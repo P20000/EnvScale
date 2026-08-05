@@ -1,6 +1,6 @@
 # EnvScale — Project Milestones & Implementation Blueprint
 
-This document outlines the step-by-step technical implementation roadmap, component responsibilities, module specifications, and task allocations for the **EnvScale** project.
+This document outlines the step-by-step technical implementation roadmap, component responsibilities, module specifications, and task allocations for the **EnvScale** project. --
 
 ---
 
