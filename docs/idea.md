@@ -1,54 +1,101 @@
-## Base App Concept: Ephemeral Staging & Architecture Sandbox ("EnvScale")
+# EnvScale — Multi-Tenant Kubernetes Observability & Gamified Governance Platform
 
-team members : pranav, neha, vinit, ishika. 
+**Team Members:** Pranav Dwivedi, Neha Sharma, Vinit, Ishika
 
-## Elevator pitch
- 
-The Real-World Problem: Engineering teams waste hundreds of hours manually configuring staging environments, drowning in alert noise when a single microservice fails, and burning corporate budget on forgotten cloud infrastructure. Developers spend more time fighting Terraform scripts and parsing gigabytes of raw logs than actually writing code.
+---
 
-## Inbuilt AIOps Features
+## Elevator Pitch
 
-- Proactive Log Telemetry: Uses an ELK stack augmented with an Isolation Forest machine learning model to catch silent memory leaks and creeping database latency anomalies before they trigger cascading outages.
+**The Real-World Problem:**
 
-- Natural Language Infrastructure Agent: Powered by CrewAI agents that take plain-text team commands ("Spin up a staging cluster for the auth service with Redis and Postgres") and automatically generate, validate, and apply the required Terraform modules and Dockerfiles.
+Modern engineering teams running microservices on Kubernetes face severe operational blind spots. Infrastructure health is buried in opaque CLI outputs (`kubectl`), alerting requires complex enterprise setups, and developers lack immediate visual feedback when pods enter crash loops or consume excess CPU. Existing tools either offer zero persistent state management or carry immense enterprise setup complexity, leaving teams struggling to track infrastructure stability across multiple staging and production environments.
 
-- Aggressive Cost-Killing Bot: A serverless engine that monitors active utilization in real-time, instantly spinning down idle non-production resources and right-sizing over-provisioned memory nodes to offset skyrocketing cloud hardware expenses.
+**The Solution:**
+
+**EnvScale** is a multi-tenant Kubernetes observability and governance platform. It transforms raw cluster metrics into an interactive real-time visual canvas, enforces custom user-defined alert policies, and gamifies infrastructure stability through automated cluster health scoring and uptime leaderboards.
+
+---
+
+## Base Features & Platform Core
+
+### 1. Interactive Cluster Topology Engine (Real-Time Canvas)
+
+* **Live Visual Mapping:** Renders Kubernetes Nodes, Pods, and Services as interactive nodes using a drag-and-drop canvas layout.
+* **Real-Time Status Streaming:** Utilizes WebSocket / Server-Sent Events (SSE) connections to instantly reflect pod lifecycle state changes (Running, CrashLoopBackOff, Pending) with intuitive color coding (Green, Red, Yellow).
+* **Single-Click Diagnostics:** Clicking a node opens an inspector panel displaying live CPU/memory usage and streaming the last 50 error log lines directly from the pod.
+
+### 2. Multi-Tenant Workspace & Infrastructure RBAC (CRUD)
+
+* **Workspace Management:** Allows engineering leads to create isolated workspaces (e.g., Staging, QA, Production) and assign team members with specific roles (Admin, Viewer).
+* **Cluster Secret Governance:** Securely stores and manages encrypted `Kubeconfig` credentials in a central database, enabling seamless switching between multiple clusters.
+
+### 3. Custom Alert Policy & Incident Engine (CRUD)
+
+* **Rule Engine Setup:** Users can configure custom metric threshold rules (e.g., *"Trigger Alert if Pod Restarts > 3 within 10 minutes"* or *"Notify if CPU Usage > 85%"*).
+* **Incident History Log:** Persists triggered alerts in a central database with resolution tracking, incident timestamps, and severity tagging.
+
+### 4. Gamified Health Scoring & Leaderboard
+
+* **Cluster Health Score (0–100):** Calculates a dynamic stability index based on active pod restarts, memory pressures, and node readiness status.
+* **Uptime & Efficiency Leaderboards:** Ranks team workspaces by zero-crash streaks and resource efficiency, incentivizing proactive cluster hygiene.
+
+---
 
 ## Tech Stack
 
-- Frontend: React, TypeScript, Tailwind CSS, Vite.
+* **Frontend:** React, TypeScript, Tailwind CSS, Vite, React Flow (Canvas Graph Visualization), Lucide Icons.
+* **Backend & Streaming Gateway:** Go (Golang) / Node.js (TypeScript) for high-performance Kubernetes API streaming via WebSockets and REST API endpoints.
+* **Database & ORM:** PostgreSQL, Drizzle ORM / Prisma (User RBAC, Workspaces, Alert Rules, Incident Logs, Leaderboard Scores).
+* **Cluster Targets & Orchestration:** Minikube / K3s (Local Development & Testing) and AWS EKS.
 
-- Backend / API Gateway: Go (Golang) with Gin framework, Node.js (TypeScript) for orchestration services.
+---
 
-- AIOps & Observability: Elasticsearch, Logstash, Kibana (ELK Stack), Python (Scikit-learn for Isolation Forest anomaly detection), Prometheus/OpenTelemetry for metrics.
+## Demographics & Psychographics
 
-- Autonomous Agent & IaC: CrewAI framework with integrated LLM integration, Terraform, Docker, Kubernetes (K8s) for container orchestration.
-
-- Cloud & Cost Engine: AWS/GCP serverless functions (AWS Lambda / Google Cloud Functions), Python-based cost-allocation tracking.
-
-- Database: PostgreSQL for app state, Redis for real-time task queues.
-
-## Demographics and Psychographics
-
-- Demographics:
-
-- Age: 26–42
-
-- Roles: DevOps Engineers, Site Reliability Engineers (SREs), Platform Engineers, Engineering Managers, and Full-Stack Tech Leads.
-
-- Company Size: Mid-market to enterprise tech companies scaling rapidly from 50 to 500+ developers.
-
-- Psychographics:
-
-- Constantly stressed by sudden production fires and on-call rotation burnout.
-
-- Frustrated by siloed tools where logs, infrastructure provisioning, and billing live in
+* **Demographics:**
+* **Age:** 22–40
+* **Roles:** DevOps Engineers, Platform Engineers, Site Reliability Engineers (SREs), Engineering Leads, and Full-Stack Developers.
+* **Company Size:** Fast-growing startups and mid-market tech teams managing multi-container microservice setups.
 
 
-entirely different dashboards.
+* **Psychographics:**
+* Frustrated by terminal-only Kubernetes interfaces (`kubectl`) during urgent outage debugging.
+* Desire instant visual clarity over complex dashboard configuration pipelines.
+* Motivated by team collaboration, proactive system stability, and clean developer experience.
 
-- Value automation, predictability, and ruthless efficiency; allergic to bureaucratic enterprise software that slows down shipping velocity.
+
+
+---
 
 ## Internal Monologue of a Victim
 
-"It’s 2:00 AM on a Tuesday. PagerDuty is screaming about a spike in 502 errors, and I’m staring at a wall of three million unstructured log lines in Kibana trying to find the one line that actually matters. Meanwhile, finance sent another passive-aggressive email about our AWS bill jumping 35% this month because someone left a staging Kubernetes cluster running all weekend. I didn't spend five years getting a computer science degree to play janitor to broken Terraform scripts and ignore my sleep schedule every time a microservice decides to throw a silent tantrum."
+> *"It’s 4:30 PM on a Friday and a microservice just silently went into a CrashLoopBackOff state. I’m running five different `kubectl get pods -n staging` commands across three terminal tabs trying to figure out which container is failing. Meanwhile, our new junior dev accidentally applied a broken config, and I have no easy way to see what altered our cluster topology. I shouldn't have to decipher walls of raw CLI text or set up a bloated enterprise monitoring tool just to know if my staging cluster is actually healthy."*
+
+---
+
+## Repository & Team Task Breakdown
+
+```text
+EnvScale/
+├── apps/
+│   ├── web/               # React + Tailwind + React Flow (Neha & Ishika)
+│   │   ├── components/    # Canvas, Dashboards, Leaderboards, Onboarding
+│   │   └── pages/         # Workspaces, Alert Rules, Cluster Map
+│   │
+│   ├── k8s-streamer/      # Go / Node.js WebSocket Engine (Pranav)
+│   │   └── client/        # Kubernetes API Client & Real-time Metrics Stream
+│   │
+│   └── api-server/        # Node.js / Go CRUD Engine (Vinit)
+│       ├── controllers/   # Workspaces, Custom Alerts, Leaderboards
+│       └── db/            # PostgreSQL / Drizzle Schema & Migrations
+│
+└── docs/                  # Project Reports, SRS, PPTs (Ishika)
+
+```
+
+### Responsibility Matrix
+
+* **Pranav (Architecture & Core Engine):** Kubernetes API Client integration, Go/Node.js WebSocket metric streaming engine, core real-time state synchronization.
+* **Vinit (Backend CRUD & API Layer):** PostgreSQL schema design, Drizzle ORM configuration, REST APIs for Workspaces, User RBAC, Alert Rules, and Leaderboard scoring endpoints.
+* **Neha (Frontend System & Visualization):** React Flow canvas integration, node/edge state rendering, Workspace settings UI, and Alert Rule management interfaces.
+* **Ishika (UI Polish, Documentation & QA):** User onboarding flows, static help documentation, empty-state UI designs, manual black-box QA logs, SRS report, and presentation assets.
