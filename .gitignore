@@ -1,0 +1,24 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build outputs
+dist
+build
+.turbo
+
+# Environment & Secrets
+.env
+.env.local
+*.pem
+*.kubeconfig
+
+# Project Management CLI Tool (Local Only - Never committed to repo)
+scripts/
+.task-manager/
+pm
+
+# IDE & OS
+.DS_Store
+.vscode
+.idea
