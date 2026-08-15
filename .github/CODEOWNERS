@@ -1,0 +1,17 @@
+# EnvScale Monorepo Codeowners & Module Governance
+
+# Global Repo Maintainer & Architecture Lead
+*                       @PranavDwivedi
+
+# Streaming Gateway & Kubernetes Engine (Pranav)
+/apps/k8s-streamer/      @PranavDwivedi
+
+# REST API & Database Layer (Vinit)
+/apps/api-server/        @Vinit
+
+# Frontend UI & Canvas Engine (Neha)
+/apps/web/               @NehaSharma
+
+# Documentation, Onboarding & QA (Ishika)
+/docs/                   @Ishika
+/apps/web/src/components/onboarding/ @Ishika

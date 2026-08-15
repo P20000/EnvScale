@@ -94,3 +94,23 @@ Before declaring any task or feature complete, the AI assistant MUST verify:
 2. **Lint Cleanliness:** Run `pnpm lint` to ensure zero ESLint violations.
 3. **Database Consistency:** Run `drizzle-kit check` or migration scripts to verify schema sync.
 4. **Milestone Alignment:** Ensure deliverables strictly conform to the 16-week timeline detailed in `docs/milestones.md`.
+
+---
+
+## 6. Git Branching Strategy & Pull Request Governance
+
+To ensure code quality and prevent unauthorized changes in `main` or `develop`:
+
+### Branch Breakdown
+- `main`: Protected production release branch. **NO DIRECT PUSHES PERMITTED**.
+- `develop`: Integration testing branch. All feature PRs merge here first.
+- `feature/pranav-k8s-streamer`: Owned by **Pranav** for `apps/k8s-streamer` core engine development.
+- `feature/vinit-api-server`: Owned by **Vinit** for `apps/api-server`, Drizzle ORM, and database schemas.
+- `feature/neha-web-ui`: Owned by **Neha** for `apps/web` React Flow canvas and visualization UI.
+- `feature/ishika-docs-qa`: Owned by **Ishika** for onboarding UI, reusable component library, docs, and QA.
+
+### Enforced Pull Request Guardrails
+1. **Never Push Directly to `main` or `develop`:** All work must originate from dedicated `feature/*` branches and be submitted via a Pull Request (PR).
+2. **Required CI Checks:** Every PR targeting `main` or `develop` MUST pass automated GitHub Actions CI (`pnpm build` and `pnpm lint`).
+3. **Module Ownership Review (`CODEOWNERS`):** PRs modifying specific paths require review and approval from the designated module owner before merging.
+
