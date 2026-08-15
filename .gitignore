@@ -17,6 +17,7 @@ build
 scripts/
 .task-manager/
 pm
+ghissue
 
 # IDE & OS
 .DS_Store
