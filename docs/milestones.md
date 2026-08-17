@@ -106,9 +106,9 @@ EnvScale Monorepo Structure
 - Implement AES-256-GCM encryption/decryption module for storing and loading `Kubeconfig` raw YAML blobs safely.
 
 #### 4. Frontend Workspace Shell (`apps/web`)
-- Initialize Vite + React + TypeScript + Tailwind CSS application shell.
+- Initialize Vite + React + TypeScript + Tailwind CSS + shadcn/ui application shell.
 - Install React Flow (`@xyflow/react`), Lucide Icons (`lucide-react`), and Zustand.
-- Implement global Dark Mode design system with custom CSS variables and glassmorphism panel styles.
+- Implement global Dark Mode design system with custom CSS variables and shadcn/ui component styles.
 
 ---
 
@@ -127,8 +127,8 @@ EnvScale Monorepo Structure
 - [x] Write seed script (`apps/api-server/src/db/seed.ts`) populating demo workspaces, RBAC roles, and test users.
 
 #### Neha (Frontend UI & Visualization Engine)
-- [x] Initialize `apps/web` with Vite, React, TypeScript, and Tailwind CSS.
-- [x] Configure design system tokens in `tailwind.config.js` (custom neon color accents, dark palette `#0f172a`, glass card utilities).
+- [x] Initialize `apps/web` with Vite, React, TypeScript, Tailwind CSS, and shadcn/ui.
+- [x] Configure design system tokens in `tailwind.config.js` and shadcn/ui theme configuration (custom neon color accents, dark palette `#0f172a`).
 - [x] Set up React Flow canvas wrapper component with basic zoom/pan handlers.
 - [x] Create Zustand global store skeleton (`apps/web/src/store/useTopologyStore.ts`).
 
@@ -400,7 +400,7 @@ EnvScale Monorepo Structure
 - [ ] Finalize environment variable schemas and security config audits.
 
 #### Neha (Frontend UI & Visualization Engine)
-- [ ] Perform visual polish across all screens: micro-animations, glassmorphic card consistency, smooth transitions.
+- [ ] Perform visual polish across all screens: micro-animations, shadcn/ui component consistency, smooth transitions.
 - [ ] Optimize React Flow canvas rendering performance (memoization of custom nodes, virtualized graph rendering for large clusters).
 - [ ] Resolve cross-browser visual bugs and mobile/tablet viewport responsiveness issues.
 - [ ] Implement global error boundary components and fallback visual states.
