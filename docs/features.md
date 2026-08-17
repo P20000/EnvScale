@@ -163,7 +163,7 @@
 
 ## 3. Neha — Frontend UI & Visualization Engine (`apps/web`)
 
-- **[NEH-01]** React + Vite + Tailwind CSS Application Shell & Token System.
+- **[NEH-01]** React + Vite + Tailwind CSS + shadcn/ui Application Shell & Token System.
 - **[NEH-02]** Custom React Flow Node Components (`K8sNode`, `K8sPod`, `K8sService`).
 - **[NEH-03]** Dagre Auto-Layout Canvas Graph Engine.
 - **[NEH-04]** Real-Time Streaming Zustand Store (`useTopologyStore`).
