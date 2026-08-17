@@ -43,7 +43,7 @@ Modern engineering teams running microservices on Kubernetes face severe operati
 
 ## Tech Stack
 
-* **Frontend:** React, TypeScript, Tailwind CSS, Vite, React Flow (Canvas Graph Visualization), Lucide Icons.
+* **Frontend:** React, TypeScript, Tailwind CSS, Vite, React Flow (Canvas Graph Visualization), React Material Design Icons (shadcn/ui MDI).
 * **Backend & Streaming Gateway:** Go (Golang) / Node.js (TypeScript) for high-performance Kubernetes API streaming via WebSockets and REST API endpoints.
 * **Database & ORM:** PostgreSQL, Drizzle ORM / Prisma (User RBAC, Workspaces, Alert Rules, Incident Logs, Leaderboard Scores).
 * **Cluster Targets & Orchestration:** Minikube / K3s (Local Development & Testing) and AWS EKS.
