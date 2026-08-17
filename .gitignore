@@ -1,17 +1,24 @@
 # Dependencies
 node_modules
+node_modules/
 .pnpm-store
 
 # Build outputs
 dist
+dist/
 build
+build/
+coverage/
 .turbo
 
 # Environment & Secrets
 .env
+.env.*
+!.env.example
 .env.local
 *.pem
 *.kubeconfig
+*.log
 
 # Project Management CLI Tool (Local Only - Never committed to repo)
 scripts/
@@ -23,3 +30,4 @@ ghissue
 .DS_Store
 .vscode
 .idea
+
