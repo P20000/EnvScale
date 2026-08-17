@@ -107,7 +107,7 @@ EnvScale Monorepo Structure
 
 #### 4. Frontend Workspace Shell (`apps/web`)
 - Initialize Vite + React + TypeScript + Tailwind CSS + shadcn/ui application shell.
-- Install React Flow (`@xyflow/react`), Lucide Icons (`lucide-react`), and Zustand.
+- Install React Flow (`@xyflow/react`), React Material Design Icons (`@mdi/react` / `@mdi/js`), and Zustand.
 - Implement global Dark Mode design system with custom CSS variables and shadcn/ui component styles.
 
 ---
