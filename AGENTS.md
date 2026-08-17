@@ -62,7 +62,7 @@ When generating code or proposing implementations, AI assistants MUST strictly a
 
 | Component | Allowed Technologies | Prohibited Choices |
 | :--- | :--- | :--- |
-| **Frontend** | React, TypeScript, Tailwind CSS, Vite, React Flow (`@xyflow/react`), Zustand, Lucide Icons | Plain JS, Bootstrap, Options API, Redux Toolkit, Tailwind v2 |
+| **Frontend** | React, TypeScript, Tailwind CSS, Vite, React Flow (`@xyflow/react`), Zustand, React Material Design Icons (shadcn/ui MDI) | Plain JS, Bootstrap, Options API, Redux Toolkit, Tailwind v2 |
 | **Streaming Gateway** | Go (`client-go`, Gorilla WebSocket) OR Node.js (TypeScript) | Polling loops, REST-only sync for metrics |
 | **REST API Engine** | Node.js Express (TypeScript) or Go REST APIs | Plain JS, Python, un-typed Express |
 | **Database & ORM** | PostgreSQL, Drizzle ORM | Raw SQL strings without Drizzle, MongoDB, Prisma |
