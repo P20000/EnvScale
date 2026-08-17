@@ -1,0 +1,64 @@
+package types
+
+import "time"
+
+// Event Type Constants matching shared monorepo contracts
+const (
+	EventPodStatusChanged = "EVENT_POD_STATUS_CHANGED"
+	EventNodeMutated      = "EVENT_NODE_MUTATED"
+	EventServiceMutated   = "EVENT_SERVICE_MUTATED"
+	EventLogLine          = "EVENT_LOG_LINE"
+	EventAlertTriggered   = "EVENT_ALERT_TRIGGERED"
+	EventHeartbeat        = "EVENT_HEARTBEAT"
+)
+
+// WSEventEnvelope represents the standardized WebSocket JSON frame delivered to client subscribers
+type WSEventEnvelope struct {
+	Event     string      `json:"event"`
+	ClusterID string      `json:"clusterId"`
+	Timestamp string      `json:"timestamp"`
+	Data      interface{} `json:"data"`
+}
+
+// PodStatusDelta encapsulates real-time Kubernetes Pod state changes sent to the UI
+type PodStatusDelta struct {
+	Name           string            `json:"name"`
+	Namespace      string            `json:"namespace"`
+	NodeName       string            `json:"nodeName"`
+	Phase          string            `json:"phase"`
+	RestartCount   int32             `json:"restartCount"`
+	CPUUsagePct    float64           `json:"cpuUsagePct,omitempty"`
+	MemoryUsageMb  float64           `json:"memoryUsageMb,omitempty"`
+	Labels         map[string]string `json:"labels"`
+	CreatedAt      time.Time         `json:"createdAt"`
+}
+
+// NodeStatusDelta encapsulates node health state updates
+type NodeStatusDelta struct {
+	Name           string            `json:"name"`
+	Status         string            `json:"status"` // "Ready", "NotReady", "Unknown"
+	CPUCapacity    string            `json:"cpuCapacity"`
+	MemoryCapacity string            `json:"memoryCapacity"`
+	PodCapacity    int64             `json:"podCapacity"`
+	Labels         map[string]string `json:"labels"`
+}
+
+// ServiceStatusDelta encapsulates K8s Service state updates
+type ServiceStatusDelta struct {
+	Name        string            `json:"name"`
+	Namespace   string            `json:"namespace"`
+	Type        string            `json:"type"`
+	ClusterIP   string            `json:"clusterIP"`
+	Selector    map[string]string `json:"selector"`
+	TargetPorts []int32           `json:"targetPorts"`
+}
+
+// LogStreamEvent encapsulates live stdout/stderr log lines
+type LogStreamEvent struct {
+	PodName   string `json:"podName"`
+	Namespace string `json:"namespace"`
+	Container string `json:"container"`
+	Log       string `json:"log"`
+	Stream    string `json:"stream"` // "stdout" | "stderr"
+	Timestamp string `json:"timestamp"`
+}
