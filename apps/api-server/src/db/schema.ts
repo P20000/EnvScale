@@ -97,8 +97,6 @@ export const workspaces = pgTable(
 export const workspaceMembers = pgTable(
   "workspace_members",
   {
-    id: uuid("id").primaryKey().defaultRandom(),
-
     workspaceId: uuid("workspace_id").notNull(),
 
     userId: uuid("user_id").notNull(),

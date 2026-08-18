@@ -1,0 +1,1 @@
+ALTER TABLE "workspace_members" DROP COLUMN IF EXISTS "id";
