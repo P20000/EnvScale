@@ -20,6 +20,7 @@ import WorkflowNode, {
 } from "./components/nodes/WorkflowNode";
 
 import ShapePalette from "./components/ShapePalette";
+import ConnectClusterWizard from "./components/onboarding/ConnectClusterWizard";
 
 import "./index.css";
 
@@ -60,6 +61,9 @@ export default function App() {
 
   const [showPalette, setShowPalette] =
     useState(false);
+
+  const [showConnectWizard, setShowConnectWizard] =
+  useState(false);
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -113,7 +117,12 @@ export default function App() {
           <h1>EnvScale</h1>
           <span>Kubernetes Observability Platform</span>
         </div>
-
+        <button
+  className="add-shape-button"
+  onClick={() => setShowConnectWizard(true)}
+>
+  Connect Cluster
+</button>
         <button
           className="add-shape-button"
           onClick={() =>
@@ -161,6 +170,12 @@ export default function App() {
             }
           />
         )}
+        {showConnectWizard && (
+  <ConnectClusterWizard
+    onClose={() => setShowConnectWizard(false)}
+  />
+)}
+
       </main>
     </div>
   );
