@@ -4,7 +4,7 @@ import { requireAuth, requireWorkspaceRole } from "../middleware/auth.middleware
 import { validate } from "../middleware/validate.js";
 import { clusterConnectSchema, clusterParamsSchema, workspaceParamsSchema } from "../schemas/request.schemas.js";
 
-export const clusterRouter = Router({ mergeParams: true });
+export const clusterRouter: Router = Router({ mergeParams: true });
 
 clusterRouter.use(requireAuth);
 clusterRouter.get("/", validate("params", workspaceParamsSchema, "Invalid workspace parameters"), requireWorkspaceRole("ADMIN", "MEMBER", "VIEWER"), list);
