@@ -1,5 +1,4 @@
 import type { Request, Response } from "express";
-import { z } from "zod";
 import {
   findUserByEmail,
   getUserById,
@@ -8,15 +7,6 @@ import {
   rotateRefreshToken,
   verifyPassword,
 } from "../services/auth.service.js";
-
-const credentialsSchema = z.object({
-  email: z.string().trim().email().transform((value) => value.toLowerCase()),
-  password: z.string().min(8).max(128),
-});
-
-const registerSchema = credentialsSchema.extend({
-  name: z.string().trim().min(1).max(255),
-});
 
 const setRefreshCookie = (response: Response, token: string) => {
   response.cookie("refreshToken", token, {
@@ -29,18 +19,14 @@ const setRefreshCookie = (response: Response, token: string) => {
 };
 
 export const register = async (request: Request, response: Response) => {
-  const parsed = registerSchema.safeParse(request.body);
-  if (!parsed.success) {
-    response.status(400).json({ error: "Invalid registration data", details: parsed.error.flatten() });
-    return;
-  }
-  if (await findUserByEmail(parsed.data.email)) {
+  const { name, email, password } = request.body as { name: string; email: string; password: string };
+  if (await findUserByEmail(email)) {
     response.status(409).json({ error: "Email is already registered" });
     return;
   }
 
   try {
-    const user = await registerUser(parsed.data.name, parsed.data.email, parsed.data.password);
+    const user = await registerUser(name, email, password);
     const tokens = await issueTokens(user);
     setRefreshCookie(response, tokens.refreshToken);
     response.status(201).json({ accessToken: tokens.accessToken, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
@@ -51,13 +37,9 @@ export const register = async (request: Request, response: Response) => {
 };
 
 export const login = async (request: Request, response: Response) => {
-  const parsed = credentialsSchema.safeParse(request.body);
-  if (!parsed.success) {
-    response.status(400).json({ error: "Invalid login data", details: parsed.error.flatten() });
-    return;
-  }
-  const user = await findUserByEmail(parsed.data.email);
-  if (!user || !user.isActive || !(await verifyPassword(parsed.data.password, user.passwordHash))) {
+  const { email, password } = request.body as { email: string; password: string };
+  const user = await findUserByEmail(email);
+  if (!user || !user.isActive || !(await verifyPassword(password, user.passwordHash))) {
     response.status(401).json({ error: "Invalid email or password" });
     return;
   }
