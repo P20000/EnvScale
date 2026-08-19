@@ -197,7 +197,7 @@ const initialIncidents: Incident[] = [
 ];
 
 export function IncidentsView() {
-  const { clusters } = useTopologyStore();
+  const clusters = useTopologyStore((s) => s.clusters);
   const [severityFilter, setSeverityFilter] = useState<string>("ALL");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [clusterFilter, setClusterFilter] = useState<string>("ALL");

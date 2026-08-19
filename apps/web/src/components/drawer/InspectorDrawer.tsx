@@ -25,9 +25,10 @@ export type SelectedTarget =
 interface InspectorDrawerProps {
   target: SelectedTarget;
   onClose: () => void;
+  onOpenLogTerminal?: (podName: string, namespace?: string) => void;
 }
 
-export function InspectorDrawer({ target, onClose }: InspectorDrawerProps) {
+export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: InspectorDrawerProps) {
   const [activeTab, setActiveTab] = useState<"overview" | "logs" | "metrics" | "chaos">("overview");
   const targetName = target?.data?.name;
 
@@ -311,6 +312,21 @@ export function InspectorDrawer({ target, onClose }: InspectorDrawerProps) {
                 </div>
               </div>
             </div>
+
+            {target.type === "pod" && onOpenLogTerminal && (
+              <button
+                onClick={() =>
+                  onOpenLogTerminal(
+                    target.data.name,
+                    targetRecord.namespace ? String(targetRecord.namespace) : "default"
+                  )
+                }
+                className="w-full flex items-center justify-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-2.5 text-xs font-medium text-blue-400 hover:bg-blue-500/20 hover:border-blue-500/50 transition-all active:scale-95 shadow-md"
+              >
+                <Terminal className="h-4 w-4" />
+                <span>Open Full Log Terminal</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -323,6 +339,19 @@ export function InspectorDrawer({ target, onClose }: InspectorDrawerProps) {
                 kubectl logs -f {target.data.name}
               </span>
               <div className="flex items-center gap-1">
+                {target.type === "pod" && onOpenLogTerminal && (
+                  <button
+                    onClick={() =>
+                      onOpenLogTerminal(
+                        target.data.name,
+                        targetRecord.namespace ? String(targetRecord.namespace) : "default"
+                      )
+                    }
+                    className="rounded bg-blue-500/20 px-2 py-1 text-[11px] font-mono text-blue-300 hover:bg-blue-500/30 transition-colors border border-blue-500/30"
+                  >
+                    Expand Terminal
+                  </button>
+                )}
                 <button
                   onClick={() => setIsTailing((prev) => !prev)}
                   className="rounded p-1 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"

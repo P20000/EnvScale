@@ -3,7 +3,9 @@ import { Settings, Key, Shield, Lock, Copy, Check, Trash2, Plus } from "lucide-r
 import { useTopologyStore } from "../../store/useTopologyStore";
 
 export function SettingsView() {
-  const { tokens, generateToken, revokeToken } = useTopologyStore();
+  const tokens = useTopologyStore((s) => s.tokens);
+  const generateToken = useTopologyStore((s) => s.generateToken);
+  const revokeToken = useTopologyStore((s) => s.revokeToken);
   const [copiedTokenId, setCopiedTokenId] = useState<string | null>(null);
   const [newTokenName, setNewTokenName] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);

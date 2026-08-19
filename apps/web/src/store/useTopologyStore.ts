@@ -16,6 +16,7 @@ import type { K8sPodData } from "../components/canvas/K8sPod";
 import type { K8sNodeData } from "../components/canvas/K8sNode";
 import type { K8sServiceData } from "../components/canvas/K8sService";
 import type { WsConnectionStatus, WsTopologyMessage } from "../hooks/useK8sStream";
+import type { SelectedTarget } from "../components/drawer/InspectorDrawer";
 import { getLayoutedElements } from "../utils/layout";
 
 export interface ApiToken {
@@ -272,15 +273,64 @@ const defaultInitialNotifications: NotificationItem[] = [
   },
 ];
 
-interface TopologyState {
+export const extractServices = (nodes: Node[]): K8sServiceData[] =>
+  nodes
+    .filter((n) => n.type === "k8sService" && Boolean(n.data))
+    .map((n) => n.data as K8sServiceData);
+
+export const extractPods = (nodes: Node[]): K8sPodData[] =>
+  nodes
+    .filter((n) => n.type === "k8sPod" && Boolean(n.data))
+    .map((n) => n.data as K8sPodData);
+
+export const syncSelectedNode = (nodes: Node[], currentSelected: SelectedTarget): SelectedTarget => {
+  if (!currentSelected || !currentSelected.data) return null;
+  const targetName = currentSelected.data.name;
+  if (!targetName) return currentSelected;
+
+  const matched = nodes.find(
+    (n) => n.id === targetName || (n.data as { name?: string })?.name === targetName
+  );
+  if (matched && matched.data) {
+    if (matched.type === "k8sPod") {
+      return { type: "pod", data: matched.data as K8sPodData };
+    } else if (matched.type === "k8sWorker") {
+      return { type: "node", data: matched.data as K8sNodeData };
+    } else if (matched.type === "k8sService") {
+      return { type: "service", data: matched.data as K8sServiceData };
+    }
+  }
+  return currentSelected;
+};
+
+export interface TopologyState {
   clusters: string[];
   activeCluster: string;
   nodes: Node[];
   edges: Edge[];
+  services: K8sServiceData[];
+  pods: K8sPodData[];
+  selectedNode: SelectedTarget;
   tokens: ApiToken[];
   notifications: NotificationItem[];
   wsStatus: WsConnectionStatus;
   wsLatencyMs: number;
+
+  // Selected Node Actions
+  setSelectedNode: (target: SelectedTarget) => void;
+  clearSelectedNode: () => void;
+
+  // Granular Resource Actions (Nodes, Services, Pods)
+  upsertNode: (node: Node) => void;
+  removeNode: (nodeId: string) => void;
+  upsertService: (serviceData: Partial<K8sServiceData> & { id?: string; name: string }) => void;
+  removeService: (serviceId: string) => void;
+  upsertPod: (podData: Partial<K8sPodData> & { id?: string; name: string }) => void;
+  removePod: (podId: string) => void;
+
+  // Resource Array Setters
+  setServices: (services: K8sServiceData[] | ((prev: K8sServiceData[]) => K8sServiceData[])) => void;
+  setPods: (pods: K8sPodData[] | ((prev: K8sPodData[]) => K8sPodData[])) => void;
 
   // Actions
   setActiveCluster: (cluster: string) => void;
@@ -302,6 +352,7 @@ interface TopologyState {
   // WebSocket Actions
   setWsStatus: (status: WsConnectionStatus, latencyMs?: number) => void;
   processWsMessage: (msg: WsTopologyMessage) => void;
+  applyDelta: (delta: WsTopologyMessage) => void;
 
   // Token Actions
   generateToken: (name?: string) => void;
@@ -321,10 +372,23 @@ export const useTopologyStore = create<TopologyState>()(
       activeCluster: "minikube-prod",
       nodes: defaultInitialNodes,
       edges: defaultInitialEdges,
+      services: extractServices(defaultInitialNodes),
+      pods: extractPods(defaultInitialNodes),
+      selectedNode: null,
       tokens: defaultInitialTokens,
       notifications: defaultInitialNotifications,
       wsStatus: "DISCONNECTED",
       wsLatencyMs: 12,
+
+      setSelectedNode: (target) => {
+        if (!target) {
+          set({ selectedNode: null });
+          return;
+        }
+        const synced = syncSelectedNode(get().nodes, target);
+        set({ selectedNode: synced });
+      },
+      clearSelectedNode: () => set({ selectedNode: null }),
 
       setActiveCluster: (cluster) => set({ activeCluster: cluster }),
 
@@ -412,6 +476,184 @@ export const useTopologyStore = create<TopologyState>()(
         });
       },
 
+      upsertNode: (node) => {
+        const current = get().nodes;
+        const idx = current.findIndex((n) => n.id === node.id);
+        const updated = idx >= 0 ? [...current] : [...current, node];
+        if (idx >= 0) updated[idx] = node;
+        set({
+          nodes: updated,
+          services: extractServices(updated),
+          pods: extractPods(updated),
+          selectedNode: syncSelectedNode(updated, get().selectedNode),
+        });
+      },
+
+      removeNode: (nodeId) => {
+        get().deleteNode(nodeId);
+      },
+
+      upsertService: (serviceData) => {
+        const name = serviceData.name;
+        const current = get().nodes;
+        const idx = current.findIndex(
+          (n) => n.id === serviceData.id || (n.data as K8sServiceData)?.name === name
+        );
+
+        let updated: Node[];
+        if (idx >= 0) {
+          const existing = current[idx];
+          updated = [...current];
+          updated[idx] = {
+            ...existing,
+            data: { ...(existing.data as K8sServiceData), ...serviceData },
+          };
+        } else {
+          const timestamp = Date.now();
+          const newServiceNode: Node = {
+            id: serviceData.id || `service-${name}-${timestamp}`,
+            type: "k8sService",
+            position: { x: 300, y: 150 },
+            data: {
+              name,
+              type: serviceData.type || "ClusterIP",
+              port: serviceData.port || ":8080",
+            } as K8sServiceData,
+          };
+          updated = [...current, newServiceNode];
+        }
+        set({
+          nodes: updated,
+          services: extractServices(updated),
+          pods: extractPods(updated),
+          selectedNode: syncSelectedNode(updated, get().selectedNode),
+        });
+      },
+
+      removeService: (serviceId) => {
+        const targetId = serviceId;
+        const currentNodes = get().nodes;
+        const remaining = currentNodes.filter(
+          (n) => n.id !== targetId && (n.data as K8sServiceData)?.name !== targetId
+        );
+        const remainingIds = new Set(remaining.map((n) => n.id));
+        const remainingEdges = get().edges.filter(
+          (e) => remainingIds.has(e.source) && remainingIds.has(e.target)
+        );
+        const selected = get().selectedNode;
+        const isSelected = selected && selected.data?.name === targetId;
+
+        set({
+          nodes: remaining,
+          services: extractServices(remaining),
+          pods: extractPods(remaining),
+          edges: remainingEdges,
+          selectedNode: isSelected ? null : syncSelectedNode(remaining, selected),
+        });
+      },
+
+      upsertPod: (podData) => {
+        const name = podData.name;
+        const current = get().nodes;
+        const idx = current.findIndex(
+          (n) => n.id === podData.id || (n.data as K8sPodData)?.name === name
+        );
+
+        let updated: Node[];
+        if (idx >= 0) {
+          const existing = current[idx];
+          updated = [...current];
+          updated[idx] = {
+            ...existing,
+            data: { ...(existing.data as K8sPodData), ...podData },
+          };
+        } else {
+          const timestamp = Date.now();
+          const newPodNode: Node = {
+            id: podData.id || `pod-${name}-${timestamp}`,
+            type: "k8sPod",
+            position: { x: 550, y: 150 },
+            data: {
+              name,
+              namespace: podData.namespace || "default",
+              nodeName: podData.nodeName || "minikube-worker-1",
+              status: podData.status || "Running",
+              restarts: podData.restarts ?? 0,
+              ip: podData.ip || "10.244.0.10",
+              cpuUsage: podData.cpuUsage || "30 mcores",
+              memoryUsage: podData.memoryUsage || "120 MiB",
+            } as K8sPodData,
+          };
+          updated = [...current, newPodNode];
+        }
+        set({
+          nodes: updated,
+          services: extractServices(updated),
+          pods: extractPods(updated),
+          selectedNode: syncSelectedNode(updated, get().selectedNode),
+        });
+      },
+
+      removePod: (podId) => {
+        const targetId = podId;
+        const currentNodes = get().nodes;
+        const remaining = currentNodes.filter(
+          (n) => n.id !== targetId && (n.data as K8sPodData)?.name !== targetId
+        );
+        const remainingIds = new Set(remaining.map((n) => n.id));
+        const remainingEdges = get().edges.filter(
+          (e) => remainingIds.has(e.source) && remainingIds.has(e.target)
+        );
+        const selected = get().selectedNode;
+        const isSelected = selected && selected.data?.name === targetId;
+
+        set({
+          nodes: remaining,
+          services: extractServices(remaining),
+          pods: extractPods(remaining),
+          edges: remainingEdges,
+          selectedNode: isSelected ? null : syncSelectedNode(remaining, selected),
+        });
+      },
+
+      setServices: (servicesInput) => {
+        const currentServices = get().services;
+        const nextServices = typeof servicesInput === "function" ? servicesInput(currentServices) : servicesInput;
+        const currentNodes = get().nodes;
+        const nonServiceNodes = currentNodes.filter((n) => n.type !== "k8sService");
+        const serviceNodes: Node[] = nextServices.map((svcData, index) => ({
+          id: `svc-${svcData.name}`,
+          type: "k8sService",
+          position: { x: 50 + (index % 4) * 250, y: 180 },
+          data: svcData,
+        }));
+        const updatedNodes = [...nonServiceNodes, ...serviceNodes];
+        set({
+          nodes: updatedNodes,
+          services: nextServices,
+          pods: extractPods(updatedNodes),
+        });
+      },
+
+      setPods: (podsInput) => {
+        const currentPods = get().pods;
+        const nextPods = typeof podsInput === "function" ? podsInput(currentPods) : podsInput;
+        const currentNodes = get().nodes;
+        const nonPodNodes = currentNodes.filter((n) => n.type !== "k8sPod");
+        const podNodes: Node[] = nextPods.map((podData, index) => ({
+          id: `pod-${podData.name}`,
+          type: "k8sPod",
+          position: { x: 580, y: 60 + (index % 5) * 110 },
+          data: podData,
+        }));
+        const updatedNodes = [...nonPodNodes, ...podNodes];
+        set({
+          nodes: updatedNodes,
+          services: extractServices(updatedNodes),
+          pods: nextPods,
+        });
+      },
+
       createNode: (type, customName) => {
         const timestamp = Date.now();
         const count = get().nodes.filter((n) => n.type === type).length + 1;
@@ -464,8 +706,11 @@ export const useTopologyStore = create<TopologyState>()(
           };
         }
 
+        const nextNodes = [...get().nodes, newNode];
         set({
-          nodes: [...get().nodes, newNode],
+          nodes: nextNodes,
+          services: extractServices(nextNodes),
+          pods: extractPods(nextNodes),
         });
       },
 
@@ -490,25 +735,40 @@ export const useTopologyStore = create<TopologyState>()(
           clusters: updatedClusters,
           activeCluster: nextActive,
           nodes: remainingNodes,
+          services: extractServices(remainingNodes),
+          pods: extractPods(remainingNodes),
           edges: remainingEdges,
         });
       },
 
       deleteNode: (nodeId) => {
-        const remainingNodes = get().nodes.filter((n) => n.id !== nodeId);
+        const remainingNodes = get().nodes.filter(
+          (n) => n.id !== nodeId && (n.data as Record<string, unknown>)?.name !== nodeId
+        );
         const remainingNodeIds = new Set(remainingNodes.map((n) => n.id));
         const remainingEdges = get().edges.filter(
           (e) => remainingNodeIds.has(e.source) && remainingNodeIds.has(e.target)
         );
+
+        const selected = get().selectedNode;
+        const isSelected = selected && (selected.data?.name === nodeId);
+
         set({
           nodes: remainingNodes,
+          services: extractServices(remainingNodes),
+          pods: extractPods(remainingNodes),
           edges: remainingEdges,
+          ...(isSelected ? { selectedNode: null } : {}),
         });
       },
 
       setNodes: (nodesInput) => {
         const nextNodes = typeof nodesInput === "function" ? nodesInput(get().nodes) : nodesInput;
-        set({ nodes: nextNodes });
+        set({
+          nodes: nextNodes,
+          services: extractServices(nextNodes),
+          pods: extractPods(nextNodes),
+        });
       },
 
       setEdges: (edgesInput) => {
@@ -524,6 +784,8 @@ export const useTopologyStore = create<TopologyState>()(
         );
         set({
           nodes: updatedNodes,
+          services: extractServices(updatedNodes),
+          pods: extractPods(updatedNodes),
           edges: updatedEdges,
         });
       },
@@ -571,19 +833,24 @@ export const useTopologyStore = create<TopologyState>()(
       },
 
       processWsMessage: (msg) => {
-        const eventType = msg.event || msg.type;
+        const eventType = String(msg.event || msg.type || "");
         const payloadData = (msg.data !== undefined ? msg.data : msg.payload) as Record<string, unknown> | undefined;
         if (!eventType || !payloadData) return;
 
         if (eventType === "EVENT_TOPOLOGY_SNAPSHOT" && Array.isArray(payloadData.nodes)) {
+          const snapshotNodes = payloadData.nodes as Node[];
           set({
-            nodes: payloadData.nodes as Node[],
+            nodes: snapshotNodes,
+            services: extractServices(snapshotNodes),
+            pods: extractPods(snapshotNodes),
             edges: (payloadData.edges as Edge[]) || get().edges,
           });
         } else if (
           eventType === "EVENT_POD_STATUS_CHANGED" ||
           eventType === "EVENT_POD_ADDED" ||
-          eventType === "EVENT_POD_MODIFIED"
+          eventType === "EVENT_POD_MODIFIED" ||
+          eventType === "ADD_POD" ||
+          eventType === "UPDATE_POD"
         ) {
           const podObj = (payloadData.pod || payloadData) as Record<string, unknown>;
           const podName = String(podObj.name || podObj.id || "");
@@ -601,6 +868,7 @@ export const useTopologyStore = create<TopologyState>()(
               : "Running"
           ) as K8sPodData["status"];
 
+          let updatedNodes: Node[];
           if (existingIdx >= 0) {
             const existingNode = currentNodes[existingIdx];
             const existingData = existingNode.data as K8sPodData;
@@ -613,20 +881,19 @@ export const useTopologyStore = create<TopologyState>()(
               memoryUsage: podObj.memoryUsageMb !== undefined ? `${podObj.memoryUsageMb} MiB` : (podObj.memoryUsage ? String(podObj.memoryUsage) : existingData.memoryUsage),
             };
 
-            const updatedNodes = [...currentNodes];
+            updatedNodes = [...currentNodes];
             updatedNodes[existingIdx] = {
               ...existingNode,
               data: updatedPodData,
             };
-            set({ nodes: updatedNodes });
           } else if (podObj.type === "k8sPod" && podObj.id) {
             const podNode = podObj as unknown as Node;
             const existing = currentNodes.filter((n) => n.id !== podNode.id);
-            set({ nodes: [...existing, podNode] });
+            updatedNodes = [...existing, podNode];
           } else {
             const timestamp = Date.now();
             const newPodNode: Node = {
-              id: `pod-${podName}-${timestamp}`,
+              id: podObj.id ? String(podObj.id) : `pod-${podName}-${timestamp}`,
               type: "k8sPod",
               position: { x: 550, y: 100 + (currentNodes.length % 5) * 80 },
               data: {
@@ -640,12 +907,20 @@ export const useTopologyStore = create<TopologyState>()(
                 memoryUsage: podObj.memoryUsageMb ? `${podObj.memoryUsageMb} MiB` : "120 MiB",
               } as K8sPodData,
             };
-            set({ nodes: [...currentNodes, newPodNode] });
+            updatedNodes = [...currentNodes, newPodNode];
           }
+          set({
+            nodes: updatedNodes,
+            services: extractServices(updatedNodes),
+            pods: extractPods(updatedNodes),
+            selectedNode: syncSelectedNode(updatedNodes, get().selectedNode),
+          });
         } else if (
           eventType === "EVENT_NODE_MUTATED" ||
           eventType === "EVENT_NODE_ADDED" ||
-          eventType === "EVENT_NODE_MODIFIED"
+          eventType === "EVENT_NODE_MODIFIED" ||
+          eventType === "ADD_NODE" ||
+          eventType === "UPDATE_NODE"
         ) {
           const nodeObj = (payloadData.node || payloadData) as Record<string, unknown>;
           const nodeName = String(nodeObj.name || nodeObj.id || "");
@@ -656,6 +931,7 @@ export const useTopologyStore = create<TopologyState>()(
             (n) => n.id === nodeName || (n.data as K8sNodeData)?.name === nodeName
           );
 
+          let updatedNodes: Node[];
           if (existingIdx >= 0) {
             const existingNode = currentNodes[existingIdx];
             const existingData = existingNode.data as K8sNodeData;
@@ -666,21 +942,30 @@ export const useTopologyStore = create<TopologyState>()(
               memoryCapacity: nodeObj.memoryCapacity ? String(nodeObj.memoryCapacity) : existingData.memoryCapacity,
             };
 
-            const updatedNodes = [...currentNodes];
+            updatedNodes = [...currentNodes];
             updatedNodes[existingIdx] = {
               ...existingNode,
               data: updatedNodeData,
             };
-            set({ nodes: updatedNodes });
           } else if (nodeObj.type === "k8sWorker" && nodeObj.id) {
             const workerNode = nodeObj as unknown as Node;
             const existing = currentNodes.filter((n) => n.id !== workerNode.id);
-            set({ nodes: [...existing, workerNode] });
+            updatedNodes = [...existing, workerNode];
+          } else {
+            updatedNodes = currentNodes;
           }
+          set({
+            nodes: updatedNodes,
+            services: extractServices(updatedNodes),
+            pods: extractPods(updatedNodes),
+            selectedNode: syncSelectedNode(updatedNodes, get().selectedNode),
+          });
         } else if (
           eventType === "EVENT_SERVICE_MUTATED" ||
           eventType === "EVENT_SERVICE_ADDED" ||
-          eventType === "EVENT_SERVICE_MODIFIED"
+          eventType === "EVENT_SERVICE_MODIFIED" ||
+          eventType === "ADD_SERVICE" ||
+          eventType === "UPDATE_SERVICE"
         ) {
           const svcObj = (payloadData.service || payloadData) as Record<string, unknown>;
           const svcName = String(svcObj.name || svcObj.id || "");
@@ -691,6 +976,7 @@ export const useTopologyStore = create<TopologyState>()(
             (n) => n.id === svcName || (n.data as K8sServiceData)?.name === svcName
           );
 
+          let updatedNodes: Node[];
           if (existingIdx >= 0) {
             const existingNode = currentNodes[existingIdx];
             const existingData = existingNode.data as K8sServiceData;
@@ -698,35 +984,48 @@ export const useTopologyStore = create<TopologyState>()(
               ...existingData,
               type: svcObj.type ? (String(svcObj.type) as K8sServiceData["type"]) : existingData.type,
             };
-            const updatedNodes = [...currentNodes];
+            updatedNodes = [...currentNodes];
             updatedNodes[existingIdx] = {
               ...existingNode,
               data: updatedSvcData,
             };
-            set({ nodes: updatedNodes });
           } else if (svcObj.type === "k8sService" && svcObj.id) {
             const serviceNode = svcObj as unknown as Node;
             const existing = currentNodes.filter((n) => n.id !== serviceNode.id);
-            set({ nodes: [...existing, serviceNode] });
+            updatedNodes = [...existing, serviceNode];
+          } else {
+            updatedNodes = currentNodes;
           }
-        } else if (eventType === "EVENT_POD_DELETED" && (payloadData.podId || payloadData.name)) {
-          const targetId = String(payloadData.podId || payloadData.name);
-          const remainingNodes = get().nodes.filter(
-            (n) => n.id !== targetId && (n.data as Record<string, unknown>)?.name !== targetId
-          );
-          set({ nodes: remainingNodes });
-        } else if (eventType === "EVENT_NODE_DELETED" && (payloadData.nodeId || payloadData.name)) {
-          const targetId = String(payloadData.nodeId || payloadData.name);
-          const remainingNodes = get().nodes.filter(
-            (n) => n.id !== targetId && (n.data as Record<string, unknown>)?.name !== targetId
-          );
-          set({ nodes: remainingNodes });
-        } else if (eventType === "EVENT_SERVICE_DELETED" && (payloadData.serviceId || payloadData.name)) {
-          const targetId = String(payloadData.serviceId || payloadData.name);
-          const remainingNodes = get().nodes.filter(
-            (n) => n.id !== targetId && (n.data as Record<string, unknown>)?.name !== targetId
-          );
-          set({ nodes: remainingNodes });
+          set({
+            nodes: updatedNodes,
+            services: extractServices(updatedNodes),
+            pods: extractPods(updatedNodes),
+            selectedNode: syncSelectedNode(updatedNodes, get().selectedNode),
+          });
+        } else if (
+          eventType === "EVENT_POD_DELETED" ||
+          eventType === "DELETE_POD"
+        ) {
+          const targetId = String(payloadData.podId || payloadData.name || payloadData.id || "");
+          if (targetId) {
+            get().removePod(targetId);
+          }
+        } else if (
+          eventType === "EVENT_NODE_DELETED" ||
+          eventType === "DELETE_NODE"
+        ) {
+          const targetId = String(payloadData.nodeId || payloadData.name || payloadData.id || "");
+          if (targetId) {
+            get().removeNode(targetId);
+          }
+        } else if (
+          eventType === "EVENT_SERVICE_DELETED" ||
+          eventType === "DELETE_SERVICE"
+        ) {
+          const targetId = String(payloadData.serviceId || payloadData.name || payloadData.id || "");
+          if (targetId) {
+            get().removeService(targetId);
+          }
         } else if (eventType === "EVENT_ALERT_TRIGGERED") {
           const rawSeverity = String(payloadData.severity || "WARNING");
           const validSeverity: NotificationItem["severity"] = (
@@ -734,7 +1033,7 @@ export const useTopologyStore = create<TopologyState>()(
           ) as NotificationItem["severity"];
 
           const alertNotif: NotificationItem = {
-            id: `alert-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            id: `alert-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
             title: String(payloadData.title || "Cluster Alert Triggered"),
             message: String(payloadData.message || "An unexpected telemetry event was recorded."),
             time: "Just now",
@@ -744,6 +1043,10 @@ export const useTopologyStore = create<TopologyState>()(
           };
           set({ notifications: [alertNotif, ...get().notifications] });
         }
+      },
+
+      applyDelta: (delta) => {
+        get().processWsMessage(delta);
       },
 
       generateToken: (tokenName) => {
@@ -787,6 +1090,9 @@ export const useTopologyStore = create<TopologyState>()(
           activeCluster: "minikube-prod",
           nodes: defaultInitialNodes,
           edges: defaultInitialEdges,
+          services: extractServices(defaultInitialNodes),
+          pods: extractPods(defaultInitialNodes),
+          selectedNode: null,
           tokens: defaultInitialTokens,
           notifications: defaultInitialNotifications,
         });
