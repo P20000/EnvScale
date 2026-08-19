@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { X, Lock, Mail, AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { apiLogin } from "../../config/api";
+import { EnvScaleLogo } from "../ui/EnvScaleLogo";
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -52,8 +53,8 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess }: AuthModalProps) {
       <div className="w-full max-w-md rounded-2xl border border-neutral-800 bg-[#141417] p-6 shadow-2xl space-y-5">
         <div className="flex items-center justify-between border-b border-neutral-800 pb-4">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400">
-              <Lock className="h-5 w-5" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 shadow-sm">
+              <EnvScaleLogo className="h-5 w-5 text-blue-400" />
             </div>
             <div>
               <h3 className="text-sm font-bold text-neutral-100">EnvScale Authentication</h3>

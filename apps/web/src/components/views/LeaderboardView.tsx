@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Trophy, Flame, Star, ShieldCheck, Server, AlertTriangle, Activity, Users, Layers } from "lucide-react";
+import { Trophy, Flame, Star, ShieldCheck, Server, AlertTriangle, Activity, Users } from "lucide-react";
 import { useTopologyStore } from "../../store/useTopologyStore";
+import { EnvScaleLogo } from "../ui/EnvScaleLogo";
 
 export function LeaderboardView() {
   const [tab, setTab] = useState<"members" | "clusters">("clusters");
@@ -79,7 +80,7 @@ export function LeaderboardView() {
                 : "text-neutral-400 hover:text-neutral-200"
             }`}
           >
-            <Layers className="h-3.5 w-3.5" />
+            <EnvScaleLogo className="h-3.5 w-3.5" />
             <span>Clusters ({clusters.length})</span>
           </button>
 
