@@ -10,82 +10,77 @@ export default {
   theme: {
     extend: {
       colors: {
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
+        background: "#09090b",
+        foreground: "#f4f4f5",
 
         card: {
-          DEFAULT: "hsl(var(--card))",
-          foreground: "hsl(var(--card-foreground))",
+          DEFAULT: "#141417",
+          foreground: "#f4f4f5",
         },
 
         popover: {
-          DEFAULT: "hsl(var(--popover))",
-          foreground: "hsl(var(--popover-foreground))",
+          DEFAULT: "#141417",
+          foreground: "#f4f4f5",
         },
 
         primary: {
-          DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))",
-        },
-
-        secondary: {
-          DEFAULT: "hsl(var(--secondary))",
-          foreground: "hsl(var(--secondary-foreground))",
-        },
-
-        muted: {
-          DEFAULT: "hsl(var(--muted))",
-          foreground: "hsl(var(--muted-foreground))",
-        },
-
-        accent: {
-          DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))",
-        },
-
-        destructive: {
-          DEFAULT: "hsl(var(--destructive))",
+          DEFAULT: "#3b82f6",
           foreground: "#ffffff",
         },
 
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
-
-        /* EnvScale palette */
-        env: {
-          navy: "#080f1f",
-          panel: "#0d1729",
-          card: "#101c30",
-          surface: "#16243a",
-          border: "#203552",
+        secondary: {
+          DEFAULT: "#27272a",
+          foreground: "#f4f4f5",
         },
 
-        neon: {
-          cyan: "#00e5ff",
-          blue: "#008cff",
-          purple: "#8b5cf6",
-          green: "#39ff14",
-          pink: "#ff00ff",
+        muted: {
+          DEFAULT: "#18181b",
+          foreground: "#a1a1aa",
+        },
+
+        accent: {
+          DEFAULT: "#27272a",
+          foreground: "#f4f4f5",
+        },
+
+        destructive: {
+          DEFAULT: "#ef4444",
+          foreground: "#ffffff",
+        },
+
+        border: "#27272a",
+        input: "#27272a",
+        ring: "#3b82f6",
+
+        /* Design.md Design System Tokens */
+        canvas: {
+          bg: "#09090b",
+          dot: "#27272a",
+        },
+
+        surface: {
+          capsule: "rgba(23, 23, 23, 0.85)",
+          card: "#141417",
+          drawer: "#141417",
+        },
+
+        status: {
+          running: "#10b981",
+          warning: "#f59e0b",
+          error: "#ef4444",
+          inactive: "#6b7280",
         },
       },
 
       boxShadow: {
-        "neon-cyan":
-          "0 0 12px rgba(0, 229, 255, 0.35)",
-
-        "neon-blue":
-          "0 0 12px rgba(0, 140, 255, 0.35)",
-
-        "neon-purple":
-          "0 0 12px rgba(139, 92, 246, 0.35)",
-
-        "glass":
-          "0 10px 30px rgba(0, 0, 0, 0.35)",
+        "capsule": "0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)",
+        "drawer": "-10px 0 30px rgba(0, 0, 0, 0.5)",
       },
 
       borderRadius: {
-        xl: "0.75rem",
+        "xl": "0.75rem",
+        "2xl": "1rem",
+        "3xl": "1.5rem",
       },
     },
   },
@@ -93,12 +88,16 @@ export default {
   plugins: [
     function ({ addUtilities }) {
       addUtilities({
+        ".glass-capsule": {
+          background: "rgba(23, 23, 23, 0.85)",
+          backdropFilter: "blur(12px)",
+          "-webkit-backdrop-filter": "blur(12px)",
+          border: "1px solid rgba(39, 39, 42, 0.8)",
+        },
         ".glass-card": {
-          background: "rgba(15, 27, 48, 0.72)",
-          backdropFilter: "blur(14px)",
-          "-webkit-backdrop-filter": "blur(14px)",
-          border: "1px solid rgba(56, 189, 248, 0.18)",
-          borderRadius: "0.75rem",
+          background: "#141417",
+          border: "1px solid #27272a",
+          boxShadow: "0 10px 30px -10px rgba(0, 0, 0, 0.5)",
         },
       });
     },
