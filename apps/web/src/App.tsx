@@ -5,7 +5,7 @@ import { TopNavbar } from "./components/layout/TopNavbar";
 import { LeftSidebar, type NavTab } from "./components/layout/LeftSidebar";
 import { ConnectClusterModal } from "./components/layout/ConnectClusterModal";
 import { TopologyCanvas } from "./components/flow/TopologyCanvas";
-import { InspectorDrawer, type SelectedTarget } from "./components/drawer/InspectorDrawer";
+import { InspectorDrawer } from "./components/drawer/InspectorDrawer";
 
 import { IncidentsView } from "./components/views/IncidentsView";
 import { MetricsView } from "./components/views/MetricsView";
@@ -16,11 +16,18 @@ import { useTopologyStore } from "./store/useTopologyStore";
 import "./index.css";
 
 function AppContent() {
-  const { activeCluster, clusters, setActiveCluster, addCluster, wsStatus, wsLatencyMs } =
-    useTopologyStore();
+  const activeCluster = useTopologyStore((s) => s.activeCluster);
+  const clusters = useTopologyStore((s) => s.clusters);
+  const setActiveCluster = useTopologyStore((s) => s.setActiveCluster);
+  const addCluster = useTopologyStore((s) => s.addCluster);
+  const wsStatus = useTopologyStore((s) => s.wsStatus);
+  const wsLatencyMs = useTopologyStore((s) => s.wsLatencyMs);
+  const selectedNode = useTopologyStore((s) => s.selectedNode);
+  const setSelectedNode = useTopologyStore((s) => s.setSelectedNode);
+  const clearSelectedNode = useTopologyStore((s) => s.clearSelectedNode);
+
   const [activeTab, setActiveTab] = useState<NavTab>("topology");
   const [connectModalOpen, setConnectModalOpen] = useState(false);
-  const [selectedTarget, setSelectedTarget] = useState<SelectedTarget>(null);
 
   const { fitView } = useReactFlow();
 
@@ -31,6 +38,10 @@ function AppContent() {
   const handleFitView = () => {
     fitView({ duration: 400, padding: 0.2 });
   };
+
+  const selectedKey = selectedNode
+    ? `${selectedNode.type}-${selectedNode.data?.name || selectedNode.data?.id || "target"}`
+    : "none";
 
   return (
     <div className="relative min-h-screen w-screen overflow-hidden bg-[#09090b] text-neutral-100 font-sans select-none">
@@ -55,7 +66,7 @@ function AppContent() {
       {/* Region 3: Center Canvas & Auxiliary Views */}
       <main className="relative h-screen w-screen overflow-hidden bg-[#09090b]">
         {activeTab === "topology" && (
-          <TopologyCanvas onSelectTarget={(target) => setSelectedTarget(target)} />
+          <TopologyCanvas onSelectTarget={(target) => setSelectedNode(target)} />
         )}
 
         {activeTab === "incidents" && <IncidentsView />}
@@ -69,9 +80,9 @@ function AppContent() {
 
       {/* Region 4: Contextual Right Slide-out Inspector Drawer */}
       <InspectorDrawer
-        key={selectedTarget?.data?.name || "none"}
-        target={selectedTarget}
-        onClose={() => setSelectedTarget(null)}
+        key={selectedKey}
+        target={selectedNode}
+        onClose={() => clearSelectedNode()}
       />
 
       {/* Connect Cluster Modal */}

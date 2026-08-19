@@ -80,6 +80,11 @@ export function useK8sStream(
     }
   }, [urlOverride, targetClusterId]);
 
+  const onMessageReceivedRef = useRef(onMessageReceived);
+  useEffect(() => {
+    onMessageReceivedRef.current = onMessageReceived;
+  }, [onMessageReceived]);
+
   const connect = useCallback(() => {
     if (
       wsRef.current &&
@@ -112,7 +117,7 @@ export function useK8sStream(
             try {
               wsRef.current.send(JSON.stringify({ type: "ping", timestamp: Date.now() }));
             } catch {
-              // Ignore
+              // Send ping frame
             }
           }
         }, 5000);
@@ -121,12 +126,7 @@ export function useK8sStream(
       socket.onmessage = (event: MessageEvent) => {
         if (!isComponentMounted.current) return;
         try {
-          const rawData =
-            typeof event.data === "string"
-              ? event.data
-              : new TextDecoder().decode(event.data);
-          const parsed = JSON.parse(rawData) as Record<string, unknown>;
-
+          const parsed = JSON.parse(event.data);
           if (parsed) {
             const eventType = String(parsed.event || parsed.type || "");
             const eventPayload = parsed.data !== undefined ? parsed.data : parsed.payload;
@@ -160,7 +160,7 @@ export function useK8sStream(
             };
 
             if (eventType) {
-              onMessageReceived?.(normalizedMsg);
+              onMessageReceivedRef.current?.(normalizedMsg);
             }
           }
         } catch {
@@ -200,7 +200,7 @@ export function useK8sStream(
         }
       }, 5000);
     }
-  }, [wsUrl, onMessageReceived]);
+  }, [wsUrl]);
 
   useEffect(() => {
     connectRef.current = connect;

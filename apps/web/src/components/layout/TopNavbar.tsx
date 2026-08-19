@@ -38,14 +38,12 @@ export function TopNavbar({
   wsStatus: propsWsStatus,
   wsLatencyMs: propsWsLatencyMs,
 }: TopNavbarProps) {
-  const {
-    notifications,
-    markNotificationRead,
-    markAllNotificationsRead,
-    wsStatus: storeWsStatus,
-    wsLatencyMs: storeWsLatencyMs,
-    addCluster,
-  } = useTopologyStore();
+  const notifications = useTopologyStore((s) => s.notifications);
+  const markNotificationRead = useTopologyStore((s) => s.markNotificationRead);
+  const markAllNotificationsRead = useTopologyStore((s) => s.markAllNotificationsRead);
+  const storeWsStatus = useTopologyStore((s) => s.wsStatus);
+  const storeWsLatencyMs = useTopologyStore((s) => s.wsLatencyMs);
+  const addCluster = useTopologyStore((s) => s.addCluster);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notifMenuOpen, setNotifMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);

@@ -4,7 +4,8 @@ import { useTopologyStore } from "../../store/useTopologyStore";
 
 export function LeaderboardView() {
   const [tab, setTab] = useState<"members" | "clusters">("clusters");
-  const { clusters, nodes } = useTopologyStore();
+  const clusters = useTopologyStore((s) => s.clusters);
+  const nodes = useTopologyStore((s) => s.nodes);
 
   // Existing Members Leaderboard
   const membersLeaderboard = [
