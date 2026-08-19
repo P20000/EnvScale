@@ -5,7 +5,10 @@ import { TopNavbar } from "./components/layout/TopNavbar";
 import { LeftSidebar, type NavTab } from "./components/layout/LeftSidebar";
 import { ConnectClusterModal } from "./components/layout/ConnectClusterModal";
 import { TopologyCanvas } from "./components/flow/TopologyCanvas";
-import { InspectorDrawer, type SelectedTarget } from "./components/drawer/InspectorDrawer";
+import {
+  InspectorDrawer,
+  type SelectedTarget,
+} from "./components/drawer/InspectorDrawer";
 import { IncidentsView } from "./components/views/IncidentsView";
 import { MetricsView } from "./components/views/MetricsView";
 import { LeaderboardView } from "./components/views/LeaderboardView";
@@ -66,9 +69,7 @@ function AppContent() {
       <main className="relative h-screen w-screen overflow-hidden bg-[#09090b]">
         {activeTab === "topology" && (
           <TopologyCanvas
-            onSelectTarget={(target) =>
-              setSelectedTarget(target)
-            }
+            onSelectTarget={(target) => setSelectedTarget(target)}
           />
         )}
 
