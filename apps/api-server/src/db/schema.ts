@@ -131,7 +131,7 @@ export const workspaceMembers = pgTable(
 
     userId: uuid("user_id").notNull(),
 
-    role: varchar("role", { length: 50 }).default("member"),
+    role: varchar("role", { length: 50 }).default("MEMBER"),
 
     joinedAt: timestamp("joined_at").defaultNow().notNull(),
 
