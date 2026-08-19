@@ -5,6 +5,7 @@ import {
   Trophy,
   Settings,
 } from "lucide-react";
+import { EnvScaleLogo } from "../ui/EnvScaleLogo";
 
 export type NavTab = "topology" | "incidents" | "metrics" | "leaderboard" | "settings";
 
@@ -44,7 +45,16 @@ export function LeftSidebar({ activeTab, onTabChange }: LeftSidebarProps) {
   ];
 
   return (
-    <aside className="fixed left-4 top-1/2 -translate-y-1/2 z-40 flex flex-col rounded-3xl bg-neutral-900/85 backdrop-blur-md border border-neutral-800 p-2.5 gap-3 shadow-xl">
+    <aside className="fixed left-4 top-1/2 -translate-y-1/2 z-40 flex flex-col rounded-3xl bg-neutral-900/85 backdrop-blur-md border border-neutral-800 p-2.5 gap-2.5 shadow-xl items-center">
+      {/* Brand Emblem Logo Header */}
+      <div className="group relative flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 cursor-pointer hover:bg-blue-500/20 transition-all">
+        <EnvScaleLogo className="h-5 w-5 text-blue-400" />
+        <div className="absolute left-full ml-3 hidden rounded-lg bg-neutral-900 px-2.5 py-1 text-xs font-bold text-neutral-100 border border-neutral-800 shadow-xl whitespace-nowrap group-hover:block z-50 animate-in fade-in slide-in-from-left-2 duration-150">
+          EnvScale Platform
+        </div>
+      </div>
+
+      <div className="w-6 h-px bg-neutral-800 my-0.5" />
       {navItems.map((item) => {
         const Icon = item.icon;
         const isActive = activeTab === item.id;
