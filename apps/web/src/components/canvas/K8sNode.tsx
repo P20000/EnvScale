@@ -36,7 +36,7 @@ export const K8sWorkerNode = memo(({ id, data, selected }: NodeProps & { data: K
 
   return (
     <div
-      className={`relative w-[300px] rounded-2xl bg-[#141417] p-4 border text-left shadow-xl transition-all ${
+      className={`relative w-[360px] rounded-2xl bg-[#141417] p-5 border text-left shadow-xl transition-all ${
         selected
           ? "border-blue-500 ring-1 ring-blue-500 shadow-blue-500/10"
           : isError
@@ -75,23 +75,23 @@ export const K8sWorkerNode = memo(({ id, data, selected }: NodeProps & { data: K
       />
 
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-neutral-800 pb-2.5">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${getStatusDot()}`} />
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-neutral-800 text-neutral-300 shrink-0">
-            <Server className="h-4 w-4" />
+      <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className={`h-3 w-3 rounded-full shrink-0 ${getStatusDot()}`} />
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-neutral-800 text-neutral-300 shrink-0 border border-neutral-700/50">
+            <Server className="h-4.5 w-4.5" />
           </div>
           <div className="min-w-0">
-            <h4 className="text-xs font-semibold text-neutral-100 truncate" title={data.name}>
+            <h4 className="text-base font-semibold text-neutral-100 truncate" title={data.name}>
               {data.name}
             </h4>
-            <p className="text-[10px] text-neutral-400 font-medium">Worker Node</p>
+            <p className="text-xs text-neutral-400 font-medium">Worker Node</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           <span
-            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+            className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
               isError
                 ? "bg-red-500/10 text-red-400 border border-red-500/20"
                 : isWarning
@@ -107,23 +107,23 @@ export const K8sWorkerNode = memo(({ id, data, selected }: NodeProps & { data: K
             title="Delete Node"
             className="p-1 rounded-md text-neutral-400 hover:text-red-400 hover:bg-neutral-800 transition-colors"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="h-4 w-4" />
           </button>
         </div>
       </div>
 
       {/* Info Rows */}
-      <div className="mt-3 space-y-2.5 text-xs">
-        <div className="flex justify-between font-mono text-[11px]">
+      <div className="mt-3.5 space-y-3.5 text-xs">
+        <div className="flex justify-between font-mono text-xs">
           <span className="text-neutral-400">IP</span>
           <span className="text-neutral-200 font-medium">{data.ip}</span>
         </div>
 
         {/* CPU Usage Bar */}
         <div>
-          <div className="flex justify-between font-mono text-[11px] mb-1">
-            <span className="flex items-center gap-1 text-neutral-400">
-              <Cpu className="h-3 w-3" /> CPU
+          <div className="flex justify-between font-mono text-xs mb-1.5">
+            <span className="flex items-center gap-1.5 text-neutral-400">
+              <Cpu className="h-4 w-4 text-blue-400" /> CPU
             </span>
             <span className="text-neutral-300">
               {data.cpuCapacity || "4 cores"}{" "}
@@ -132,7 +132,7 @@ export const K8sWorkerNode = memo(({ id, data, selected }: NodeProps & { data: K
               </span>
             </span>
           </div>
-          <div className="h-1.5 w-full rounded-full bg-neutral-900 overflow-hidden">
+          <div className="h-2.5 w-full rounded-full bg-neutral-900 overflow-hidden border border-neutral-800/60">
             <div
               className={`h-full rounded-full transition-all duration-500 ${
                 isCpuHigh ? "bg-amber-500" : "bg-blue-500"
@@ -144,9 +144,9 @@ export const K8sWorkerNode = memo(({ id, data, selected }: NodeProps & { data: K
 
         {/* Memory Usage Bar */}
         <div>
-          <div className="flex justify-between font-mono text-[11px] mb-1">
-            <span className="flex items-center gap-1 text-neutral-400">
-              <HardDrive className="h-3 w-3" /> Memory
+          <div className="flex justify-between font-mono text-xs mb-1.5">
+            <span className="flex items-center gap-1.5 text-neutral-400">
+              <HardDrive className="h-4 w-4 text-emerald-400" /> Memory
             </span>
             <span className="text-neutral-300">
               {data.memoryCapacity || "8 GiB"}{" "}
@@ -155,7 +155,7 @@ export const K8sWorkerNode = memo(({ id, data, selected }: NodeProps & { data: K
               </span>
             </span>
           </div>
-          <div className="h-1.5 w-full rounded-full bg-neutral-900 overflow-hidden">
+          <div className="h-2.5 w-full rounded-full bg-neutral-900 overflow-hidden border border-neutral-800/60">
             <div
               className={`h-full rounded-full transition-all duration-500 ${
                 isMemHigh ? "bg-amber-500" : "bg-emerald-500"

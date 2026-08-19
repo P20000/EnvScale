@@ -2,29 +2,29 @@ import { BarChart3, Cpu, HardDrive, Zap } from "lucide-react";
 
 export function MetricsView() {
   return (
-    <div className="p-8 pt-24 max-w-6xl mx-auto space-y-6 animate-in fade-in duration-200">
+    <div className="w-full max-w-7xl px-6 lg:px-8 pt-24 pb-12 mx-auto space-y-8 animate-in fade-in duration-200">
       <div>
-        <h2 className="text-xl font-bold text-neutral-100 flex items-center gap-2">
-          <BarChart3 className="h-6 w-6 text-blue-500" />
+        <h2 className="text-2xl font-bold text-neutral-100 flex items-center gap-2.5">
+          <BarChart3 className="h-7 w-7 text-blue-500" />
           Metrics Inspector
         </h2>
-        <p className="text-xs text-neutral-400 mt-1">
+        <p className="text-sm text-neutral-400 mt-1.5">
           Cluster-wide resource utilization, CPU mcore telemetry, and RAM pressure analysis
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* CPU Telemetry Card */}
-        <div className="rounded-2xl border border-neutral-800 bg-[#141417] p-5 space-y-4 shadow-xl">
+        <div className="rounded-2xl border border-neutral-800 bg-[#141417] p-6 space-y-5 shadow-2xl">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Cpu className="h-5 w-5 text-blue-400" />
-              <h3 className="text-sm font-semibold text-neutral-200">Aggregate CPU Usage</h3>
+            <div className="flex items-center gap-2.5">
+              <Cpu className="h-6 w-6 text-blue-400" />
+              <h3 className="text-base font-semibold text-neutral-200">Aggregate CPU Usage</h3>
             </div>
-            <span className="font-mono text-sm text-blue-400 font-bold">1.42 / 4.0 Cores (35.5%)</span>
+            <span className="font-mono text-base text-blue-400 font-bold">1.42 / 4.0 Cores (35.5%)</span>
           </div>
 
-          <div className="h-40 w-full rounded-xl bg-neutral-950 p-4 border border-neutral-800 flex items-end gap-2">
+          <div className="h-52 w-full rounded-xl bg-neutral-950 p-4 border border-neutral-800 flex items-end gap-2.5">
             {[40, 55, 30, 65, 80, 45, 35, 50, 60, 42, 38, 52, 70, 48, 35.5].map((val, i) => (
               <div key={i} className="flex-1 flex flex-col items-center gap-1 group">
                 <div
@@ -37,16 +37,16 @@ export function MetricsView() {
         </div>
 
         {/* Memory Telemetry Card */}
-        <div className="rounded-2xl border border-neutral-800 bg-[#141417] p-5 space-y-4 shadow-xl">
+        <div className="rounded-2xl border border-neutral-800 bg-[#141417] p-6 space-y-5 shadow-2xl">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <HardDrive className="h-5 w-5 text-emerald-400" />
-              <h3 className="text-sm font-semibold text-neutral-200">RAM Consumption</h3>
+            <div className="flex items-center gap-2.5">
+              <HardDrive className="h-6 w-6 text-emerald-400" />
+              <h3 className="text-base font-semibold text-neutral-200">RAM Consumption</h3>
             </div>
-            <span className="font-mono text-sm text-emerald-400 font-bold">4.8 GB / 8.0 GB (60%)</span>
+            <span className="font-mono text-base text-emerald-400 font-bold">4.8 GB / 8.0 GB (60%)</span>
           </div>
 
-          <div className="h-40 w-full rounded-xl bg-neutral-950 p-4 border border-neutral-800 flex items-end gap-2">
+          <div className="h-52 w-full rounded-xl bg-neutral-950 p-4 border border-neutral-800 flex items-end gap-2.5">
             {[50, 52, 55, 58, 62, 60, 61, 63, 60, 59, 62, 64, 60, 58, 60].map((val, i) => (
               <div key={i} className="flex-1 flex flex-col items-center gap-1 group">
                 <div

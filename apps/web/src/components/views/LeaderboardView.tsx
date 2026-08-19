@@ -58,7 +58,7 @@ export function LeaderboardView() {
   const sortedClusters = [...clusterMetrics].sort((a, b) => b.healthScore - a.healthScore);
 
   return (
-    <div className="p-8 pt-24 max-w-5xl mx-auto space-y-6 animate-in fade-in duration-200">
+    <div className="w-full max-w-7xl px-6 lg:px-8 pt-24 pb-12 mx-auto space-y-6 animate-in fade-in duration-200">
       {/* Header & Toggle */}
       <div className="flex items-center justify-between">
         <div>
@@ -66,7 +66,7 @@ export function LeaderboardView() {
             <Trophy className="h-6 w-6 text-amber-400" />
             Gamified Governance Leaderboard
           </h2>
-          <p className="text-xs text-neutral-400 mt-1">
+          <p className="text-sm text-neutral-400 mt-1">
             Cluster Health Index rankings, fault recovery streaks, and team governance scorecards
           </p>
         </div>

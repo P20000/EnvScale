@@ -81,7 +81,7 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
   const handleAutoLayout = () => {
     applyDagreLayout("TB");
     setTimeout(() => {
-      fitView({ duration: 400, padding: 0.2 });
+      fitView({ duration: 400, padding: 0.08, minZoom: 0.95 });
     }, 50);
   };
 
@@ -94,7 +94,7 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
       applyDagreLayout("TB");
       if (!initialLayoutDone.current) {
         setTimeout(() => {
-          fitView({ duration: 400, padding: 0.2 });
+          fitView({ duration: 400, padding: 0.08, minZoom: 0.95 });
         }, 50);
         initialLayoutDone.current = true;
       }
@@ -114,7 +114,7 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         onPaneClick={handlePaneClick}
         deleteKeyCode={["Delete", "Backspace"]}
         fitView
-        fitViewOptions={{ padding: 0.2 }}
+        fitViewOptions={{ padding: 0.08, minZoom: 0.95 }}
         minZoom={0.3}
         maxZoom={2}
         defaultEdgeOptions={{
