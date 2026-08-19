@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   ReactFlow,
   Background,
@@ -72,6 +72,22 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
       fitView({ duration: 400, padding: 0.2 });
     }, 50);
   };
+
+  const nodeIds = nodes.map((n) => n.id).join(",");
+  const edgeIds = edges.map((e) => `${e.source}-${e.target}`).join(",");
+  const initialLayoutDone = useRef(false);
+
+  useEffect(() => {
+    if (nodes.length > 0) {
+      applyDagreLayout("TB");
+      if (!initialLayoutDone.current) {
+        setTimeout(() => {
+          fitView({ duration: 400, padding: 0.2 });
+        }, 50);
+        initialLayoutDone.current = true;
+      }
+    }
+  }, [nodeIds, edgeIds, applyDagreLayout, fitView, nodes.length]);
 
   return (
     <div className="h-screen w-screen bg-[#09090b] relative">
