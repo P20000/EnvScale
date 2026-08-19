@@ -146,10 +146,10 @@ export const defaultInitialEdges: Edge[] = [
     target: "svc-api",
     type: "smoothstep",
     animated: true,
-    style: { stroke: "#3f3f46", strokeWidth: 2 },
+    style: { stroke: "#3b82f6", strokeWidth: 2 },
     markerEnd: {
       type: MarkerType.ArrowClosed,
-      color: "#3f3f46",
+      color: "#3b82f6",
     },
   },
   {
@@ -158,10 +158,10 @@ export const defaultInitialEdges: Edge[] = [
     target: "pod-auth-1",
     type: "smoothstep",
     animated: true,
-    style: { stroke: "#3f3f46", strokeWidth: 2 },
+    style: { stroke: "#3b82f6", strokeWidth: 2 },
     markerEnd: {
       type: MarkerType.ArrowClosed,
-      color: "#3f3f46",
+      color: "#3b82f6",
     },
   },
   {
@@ -170,10 +170,10 @@ export const defaultInitialEdges: Edge[] = [
     target: "pod-auth-2",
     type: "smoothstep",
     animated: true,
-    style: { stroke: "#3f3f46", strokeWidth: 2 },
+    style: { stroke: "#3b82f6", strokeWidth: 2 },
     markerEnd: {
       type: MarkerType.ArrowClosed,
-      color: "#3f3f46",
+      color: "#3b82f6",
     },
   },
   {
@@ -181,19 +181,21 @@ export const defaultInitialEdges: Edge[] = [
     source: "svc-api",
     target: "pod-payment-1",
     type: "smoothstep",
-    animated: false,
+    animated: true,
     style: { stroke: "#ef4444", strokeWidth: 2 },
     markerEnd: {
       type: MarkerType.ArrowClosed,
       color: "#ef4444",
     },
   },
+  // Hosting Edges (Pod -> Worker Node): Muted dashed connectors
   {
     id: "e-pod1-worker1",
     source: "pod-auth-1",
     target: "node-worker-1",
     type: "smoothstep",
-    style: { stroke: "#3f3f46", strokeWidth: 2 },
+    animated: false,
+    style: { stroke: "#3f3f46", strokeWidth: 1.5, strokeDasharray: "4 4" },
     markerEnd: {
       type: MarkerType.ArrowClosed,
       color: "#3f3f46",
@@ -204,7 +206,8 @@ export const defaultInitialEdges: Edge[] = [
     source: "pod-auth-2",
     target: "node-worker-1",
     type: "smoothstep",
-    style: { stroke: "#3f3f46", strokeWidth: 2 },
+    animated: false,
+    style: { stroke: "#3f3f46", strokeWidth: 1.5, strokeDasharray: "4 4" },
     markerEnd: {
       type: MarkerType.ArrowClosed,
       color: "#3f3f46",
@@ -215,7 +218,8 @@ export const defaultInitialEdges: Edge[] = [
     source: "pod-payment-1",
     target: "node-worker-2",
     type: "smoothstep",
-    style: { stroke: "#3f3f46", strokeWidth: 2 },
+    animated: false,
+    style: { stroke: "#3f3f46", strokeWidth: 1.5, strokeDasharray: "4 4" },
     markerEnd: {
       type: MarkerType.ArrowClosed,
       color: "#3f3f46",

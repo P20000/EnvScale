@@ -14,6 +14,21 @@ export interface K8sPodData extends Record<string, unknown> {
   memoryUsage?: string;
 }
 
+export function formatPodName(name: string, maxLen = 20): string {
+  if (!name || name.length <= maxLen) return name;
+  const parts = name.split("-");
+  if (parts.length >= 2) {
+    const suffix = parts.slice(-2).join("-");
+    if (suffix.length < maxLen - 5) {
+      const prefix = name.slice(0, maxLen - suffix.length - 4);
+      return `${prefix}...-${suffix}`;
+    }
+  }
+  const start = name.slice(0, 8);
+  const end = name.slice(-6);
+  return `${start}...${end}`;
+}
+
 export const K8sPodNode = memo(({ id, data, selected }: NodeProps & { data: K8sPodData }) => {
   const deleteNode = useTopologyStore((s) => s.deleteNode);
 
@@ -79,7 +94,7 @@ export const K8sPodNode = memo(({ id, data, selected }: NodeProps & { data: K8sP
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <Box className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
           <span className="text-xs font-semibold text-neutral-100 truncate" title={data.name}>
-            {data.name}
+            {formatPodName(data.name)}
           </span>
         </div>
 

@@ -56,27 +56,35 @@ export function getLayoutedElements(
       return;
     }
 
-    // Ingress / Service -> Service relationship (minlen: 1 to separate ranks)
+    // Ignore direct Service -> Worker Node edges (architectural anti-pattern)
+    if (
+      (sourceNode.type === "k8sService" && targetNode.type === "k8sWorker") ||
+      (sourceNode.type === "k8sWorker" && targetNode.type === "k8sService")
+    ) {
+      return;
+    }
+
+    // Ingress Gateway -> Service
     if (sourceNode.type === "k8sService" && targetNode.type === "k8sService") {
-      dagreGraph.setEdge(edge.source, edge.target, { minlen: 1, weight: 2 });
+      dagreGraph.setEdge(edge.source, edge.target, { minlen: 1, weight: 5 });
       return;
     }
 
-    // Service -> Pod relationship
+    // Service -> Pod
     if (sourceNode.type === "k8sService" && targetNode.type === "k8sPod") {
-      dagreGraph.setEdge(edge.source, edge.target, { minlen: 1, weight: 1 });
+      dagreGraph.setEdge(edge.source, edge.target, { minlen: 1, weight: 4 });
       return;
     }
 
-    // Pod -> Worker Node relationship
+    // Pod -> Worker Node (Hosting connection)
     if (sourceNode.type === "k8sPod" && targetNode.type === "k8sWorker") {
       dagreGraph.setEdge(edge.source, edge.target, { minlen: 1, weight: 2 });
       return;
     }
 
-    // Worker Node -> Pod relationship
+    // Worker Node -> Pod (Reversed hosting connection - align direction)
     if (sourceNode.type === "k8sWorker" && targetNode.type === "k8sPod") {
-      dagreGraph.setEdge(edge.source, edge.target, { minlen: 1, weight: 2 });
+      dagreGraph.setEdge(targetNode.id, sourceNode.id, { minlen: 1, weight: 2 });
       return;
     }
 
