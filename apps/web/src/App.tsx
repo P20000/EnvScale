@@ -3,17 +3,17 @@ import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
 
 import { TopNavbar } from "./components/layout/TopNavbar";
 import { LeftSidebar, type NavTab } from "./components/layout/LeftSidebar";
-import { ConnectClusterModal } from "./components/layout/ConnectClusterModal";
 import { TopologyCanvas } from "./components/flow/TopologyCanvas";
 import { InspectorDrawer } from "./components/drawer/InspectorDrawer";
 import { PodLogDrawer } from "./components/drawer/PodLogDrawer";
-
 import { IncidentsView } from "./components/views/IncidentsView";
 import { MetricsView } from "./components/views/MetricsView";
 import { LeaderboardView } from "./components/views/LeaderboardView";
 import { SettingsView } from "./components/views/SettingsView";
 import { useTopologyStore } from "./store/useTopologyStore";
+import ConnectClusterWizard from "./components/onboarding/ConnectClusterWizard";
 
+import "@xyflow/react/dist/style.css";
 import "./index.css";
 
 function AppContent() {
@@ -28,12 +28,16 @@ function AppContent() {
   const clearSelectedNode = useTopologyStore((s) => s.clearSelectedNode);
 
   const [activeTab, setActiveTab] = useState<NavTab>("topology");
-  const [connectModalOpen, setConnectModalOpen] = useState(false);
+  const [showConnectWizard, setShowConnectWizard] = useState(false);
+
   const [logDrawerState, setLogDrawerState] = useState<{
     isOpen: boolean;
     podName: string | null;
     namespace?: string;
-  }>({ isOpen: false, podName: null });
+  }>({
+    isOpen: false,
+    podName: null,
+  });
 
   const { fitView } = useReactFlow();
 
@@ -45,8 +49,15 @@ function AppContent() {
     fitView({ duration: 400, padding: 0.2 });
   };
 
-  const handleOpenLogTerminal = (podName: string, namespace?: string) => {
-    setLogDrawerState({ isOpen: true, podName, namespace: namespace || "default" });
+  const handleOpenLogTerminal = (
+    podName: string,
+    namespace?: string,
+  ) => {
+    setLogDrawerState({
+      isOpen: true,
+      podName,
+      namespace: namespace || "default",
+    });
   };
 
   const selectedKey = selectedNode
@@ -54,13 +65,13 @@ function AppContent() {
     : "none";
 
   return (
-    <div className="relative min-h-screen w-screen overflow-hidden bg-[#09090b] text-neutral-100 font-sans select-none">
+    <div className="relative min-h-screen w-screen overflow-hidden bg-[#09090b] font-sans text-neutral-100 select-none">
       {/* Region 1: Top Floating Navbar Capsule */}
       <TopNavbar
         activeCluster={activeCluster}
         clusters={clusters}
         onSelectCluster={(cluster) => setActiveCluster(cluster)}
-        onOpenConnectModal={() => setConnectModalOpen(true)}
+        onOpenConnectModal={() => setShowConnectWizard(true)}
         onFitView={handleFitView}
         activeIncidentsCount={2}
         wsLatencyMs={wsLatencyMs}
@@ -76,7 +87,9 @@ function AppContent() {
       {/* Region 3: Center Canvas & Auxiliary Views */}
       <main className="relative h-screen w-screen overflow-hidden bg-[#09090b]">
         {activeTab === "topology" && (
-          <TopologyCanvas onSelectTarget={(target) => setSelectedNode(target)} />
+          <TopologyCanvas
+            onSelectTarget={(target) => setSelectedNode(target)}
+          />
         )}
 
         {activeTab === "incidents" && <IncidentsView />}
@@ -101,15 +114,21 @@ function AppContent() {
         isOpen={logDrawerState.isOpen}
         podName={logDrawerState.podName}
         namespace={logDrawerState.namespace}
-        onClose={() => setLogDrawerState((prev) => ({ ...prev, isOpen: false }))}
+        onClose={() =>
+          setLogDrawerState((prev) => ({
+            ...prev,
+            isOpen: false,
+          }))
+        }
       />
 
-      {/* Connect Cluster Modal */}
-      <ConnectClusterModal
-        isOpen={connectModalOpen}
-        onClose={() => setConnectModalOpen(false)}
-        onClusterConnected={handleClusterConnected}
-      />
+      {/* ISH-01: Connect Cluster Onboarding Wizard */}
+      {showConnectWizard && (
+        <ConnectClusterWizard
+          onClose={() => setShowConnectWizard(false)}
+          onClusterConnected={handleClusterConnected}
+        />
+      )}
     </div>
   );
 }
