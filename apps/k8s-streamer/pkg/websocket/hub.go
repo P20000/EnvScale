@@ -9,14 +9,24 @@ import (
 	"github.com/EnvScale/k8s-streamer/pkg/types"
 )
 
-// Hub maintains the set of active WebSocket client connections and broadcasts messages to them.
-type Hub struct {
-	// Registered clients map protected by RWMutex for safe concurrent reads
-	clients map[*Client]bool
-	mu      sync.RWMutex
+// roomedMessage bundles a serialized payload with the target clusterID room for routing.
+type roomedMessage struct {
+	clusterID string
+	payload   []byte
+}
 
-	// Inbound messages from informers to broadcast to all clients
-	Broadcast chan []byte
+// Hub maintains the set of active WebSocket client connections and routes
+// messages to the correct workspace/cluster room. Each client registers with
+// a clusterID so that Kubernetes Informer delta events are only delivered to
+// clients watching that specific cluster — preventing cross-tenant data leaks.
+type Hub struct {
+	// rooms maps clusterID → set of Clients subscribed to that cluster room.
+	// Protected by mu for concurrent safe access.
+	rooms map[string]map[*Client]bool
+	mu    sync.RWMutex
+
+	// Inbound roomed messages from Informer pipeline to dispatch to room subscribers
+	broadcast chan roomedMessage
 
 	// Register requests from clients
 	Register chan *Client
@@ -25,13 +35,13 @@ type Hub struct {
 	Unregister chan *Client
 }
 
-// NewHub initializes and returns a new Hub instance
+// NewHub initializes and returns a new Hub instance with room-based routing
 func NewHub() *Hub {
 	return &Hub{
-		Broadcast:  make(chan []byte, 256),
+		rooms:      make(map[string]map[*Client]bool),
+		broadcast:  make(chan roomedMessage, 512), // larger buffer for high-throughput cluster events
 		Register:   make(chan *Client),
 		Unregister: make(chan *Client),
-		clients:    make(map[*Client]bool),
 	}
 }
 
@@ -45,30 +55,32 @@ func (h *Hub) Run() {
 		select {
 		case client := <-h.Register:
 			h.mu.Lock()
-			h.clients[client] = true
+			if _, ok := h.rooms[client.ClusterID]; !ok {
+				h.rooms[client.ClusterID] = make(map[*Client]bool)
+			}
+			h.rooms[client.ClusterID][client] = true
 			h.mu.Unlock()
-			log.Printf("[WebSocket Hub] Client registered: %s (Total Active: %d)", client.ID, h.ClientCount())
+			log.Printf("[WebSocket Hub] Client %s registered to room '%s' (Room size: %d)",
+				client.ID, client.ClusterID, h.RoomSize(client.ClusterID))
 
 		case client := <-h.Unregister:
 			h.mu.Lock()
-			if _, ok := h.clients[client]; ok {
-				delete(h.clients, client)
-				close(client.send)
-				log.Printf("[WebSocket Hub] Client unregistered: %s (Total Active: %d)", client.ID, h.ClientCount())
+			if room, ok := h.rooms[client.ClusterID]; ok {
+				if _, ok := room[client]; ok {
+					delete(room, client)
+					close(client.send)
+					// Prune empty rooms to avoid memory leaks
+					if len(room) == 0 {
+						delete(h.rooms, client.ClusterID)
+					}
+					log.Printf("[WebSocket Hub] Client %s unregistered from room '%s'",
+						client.ID, client.ClusterID)
+				}
 			}
 			h.mu.Unlock()
 
-		case message := <-h.Broadcast:
-			h.mu.RLock()
-			for client := range h.clients {
-				select {
-				case client.send <- message:
-				default:
-					close(client.send)
-					delete(h.clients, client)
-				}
-			}
-			h.mu.RUnlock()
+		case msg := <-h.broadcast:
+			h.routeToRoom(msg.clusterID, msg.payload)
 
 		case <-heartbeatTicker.C:
 			h.broadcastHeartbeat()
@@ -76,14 +88,54 @@ func (h *Hub) Run() {
 	}
 }
 
-// ClientCount returns the number of currently connected WebSocket clients
-func (h *Hub) ClientCount() int {
+// routeToRoom delivers a payload to all clients subscribed to the given clusterID room.
+// Stale clients (full send buffers) are evicted immediately to prevent goroutine leaks.
+func (h *Hub) routeToRoom(clusterID string, payload []byte) {
 	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return len(h.clients)
+	room, ok := h.rooms[clusterID]
+	if !ok {
+		h.mu.RUnlock()
+		return
+	}
+	// Snapshot room clients under read lock to minimise lock hold time
+	targets := make([]*Client, 0, len(room))
+	for client := range room {
+		targets = append(targets, client)
+	}
+	h.mu.RUnlock()
+
+	// Deliver to each client outside the lock — non-blocking send to stay sub-200ms
+	var stale []*Client
+	for _, client := range targets {
+		select {
+		case client.send <- payload:
+		default:
+			// Client send buffer full — mark as stale
+			stale = append(stale, client)
+		}
+	}
+
+	// Evict stale clients under write lock
+	if len(stale) > 0 {
+		h.mu.Lock()
+		for _, client := range stale {
+			if room, ok := h.rooms[clusterID]; ok {
+				if _, exists := room[client]; exists {
+					delete(room, client)
+					close(client.send)
+					log.Printf("[WebSocket Hub] Evicted stale client %s from room '%s'", client.ID, clusterID)
+				}
+				if len(room) == 0 {
+					delete(h.rooms, clusterID)
+				}
+			}
+		}
+		h.mu.Unlock()
+	}
 }
 
-// BroadcastEvent helper method to serialize and emit structured event payload to all clients
+// BroadcastEvent serializes a structured event envelope and routes it to all clients
+// subscribed to the given clusterID room. Target delivery latency: < 200ms.
 func (h *Hub) BroadcastEvent(event string, clusterID string, data interface{}) {
 	envelope := types.WSEventEnvelope{
 		Event:     event,
@@ -94,16 +146,60 @@ func (h *Hub) BroadcastEvent(event string, clusterID string, data interface{}) {
 
 	payload, err := json.Marshal(envelope)
 	if err != nil {
-		log.Printf("[WebSocket Hub] Error marshaling event %s: %v", event, err)
-		return;
+		log.Printf("[WebSocket Hub] Failed to marshal event '%s' for cluster '%s': %v", event, clusterID, err)
+		return
 	}
 
-	h.Broadcast <- payload
+	// Non-blocking send: if the broadcast channel is saturated, log and drop
+	// rather than blocking the Kubernetes Informer goroutine
+	select {
+	case h.broadcast <- roomedMessage{clusterID: clusterID, payload: payload}:
+	default:
+		log.Printf("[WebSocket Hub] Broadcast channel full — dropping event '%s' for cluster '%s'", event, clusterID)
+	}
+}
+
+// ClientCount returns the total number of connected WebSocket clients across all rooms
+func (h *Hub) ClientCount() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	total := 0
+	for _, room := range h.rooms {
+		total += len(room)
+	}
+	return total
+}
+
+// RoomSize returns the number of clients subscribed to a specific cluster room
+func (h *Hub) RoomSize(clusterID string) int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.rooms[clusterID])
+}
+
+// RoomIDs returns the list of currently active cluster room IDs
+func (h *Hub) RoomIDs() []string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	ids := make([]string, 0, len(h.rooms))
+	for id := range h.rooms {
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 func (h *Hub) broadcastHeartbeat() {
-	h.BroadcastEvent(types.EventHeartbeat, "system", map[string]interface{}{
-		"activeClients": h.ClientCount(),
-		"serverTime":    time.Now().UTC().Format(time.RFC3339),
-	})
+	h.mu.RLock()
+	clusterIDs := make([]string, 0, len(h.rooms))
+	for id := range h.rooms {
+		clusterIDs = append(clusterIDs, id)
+	}
+	h.mu.RUnlock()
+
+	for _, clusterID := range clusterIDs {
+		h.BroadcastEvent(types.EventHeartbeat, clusterID, map[string]interface{}{
+			"activeClients": h.RoomSize(clusterID),
+			"serverTime":    time.Now().UTC().Format(time.RFC3339),
+		})
+	}
 }
