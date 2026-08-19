@@ -69,6 +69,7 @@ function AppContent() {
 
       {/* Region 4: Contextual Right Slide-out Inspector Drawer */}
       <InspectorDrawer
+        key={selectedTarget?.data?.name || "none"}
         target={selectedTarget}
         onClose={() => setSelectedTarget(null)}
       />

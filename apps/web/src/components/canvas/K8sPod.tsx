@@ -6,6 +6,7 @@ import { useTopologyStore } from "../../store/useTopologyStore";
 export interface K8sPodData extends Record<string, unknown> {
   name: string;
   namespace: string;
+  nodeName?: string;
   status: "Running" | "CrashLoopBackOff" | "Pending" | "Terminated" | "Failed" | "Unknown";
   restarts: number;
   ip?: string;

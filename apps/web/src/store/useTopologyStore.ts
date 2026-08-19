@@ -66,6 +66,7 @@ export const defaultInitialNodes: Node[] = [
     data: {
       name: "auth-service-7f8d-a1",
       namespace: "default",
+      nodeName: "minikube-worker-1",
       status: "Running",
       restarts: 0,
       ip: "10.244.0.12",
@@ -80,6 +81,7 @@ export const defaultInitialNodes: Node[] = [
     data: {
       name: "auth-service-7f8d-b2",
       namespace: "default",
+      nodeName: "minikube-worker-1",
       status: "Running",
       restarts: 1,
       ip: "10.244.0.15",
@@ -94,6 +96,7 @@ export const defaultInitialNodes: Node[] = [
     data: {
       name: "payment-api-x2k4",
       namespace: "default",
+      nodeName: "minikube-worker-2",
       status: "CrashLoopBackOff",
       restarts: 5,
       ip: "10.244.0.18",
@@ -568,41 +571,178 @@ export const useTopologyStore = create<TopologyState>()(
       },
 
       processWsMessage: (msg) => {
-        const { payload, type } = msg;
-        if (!payload) return;
+        const eventType = msg.event || msg.type;
+        const payloadData = (msg.data !== undefined ? msg.data : msg.payload) as Record<string, unknown> | undefined;
+        if (!eventType || !payloadData) return;
 
-        if (type === "EVENT_TOPOLOGY_SNAPSHOT" && payload.nodes) {
+        if (eventType === "EVENT_TOPOLOGY_SNAPSHOT" && Array.isArray(payloadData.nodes)) {
           set({
-            nodes: payload.nodes,
-            edges: payload.edges || get().edges,
+            nodes: payloadData.nodes as Node[],
+            edges: (payloadData.edges as Edge[]) || get().edges,
           });
         } else if (
-          (type === "EVENT_POD_ADDED" || type === "EVENT_POD_MODIFIED") &&
-          payload.pod
+          eventType === "EVENT_POD_STATUS_CHANGED" ||
+          eventType === "EVENT_POD_ADDED" ||
+          eventType === "EVENT_POD_MODIFIED"
         ) {
-          const pod = payload.pod;
-          const existing = get().nodes.filter((n) => n.id !== pod.id);
-          set({ nodes: [...existing, pod] });
+          const podObj = (payloadData.pod || payloadData) as Record<string, unknown>;
+          const podName = String(podObj.name || podObj.id || "");
+          if (!podName) return;
+
+          const currentNodes = get().nodes;
+          const existingIdx = currentNodes.findIndex(
+            (n) => n.id === podName || (n.data as K8sPodData)?.name === podName
+          );
+
+          const rawStatus = String(podObj.phase || podObj.status || "Running");
+          const validStatus: K8sPodData["status"] = (
+            ["Running", "CrashLoopBackOff", "Pending", "Terminated", "Failed", "Unknown"].includes(rawStatus)
+              ? rawStatus
+              : "Running"
+          ) as K8sPodData["status"];
+
+          if (existingIdx >= 0) {
+            const existingNode = currentNodes[existingIdx];
+            const existingData = existingNode.data as K8sPodData;
+            const updatedPodData: K8sPodData = {
+              ...existingData,
+              status: validStatus,
+              restarts: podObj.restartCount !== undefined ? Number(podObj.restartCount) : (podObj.restarts !== undefined ? Number(podObj.restarts) : existingData.restarts),
+              nodeName: podObj.nodeName ? String(podObj.nodeName) : existingData.nodeName,
+              cpuUsage: podObj.cpuUsagePct !== undefined ? `${podObj.cpuUsagePct}%` : (podObj.cpuUsage ? String(podObj.cpuUsage) : existingData.cpuUsage),
+              memoryUsage: podObj.memoryUsageMb !== undefined ? `${podObj.memoryUsageMb} MiB` : (podObj.memoryUsage ? String(podObj.memoryUsage) : existingData.memoryUsage),
+            };
+
+            const updatedNodes = [...currentNodes];
+            updatedNodes[existingIdx] = {
+              ...existingNode,
+              data: updatedPodData,
+            };
+            set({ nodes: updatedNodes });
+          } else if (podObj.type === "k8sPod" && podObj.id) {
+            const podNode = podObj as unknown as Node;
+            const existing = currentNodes.filter((n) => n.id !== podNode.id);
+            set({ nodes: [...existing, podNode] });
+          } else {
+            const timestamp = Date.now();
+            const newPodNode: Node = {
+              id: `pod-${podName}-${timestamp}`,
+              type: "k8sPod",
+              position: { x: 550, y: 100 + (currentNodes.length % 5) * 80 },
+              data: {
+                name: podName,
+                namespace: podObj.namespace ? String(podObj.namespace) : "default",
+                nodeName: podObj.nodeName ? String(podObj.nodeName) : "minikube-worker-1",
+                status: validStatus,
+                restarts: podObj.restartCount ? Number(podObj.restartCount) : 0,
+                ip: podObj.ip ? String(podObj.ip) : "10.244.0.22",
+                cpuUsage: podObj.cpuUsagePct ? `${podObj.cpuUsagePct}%` : "32 mcores",
+                memoryUsage: podObj.memoryUsageMb ? `${podObj.memoryUsageMb} MiB` : "120 MiB",
+              } as K8sPodData,
+            };
+            set({ nodes: [...currentNodes, newPodNode] });
+          }
         } else if (
-          (type === "EVENT_NODE_ADDED" || type === "EVENT_NODE_MODIFIED") &&
-          payload.node
+          eventType === "EVENT_NODE_MUTATED" ||
+          eventType === "EVENT_NODE_ADDED" ||
+          eventType === "EVENT_NODE_MODIFIED"
         ) {
-          const node = payload.node;
-          const existing = get().nodes.filter((n) => n.id !== node.id);
-          set({ nodes: [...existing, node] });
+          const nodeObj = (payloadData.node || payloadData) as Record<string, unknown>;
+          const nodeName = String(nodeObj.name || nodeObj.id || "");
+          if (!nodeName) return;
+
+          const currentNodes = get().nodes;
+          const existingIdx = currentNodes.findIndex(
+            (n) => n.id === nodeName || (n.data as K8sNodeData)?.name === nodeName
+          );
+
+          if (existingIdx >= 0) {
+            const existingNode = currentNodes[existingIdx];
+            const existingData = existingNode.data as K8sNodeData;
+            const updatedNodeData: K8sNodeData = {
+              ...existingData,
+              status: nodeObj.status ? (String(nodeObj.status) as K8sNodeData["status"]) : existingData.status,
+              cpuCapacity: nodeObj.cpuCapacity ? String(nodeObj.cpuCapacity) : existingData.cpuCapacity,
+              memoryCapacity: nodeObj.memoryCapacity ? String(nodeObj.memoryCapacity) : existingData.memoryCapacity,
+            };
+
+            const updatedNodes = [...currentNodes];
+            updatedNodes[existingIdx] = {
+              ...existingNode,
+              data: updatedNodeData,
+            };
+            set({ nodes: updatedNodes });
+          } else if (nodeObj.type === "k8sWorker" && nodeObj.id) {
+            const workerNode = nodeObj as unknown as Node;
+            const existing = currentNodes.filter((n) => n.id !== workerNode.id);
+            set({ nodes: [...existing, workerNode] });
+          }
         } else if (
-          (type === "EVENT_SERVICE_ADDED" || type === "EVENT_SERVICE_MODIFIED") &&
-          payload.service
+          eventType === "EVENT_SERVICE_MUTATED" ||
+          eventType === "EVENT_SERVICE_ADDED" ||
+          eventType === "EVENT_SERVICE_MODIFIED"
         ) {
-          const service = payload.service;
-          const existing = get().nodes.filter((n) => n.id !== service.id);
-          set({ nodes: [...existing, service] });
-        } else if (type === "EVENT_POD_DELETED" && payload.podId) {
-          get().deleteNode(payload.podId);
-        } else if (type === "EVENT_NODE_DELETED" && payload.nodeId) {
-          get().deleteNode(payload.nodeId);
-        } else if (type === "EVENT_SERVICE_DELETED" && payload.serviceId) {
-          get().deleteNode(payload.serviceId);
+          const svcObj = (payloadData.service || payloadData) as Record<string, unknown>;
+          const svcName = String(svcObj.name || svcObj.id || "");
+          if (!svcName) return;
+
+          const currentNodes = get().nodes;
+          const existingIdx = currentNodes.findIndex(
+            (n) => n.id === svcName || (n.data as K8sServiceData)?.name === svcName
+          );
+
+          if (existingIdx >= 0) {
+            const existingNode = currentNodes[existingIdx];
+            const existingData = existingNode.data as K8sServiceData;
+            const updatedSvcData: K8sServiceData = {
+              ...existingData,
+              type: svcObj.type ? (String(svcObj.type) as K8sServiceData["type"]) : existingData.type,
+            };
+            const updatedNodes = [...currentNodes];
+            updatedNodes[existingIdx] = {
+              ...existingNode,
+              data: updatedSvcData,
+            };
+            set({ nodes: updatedNodes });
+          } else if (svcObj.type === "k8sService" && svcObj.id) {
+            const serviceNode = svcObj as unknown as Node;
+            const existing = currentNodes.filter((n) => n.id !== serviceNode.id);
+            set({ nodes: [...existing, serviceNode] });
+          }
+        } else if (eventType === "EVENT_POD_DELETED" && (payloadData.podId || payloadData.name)) {
+          const targetId = String(payloadData.podId || payloadData.name);
+          const remainingNodes = get().nodes.filter(
+            (n) => n.id !== targetId && (n.data as Record<string, unknown>)?.name !== targetId
+          );
+          set({ nodes: remainingNodes });
+        } else if (eventType === "EVENT_NODE_DELETED" && (payloadData.nodeId || payloadData.name)) {
+          const targetId = String(payloadData.nodeId || payloadData.name);
+          const remainingNodes = get().nodes.filter(
+            (n) => n.id !== targetId && (n.data as Record<string, unknown>)?.name !== targetId
+          );
+          set({ nodes: remainingNodes });
+        } else if (eventType === "EVENT_SERVICE_DELETED" && (payloadData.serviceId || payloadData.name)) {
+          const targetId = String(payloadData.serviceId || payloadData.name);
+          const remainingNodes = get().nodes.filter(
+            (n) => n.id !== targetId && (n.data as Record<string, unknown>)?.name !== targetId
+          );
+          set({ nodes: remainingNodes });
+        } else if (eventType === "EVENT_ALERT_TRIGGERED") {
+          const rawSeverity = String(payloadData.severity || "WARNING");
+          const validSeverity: NotificationItem["severity"] = (
+            ["CRITICAL", "WARNING", "INFO"].includes(rawSeverity) ? rawSeverity : "WARNING"
+          ) as NotificationItem["severity"];
+
+          const alertNotif: NotificationItem = {
+            id: `alert-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            title: String(payloadData.title || "Cluster Alert Triggered"),
+            message: String(payloadData.message || "An unexpected telemetry event was recorded."),
+            time: "Just now",
+            severity: validSeverity,
+            read: false,
+            cluster: String(payloadData.cluster || msg.clusterId || get().activeCluster),
+          };
+          set({ notifications: [alertNotif, ...get().notifications] });
         }
       },
 
@@ -655,6 +795,10 @@ export const useTopologyStore = create<TopologyState>()(
     {
       name: "envscale-topology-storage",
       storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        activeCluster: state.activeCluster,
+        clusters: state.clusters,
+      }),
     }
   )
 );

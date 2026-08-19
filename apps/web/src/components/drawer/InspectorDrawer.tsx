@@ -29,25 +29,21 @@ interface InspectorDrawerProps {
 
 export function InspectorDrawer({ target, onClose }: InspectorDrawerProps) {
   const [activeTab, setActiveTab] = useState<"overview" | "logs" | "metrics" | "chaos">("overview");
-  const [logs, setLogs] = useState<string[]>([]);
+  const targetName = target?.data?.name;
+
+  const [logs, setLogs] = useState<string[]>(() => {
+    if (!targetName) return [];
+    const timestamp = new Date().toISOString();
+    return [
+      `[INFO] ${timestamp} Starting container process for ${targetName}...`,
+      `[INFO] ${timestamp} Listening on port 8080 (0.0.0.0)`,
+      `[DEBUG] ${timestamp} Health check endpoint GET /healthz 200 OK`,
+    ];
+  });
+
   const [isTailing, setIsTailing] = useState(true);
   const [copied, setCopied] = useState(false);
   const [chaosActionMsg, setChaosActionMsg] = useState<string | null>(null);
-
-  const [prevTargetName, setPrevTargetName] = useState<string | null>(null);
-  const currentTargetName = target?.data?.name || null;
-
-  if (currentTargetName !== prevTargetName) {
-    setPrevTargetName(currentTargetName);
-    if (currentTargetName) {
-      const timestamp = new Date().toISOString();
-      setLogs([
-        `[INFO] ${timestamp} Starting container process for ${currentTargetName}...`,
-        `[INFO] ${timestamp} Listening on port 8080 (0.0.0.0)`,
-        `[DEBUG] ${timestamp} Health check endpoint GET /healthz 200 OK`,
-      ]);
-    }
-  }
 
   useEffect(() => {
     if (!isTailing || !target) return;
@@ -84,6 +80,64 @@ export function InspectorDrawer({ target, onClose }: InspectorDrawerProps) {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  // Helper to parse Node Assignment dynamically without hardcoding
+  const getNodeAssignment = () => {
+    if (target.type === "node") return target.data.name;
+    if (targetRecord.nodeName) return String(targetRecord.nodeName);
+    if (targetRecord.node) return String(targetRecord.node);
+    return "Unassigned";
+  };
+
+  // Helper to parse CPU usage and percentage dynamically
+  const getCpuTelemetry = () => {
+    if (target.type === "node") {
+      const nodeData = target.data as K8sNodeData;
+      const pct = nodeData.cpuPct ?? 42;
+      return {
+        label: `${pct}% (${nodeData.cpuCapacity || "4 cores"})`,
+        pct: Math.min(100, Math.max(0, pct)),
+      };
+    }
+    const podData = target.data as K8sPodData;
+    const cpuStr = podData.cpuUsage ? String(podData.cpuUsage) : "";
+    if (cpuStr.includes("%")) {
+      const val = parseFloat(cpuStr) || 15;
+      return { label: cpuStr, pct: Math.min(100, Math.max(0, val)) };
+    } else if (cpuStr.includes("mcores") || cpuStr.includes("m")) {
+      const mcores = parseFloat(cpuStr) || 34;
+      const pct = Math.min(100, Math.round((mcores / 250) * 100));
+      return { label: `${mcores} mcores (${pct}%)`, pct };
+    }
+    return { label: cpuStr || "34 mcores (13.6%)", pct: 13.6 };
+  };
+
+  // Helper to parse Memory usage and percentage dynamically
+  const getMemoryTelemetry = () => {
+    if (target.type === "node") {
+      const nodeData = target.data as K8sNodeData;
+      const pct = nodeData.memoryPct ?? 68;
+      return {
+        label: `${pct}% (${nodeData.memoryCapacity || "8 GiB"})`,
+        pct: Math.min(100, Math.max(0, pct)),
+      };
+    }
+    const podData = target.data as K8sPodData;
+    const memStr = podData.memoryUsage ? String(podData.memoryUsage) : "";
+    if (memStr.includes("%")) {
+      const val = parseFloat(memStr) || 25;
+      return { label: memStr, pct: Math.min(100, Math.max(0, val)) };
+    } else if (memStr.includes("MiB") || memStr.includes("MB") || memStr.includes("GiB")) {
+      const mib = parseFloat(memStr) || 128;
+      const totalMib = 512;
+      const pct = Math.min(100, Math.round((mib / totalMib) * 100));
+      return { label: `${mib} MiB / ${totalMib} MiB (${pct}%)`, pct };
+    }
+    return { label: memStr || "128 MiB / 512 MiB (25%)", pct: 25 };
+  };
+
+  const cpuTelemetry = getCpuTelemetry();
+  const memoryTelemetry = getMemoryTelemetry();
 
   return (
     <aside className="fixed right-0 top-0 bottom-0 z-50 w-[420px] bg-[#141417] border-l border-neutral-800 shadow-2xl flex flex-col animate-in slide-in-from-right duration-250">
@@ -193,7 +247,7 @@ export function InspectorDrawer({ target, onClose }: InspectorDrawerProps) {
               <div className="space-y-1.5 text-xs font-mono">
                 <div className="flex justify-between">
                   <span className="text-neutral-400">Node Assignment:</span>
-                  <span className="text-neutral-200">minikube-worker-1</span>
+                  <span className="text-neutral-200">{getNodeAssignment()}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-neutral-400">Pod IP Address:</span>
@@ -253,20 +307,34 @@ export function InspectorDrawer({ target, onClose }: InspectorDrawerProps) {
             <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-neutral-300">CPU Usage</span>
-                <span className="font-mono text-xs text-blue-400 font-bold">142 mcores (14.2%)</span>
+                <span className="font-mono text-xs text-blue-400 font-bold">
+                  {cpuTelemetry.label}
+                </span>
               </div>
               <div className="h-2 w-full rounded-full bg-neutral-950 overflow-hidden">
-                <div className="h-full rounded-full bg-blue-500 w-[14%]" />
+                <div
+                  className="h-full rounded-full bg-blue-500 transition-all duration-500"
+                  style={{
+                    width: `${cpuTelemetry.pct}%`,
+                  }}
+                />
               </div>
             </div>
 
             <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-neutral-300">Memory Consumption</span>
-                <span className="font-mono text-xs text-emerald-400 font-bold">256 MiB / 512 MiB (50%)</span>
+                <span className="font-mono text-xs text-emerald-400 font-bold">
+                  {memoryTelemetry.label}
+                </span>
               </div>
               <div className="h-2 w-full rounded-full bg-neutral-950 overflow-hidden">
-                <div className="h-full rounded-full bg-emerald-500 w-[50%]" />
+                <div
+                  className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                  style={{
+                    width: `${memoryTelemetry.pct}%`,
+                  }}
+                />
               </div>
             </div>
           </div>
