@@ -183,8 +183,6 @@ export function useK8sStream(
               if (!isNaN(msgTime) && msgTime > 0) {
                 measuredLatency = Math.max(1, Math.round(Date.now() - msgTime));
               }
-            } else if (lastPingTimeRef.current > 0) {
-              measuredLatency = Math.max(1, Math.round(performance.now() - lastPingTimeRef.current));
             }
 
             const processingTime = Math.max(1, Math.round(performance.now() - startTime));
