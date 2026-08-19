@@ -6,6 +6,7 @@ import { LeftSidebar, type NavTab } from "./components/layout/LeftSidebar";
 import { ConnectClusterModal } from "./components/layout/ConnectClusterModal";
 import { TopologyCanvas } from "./components/flow/TopologyCanvas";
 import { InspectorDrawer } from "./components/drawer/InspectorDrawer";
+import { PodLogDrawer } from "./components/drawer/PodLogDrawer";
 
 import { IncidentsView } from "./components/views/IncidentsView";
 import { MetricsView } from "./components/views/MetricsView";
@@ -28,6 +29,11 @@ function AppContent() {
 
   const [activeTab, setActiveTab] = useState<NavTab>("topology");
   const [connectModalOpen, setConnectModalOpen] = useState(false);
+  const [logDrawerState, setLogDrawerState] = useState<{
+    isOpen: boolean;
+    podName: string | null;
+    namespace?: string;
+  }>({ isOpen: false, podName: null });
 
   const { fitView } = useReactFlow();
 
@@ -37,6 +43,10 @@ function AppContent() {
 
   const handleFitView = () => {
     fitView({ duration: 400, padding: 0.2 });
+  };
+
+  const handleOpenLogTerminal = (podName: string, namespace?: string) => {
+    setLogDrawerState({ isOpen: true, podName, namespace: namespace || "default" });
   };
 
   const selectedKey = selectedNode
@@ -83,6 +93,15 @@ function AppContent() {
         key={selectedKey}
         target={selectedNode}
         onClose={() => clearSelectedNode()}
+        onOpenLogTerminal={handleOpenLogTerminal}
+      />
+
+      {/* Region 5: Pod Log Terminal Drawer */}
+      <PodLogDrawer
+        isOpen={logDrawerState.isOpen}
+        podName={logDrawerState.podName}
+        namespace={logDrawerState.namespace}
+        onClose={() => setLogDrawerState((prev) => ({ ...prev, isOpen: false }))}
       />
 
       {/* Connect Cluster Modal */}
