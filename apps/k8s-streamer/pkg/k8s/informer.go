@@ -3,6 +3,7 @@ package k8s
 import (
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -22,6 +23,9 @@ type InformerManager struct {
 	factory   informers.SharedInformerFactory
 	hub       *websocket.Hub
 	clusterID string
+	stopCh    chan struct{}
+	running   bool
+	mu        sync.RWMutex
 }
 
 // NewInformerManager creates an InformerManager from raw Kubeconfig bytes
@@ -41,15 +45,7 @@ func NewInformerManager(kubeconfigBytes []byte, hub *websocket.Hub, clusterID st
 		return nil, fmt.Errorf("failed to create kubernetes clientset: %w", err)
 	}
 
-	// SharedInformerFactory with 30s resync period
-	factory := informers.NewSharedInformerFactory(clientset, 30*time.Second)
-
-	return &InformerManager{
-		clientset: clientset,
-		factory:   factory,
-		hub:       hub,
-		clusterID: clusterID,
-	}, nil
+	return NewInformerManagerWithClientset(clientset, hub, clusterID), nil
 }
 
 // NewInformerManagerInCluster creates an InformerManager using in-cluster ServiceAccount config
@@ -64,6 +60,11 @@ func NewInformerManagerInCluster(hub *websocket.Hub, clusterID string) (*Informe
 		return nil, fmt.Errorf("failed to create kubernetes clientset: %w", err)
 	}
 
+	return NewInformerManagerWithClientset(clientset, hub, clusterID), nil
+}
+
+// NewInformerManagerWithClientset creates an InformerManager using an explicit kubernetes.Interface (useful for fake clientset testing)
+func NewInformerManagerWithClientset(clientset kubernetes.Interface, hub *websocket.Hub, clusterID string) *InformerManager {
 	factory := informers.NewSharedInformerFactory(clientset, 30*time.Second)
 
 	return &InformerManager{
@@ -71,11 +72,17 @@ func NewInformerManagerInCluster(hub *websocket.Hub, clusterID string) (*Informe
 		factory:   factory,
 		hub:       hub,
 		clusterID: clusterID,
-	}, nil
+		stopCh:    make(chan struct{}),
+		running:   false,
+	}
 }
 
-// Start registers Informer handlers and begins watching Pods, Nodes, and Services
+// Start registers Informer handlers and begins watching Pods, Nodes, and Services synchronously
 func (im *InformerManager) Start(stopCh <-chan struct{}) {
+	im.mu.Lock()
+	im.running = true
+	im.mu.Unlock()
+
 	podInformer := im.factory.Core().V1().Pods().Informer()
 	nodeInformer := im.factory.Core().V1().Nodes().Informer()
 	serviceInformer := im.factory.Core().V1().Services().Informer()
@@ -93,7 +100,8 @@ func (im *InformerManager) Start(stopCh <-chan struct{}) {
 			}
 		},
 		DeleteFunc: func(obj interface{}) {
-			if pod, ok := obj.(*corev1.Pod); ok {
+			pod := im.resolvePodObject(obj)
+			if pod != nil {
 				delta := im.extractPodDelta(pod)
 				delta.Phase = "Failed" // Mark as terminated
 				im.hub.BroadcastEvent(types.EventPodStatusChanged, im.clusterID, delta)
@@ -111,6 +119,17 @@ func (im *InformerManager) Start(stopCh <-chan struct{}) {
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			if node, ok := newObj.(*corev1.Node); ok {
 				im.emitNodeDelta(node)
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			node := im.resolveNodeObject(obj)
+			if node != nil {
+				delta := types.NodeStatusDelta{
+					Name:   node.Name,
+					Status: "Terminated",
+					Labels: node.Labels,
+				}
+				im.hub.BroadcastEvent(types.EventNodeMutated, im.clusterID, delta)
 			}
 		},
 	})
@@ -131,6 +150,63 @@ func (im *InformerManager) Start(stopCh <-chan struct{}) {
 
 	im.factory.Start(stopCh)
 	log.Printf("[K8s Informer] Informers started for cluster: %s", im.clusterID)
+}
+
+// StartAsync starts the informer event loops in a background goroutine using internal stopCh
+func (im *InformerManager) StartAsync() {
+	im.mu.Lock()
+	im.running = true
+	im.mu.Unlock()
+	go im.Start(im.stopCh)
+}
+
+// Stop closes the internal stopCh channel and halts all informer event loops
+func (im *InformerManager) Stop() {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+
+	if !im.running {
+		return
+	}
+	close(im.stopCh)
+	im.running = false
+	log.Printf("[K8s Informer] Informers stopped for cluster: %s", im.clusterID)
+}
+
+// IsRunning returns whether the informer factory is currently active
+func (im *InformerManager) IsRunning() bool {
+	im.mu.RLock()
+	defer im.mu.RUnlock()
+	return im.running
+}
+
+// GetClusterID returns the cluster ID associated with this InformerManager
+func (im *InformerManager) GetClusterID() string {
+	return im.clusterID
+}
+
+func (im *InformerManager) resolvePodObject(obj interface{}) *corev1.Pod {
+	if pod, ok := obj.(*corev1.Pod); ok {
+		return pod
+	}
+	if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+		if pod, ok := tombstone.Obj.(*corev1.Pod); ok {
+			return pod
+		}
+	}
+	return nil
+}
+
+func (im *InformerManager) resolveNodeObject(obj interface{}) *corev1.Node {
+	if node, ok := obj.(*corev1.Node); ok {
+		return node
+	}
+	if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+		if node, ok := tombstone.Obj.(*corev1.Node); ok {
+			return node
+		}
+	}
+	return nil
 }
 
 func (im *InformerManager) extractPodDelta(pod *corev1.Pod) types.PodStatusDelta {
@@ -204,3 +280,4 @@ func (im *InformerManager) emitServiceDelta(svc *corev1.Service) {
 	}
 	im.hub.BroadcastEvent(types.EventServiceMutated, im.clusterID, delta)
 }
+
