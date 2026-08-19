@@ -1,0 +1,42 @@
+import { z } from "zod";
+import { workspaceRoles } from "../middleware/auth.middleware.js";
+
+export const idSchema = z.string().uuid();
+
+export const credentialsSchema = z.object({
+  email: z.string().trim().email().transform((value) => value.toLowerCase()),
+  password: z.string().min(8).max(128),
+});
+
+export const registerSchema = credentialsSchema.extend({
+  name: z.string().trim().min(1).max(255),
+});
+
+export const workspaceSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  slug: z.string().trim().min(1).max(255).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).optional(),
+  description: z.string().trim().max(5000).optional(),
+});
+
+export const updateWorkspaceSchema = workspaceSchema.partial().extend({
+  description: z.string().trim().max(5000).nullable().optional(),
+});
+
+export const memberSchema = z.object({
+  userId: idSchema,
+  role: z.enum(workspaceRoles),
+});
+
+export const workspaceParamsSchema = z.object({ id: idSchema });
+export const memberParamsSchema = workspaceParamsSchema.extend({ userId: idSchema });
+
+export const clusterConnectSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  type: z.string().trim().min(1).max(50).default("kubernetes"),
+  kubeconfig: z.string().min(1).max(2_000_000),
+});
+
+export const clusterParamsSchema = z.object({
+  id: idSchema,
+  clusterId: idSchema,
+});
