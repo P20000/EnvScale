@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { X, Server, Shield, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { X, Shield, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { apiConnectCluster } from "../../config/api";
+import { EnvScaleLogo } from "../ui/EnvScaleLogo";
 
 interface ConnectClusterModalProps {
   isOpen: boolean;
@@ -62,8 +63,8 @@ export function ConnectClusterModal({
       <div className="relative w-full max-w-lg rounded-2xl border border-neutral-800 bg-[#141417] p-6 shadow-2xl">
         <div className="flex items-center justify-between border-b border-neutral-800 pb-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500 border border-blue-500/20">
-              <Server className="h-5 w-5" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20 shadow-sm">
+              <EnvScaleLogo className="h-5 w-5 text-blue-400" />
             </div>
             <div>
               <h3 className="text-base font-semibold text-neutral-100">Connect K8s Cluster</h3>

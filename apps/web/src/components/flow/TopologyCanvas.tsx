@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   ReactFlow,
   Background,
@@ -17,7 +17,7 @@ import type { K8sNodeData } from "../canvas/K8sNode";
 import type { K8sServiceData } from "../canvas/K8sService";
 import { useTopologyStore } from "../../store/useTopologyStore";
 import type { SelectedTarget } from "../drawer/InspectorDrawer";
-import { useK8sStream } from "../../hooks/useK8sStream";
+import { useK8sStream, type WsTopologyMessage } from "../../hooks/useK8sStream";
 
 const nodeTypes = {
   k8sPod: K8sPodNode,
@@ -30,41 +30,53 @@ interface TopologyCanvasProps {
 }
 
 function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
-  const {
-    nodes,
-    edges,
-    onNodesChange,
-    onEdgesChange,
-    onConnect,
-    createNode,
-    applyDagreLayout,
-    processWsMessage,
-    setWsStatus,
-  } = useTopologyStore();
+  const nodes = useTopologyStore((s) => s.nodes);
+  const edges = useTopologyStore((s) => s.edges);
+  const onNodesChange = useTopologyStore((s) => s.onNodesChange);
+  const onEdgesChange = useTopologyStore((s) => s.onEdgesChange);
+  const onConnect = useTopologyStore((s) => s.onConnect);
+  const createNode = useTopologyStore((s) => s.createNode);
+  const applyDagreLayout = useTopologyStore((s) => s.applyDagreLayout);
+  const applyDelta = useTopologyStore((s) => s.applyDelta);
+  const setSelectedNode = useTopologyStore((s) => s.setSelectedNode);
+  const setWsStatus = useTopologyStore((s) => s.setWsStatus);
+
   const [paletteOpen, setPaletteOpen] = useState(false);
   const { fitView } = useReactFlow();
 
-  const { status, latencyMs } = useK8sStream((msg) => {
-    processWsMessage(msg);
-  });
+  const handleWsMessage = useCallback(
+    (msg: WsTopologyMessage) => {
+      applyDelta(msg);
+    },
+    [applyDelta]
+  );
+
+  const { status, latencyMs } = useK8sStream(handleWsMessage);
 
   useEffect(() => {
     setWsStatus(status, latencyMs);
   }, [status, latencyMs, setWsStatus]);
 
-  const handleNodeClick = (_: React.MouseEvent, node: Node) => {
-    if (node.type === "k8sPod") {
-      onSelectTarget({ type: "pod", data: node.data as K8sPodData });
-    } else if (node.type === "k8sWorker") {
-      onSelectTarget({ type: "node", data: node.data as K8sNodeData });
-    } else if (node.type === "k8sService") {
-      onSelectTarget({ type: "service", data: node.data as K8sServiceData });
-    }
-  };
+  const handleNodeClick = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      let target: SelectedTarget = null;
+      if (node.type === "k8sPod") {
+        target = { type: "pod", data: node.data as K8sPodData };
+      } else if (node.type === "k8sWorker") {
+        target = { type: "node", data: node.data as K8sNodeData };
+      } else if (node.type === "k8sService") {
+        target = { type: "service", data: node.data as K8sServiceData };
+      }
+      setSelectedNode(target);
+      onSelectTarget(target);
+    },
+    [setSelectedNode, onSelectTarget]
+  );
 
-  const handlePaneClick = () => {
+  const handlePaneClick = useCallback(() => {
+    setSelectedNode(null);
     onSelectTarget(null);
-  };
+  }, [setSelectedNode, onSelectTarget]);
 
   const handleAutoLayout = () => {
     applyDagreLayout("TB");
@@ -72,6 +84,22 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
       fitView({ duration: 400, padding: 0.2 });
     }, 50);
   };
+
+  const nodeIds = nodes.map((n) => n.id).join(",");
+  const edgeIds = edges.map((e) => `${e.source}-${e.target}`).join(",");
+  const initialLayoutDone = useRef(false);
+
+  useEffect(() => {
+    if (nodes.length > 0) {
+      applyDagreLayout("TB");
+      if (!initialLayoutDone.current) {
+        setTimeout(() => {
+          fitView({ duration: 400, padding: 0.2 });
+        }, 50);
+        initialLayoutDone.current = true;
+      }
+    }
+  }, [nodeIds, edgeIds, applyDagreLayout, fitView, nodes.length]);
 
   return (
     <div className="h-screen w-screen bg-[#09090b] relative">

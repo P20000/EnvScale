@@ -7,13 +7,13 @@ import {
   User,
   Check,
   Server,
-  Layers,
   CheckCheck,
   Lock,
 } from "lucide-react";
 import { useTopologyStore, type NotificationItem } from "../../store/useTopologyStore";
 import { AuthModal } from "./AuthModal";
 import { WorkspaceModal } from "./WorkspaceModal";
+import { EnvScaleLogo } from "../ui/EnvScaleLogo";
 
 import type { WsConnectionStatus } from "../../hooks/useK8sStream";
 
@@ -38,14 +38,12 @@ export function TopNavbar({
   wsStatus: propsWsStatus,
   wsLatencyMs: propsWsLatencyMs,
 }: TopNavbarProps) {
-  const {
-    notifications,
-    markNotificationRead,
-    markAllNotificationsRead,
-    wsStatus: storeWsStatus,
-    wsLatencyMs: storeWsLatencyMs,
-    addCluster,
-  } = useTopologyStore();
+  const notifications = useTopologyStore((s) => s.notifications);
+  const markNotificationRead = useTopologyStore((s) => s.markNotificationRead);
+  const markAllNotificationsRead = useTopologyStore((s) => s.markAllNotificationsRead);
+  const storeWsStatus = useTopologyStore((s) => s.wsStatus);
+  const storeWsLatencyMs = useTopologyStore((s) => s.wsLatencyMs);
+  const addCluster = useTopologyStore((s) => s.addCluster);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notifMenuOpen, setNotifMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -78,18 +76,18 @@ export function TopNavbar({
   const currentWsLatencyMs = propsWsLatencyMs ?? storeWsLatencyMs;
 
   const isConnected = currentWsStatus === "CONNECTED";
-  const isConnecting = currentWsStatus === "CONNECTING";
+  const isConnecting = currentWsStatus === "CONNECTING" || currentWsStatus === "RECONNECTING";
 
   return (
     <>
       <header className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center justify-between gap-6 rounded-full bg-neutral-900/85 backdrop-blur-md border border-neutral-800 px-5 py-2 shadow-2xl min-w-[640px] max-w-4xl w-[calc(100%-2rem)]">
         {/* Left Group: Cluster Selector Dropdown */}
         <div className="flex items-center gap-3 relative" ref={dropdownRef}>
-          <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-500/10 text-blue-500 border border-blue-500/20">
-              <Layers className="h-3.5 w-3.5" />
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20 shadow-sm">
+              <EnvScaleLogo className="h-4 w-4 text-blue-400" />
             </div>
-            <span className="text-xs font-semibold tracking-wide text-neutral-400 uppercase">
+            <span className="text-xs font-bold tracking-wider uppercase bg-gradient-to-r from-blue-400 via-indigo-300 to-sky-400 bg-clip-text text-transparent">
               EnvScale
             </span>
           </div>
@@ -100,23 +98,20 @@ export function TopNavbar({
             onClick={() => setDropdownOpen((prev) => !prev)}
             className="flex items-center gap-2 rounded-full bg-neutral-950/80 px-3 py-1.5 text-xs font-medium text-neutral-200 border border-neutral-800 hover:border-neutral-700 hover:bg-neutral-800/60 transition-all active:scale-95"
           >
-            <Server className="h-3.5 w-3.5 text-emerald-400" />
-            <span className="font-mono text-neutral-100 font-semibold truncate max-w-[140px]">
-              {activeCluster}
-            </span>
-            <ChevronDown className={`h-3.5 w-3.5 text-neutral-400 transition-transform duration-200 ${dropdownOpen ? "rotate-180" : ""}`} />
+            <Server className="h-3.5 w-3.5 text-blue-400" />
+            <span className="font-mono">{activeCluster}</span>
+            <ChevronDown className="h-3.5 w-3.5 text-neutral-400" />
           </button>
 
           {/* Dropdown Menu with scrollable options list */}
           {dropdownOpen && (
-            <div className="absolute top-full left-12 mt-2 w-64 rounded-xl border border-neutral-800 bg-[#141417] p-1.5 shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-150">
-              <div className="px-2 py-1.5 text-[10px] font-semibold text-neutral-400 uppercase tracking-wider flex items-center justify-between">
-                <span>Active Clusters</span>
-                <span className="font-mono text-[9px] text-neutral-400">({clusters.length})</span>
+            <div className="absolute top-full left-0 mt-2 w-64 rounded-2xl border border-neutral-800 bg-[#141417] p-2 shadow-2xl animate-in fade-in zoom-in-95 duration-150 z-50">
+              <div className="px-2 py-1.5 text-[10px] font-bold tracking-wider text-neutral-400 uppercase">
+                Active Kubernetes Clusters
               </div>
 
               {/* Scrollable list area */}
-              <div className="space-y-0.5 max-h-56 overflow-y-auto pr-0.5">
+              <div className="space-y-1">
                 {clusters.map((cluster) => (
                   <button
                     key={cluster}
@@ -176,6 +171,8 @@ export function TopNavbar({
             <span className="font-mono">
               {isConnected
                 ? `Connected (${currentWsLatencyMs}ms)`
+                : currentWsStatus === "RECONNECTING"
+                ? "Reconnecting..."
                 : isConnecting
                 ? "Connecting..."
                 : "Disconnected"}
@@ -312,7 +309,7 @@ export function TopNavbar({
                     }}
                     className="w-full flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100 transition-colors"
                   >
-                    <Layers className="h-3.5 w-3.5 text-purple-400" />
+                    <EnvScaleLogo className="h-3.5 w-3.5 text-purple-400" />
                     <span>New Workspace</span>
                   </button>
                 </div>

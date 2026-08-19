@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import type { Node, Edge } from "@xyflow/react";
 import { useTopologyStore } from "../store/useTopologyStore";
 
-export type WsConnectionStatus = "CONNECTING" | "CONNECTED" | "DISCONNECTED" | "ERROR";
+export type WsConnectionStatus = "CONNECTING" | "CONNECTED" | "DISCONNECTED" | "RECONNECTING" | "ERROR";
 
 export interface WsTopologyMessage {
   type?:
@@ -52,12 +52,18 @@ export function useK8sStream(
 ) {
   const [status, setStatus] = useState<WsConnectionStatus>("DISCONNECTED");
   const [latencyMs, setLatencyMs] = useState<number>(0);
+
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastPingTimeRef = useRef<number>(0);
+
   const isComponentMounted = useRef<boolean>(true);
+  const shouldReconnectRef = useRef<boolean>(true);
+  const reconnectAttemptRef = useRef<number>(0);
+
   const connectRef = useRef<() => void>(() => {});
+  const onMessageReceivedRef = useRef(onMessageReceived);
 
   const activeCluster = useTopologyStore((state) => state.activeCluster);
   const targetClusterId = clusterId || activeCluster || "minikube-prod";
@@ -80,7 +86,39 @@ export function useK8sStream(
     }
   }, [urlOverride, targetClusterId]);
 
+  useEffect(() => {
+    onMessageReceivedRef.current = onMessageReceived;
+  }, [onMessageReceived]);
+
+  const scheduleReconnect = useCallback(() => {
+    if (!isComponentMounted.current || !shouldReconnectRef.current) return;
+
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+
+    const attempt = reconnectAttemptRef.current;
+    const baseDelay = 1000; // 1s base
+    const maxDelay = 30000; // 30s max
+    const expDelay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
+    // Add jitter (80% to 120% of delay)
+    const jitter = 0.8 + Math.random() * 0.4;
+    const delay = Math.round(expDelay * jitter);
+
+    reconnectAttemptRef.current = attempt + 1;
+    setStatus("RECONNECTING");
+
+    reconnectTimeoutRef.current = setTimeout(() => {
+      if (isComponentMounted.current && shouldReconnectRef.current) {
+        connectRef.current();
+      }
+    }, delay);
+  }, []);
+
   const connect = useCallback(() => {
+    if (!shouldReconnectRef.current) return;
+
     if (
       wsRef.current &&
       (wsRef.current.readyState === WebSocket.CONNECTING ||
@@ -89,7 +127,12 @@ export function useK8sStream(
       return;
     }
 
-    setStatus("CONNECTING");
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+
+    setStatus(reconnectAttemptRef.current > 0 ? "RECONNECTING" : "CONNECTING");
 
     try {
       const socket = new WebSocket(wsUrl);
@@ -98,6 +141,8 @@ export function useK8sStream(
       socket.onopen = () => {
         if (!isComponentMounted.current) return;
         setStatus("CONNECTED");
+        reconnectAttemptRef.current = 0;
+
         lastPingTimeRef.current = performance.now();
         try {
           socket.send(JSON.stringify({ type: "ping", timestamp: Date.now() }));
@@ -112,7 +157,7 @@ export function useK8sStream(
             try {
               wsRef.current.send(JSON.stringify({ type: "ping", timestamp: Date.now() }));
             } catch {
-              // Ignore
+              // Send ping frame
             }
           }
         }, 5000);
@@ -120,13 +165,10 @@ export function useK8sStream(
 
       socket.onmessage = (event: MessageEvent) => {
         if (!isComponentMounted.current) return;
-        try {
-          const rawData =
-            typeof event.data === "string"
-              ? event.data
-              : new TextDecoder().decode(event.data);
-          const parsed = JSON.parse(rawData) as Record<string, unknown>;
+        const startTime = performance.now();
 
+        try {
+          const parsed = JSON.parse(event.data);
           if (parsed) {
             const eventType = String(parsed.event || parsed.type || "");
             const eventPayload = parsed.data !== undefined ? parsed.data : parsed.payload;
@@ -141,12 +183,13 @@ export function useK8sStream(
               if (!isNaN(msgTime) && msgTime > 0) {
                 measuredLatency = Math.max(1, Math.round(Date.now() - msgTime));
               }
-            } else if (lastPingTimeRef.current > 0) {
-              measuredLatency = Math.max(1, Math.round(performance.now() - lastPingTimeRef.current));
             }
 
-            if (measuredLatency > 0) {
-              setLatencyMs(measuredLatency);
+            const processingTime = Math.max(1, Math.round(performance.now() - startTime));
+            const finalLatency = measuredLatency > 0 ? measuredLatency : processingTime;
+
+            if (finalLatency > 0) {
+              setLatencyMs(finalLatency);
             }
 
             const normalizedMsg: WsTopologyMessage = {
@@ -156,15 +199,15 @@ export function useK8sStream(
               data: eventPayload,
               clusterId: typeof parsed.clusterId === "string" ? parsed.clusterId : undefined,
               timestamp: typeof parsed.timestamp === "string" ? parsed.timestamp : undefined,
-              latencyMs: measuredLatency || undefined,
+              latencyMs: finalLatency || undefined,
             };
 
             if (eventType) {
-              onMessageReceived?.(normalizedMsg);
+              onMessageReceivedRef.current?.(normalizedMsg);
             }
           }
         } catch {
-          // Safe JSON parsing
+          // Safe JSON parsing: malformed frame will not break socket
         }
       };
 
@@ -176,31 +219,58 @@ export function useK8sStream(
 
       socket.onclose = () => {
         if (!isComponentMounted.current) return;
-        setStatus("DISCONNECTED");
-        setLatencyMs(0);
         wsRef.current = null;
         if (pingIntervalRef.current) {
           clearInterval(pingIntervalRef.current);
           pingIntervalRef.current = null;
         }
 
-        reconnectTimeoutRef.current = setTimeout(() => {
-          if (isComponentMounted.current) {
-            connectRef.current();
-          }
-        }, 4000);
+        if (shouldReconnectRef.current) {
+          scheduleReconnect();
+        } else {
+          setStatus("DISCONNECTED");
+          setLatencyMs(0);
+        }
       };
     } catch {
       if (!isComponentMounted.current) return;
-      setStatus("DISCONNECTED");
-      setLatencyMs(0);
-      reconnectTimeoutRef.current = setTimeout(() => {
-        if (isComponentMounted.current) {
-          connectRef.current();
-        }
-      }, 5000);
+      wsRef.current = null;
+      if (shouldReconnectRef.current) {
+        scheduleReconnect();
+      } else {
+        setStatus("DISCONNECTED");
+        setLatencyMs(0);
+      }
     }
-  }, [wsUrl, onMessageReceived]);
+  }, [wsUrl, scheduleReconnect]);
+
+  const disconnect = useCallback(() => {
+    shouldReconnectRef.current = false;
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+    if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current);
+      pingIntervalRef.current = null;
+    }
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    setStatus("DISCONNECTED");
+    setLatencyMs(0);
+  }, []);
+
+  const manualReconnect = useCallback(() => {
+    shouldReconnectRef.current = true;
+    reconnectAttemptRef.current = 0;
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    connect();
+  }, [connect]);
 
   useEffect(() => {
     connectRef.current = connect;
@@ -208,10 +278,12 @@ export function useK8sStream(
 
   useEffect(() => {
     isComponentMounted.current = true;
+    shouldReconnectRef.current = true;
     connect();
 
     return () => {
       isComponentMounted.current = false;
+      shouldReconnectRef.current = false;
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
@@ -228,6 +300,7 @@ export function useK8sStream(
   return {
     status,
     latencyMs,
-    reconnect: connect,
+    reconnect: manualReconnect,
+    disconnect,
   };
 }
