@@ -26,6 +26,14 @@ type registerClusterRequest struct {
 	IsInClusterMode bool   `json:"isInClusterMode"` // Optional flag for in-cluster ServiceAccount mode
 }
 
+type logStreamRequest struct {
+	ClusterID  string `json:"clusterId"`
+	Namespace  string `json:"namespace"`
+	PodName    string `json:"podName"`
+	Container  string `json:"container"`  // optional — defaults to first container
+	TailLines  int64  `json:"tailLines"`  // number of historical lines to tail before following
+}
+
 func main() {
 	log.Println("==================================================")
 	log.Println(" Starting EnvScale K8s WebSocket Streaming Gateway")
@@ -50,6 +58,10 @@ func main() {
 	clusterManager := k8s.NewClusterManager(hub)
 	log.Println("[ClusterManager] Dynamic multi-tenant cluster registry initialized")
 
+	// Initialize PodLogStreamer — shared log tailing engine backed by the same Hub
+	logStreamer := k8s.NewPodLogStreamer(hub)
+	log.Println("[LogStreamer] Pod log streaming engine initialized")
+
 	mux := http.NewServeMux()
 
 	// Health Check Endpoint
@@ -57,11 +69,12 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status":         "ok",
-			"service":        "k8s-streamer",
-			"activeClients":  hub.ClientCount(),
-			"activeClusters": clusterManager.ActiveClusterCount(),
-			"timestamp":      time.Now().UTC().Format(time.RFC3339),
+			"status":           "ok",
+			"service":          "k8s-streamer",
+			"activeClients":    hub.ClientCount(),
+			"activeClusters":   clusterManager.ActiveClusterCount(),
+			"activeLogStreams": logStreamer.ActiveStreamCount(),
+			"timestamp":        time.Now().UTC().Format(time.RFC3339),
 		})
 	})
 
@@ -180,6 +193,75 @@ func main() {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	})
 
+	// POST /api/v1/logs/stream  — start tailing logs for a pod/container
+	// DELETE /api/v1/logs/stream — stop an active log stream
+	mux.HandleFunc("/api/v1/logs/stream", func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Failed to read request body", http.StatusBadRequest)
+			return
+		}
+
+		var req logStreamRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
+			return
+		}
+		if req.ClusterID == "" || req.Namespace == "" || req.PodName == "" {
+			http.Error(w, "clusterId, namespace, and podName are required", http.StatusBadRequest)
+			return
+		}
+
+		switch r.Method {
+		case http.MethodPost:
+			// Retrieve the InformerManager so we can borrow its kubernetes.Interface clientset
+			im, ok := clusterManager.GetCluster(req.ClusterID)
+			if !ok {
+				http.Error(w, fmt.Sprintf("cluster '%s' is not registered", req.ClusterID), http.StatusNotFound)
+				return
+			}
+
+			tailLines := req.TailLines
+			if tailLines <= 0 {
+				tailLines = 100 // sensible default
+			}
+
+			if err := logStreamer.StartStream(
+				context.Background(),
+				im.Clientset(),
+				req.ClusterID, req.Namespace, req.PodName, req.Container,
+				tailLines,
+			); err != nil {
+				http.Error(w, fmt.Sprintf("Failed to start log stream: %v", err), http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"status":    "streaming",
+				"clusterId": req.ClusterID,
+				"namespace": req.Namespace,
+				"pod":       req.PodName,
+				"container": req.Container,
+			})
+
+		case http.MethodDelete:
+			logStreamer.StopStream(req.ClusterID, req.Namespace, req.PodName, req.Container)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"status":    "stopped",
+				"clusterId": req.ClusterID,
+				"namespace": req.Namespace,
+				"pod":       req.PodName,
+			})
+
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
 	server := &http.Server{
 		Addr:         ":" + port,
 		Handler:      mux,
@@ -208,6 +290,10 @@ func main() {
 	case sig := <-shutdown:
 		log.Printf("[Shutdown] Signal received: %v. Initiating graceful shutdown...", sig)
 
+		// Stop all active log streams before shutting down cluster informers
+		for clusterID := range clusterManager.ListClusters() {
+			logStreamer.StopAllForCluster(clusterID)
+		}
 		// Stop all active cluster informers
 		clusterManager.ShutdownAll()
 

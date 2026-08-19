@@ -185,6 +185,12 @@ func (im *InformerManager) GetClusterID() string {
 	return im.clusterID
 }
 
+// Clientset returns the underlying kubernetes.Interface for this cluster.
+// Used by PodLogStreamer to open log stream requests against the same cluster.
+func (im *InformerManager) Clientset() kubernetes.Interface {
+	return im.clientset
+}
+
 func (im *InformerManager) resolvePodObject(obj interface{}) *corev1.Pod {
 	if pod, ok := obj.(*corev1.Pod); ok {
 		return pod
