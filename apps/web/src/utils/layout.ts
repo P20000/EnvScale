@@ -19,26 +19,26 @@ export function getLayoutedElements(
   const isHorizontal = direction === "LR";
   dagreGraph.setGraph({
     rankdir: direction,
-    nodesep: 60,
-    ranksep: 80,
-    marginx: 40,
-    marginy: 40,
+    nodesep: 80,
+    ranksep: 100,
+    marginx: 50,
+    marginy: 50,
   });
 
   // Set nodes with exact UI component dimensions
   nodes.forEach((node) => {
-    let width = 230;
-    let height = 90;
+    let width = 280;
+    let height = 110;
 
     if (node.type === "k8sWorker") {
-      width = 300;
-      height = 180;
+      width = 360;
+      height = 210;
     } else if (node.type === "k8sService") {
-      width = 220;
-      height = 60;
+      width = 250;
+      height = 75;
     } else if (node.type === "k8sPod") {
-      width = 230;
-      height = 90;
+      width = 280;
+      height = 110;
     }
 
     dagreGraph.setNode(node.id, { width, height });

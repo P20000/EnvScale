@@ -213,7 +213,7 @@ export function IncidentsView() {
   const activeAlertsCount = filteredIncidents.filter((i) => i.status === "ACTIVE").length;
 
   return (
-    <div className="h-full max-h-screen flex flex-col p-8 pt-24 max-w-6xl mx-auto space-y-5 overflow-hidden">
+    <div className="h-full max-h-screen flex flex-col w-full max-w-7xl px-6 lg:px-8 pt-24 pb-12 mx-auto space-y-5 overflow-hidden">
       {/* Header (shrink-0) */}
       <div className="flex items-center justify-between shrink-0">
         <div>
@@ -221,7 +221,7 @@ export function IncidentsView() {
             <ShieldAlert className="h-6 w-6 text-red-500" />
             Incidents & Alert Policies
           </h2>
-          <p className="text-xs text-neutral-400 mt-1">
+          <p className="text-sm text-neutral-400 mt-1">
             Real-time incident detection and severity rules for active Kubernetes workloads
           </p>
         </div>
