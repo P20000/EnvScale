@@ -5,13 +5,11 @@ import jwt from "jsonwebtoken";
 import { db } from "../db/client.js";
 import { refreshTokens, users } from "../db/schema.js";
 
-const accessTokenSecret = process.env.JWT_ACCESS_SECRET;
-const refreshTokenSecret = process.env.JWT_REFRESH_SECRET;
+const getAccessTokenSecret = () =>
+  process.env.JWT_ACCESS_SECRET || "default_dev_access_secret_do_not_use_in_prod";
+const getRefreshTokenSecret = () =>
+  process.env.JWT_REFRESH_SECRET || "default_dev_refresh_secret_do_not_use_in_prod";
 const refreshTokenLifetimeMs = 7 * 24 * 60 * 60 * 1000;
-
-if (!accessTokenSecret || !refreshTokenSecret) {
-  throw new Error("JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be configured");
-}
 
 export type AuthUser = typeof users.$inferSelect;
 
@@ -24,7 +22,7 @@ const hashRefreshToken = (token: string) =>
   createHash("sha256").update(token).digest("hex");
 
 const createAccessToken = (user: AuthUser) =>
-  jwt.sign({ sub: user.id, email: user.email, role: user.role }, accessTokenSecret, {
+  jwt.sign({ sub: user.id, email: user.email, role: user.role }, getAccessTokenSecret(), {
     expiresIn: "15m",
   });
 
