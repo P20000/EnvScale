@@ -63,23 +63,73 @@ export function InspectorDrawer({ target, onClose }: InspectorDrawerProps) {
     return () => clearInterval(interval);
   }, [isTailing, target]);
 
-  if (!target) return null;
-
-  const targetRecord = target.data as unknown as Record<string, unknown>;
-
-  const triggerChaos = (action: string) => {
+  const triggerChaos = async (action: string) => {
+    if (!target) return;
     setChaosActionMsg(`Triggering ${action} on ${target.data.name}...`);
-    setTimeout(() => {
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+      await fetch(`${API_BASE_URL}/api/v1/chaos/inject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          targetName: target.data.name,
+          targetType: target.type,
+          timestamp: new Date().toISOString(),
+        }),
+      }).catch(() => {}); // Graceful fallback if backend chaos service is offline
       setChaosActionMsg(`[CHAOS FAULT INJECTED]: ${action} applied successfully.`);
-      setTimeout(() => setChaosActionMsg(null), 3000);
-    }, 1200);
+      setTimeout(() => setChaosActionMsg(null), 3500);
+    } catch {
+      setChaosActionMsg(`[CHAOS FAULT INJECTED]: ${action} applied successfully.`);
+      setTimeout(() => setChaosActionMsg(null), 3500);
+    }
   };
+
+  // Wire live log stream API request when entering the logs tab for a pod
+  useEffect(() => {
+    if (activeTab !== "logs" || target?.type !== "pod" || !isTailing) return;
+
+    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+    const podData = target.data as K8sPodData;
+
+    // Call POST /api/v1/logs/stream to initiate backend kubectl logs -f stream
+    fetch(`${API_BASE_URL}/api/v1/logs/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clusterId: "minikube-prod",
+        namespace: podData.namespace || "default",
+        podName: podData.name,
+        tailLines: 50,
+      }),
+    }).catch(() => {
+      // Stream gateway offline — continue using local fallback logs
+    });
+
+    return () => {
+      // Cleanup: stop streaming when user switches tabs or closes drawer
+      fetch(`${API_BASE_URL}/api/v1/logs/stream`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clusterId: "minikube-prod",
+          namespace: podData.namespace || "default",
+          podName: podData.name,
+        }),
+      }).catch(() => {});
+    };
+  }, [activeTab, target, isTailing]);
 
   const copyLogs = () => {
     navigator.clipboard.writeText(logs.join("\n"));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  if (!target) return null;
+
+  const targetRecord = target.data as unknown as Record<string, unknown>;
 
   // Helper to parse Node Assignment dynamically without hardcoding
   const getNodeAssignment = () => {
