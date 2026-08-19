@@ -2,6 +2,7 @@ import "dotenv/config";
 import cookieParser from "cookie-parser";
 import express, { type Express } from "express";
 import { authRouter } from "./routes/auth.routes.js";
+import { workspaceRouter } from "./routes/workspace.routes.js";
 
 const app: Express = express();
 const port = Number(process.env.PORT ?? 3000);
@@ -12,6 +13,7 @@ app.get("/health", (_request, response) => {
   response.json({ status: "ok" });
 });
 app.use("/api/v1/auth", authRouter);
+app.use("/api/v1/workspaces", workspaceRouter);
 
 app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
   console.error(error);
