@@ -3,7 +3,6 @@ import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
 
 import { TopNavbar } from "./components/layout/TopNavbar";
 import { LeftSidebar, type NavTab } from "./components/layout/LeftSidebar";
-import { ConnectClusterModal } from "./components/layout/ConnectClusterModal";
 import { TopologyCanvas } from "./components/flow/TopologyCanvas";
 import { InspectorDrawer } from "./components/drawer/InspectorDrawer";
 import { PodLogDrawer } from "./components/drawer/PodLogDrawer";
@@ -29,7 +28,6 @@ function AppContent() {
   const clearSelectedNode = useTopologyStore((s) => s.clearSelectedNode);
 
   const [activeTab, setActiveTab] = useState<NavTab>("topology");
-  const [connectModalOpen, setConnectModalOpen] = useState(false);
   const [showConnectWizard, setShowConnectWizard] = useState(false);
 
   const [logDrawerState, setLogDrawerState] = useState<{
@@ -124,17 +122,11 @@ function AppContent() {
         }
       />
 
-      {/* Existing Connect Cluster Modal */}
-      <ConnectClusterModal
-        isOpen={connectModalOpen}
-        onClose={() => setConnectModalOpen(false)}
-        onClusterConnected={handleClusterConnected}
-      />
-
       {/* ISH-01: Connect Cluster Onboarding Wizard */}
       {showConnectWizard && (
         <ConnectClusterWizard
           onClose={() => setShowConnectWizard(false)}
+          onClusterConnected={handleClusterConnected}
         />
       )}
     </div>

@@ -3,10 +3,12 @@ import { Button } from "../ui/button";
 
 type ConnectClusterWizardProps = {
   onClose: () => void;
+  onClusterConnected?: (clusterName: string) => void;
 };
 
 export default function ConnectClusterWizard({
   onClose,
+  onClusterConnected,
 }: ConnectClusterWizardProps) {
   const [step, setStep] = useState(1);
   const [clusterName, setClusterName] = useState("");
@@ -138,7 +140,10 @@ export default function ConnectClusterWizard({
 
         <Button
           className="mt-6"
-          onClick={onClose}
+          onClick={() => {
+            onClusterConnected?.(clusterName);
+            onClose();
+          }}
         >
           Done
         </Button>
