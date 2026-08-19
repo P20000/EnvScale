@@ -14,7 +14,7 @@ export interface K8sPodData extends Record<string, unknown> {
   memoryUsage?: string;
 }
 
-export function formatPodName(name: string, maxLen = 20): string {
+function formatPodName(name: string, maxLen = 20): string {
   if (!name || name.length <= maxLen) return name;
   const parts = name.split("-");
   if (parts.length >= 2) {
