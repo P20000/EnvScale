@@ -33,7 +33,12 @@ var upgrader = websocket.Upgrader{
 
 // Client is a middleman between the websocket connection and the hub.
 type Client struct {
-	ID   string
+	// ID is the unique identifier for this client connection
+	ID string
+
+	// ClusterID is the Kubernetes cluster room this client subscribes to
+	ClusterID string
+
 	Hub  *Hub
 	Conn *websocket.Conn
 
@@ -41,15 +46,17 @@ type Client struct {
 	send chan []byte
 }
 
-// NewClient initializes a Client instance
-func NewClient(id string, hub *Hub, conn *websocket.Conn) *Client {
+// NewClient initializes a Client instance subscribed to a specific cluster room
+func NewClient(id string, clusterID string, hub *Hub, conn *websocket.Conn) *Client {
 	return &Client{
-		ID:   id,
-		Hub:  hub,
-		Conn: conn,
-		send: make(chan []byte, 256),
+		ID:        id,
+		ClusterID: clusterID,
+		Hub:       hub,
+		Conn:      conn,
+		send:      make(chan []byte, 256),
 	}
 }
+
 
 // ReadPump pumps messages from the websocket connection to the hub.
 func (c *Client) ReadPump() {
@@ -121,14 +128,23 @@ func (c *Client) WritePump() {
 }
 
 // ServeWs handles websocket requests from the peer.
+// Query params:
+//   - clientId  (optional) — unique client identifier; auto-generated if absent
+//   - clusterId (required) — Kubernetes cluster room to subscribe to
 func ServeWs(hub *Hub, id string, w http.ResponseWriter, r *http.Request) {
+	clusterID := r.URL.Query().Get("clusterId")
+	if clusterID == "" {
+		http.Error(w, "clusterId query parameter is required", http.StatusBadRequest)
+		return
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("[WebSocket Upgrade] Error upgrading connection: %v", err)
 		return
 	}
 
-	client := NewClient(id, hub, conn)
+	client := NewClient(id, clusterID, hub, conn)
 	client.Hub.Register <- client
 
 	// Allow collection of memory referenced by the caller by doing all work in
