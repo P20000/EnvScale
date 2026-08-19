@@ -15,6 +15,8 @@ import { useTopologyStore, type NotificationItem } from "../../store/useTopology
 import { AuthModal } from "./AuthModal";
 import { WorkspaceModal } from "./WorkspaceModal";
 
+import type { WsConnectionStatus } from "../../hooks/useK8sStream";
+
 interface TopNavbarProps {
   activeCluster: string;
   clusters: string[];
@@ -23,6 +25,7 @@ interface TopNavbarProps {
   onFitView?: () => void;
   activeIncidentsCount?: number;
   wsLatencyMs?: number;
+  wsStatus?: WsConnectionStatus;
   wsConnected?: boolean;
 }
 
@@ -32,13 +35,15 @@ export function TopNavbar({
   onSelectCluster,
   onOpenConnectModal,
   onFitView,
+  wsStatus: propsWsStatus,
+  wsLatencyMs: propsWsLatencyMs,
 }: TopNavbarProps) {
   const {
     notifications,
     markNotificationRead,
     markAllNotificationsRead,
-    wsStatus,
-    wsLatencyMs,
+    wsStatus: storeWsStatus,
+    wsLatencyMs: storeWsLatencyMs,
     addCluster,
   } = useTopologyStore();
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -69,8 +74,11 @@ export function TopNavbar({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const isConnected = wsStatus === "CONNECTED";
-  const isConnecting = wsStatus === "CONNECTING";
+  const currentWsStatus = propsWsStatus ?? storeWsStatus;
+  const currentWsLatencyMs = propsWsLatencyMs ?? storeWsLatencyMs;
+
+  const isConnected = currentWsStatus === "CONNECTED";
+  const isConnecting = currentWsStatus === "CONNECTING";
 
   return (
     <>
@@ -167,7 +175,7 @@ export function TopNavbar({
             </span>
             <span className="font-mono">
               {isConnected
-                ? `Connected (${wsLatencyMs}ms)`
+                ? `Connected (${currentWsLatencyMs}ms)`
                 : isConnecting
                 ? "Connecting..."
                 : "Disconnected"}

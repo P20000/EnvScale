@@ -101,3 +101,50 @@ export async function apiCreateWorkspace(workspaceData: {
     };
   }
 }
+
+export interface ClusterResponse {
+  cluster?: {
+    id?: string;
+    name: string;
+    environment?: string;
+  };
+  error?: string;
+  message?: string;
+}
+
+/**
+ * Connect K8s Cluster via REST API
+ * Endpoint: POST /api/v1/clusters
+ */
+export async function apiConnectCluster(clusterData: {
+  name: string;
+  environment?: string;
+  kubeconfig?: string;
+}): Promise<ClusterResponse> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/clusters`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: clusterData.name,
+        environment: clusterData.environment || "development",
+        kubeconfig: clusterData.kubeconfig || "",
+      }),
+    });
+
+    const data = (await res.json()) as ClusterResponse;
+    if (!res.ok) {
+      return {
+        error: data.message || data.error || `Failed to connect cluster (${res.status})`,
+      };
+    }
+    return data;
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Network error: Unable to connect to cluster API server",
+    };
+  }
+}
+

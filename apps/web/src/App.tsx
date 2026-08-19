@@ -16,7 +16,8 @@ import { useTopologyStore } from "./store/useTopologyStore";
 import "./index.css";
 
 function AppContent() {
-  const { activeCluster, clusters, setActiveCluster, addCluster } = useTopologyStore();
+  const { activeCluster, clusters, setActiveCluster, addCluster, wsStatus, wsLatencyMs } =
+    useTopologyStore();
   const [activeTab, setActiveTab] = useState<NavTab>("topology");
   const [connectModalOpen, setConnectModalOpen] = useState(false);
   const [selectedTarget, setSelectedTarget] = useState<SelectedTarget>(null);
@@ -41,8 +42,8 @@ function AppContent() {
         onOpenConnectModal={() => setConnectModalOpen(true)}
         onFitView={handleFitView}
         activeIncidentsCount={2}
-        wsLatencyMs={12}
-        wsConnected={true}
+        wsLatencyMs={wsLatencyMs}
+        wsStatus={wsStatus}
       />
 
       {/* Region 2: Left Floating Sidebar Capsule */}

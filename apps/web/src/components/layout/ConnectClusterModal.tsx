@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { X, Server, Shield, CheckCircle2 } from "lucide-react";
+import { X, Server, Shield, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { apiConnectCluster } from "../../config/api";
 
 interface ConnectClusterModalProps {
   isOpen: boolean;
@@ -16,26 +17,44 @@ export function ConnectClusterModal({
   const [environment, setEnvironment] = useState("development");
   const [kubeconfig, setKubeconfig] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState("");
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!clusterName.trim()) return;
+    if (!clusterName.trim()) {
+      setError("Cluster identifier is required.");
+      return;
+    }
 
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
-      setSuccessMsg(`Cluster "${clusterName}" successfully connected and encrypted (AES-256-GCM).`);
+    setError(null);
+    setSuccessMsg("");
+
+    const res = await apiConnectCluster({
+      name: clusterName.trim(),
+      environment,
+      kubeconfig,
+    });
+
+    setIsSubmitting(false);
+
+    if (res.error) {
+      setError(res.error);
+    } else {
+      const nameToConnect = res.cluster?.name || clusterName.trim();
+      setSuccessMsg(`Cluster "${nameToConnect}" successfully connected and encrypted (AES-256-GCM).`);
+      onClusterConnected(nameToConnect);
       setTimeout(() => {
-        onClusterConnected(clusterName.trim());
         setClusterName("");
         setKubeconfig("");
         setSuccessMsg("");
+        setError(null);
         onClose();
-      }, 1200);
-    }, 800);
+      }, 1000);
+    }
   };
 
   return (
@@ -58,6 +77,13 @@ export function ConnectClusterModal({
             <X className="h-4 w-4" />
           </button>
         </div>
+
+        {error && (
+          <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs font-medium text-red-400 flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
 
         {successMsg ? (
           <div className="my-6 flex flex-col items-center justify-center gap-3 py-6 text-center">
@@ -126,7 +152,8 @@ export function ConnectClusterModal({
                 disabled={isSubmitting || !clusterName.trim()}
                 className="flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-600 active:scale-95 disabled:opacity-50 transition-all shadow-md shadow-blue-500/20"
               >
-                {isSubmitting ? "Connecting..." : "Connect Cluster"}
+                {isSubmitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                <span>{isSubmitting ? "Connecting..." : "Connect Cluster"}</span>
               </button>
             </div>
           </form>
@@ -135,3 +162,4 @@ export function ConnectClusterModal({
     </div>
   );
 }
+
