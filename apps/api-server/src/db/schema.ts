@@ -50,6 +50,36 @@ export const users = pgTable(
   })
 );
 
+export const refreshTokens = pgTable(
+  "refresh_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    userId: uuid("user_id").notNull(),
+
+    tokenHash: text("token_hash").notNull().unique(),
+
+    expiresAt: timestamp("expires_at").notNull(),
+
+    revokedAt: timestamp("revoked_at"),
+
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdx: index("refresh_tokens_user_id_idx").on(table.userId),
+
+    tokenHashIdx: uniqueIndex("refresh_tokens_token_hash_idx").on(
+      table.tokenHash
+    ),
+
+    userFk: foreignKey({
+      columns: [table.userId],
+      foreignColumns: [users.id],
+      name: "refresh_tokens_user_id_fk",
+    }).onDelete("cascade"),
+  })
+);
+
 // ============================================================================
 // WORKSPACES TABLE
 // ============================================================================
