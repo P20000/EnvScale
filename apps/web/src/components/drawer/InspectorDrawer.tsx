@@ -12,11 +12,11 @@ import {
   Copy,
   Check,
 } from "lucide-react";
-import type { K8sPodData } from "../nodes/K8sPod";
-import type { K8sNodeData } from "../nodes/K8sNode";
-import type { K8sServiceData } from "../nodes/K8sService";
+import type { K8sPodData } from "../canvas/K8sPod";
+import type { K8sNodeData } from "../canvas/K8sNode";
+import type { K8sServiceData } from "../canvas/K8sService";
 
-type SelectedTarget =
+export type SelectedTarget =
   | { type: "pod"; data: K8sPodData }
   | { type: "node"; data: K8sNodeData }
   | { type: "service"; data: K8sServiceData }
@@ -34,16 +34,20 @@ export function InspectorDrawer({ target, onClose }: InspectorDrawerProps) {
   const [copied, setCopied] = useState(false);
   const [chaosActionMsg, setChaosActionMsg] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!target) return;
-    const name = target.data.name;
-    const initial = [
-      `[INFO] ${new Date().toISOString()} Starting container process for ${name}...`,
-      `[INFO] ${new Date().toISOString()} Listening on port 8080 (0.0.0.0)`,
-      `[DEBUG] ${new Date().toISOString()} Health check endpoint GET /healthz 200 OK`,
-    ];
-    setLogs(initial);
-  }, [target]);
+  const [prevTargetName, setPrevTargetName] = useState<string | null>(null);
+  const currentTargetName = target?.data?.name || null;
+
+  if (currentTargetName !== prevTargetName) {
+    setPrevTargetName(currentTargetName);
+    if (currentTargetName) {
+      const timestamp = new Date().toISOString();
+      setLogs([
+        `[INFO] ${timestamp} Starting container process for ${currentTargetName}...`,
+        `[INFO] ${timestamp} Listening on port 8080 (0.0.0.0)`,
+        `[DEBUG] ${timestamp} Health check endpoint GET /healthz 200 OK`,
+      ]);
+    }
+  }
 
   useEffect(() => {
     if (!isTailing || !target) return;
@@ -65,7 +69,7 @@ export function InspectorDrawer({ target, onClose }: InspectorDrawerProps) {
 
   if (!target) return null;
 
-  const targetRecord = target.data as Record<string, any>;
+  const targetRecord = target.data as unknown as Record<string, unknown>;
 
   const triggerChaos = (action: string) => {
     setChaosActionMsg(`Triggering ${action} on ${target.data.name}...`);

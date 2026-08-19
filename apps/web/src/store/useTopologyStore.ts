@@ -15,6 +15,8 @@ import {
 import type { K8sPodData } from "../components/canvas/K8sPod";
 import type { K8sNodeData } from "../components/canvas/K8sNode";
 import type { K8sServiceData } from "../components/canvas/K8sService";
+import type { WsConnectionStatus, WsTopologyMessage } from "../hooks/useK8sStream";
+import { getLayoutedElements } from "../utils/layout";
 
 export interface ApiToken {
   id: string;
@@ -274,6 +276,8 @@ interface TopologyState {
   edges: Edge[];
   tokens: ApiToken[];
   notifications: NotificationItem[];
+  wsStatus: WsConnectionStatus;
+  wsLatencyMs: number;
 
   // Actions
   setActiveCluster: (cluster: string) => void;
@@ -288,6 +292,13 @@ interface TopologyState {
   onNodesChange: OnNodesChange;
   onEdgesChange: OnEdgesChange;
   onConnect: OnConnect;
+
+  // Dagre Auto-Layout Action
+  applyDagreLayout: (direction?: "TB" | "LR") => void;
+
+  // WebSocket Actions
+  setWsStatus: (status: WsConnectionStatus, latencyMs?: number) => void;
+  processWsMessage: (msg: WsTopologyMessage) => void;
 
   // Token Actions
   generateToken: (name?: string) => void;
@@ -309,6 +320,8 @@ export const useTopologyStore = create<TopologyState>()(
       edges: defaultInitialEdges,
       tokens: defaultInitialTokens,
       notifications: defaultInitialNotifications,
+      wsStatus: "DISCONNECTED",
+      wsLatencyMs: 12,
 
       setActiveCluster: (cluster) => set({ activeCluster: cluster }),
 
@@ -461,7 +474,7 @@ export const useTopologyStore = create<TopologyState>()(
             : get().activeCluster;
 
         const remainingNodes = get().nodes.filter((node) => {
-          const name = (node.data as Record<string, any>)?.name;
+          const name = (node.data as Record<string, unknown>)?.name;
           return name !== clusterName;
         });
 
@@ -534,6 +547,63 @@ export const useTopologyStore = create<TopologyState>()(
             get().edges
           ),
         });
+      },
+
+      applyDagreLayout: (direction = "TB") => {
+        const { nodes, edges } = get();
+        if (nodes.length === 0) return;
+        const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
+          nodes,
+          edges,
+          direction
+        );
+        set({ nodes: layoutedNodes, edges: layoutedEdges });
+      },
+
+      setWsStatus: (status, latencyMs) => {
+        set({
+          wsStatus: status,
+          wsLatencyMs: latencyMs ?? get().wsLatencyMs,
+        });
+      },
+
+      processWsMessage: (msg) => {
+        const { payload, type } = msg;
+        if (!payload) return;
+
+        if (type === "EVENT_TOPOLOGY_SNAPSHOT" && payload.nodes) {
+          set({
+            nodes: payload.nodes,
+            edges: payload.edges || get().edges,
+          });
+        } else if (
+          (type === "EVENT_POD_ADDED" || type === "EVENT_POD_MODIFIED") &&
+          payload.pod
+        ) {
+          const pod = payload.pod;
+          const existing = get().nodes.filter((n) => n.id !== pod.id);
+          set({ nodes: [...existing, pod] });
+        } else if (
+          (type === "EVENT_NODE_ADDED" || type === "EVENT_NODE_MODIFIED") &&
+          payload.node
+        ) {
+          const node = payload.node;
+          const existing = get().nodes.filter((n) => n.id !== node.id);
+          set({ nodes: [...existing, node] });
+        } else if (
+          (type === "EVENT_SERVICE_ADDED" || type === "EVENT_SERVICE_MODIFIED") &&
+          payload.service
+        ) {
+          const service = payload.service;
+          const existing = get().nodes.filter((n) => n.id !== service.id);
+          set({ nodes: [...existing, service] });
+        } else if (type === "EVENT_POD_DELETED" && payload.podId) {
+          get().deleteNode(payload.podId);
+        } else if (type === "EVENT_NODE_DELETED" && payload.nodeId) {
+          get().deleteNode(payload.nodeId);
+        } else if (type === "EVENT_SERVICE_DELETED" && payload.serviceId) {
+          get().deleteNode(payload.serviceId);
+        }
       },
 
       generateToken: (tokenName) => {

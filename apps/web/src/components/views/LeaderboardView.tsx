@@ -20,7 +20,7 @@ export function LeaderboardView() {
     let cpuPct = 38 + (index % 4) * 12;
     let memPct = 45 + (index % 5) * 10;
     let activeIncidents = index % 3 === 0 ? 1 : index % 4 === 0 ? 2 : 0;
-    let podHealth = index % 2 === 0 ? "8/9 Healthy" : "12/12 Healthy";
+    const podHealth = index % 2 === 0 ? "8/9 Healthy" : "12/12 Healthy";
 
     if (clusterName.toLowerCase().includes("prod") && index === 0) {
       healthScore = 94;

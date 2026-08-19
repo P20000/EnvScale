@@ -5,7 +5,7 @@ import { TopNavbar } from "./components/layout/TopNavbar";
 import { LeftSidebar, type NavTab } from "./components/layout/LeftSidebar";
 import { ConnectClusterModal } from "./components/layout/ConnectClusterModal";
 import { TopologyCanvas } from "./components/flow/TopologyCanvas";
-import { InspectorDrawer } from "./components/drawer/InspectorDrawer";
+import { InspectorDrawer, type SelectedTarget } from "./components/drawer/InspectorDrawer";
 
 import { IncidentsView } from "./components/views/IncidentsView";
 import { MetricsView } from "./components/views/MetricsView";
@@ -19,10 +19,7 @@ function AppContent() {
   const { activeCluster, clusters, setActiveCluster, addCluster } = useTopologyStore();
   const [activeTab, setActiveTab] = useState<NavTab>("topology");
   const [connectModalOpen, setConnectModalOpen] = useState(false);
-  const [selectedTarget, setSelectedTarget] = useState<{
-    type: "pod" | "node" | "service";
-    data: any;
-  } | null>(null);
+  const [selectedTarget, setSelectedTarget] = useState<SelectedTarget>(null);
 
   const { fitView } = useReactFlow();
 

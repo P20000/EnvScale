@@ -1,17 +1,23 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   ReactFlow,
   Background,
   BackgroundVariant,
   Controls,
   MarkerType,
+  useReactFlow,
   type Node,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Box, Server, Globe, Plus } from "lucide-react";
+import { Box, Server, Globe, Plus, LayoutGrid } from "lucide-react";
 
 import { K8sPodNode, K8sWorkerNode, K8sServiceNode } from "../canvas";
+import type { K8sPodData } from "../canvas/K8sPod";
+import type { K8sNodeData } from "../canvas/K8sNode";
+import type { K8sServiceData } from "../canvas/K8sService";
 import { useTopologyStore } from "../../store/useTopologyStore";
+import type { SelectedTarget } from "../drawer/InspectorDrawer";
+import { useK8sStream } from "../../hooks/useK8sStream";
 
 const nodeTypes = {
   k8sPod: K8sPodNode,
@@ -20,25 +26,51 @@ const nodeTypes = {
 };
 
 interface TopologyCanvasProps {
-  onSelectTarget: (target: { type: "pod" | "node" | "service"; data: any } | null) => void;
+  onSelectTarget: (target: SelectedTarget) => void;
 }
 
 function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
-  const { nodes, edges, onNodesChange, onEdgesChange, onConnect, createNode } = useTopologyStore();
+  const {
+    nodes,
+    edges,
+    onNodesChange,
+    onEdgesChange,
+    onConnect,
+    createNode,
+    applyDagreLayout,
+    processWsMessage,
+    setWsStatus,
+  } = useTopologyStore();
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const { fitView } = useReactFlow();
+
+  const { status, latencyMs } = useK8sStream((msg) => {
+    processWsMessage(msg);
+  });
+
+  useEffect(() => {
+    setWsStatus(status, latencyMs);
+  }, [status, latencyMs, setWsStatus]);
 
   const handleNodeClick = (_: React.MouseEvent, node: Node) => {
     if (node.type === "k8sPod") {
-      onSelectTarget({ type: "pod", data: node.data });
+      onSelectTarget({ type: "pod", data: node.data as K8sPodData });
     } else if (node.type === "k8sWorker") {
-      onSelectTarget({ type: "node", data: node.data });
+      onSelectTarget({ type: "node", data: node.data as K8sNodeData });
     } else if (node.type === "k8sService") {
-      onSelectTarget({ type: "service", data: node.data });
+      onSelectTarget({ type: "service", data: node.data as K8sServiceData });
     }
   };
 
   const handlePaneClick = () => {
     onSelectTarget(null);
+  };
+
+  const handleAutoLayout = () => {
+    applyDagreLayout("TB");
+    setTimeout(() => {
+      fitView({ duration: 400, padding: 0.2 });
+    }, 50);
   };
 
   return (
@@ -69,6 +101,18 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#27272a" />
         <Controls position="bottom-left" showInteractive={false} />
       </ReactFlow>
+
+      {/* Auto Layout Action Button */}
+      <div className="absolute top-24 right-6 z-40">
+        <button
+          onClick={handleAutoLayout}
+          className="flex items-center gap-2 rounded-xl bg-[#141417] border border-neutral-800 px-3.5 py-2 text-xs font-semibold text-neutral-200 shadow-xl hover:border-blue-500/50 hover:bg-neutral-800 hover:text-blue-400 transition-all active:scale-95"
+          title="Auto Layout Topology Graph (Dagre Engine)"
+        >
+          <LayoutGrid className="h-4 w-4 text-blue-400" />
+          <span>Auto Layout</span>
+        </button>
+      </div>
 
       {/* Floating Canvas Node Toolbar / Add Shape Palette */}
       <div className="absolute bottom-6 right-6 z-40 flex items-center gap-2">
