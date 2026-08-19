@@ -16,11 +16,16 @@ const idSchema = z.string().uuid();
 const roleSchema = z.enum(workspaceRoles);
 const workspaceSchema = z.object({
   name: z.string().trim().min(1).max(255),
-  slug: z.string().trim().min(1).max(255).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  slug: z.string().trim().min(1).max(255).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).optional(),
   description: z.string().trim().max(5000).optional(),
 });
 const updateSchema = workspaceSchema.partial().extend({ description: z.string().trim().max(5000).nullable().optional() });
 const memberSchema = z.object({ userId: idSchema, role: roleSchema });
+
+const generateSlug = (name: string): string => {
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return base || `workspace-${Date.now().toString(36)}`;
+};
 
 const publicUser = (user: { id: string; name: string; email: string; avatar: string | null }) =>
   ({ id: user.id, name: user.name, email: user.email, avatar: user.avatar });
@@ -45,8 +50,9 @@ export const create = async (request: Request, response: Response) => {
     response.status(400).json({ error: "Invalid workspace data", details: parsed.error.flatten() });
     return;
   }
+  const slug = parsed.data.slug || generateSlug(parsed.data.name);
   try {
-    const workspace = await createWorkspace(request.user!.id, parsed.data.name, parsed.data.slug, parsed.data.description);
+    const workspace = await createWorkspace(request.user!.id, parsed.data.name, slug, parsed.data.description);
     response.status(201).json({ ...workspace, role: "ADMIN" });
   } catch (error: unknown) {
     if (error && typeof error === "object" && "code" in error && error.code === "23505") {

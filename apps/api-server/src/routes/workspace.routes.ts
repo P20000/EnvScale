@@ -2,7 +2,7 @@ import { Router } from "express";
 import { addMember, create, get, list, remove, removeMember, update } from "../controllers/workspace.controller.js";
 import { requireAuth, requireWorkspaceRole } from "../middleware/auth.middleware.js";
 
-export const workspaceRouter = Router();
+export const workspaceRouter: Router = Router();
 
 workspaceRouter.use(requireAuth);
 workspaceRouter.get("/", list);
