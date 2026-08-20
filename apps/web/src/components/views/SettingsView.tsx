@@ -24,13 +24,13 @@ export function SettingsView() {
   };
 
   return (
-    <div className="p-8 pt-24 max-w-4xl mx-auto space-y-6 animate-in fade-in duration-200">
+    <div className="w-full max-w-6xl px-6 lg:px-8 pt-24 pb-12 mx-auto space-y-6 animate-in fade-in duration-200">
       <div>
         <h2 className="text-xl font-bold text-neutral-100 flex items-center gap-2">
           <Settings className="h-6 w-6 text-neutral-300" />
           Workspace Settings
         </h2>
-        <p className="text-xs text-neutral-400 mt-1">
+        <p className="text-sm text-neutral-400 mt-1">
           RBAC permissions, encrypted Kubeconfig vault, API key management, and PostgreSQL schemas
         </p>
       </div>

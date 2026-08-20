@@ -55,7 +55,7 @@ export const K8sPodNode = memo(({ id, data, selected }: NodeProps & { data: K8sP
 
   return (
     <div
-      className={`relative w-[230px] min-h-[82px] rounded-xl bg-neutral-900 p-2.5 border text-left shadow-lg transition-all ${
+      className={`relative w-[280px] min-h-[105px] rounded-xl bg-neutral-900 p-3.5 border text-left shadow-lg transition-all ${
         selected
           ? "border-blue-500 ring-1 ring-blue-500 shadow-blue-500/10"
           : statusStyle.border
@@ -90,37 +90,37 @@ export const K8sPodNode = memo(({ id, data, selected }: NodeProps & { data: K8sP
       />
 
       {/* Header: Pod Name & Namespace Badge & Delete */}
-      <div className="flex items-center justify-between gap-1.5 border-b border-neutral-800/80 pb-1.5">
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-          <Box className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
-          <span className="text-xs font-semibold text-neutral-100 truncate" title={data.name}>
+      <div className="flex items-center justify-between gap-2 border-b border-neutral-800/80 pb-2.5">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <Box className="h-4.5 w-4.5 shrink-0 text-neutral-400" />
+          <span className="text-base font-semibold text-neutral-100 truncate" title={data.name}>
             {formatPodName(data.name)}
           </span>
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
-          <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-[9px] font-mono text-neutral-400 border border-neutral-700/50">
+          <span className="rounded-md bg-neutral-800 px-2 py-0.5 text-xs font-mono text-neutral-300 border border-neutral-700/50">
             {data.namespace}
           </span>
           <button
             onClick={handleDelete}
             title="Delete Pod"
-            className="p-0.5 rounded text-neutral-400 hover:text-red-400 hover:bg-neutral-800 transition-colors"
+            className="p-1 rounded text-neutral-400 hover:text-red-400 hover:bg-neutral-800 transition-colors"
           >
-            <Trash2 className="h-3 w-3" />
+            <Trash2 className="h-4 w-4" />
           </button>
         </div>
       </div>
 
       {/* Body: Status Dot & Restarts Count */}
-      <div className="flex items-center justify-between pt-2">
-        <div className="flex items-center gap-1.5">
-          <span className={`h-2 w-2 rounded-full ${statusStyle.dot}`} />
-          <span className={`text-[11px] font-medium ${statusStyle.text}`}>{data.status}</span>
+      <div className="flex items-center justify-between pt-3">
+        <div className="flex items-center gap-2">
+          <span className={`h-2.5 w-2.5 rounded-full ${statusStyle.dot}`} />
+          <span className={`text-xs font-semibold ${statusStyle.text}`}>{data.status}</span>
         </div>
 
-        <div className="flex items-center gap-1 text-[10px] text-neutral-400 font-mono bg-neutral-950 px-1.5 py-0.5 rounded border border-neutral-800">
-          <RotateCcw className="h-2.5 w-2.5" />
+        <div className="flex items-center gap-1.5 text-xs text-neutral-300 font-mono bg-neutral-950 px-2.5 py-1 rounded-md border border-neutral-800">
+          <RotateCcw className="h-3.5 w-3.5 text-neutral-400" />
           <span>Restarts: {data.restarts}</span>
         </div>
       </div>
