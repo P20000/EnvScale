@@ -64,3 +64,9 @@ export const alertPolicyParamsSchema = z.object({ policyId: idSchema });
 export const alertPolicyToggleSchema = z.object({
   isEnabled: z.boolean(),
 });
+
+export const incidentParamsSchema = z.object({ incidentId: idSchema });
+
+export const incidentResolveSchema = z.object({
+  resolution: z.string().trim().max(5000).nullable().optional(),
+});
