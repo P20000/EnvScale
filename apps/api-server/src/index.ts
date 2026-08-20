@@ -2,6 +2,7 @@ import "dotenv/config";
 import cookieParser from "cookie-parser";
 import express, { type Express } from "express";
 import { authRouter } from "./routes/auth.routes.js";
+import { alertPolicyRouter, topLevelAlertPolicyRouter } from "./routes/alert-policy.routes.js";
 import { clusterRouter } from "./routes/cluster.routes.js";
 import { workspaceRouter } from "./routes/workspace.routes.js";
 
@@ -16,6 +17,8 @@ app.get("/health", (_request, response) => {
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/workspaces", workspaceRouter);
 app.use("/api/v1/workspaces/:id/clusters", clusterRouter);
+app.use("/api/v1/workspaces/:id/alert-policies", alertPolicyRouter);
+app.use("/api/v1/alert-policies", topLevelAlertPolicyRouter);
 
 app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
   console.error(error);

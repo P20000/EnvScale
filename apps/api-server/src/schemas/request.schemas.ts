@@ -40,3 +40,27 @@ export const clusterParamsSchema = z.object({
   id: idSchema,
   clusterId: idSchema,
 });
+
+export const alertPolicySchema = z.object({
+  clusterId: idSchema,
+  name: z.string().trim().min(1).max(255),
+  description: z.string().trim().max(5000).nullable().optional(),
+  metric: z.string().trim().min(1).max(255),
+  threshold: z.number().finite(),
+  operator: z.enum([">", ">=", "<", "<=", "==", "!="]),
+  duration: z.number().int().positive(),
+  severity: z.enum(["info", "warning", "error", "critical"]).default("warning"),
+  isEnabled: z.boolean().default(true),
+  conditions: z.record(z.unknown()).nullable().optional(),
+  notificationChannels: z.array(z.string().trim().min(1).max(100)).optional(),
+});
+
+export const updateAlertPolicySchema = alertPolicySchema
+  .omit({ clusterId: true })
+  .partial();
+
+export const alertPolicyParamsSchema = z.object({ policyId: idSchema });
+
+export const alertPolicyToggleSchema = z.object({
+  isEnabled: z.boolean(),
+});
