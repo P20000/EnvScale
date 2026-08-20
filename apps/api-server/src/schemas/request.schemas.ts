@@ -70,3 +70,7 @@ export const incidentParamsSchema = z.object({ incidentId: idSchema });
 export const incidentResolveSchema = z.object({
   resolution: z.string().trim().max(5000).nullable().optional(),
 });
+
+export const healthHistoryQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(90).default(7),
+});

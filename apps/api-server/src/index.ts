@@ -5,6 +5,7 @@ import { authRouter } from "./routes/auth.routes.js";
 import { alertPolicyRouter, topLevelAlertPolicyRouter } from "./routes/alert-policy.routes.js";
 import { clusterRouter } from "./routes/cluster.routes.js";
 import { incidentRouter, topLevelIncidentRouter } from "./routes/incident.routes.js";
+import { healthHistoryRouter, leaderboardRouter } from "./routes/leaderboard.routes.js";
 import { workspaceRouter } from "./routes/workspace.routes.js";
 import { startHealthSnapshotWorker } from "./workers/snapshot.worker.js";
 
@@ -23,6 +24,8 @@ app.use("/api/v1/workspaces/:id/alert-policies", alertPolicyRouter);
 app.use("/api/v1/alert-policies", topLevelAlertPolicyRouter);
 app.use("/api/v1/workspaces/:id/incidents", incidentRouter);
 app.use("/api/v1/incidents", topLevelIncidentRouter);
+app.use("/api/v1/leaderboard", leaderboardRouter);
+app.use("/api/v1/workspaces/:id/health-history", healthHistoryRouter);
 
 app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
   console.error(error);
