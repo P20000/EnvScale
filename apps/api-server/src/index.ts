@@ -6,6 +6,7 @@ import { alertPolicyRouter, topLevelAlertPolicyRouter } from "./routes/alert-pol
 import { clusterRouter } from "./routes/cluster.routes.js";
 import { incidentRouter, topLevelIncidentRouter } from "./routes/incident.routes.js";
 import { workspaceRouter } from "./routes/workspace.routes.js";
+import { startHealthSnapshotWorker } from "./workers/snapshot.worker.js";
 
 const app: Express = express();
 const port = Number(process.env.PORT ?? 3000);
@@ -31,6 +32,7 @@ app.use((error: unknown, _request: express.Request, response: express.Response, 
 if (process.env.NODE_ENV !== "test") {
   app.listen(port, () => {
     console.log(`API server listening on port ${port}`);
+    startHealthSnapshotWorker();
   });
 }
 
