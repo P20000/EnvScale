@@ -347,14 +347,11 @@ def cmd_summary(args):
     print()
 
 
-def cmd_audit(args):
-    """Priority 2: Deep structural audit for a specific task ID (e.g. VIN-08)."""
-    task_id = args.task_id.upper()
-    json_mode = getattr(args, "json", False)
-
+def audit_single_task(task_id):
+    """Perform structural code and git verification for a single task ID."""
+    task_id = task_id.upper()
     if task_id not in TASK_DB:
-        print(f"{RED}Error: Task ID '{task_id}' not found in task matrix.{NC}")
-        sys.exit(1)
+        return None
 
     info = TASK_DB[task_id]
     audit_items = []
@@ -366,29 +363,73 @@ def cmd_audit(args):
         audit_items.append({"item": f"File: {f}", "status": "PASS" if exists else "FAIL"})
 
     # Specific code inspections
-    if task_id == "VIN-08":
-        # Check schema table definition
-        schema_p = os.path.join(PROJECT_ROOT, "apps/api-server/src/db/schema.ts")
-        has_schema = False
-        if os.path.exists(schema_p):
-            with open(schema_p, "r") as fp:
-                has_schema = "export const alertPolicies" in fp.read()
-        audit_items.append({"item": "DB Schema table (alertPolicies in schema.ts)", "status": "PASS" if has_schema else "FAIL"})
+    schema_p = os.path.join(PROJECT_ROOT, "apps/api-server/src/db/schema.ts")
+    idx_p = os.path.join(PROJECT_ROOT, "apps/api-server/src/index.ts")
 
-        # Check controller
+    schema_content = ""
+    if os.path.exists(schema_p):
+        with open(schema_p, "r") as fp:
+            schema_content = fp.read()
+
+    index_content = ""
+    if os.path.exists(idx_p):
+        with open(idx_p, "r") as fp:
+            index_content = fp.read()
+
+    if task_id == "VIN-08":
+        has_schema = "export const alertPolicies" in schema_content
+        audit_items.append({"item": "DB Schema table (alertPolicies in schema.ts)", "status": "PASS" if has_schema else "FAIL"})
         ctrl_p = os.path.join(PROJECT_ROOT, "apps/api-server/src/controllers/alert.controller.ts")
         audit_items.append({"item": "Alert Controller (alert.controller.ts)", "status": "PASS" if os.path.exists(ctrl_p) else "FAIL"})
-
-        # Check router
         route_p = os.path.join(PROJECT_ROOT, "apps/api-server/src/routes/alert.routes.ts")
         audit_items.append({"item": "Alert Router (alert.routes.ts)", "status": "PASS" if os.path.exists(route_p) else "FAIL"})
+        has_mount = "alertPolicies" in index_content or "alertRouter" in index_content
+        audit_items.append({"item": "Mounted in apps/api-server/src/index.ts", "status": "PASS" if has_mount else "FAIL"})
 
-        # Check index.ts mount
-        idx_p = os.path.join(PROJECT_ROOT, "apps/api-server/src/index.ts")
-        has_mount = False
-        if os.path.exists(idx_p):
-            with open(idx_p, "r") as fp:
-                has_mount = "alertPolicies" in fp.read() or "alertRouter" in fp.read()
+    elif task_id == "VIN-09":
+        has_schema = "export const incidents" in schema_content
+        audit_items.append({"item": "DB Schema table (incidents in schema.ts)", "status": "PASS" if has_schema else "FAIL"})
+        ctrl_p = os.path.join(PROJECT_ROOT, "apps/api-server/src/controllers/incident.controller.ts")
+        audit_items.append({"item": "Incident Controller (incident.controller.ts)", "status": "PASS" if os.path.exists(ctrl_p) else "FAIL"})
+        srv_p = os.path.join(PROJECT_ROOT, "apps/api-server/src/services/incident.service.ts")
+        audit_items.append({"item": "Incident Service (incident.service.ts)", "status": "PASS" if os.path.exists(srv_p) else "FAIL"})
+        route_p = os.path.join(PROJECT_ROOT, "apps/api-server/src/routes/incident.routes.ts")
+        audit_items.append({"item": "Incident Router (incident.routes.ts)", "status": "PASS" if os.path.exists(route_p) else "FAIL"})
+        has_mount = "incidentRouter" in index_content or "incidents" in index_content
+        audit_items.append({"item": "Mounted in apps/api-server/src/index.ts", "status": "PASS" if has_mount else "FAIL"})
+
+    elif task_id == "VIN-10":
+        has_schema = "export const healthSnapshots" in schema_content
+        audit_items.append({"item": "DB Schema table (healthSnapshots in schema.ts)", "status": "PASS" if has_schema else "FAIL"})
+        srv_p = os.path.join(PROJECT_ROOT, "apps/api-server/src/services/health-calculator.service.ts")
+        audit_items.append({"item": "Health Calculator Service (health-calculator.service.ts)", "status": "PASS" if os.path.exists(srv_p) else "FAIL"})
+        wrk_p = os.path.join(PROJECT_ROOT, "apps/api-server/src/workers/snapshot.worker.ts")
+        audit_items.append({"item": "Snapshot Background Worker (snapshot.worker.ts)", "status": "PASS" if os.path.exists(wrk_p) else "FAIL"})
+
+    elif task_id == "VIN-11":
+        ctrl_p = os.path.join(PROJECT_ROOT, "apps/api-server/src/controllers/leaderboard.controller.ts")
+        audit_items.append({"item": "Leaderboard Controller (leaderboard.controller.ts)", "status": "PASS" if os.path.exists(ctrl_p) else "FAIL"})
+        has_mount = "leaderboard" in index_content
+        audit_items.append({"item": "Mounted in apps/api-server/src/index.ts", "status": "PASS" if has_mount else "FAIL"})
+
+    elif task_id == "VIN-04":
+        ctrl_p = os.path.join(PROJECT_ROOT, "apps/api-server/src/controllers/auth.controller.ts")
+        audit_items.append({"item": "Auth Controller (auth.controller.ts)", "status": "PASS" if os.path.exists(ctrl_p) else "FAIL"})
+        has_mount = "authRouter" in index_content
+        audit_items.append({"item": "Mounted in apps/api-server/src/index.ts", "status": "PASS" if has_mount else "FAIL"})
+
+    elif task_id == "VIN-05":
+        ctrl_p = os.path.join(PROJECT_ROOT, "apps/api-server/src/controllers/workspace.controller.ts")
+        audit_items.append({"item": "Workspace Controller (workspace.controller.ts)", "status": "PASS" if os.path.exists(ctrl_p) else "FAIL"})
+        has_mount = "workspaceRouter" in index_content
+        audit_items.append({"item": "Mounted in apps/api-server/src/index.ts", "status": "PASS" if has_mount else "FAIL"})
+
+    elif task_id == "VIN-06":
+        crypto_p = os.path.join(PROJECT_ROOT, "apps/api-server/src/utils/crypto.ts")
+        audit_items.append({"item": "AES-256 Crypto Module (crypto.ts)", "status": "PASS" if os.path.exists(crypto_p) else "FAIL"})
+        ctrl_p = os.path.join(PROJECT_ROOT, "apps/api-server/src/controllers/cluster.controller.ts")
+        audit_items.append({"item": "Cluster Controller (cluster.controller.ts)", "status": "PASS" if os.path.exists(ctrl_p) else "FAIL"})
+        has_mount = "clusterRouter" in index_content
         audit_items.append({"item": "Mounted in apps/api-server/src/index.ts", "status": "PASS" if has_mount else "FAIL"})
 
     commits = get_git_commits_for_task(task_id)
@@ -396,23 +437,81 @@ def cmd_audit(args):
 
     is_complete = all(i["status"] == "PASS" for i in audit_items if not i["item"].startswith("Git"))
 
+    return {
+        "task_id": task_id,
+        "title": info["title"],
+        "owner": info["owner"],
+        "milestone": info["milestone"],
+        "module": info["module"],
+        "is_completed": is_complete,
+        "audit": audit_items,
+        "git_commits": commits,
+    }
+
+
+def cmd_audit(args):
+    """Priority 2: Deep structural audit for targeted task IDs, assignee, or review tasks."""
+    json_mode = getattr(args, "json", False)
+    target_tasks = []
+
+    raw_ids = getattr(args, "task_ids", []) or []
+    assignee = getattr(args, "assignee", None)
+    review_mode = getattr(args, "review", False)
+
+    if raw_ids:
+        for tid in raw_ids:
+            tid_upper = tid.upper()
+            if tid_upper in TASK_DB:
+                target_tasks.append(tid_upper)
+            else:
+                print(f"{YELLOW}Warning: Task ID '{tid}' not found in task matrix.{NC}")
+
+    if review_mode:
+        for tid, info in TASK_DB.items():
+            if tid not in target_tasks:
+                if info["milestone"] >= 3 or not is_task_completed(tid, info):
+                    if assignee:
+                        if info["owner"].lower() == assignee.lower():
+                            target_tasks.append(tid)
+                    else:
+                        target_tasks.append(tid)
+
+    elif assignee and not raw_ids:
+        for tid, info in TASK_DB.items():
+            if info["owner"].lower() == assignee.lower():
+                target_tasks.append(tid)
+
+    if not target_tasks:
+        print(f"{RED}Error: No valid Task IDs specified. Use task IDs (e.g. VIN-08 VIN-09), --assignee Vinit, or --review.{NC}")
+        sys.exit(1)
+
+    results = []
+    for tid in target_tasks:
+        res = audit_single_task(tid)
+        if res:
+            results.append(res)
+
     if json_mode:
-        print(json.dumps({"task_id": task_id, "title": info["title"], "is_completed": is_complete, "audit": audit_items, "git_commits": commits}, indent=2))
+        print(json.dumps(results, indent=2))
         return
 
-    print(f"\n{BOLD}{CYAN}=== Deep Audit Report: [{task_id}] {info['title']} ==={NC}\n")
-    print(f"Owner: {BOLD}{info['owner']}{NC} | Milestone: {BOLD}M{info['milestone']}{NC} | Module: {BOLD}{info['module']}{NC}\n")
+    print(f"\n{BOLD}{CYAN}=== EnvScale Multi-Task Structural Audit Report ==={NC}\n")
+    print(f"Total Tasks Audited: {BOLD}{len(results)}{NC}\n")
 
-    print(f"{BOLD}Structural Verification Checklist:{NC}")
-    for item in audit_items:
-        badge = f"{GREEN}✓ PASS{NC}" if item["status"] == "PASS" else f"{RED}✗ MISSING/FAIL{NC}"
-        print(f"  {badge}  {item['item']}")
+    completed_count = sum(1 for r in results if r["is_completed"])
 
-    print(f"\n{BOLD}Overall Audit Result:{NC}")
-    if is_complete:
-        print(f"  {GREEN}{BOLD}✅ TASK IS FULLY COMPLETED AND VERIFIED.{NC}\n")
-    else:
-        print(f"  {RED}{BOLD}❌ TASK IS INCOMPLETE. Complete missing items above.{NC}\n")
+    for r in results:
+        status_badge = f"{GREEN}✅ COMPLETE{NC}" if r["is_completed"] else f"{RED}❌ INCOMPLETE{NC}"
+        print(f"{BOLD}[{r['task_id']}]{NC} {r['title']} ({r['owner']}) - Status: {status_badge}")
+        print(f"  Owner: {r['owner']} | Milestone: M{r['milestone']} | Module: {r['module']}")
+        print(f"  Checklist:")
+        for item in r["audit"]:
+            badge = f"{GREEN}✓ PASS{NC}" if item["status"] == "PASS" else f"{RED}✗ FAIL{NC}"
+            print(f"    {badge}  {item['item']}")
+        print()
+
+    print(f"{BOLD}Summary Result:{NC} {GREEN if completed_count == len(results) else RED}{completed_count}/{len(results)} tasks fully complete and verified.{NC}\n")
+
 
 
 def cmd_owner(args):
@@ -605,8 +704,10 @@ def main():
     p_sum.add_argument("--human", action="store_true", help="Force human-readable colorized table output")
 
     # audit
-    p_audit = subparsers.add_parser("audit", help="Deep structural audit for a targeted task ID")
-    p_audit.add_argument("task_id", help="Task ID (e.g. VIN-08, PRN-04)")
+    p_audit = subparsers.add_parser("audit", help="Deep structural audit for targeted task ID(s), assignee, or review tasks")
+    p_audit.add_argument("task_ids", nargs="*", help="Task ID(s) (e.g. VIN-08 VIN-09 VIN-10)")
+    p_audit.add_argument("--assignee", "-a", help="Filter by owner/assignee (Vinit, Pranav, Neha, Ishika)")
+    p_audit.add_argument("--review", "-r", action="store_true", help="Audit review/pending milestone tasks")
     p_audit.add_argument("--json", action="store_true", help="Output machine-parseable JSON")
 
     # owner
