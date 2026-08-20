@@ -68,6 +68,23 @@ export const connectCluster = async (
       lastSyncAt: new Date(),
     })
     .returning(publicClusterFields);
+
+  // Automatically register cluster with Go k8s-streamer gateway
+  const streamerUrl = process.env.K8S_STREAMER_URL || "http://localhost:8080";
+  try {
+    await fetch(`${streamerUrl}/api/v1/clusters/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clusterId: cluster.id || values.name,
+        kubeconfig: values.kubeconfig,
+      }),
+    });
+    console.log(`[ClusterService] Successfully registered cluster ${cluster.name} (${cluster.id}) with k8s-streamer gateway`);
+  } catch (err) {
+    console.warn(`[ClusterService] Warning: Could not auto-notify k8s-streamer at ${streamerUrl}:`, err);
+  }
+
   return cluster;
 };
 

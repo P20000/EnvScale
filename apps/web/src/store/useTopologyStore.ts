@@ -15,6 +15,8 @@ import {
 import type { K8sPodData } from "../components/canvas/K8sPod";
 import type { K8sNodeData } from "../components/canvas/K8sNode";
 import type { K8sServiceData } from "../components/canvas/K8sService";
+
+import type { K8sIngressData, IngressRuleData } from "../components/canvas/K8sIngress";
 import type { WsConnectionStatus, WsTopologyMessage } from "../hooks/useK8sStream";
 import type { SelectedTarget } from "../components/drawer/InspectorDrawer";
 import { getLayoutedElements } from "../utils/layout";
@@ -36,246 +38,11 @@ export interface NotificationItem {
   cluster?: string;
 }
 
-export const defaultInitialNodes: Node[] = [
-  // Services
-  {
-    id: "svc-ingress",
-    type: "k8sService",
-    position: { x: 50, y: 180 },
-    data: {
-      name: "ingress-gateway",
-      type: "Ingress",
-      port: ":443",
-    } as K8sServiceData,
-  },
-  {
-    id: "svc-api",
-    type: "k8sService",
-    position: { x: 300, y: 180 },
-    data: {
-      name: "api-router",
-      type: "ClusterIP",
-      port: ":8080",
-    } as K8sServiceData,
-  },
-
-  // Pods
-  {
-    id: "pod-auth-1",
-    type: "k8sPod",
-    position: { x: 580, y: 60 },
-    data: {
-      name: "auth-service-7f8d-a1",
-      namespace: "default",
-      nodeName: "minikube-worker-1",
-      status: "Running",
-      restarts: 0,
-      ip: "10.244.0.12",
-      cpuUsage: "34 mcores",
-      memoryUsage: "128 MiB",
-    } as K8sPodData,
-  },
-  {
-    id: "pod-auth-2",
-    type: "k8sPod",
-    position: { x: 580, y: 170 },
-    data: {
-      name: "auth-service-7f8d-b2",
-      namespace: "default",
-      nodeName: "minikube-worker-1",
-      status: "Running",
-      restarts: 1,
-      ip: "10.244.0.15",
-      cpuUsage: "42 mcores",
-      memoryUsage: "145 MiB",
-    } as K8sPodData,
-  },
-  {
-    id: "pod-payment-1",
-    type: "k8sPod",
-    position: { x: 580, y: 280 },
-    data: {
-      name: "payment-api-x2k4",
-      namespace: "default",
-      nodeName: "minikube-worker-2",
-      status: "CrashLoopBackOff",
-      restarts: 5,
-      ip: "10.244.0.18",
-      cpuUsage: "180 mcores",
-      memoryUsage: "480 MiB",
-    } as K8sPodData,
-  },
-
-  // Worker Nodes
-  {
-    id: "node-worker-1",
-    type: "k8sWorker",
-    position: { x: 880, y: 50 },
-    data: {
-      name: "minikube-worker-1",
-      ip: "192.168.49.2",
-      osImage: "Ubuntu 22.04 LTS",
-      cpuCapacity: "4 cores",
-      memoryCapacity: "8 GiB",
-      cpuPct: 42,
-      memoryPct: 68,
-      status: "Ready",
-    } as K8sNodeData,
-  },
-  {
-    id: "node-worker-2",
-    type: "k8sWorker",
-    position: { x: 880, y: 260 },
-    data: {
-      name: "minikube-worker-2",
-      ip: "192.168.49.3",
-      osImage: "Ubuntu 22.04 LTS",
-      cpuCapacity: "4 cores",
-      memoryCapacity: "8 GiB",
-      cpuPct: 88,
-      memoryPct: 92,
-      status: "Ready",
-    } as K8sNodeData,
-  },
-];
-
-export const defaultInitialEdges: Edge[] = [
-  {
-    id: "e-ingress-api",
-    source: "svc-ingress",
-    target: "svc-api",
-    type: "smoothstep",
-    animated: true,
-    style: { stroke: "#3b82f6", strokeWidth: 2 },
-    markerEnd: {
-      type: MarkerType.ArrowClosed,
-      color: "#3b82f6",
-    },
-  },
-  {
-    id: "e-api-pod1",
-    source: "svc-api",
-    target: "pod-auth-1",
-    type: "smoothstep",
-    animated: true,
-    style: { stroke: "#3b82f6", strokeWidth: 2 },
-    markerEnd: {
-      type: MarkerType.ArrowClosed,
-      color: "#3b82f6",
-    },
-  },
-  {
-    id: "e-api-pod2",
-    source: "svc-api",
-    target: "pod-auth-2",
-    type: "smoothstep",
-    animated: true,
-    style: { stroke: "#3b82f6", strokeWidth: 2 },
-    markerEnd: {
-      type: MarkerType.ArrowClosed,
-      color: "#3b82f6",
-    },
-  },
-  {
-    id: "e-api-pod3",
-    source: "svc-api",
-    target: "pod-payment-1",
-    type: "smoothstep",
-    animated: true,
-    style: { stroke: "#ef4444", strokeWidth: 2 },
-    markerEnd: {
-      type: MarkerType.ArrowClosed,
-      color: "#ef4444",
-    },
-  },
-  // Hosting Edges (Pod -> Worker Node): Muted dashed connectors
-  {
-    id: "e-pod1-worker1",
-    source: "pod-auth-1",
-    target: "node-worker-1",
-    type: "smoothstep",
-    animated: false,
-    style: { stroke: "#3f3f46", strokeWidth: 1.5, strokeDasharray: "4 4" },
-    markerEnd: {
-      type: MarkerType.ArrowClosed,
-      color: "#3f3f46",
-    },
-  },
-  {
-    id: "e-pod2-worker1",
-    source: "pod-auth-2",
-    target: "node-worker-1",
-    type: "smoothstep",
-    animated: false,
-    style: { stroke: "#3f3f46", strokeWidth: 1.5, strokeDasharray: "4 4" },
-    markerEnd: {
-      type: MarkerType.ArrowClosed,
-      color: "#3f3f46",
-    },
-  },
-  {
-    id: "e-pod3-worker2",
-    source: "pod-payment-1",
-    target: "node-worker-2",
-    type: "smoothstep",
-    animated: false,
-    style: { stroke: "#3f3f46", strokeWidth: 1.5, strokeDasharray: "4 4" },
-    markerEnd: {
-      type: MarkerType.ArrowClosed,
-      color: "#3f3f46",
-    },
-  },
-];
-
-const defaultClusters = ["minikube-prod", "staging-us-east", "eks-production"];
-
-const defaultInitialTokens: ApiToken[] = [
-  {
-    id: "token-1",
-    name: "Production Gateway Agent",
-    token: "envscale_live_sk_89f410a7c92e4b316d8a",
-    createdAt: "Aug 19, 2026",
-  },
-];
-
-const defaultInitialNotifications: NotificationItem[] = [
-  {
-    id: "notif-1",
-    title: "Critical Incident Detected",
-    message: "CrashLoopBackOff — payment-api exited with code 137 (OOMKilled)",
-    time: "2 mins ago",
-    severity: "CRITICAL",
-    read: false,
-    cluster: "minikube-prod",
-  },
-  {
-    id: "notif-2",
-    title: "High Latency Warning",
-    message: "P99 latency on ingress-gateway exceeded 450ms threshold",
-    time: "18 mins ago",
-    severity: "WARNING",
-    read: false,
-    cluster: "minikube-prod",
-  },
-  {
-    id: "notif-3",
-    title: "Pod Restart Threshold",
-    message: "payment-api restarted 5 times in the last 15 minutes",
-    time: "42 mins ago",
-    severity: "WARNING",
-    read: false,
-    cluster: "staging-us-east",
-  },
-  {
-    id: "notif-4",
-    title: "New Cluster Connected",
-    message: "Cluster eks-production successfully registered to workspace",
-    time: "2 hours ago",
-    severity: "INFO",
-    read: true,
-    cluster: "eks-production",
-  },
-];
+export const defaultInitialNodes: Node[] = [];
+export const defaultInitialEdges: Edge[] = [];
+const defaultClusters: string[] = [];
+const defaultInitialTokens: ApiToken[] = [];
+const defaultInitialNotifications: NotificationItem[] = [];
 
 export const extractServices = (nodes: Node[]): K8sServiceData[] =>
   nodes
@@ -286,6 +53,71 @@ export const extractPods = (nodes: Node[]): K8sPodData[] =>
   nodes
     .filter((n) => n.type === "k8sPod" && Boolean(n.data))
     .map((n) => n.data as K8sPodData);
+
+export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[]): Edge[] => {
+  const baseEdges = currentEdges.filter((e) => !e.id.startsWith("e-sys-"));
+  const sysEdges: Edge[] = [];
+  
+  const pods = nodes.filter((n) => n.type === "k8sPod");
+  const services = nodes.filter((n) => n.type === "k8sService");
+  const ingresses = nodes.filter((n) => n.type === "k8sIngress");
+
+  // Ingress -> Service
+  ingresses.forEach((ing) => {
+    const rules = (ing.data as K8sIngressData).rules as IngressRuleData[];
+    if (rules && rules.length > 0) {
+      rules.forEach((rule) => {
+        if (rule.serviceName) {
+          const svc = services.find((s) => s.id === rule.serviceName || (s.data as K8sServiceData).name === rule.serviceName);
+          if (svc) {
+            sysEdges.push({
+              id: `e-sys-${ing.id}-${svc.id}-${rule.path || 'root'}`,
+              source: ing.id,
+              target: svc.id,
+              type: "smoothstep",
+              animated: true,
+              label: rule.path || "/",
+              labelStyle: { fill: "#a1a1aa", fontSize: 10, fontWeight: 500, fontFamily: "monospace" },
+              labelBgStyle: { fill: "#18181b", stroke: "#27272a", fillOpacity: 0.9 },
+              labelBgPadding: [6, 4],
+              labelBgBorderRadius: 4,
+              sourceHandle: "right-source",
+              targetHandle: "left-target",
+              style: { stroke: "#8b5cf6", strokeWidth: 2 },
+            });
+          }
+        }
+      });
+    }
+  });
+
+  // Service -> Pod (Direct traffic routing based on selectors)
+  services.forEach((svc) => {
+    const svcSelector = (svc.data as K8sServiceData).selector;
+    if (svcSelector && Object.keys(svcSelector).length > 0) {
+      pods.forEach((pod) => {
+        const labels = (pod.data as K8sPodData).labels as Record<string, string>;
+        if (labels) {
+          const match = Object.keys(svcSelector).every((key) => labels[key] === svcSelector[key as keyof typeof svcSelector]);
+          if (match) {
+             sysEdges.push({
+               id: `e-sys-${svc.id}-${pod.id}`,
+               source: svc.id,
+               target: pod.id,
+               type: "smoothstep",
+               animated: true,
+               sourceHandle: "right-source",
+               targetHandle: "left-target",
+               style: { stroke: "#0ea5e9", strokeWidth: 2 },
+             });
+          }
+        }
+      });
+    }
+  });
+
+  return [...baseEdges, ...sysEdges];
+};
 
 export const syncSelectedNode = (nodes: Node[], currentSelected: SelectedTarget): SelectedTarget => {
   if (!currentSelected || !currentSelected.data) return null;
@@ -314,6 +146,7 @@ export interface TopologyState {
   edges: Edge[];
   services: K8sServiceData[];
   pods: K8sPodData[];
+  ingresses: K8sIngressData[];
   selectedNode: SelectedTarget;
   tokens: ApiToken[];
   notifications: NotificationItem[];
@@ -378,6 +211,7 @@ export const useTopologyStore = create<TopologyState>()(
       edges: defaultInitialEdges,
       services: extractServices(defaultInitialNodes),
       pods: extractPods(defaultInitialNodes),
+      ingresses: [],
       selectedNode: null,
       tokens: defaultInitialTokens,
       notifications: defaultInitialNotifications,
@@ -406,61 +240,6 @@ export const useTopologyStore = create<TopologyState>()(
           : [...currentClusters, trimmed];
 
         const timestamp = Date.now();
-        const clusterNodeId = `node-cluster-${timestamp}`;
-        const randomIp = `192.168.${Math.floor(Math.random() * 100 + 1)}.${Math.floor(Math.random() * 200 + 2)}`;
-
-        const newWorkerNode: Node = {
-          id: clusterNodeId,
-          type: "k8sWorker",
-          position: {
-            x: 400 + (get().nodes.length % 4) * 80 + Math.random() * 50,
-            y: 120 + Math.random() * 100,
-          },
-          data: {
-            name: trimmed,
-            ip: randomIp,
-            osImage: "Ubuntu 22.04 LTS",
-            cpuCapacity: "4 cores",
-            memoryCapacity: "8 GiB",
-            cpuPct: Math.floor(Math.random() * 40 + 20),
-            memoryPct: Math.floor(Math.random() * 40 + 30),
-            status: "Ready",
-          } as K8sNodeData,
-        };
-
-        const podNodeId = `pod-${timestamp}`;
-        const podName = `${trimmed.toLowerCase().replace(/[^a-z0-9]/g, "-")}-workload`;
-        const newPodNode: Node = {
-          id: podNodeId,
-          type: "k8sPod",
-          position: {
-            x: newWorkerNode.position.x - 240,
-            y: newWorkerNode.position.y + 20,
-          },
-          data: {
-            name: podName,
-            namespace: "default",
-            status: "Running",
-            restarts: 0,
-            ip: `10.244.${Math.floor(Math.random() * 10 + 1)}.${Math.floor(Math.random() * 200 + 10)}`,
-            cpuUsage: "28 mcores",
-            memoryUsage: "96 MiB",
-          } as K8sPodData,
-        };
-
-        const newEdge: Edge = {
-          id: `e-${podNodeId}-${clusterNodeId}`,
-          source: podNodeId,
-          target: clusterNodeId,
-          type: "smoothstep",
-          animated: true,
-          style: { stroke: "#3f3f46", strokeWidth: 2 },
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            color: "#3f3f46",
-          },
-        };
-
         const newNotif: NotificationItem = {
           id: `notif-${timestamp}`,
           title: "New Cluster Connected",
@@ -474,8 +253,6 @@ export const useTopologyStore = create<TopologyState>()(
         set({
           clusters: updatedClusters,
           activeCluster: trimmed,
-          nodes: [...get().nodes, newWorkerNode, newPodNode],
-          edges: [...get().edges, newEdge],
           notifications: [newNotif, ...get().notifications],
         });
       },
@@ -839,7 +616,14 @@ export const useTopologyStore = create<TopologyState>()(
       processWsMessage: (msg) => {
         const eventType = String(msg.event || msg.type || "");
         const payloadData = (msg.data !== undefined ? msg.data : msg.payload) as Record<string, unknown> | undefined;
-        if (!eventType || !payloadData) return;
+        if (!eventType) return;
+        
+        if (eventType === "EVENT_BATCH_COMPLETE") {
+          get().applyDagreLayout("LR");
+          return;
+        }
+
+        if (!payloadData) return;
 
         if (eventType === "EVENT_TOPOLOGY_SNAPSHOT" && Array.isArray(payloadData.nodes)) {
           const snapshotNodes = payloadData.nodes as Node[];
@@ -847,7 +631,7 @@ export const useTopologyStore = create<TopologyState>()(
             nodes: snapshotNodes,
             services: extractServices(snapshotNodes),
             pods: extractPods(snapshotNodes),
-            edges: (payloadData.edges as Edge[]) || get().edges,
+            edges: generateDynamicEdges(snapshotNodes, (payloadData.edges as Edge[]) || get().edges),
           });
         } else if (
           eventType === "EVENT_POD_STATUS_CHANGED" ||
@@ -857,6 +641,10 @@ export const useTopologyStore = create<TopologyState>()(
           eventType === "UPDATE_POD"
         ) {
           const podObj = (payloadData.pod || payloadData) as Record<string, unknown>;
+          const namespace = podObj.namespace ? String(podObj.namespace) : "default";
+          // Ignore noisy system namespaces to clean up the graph
+          if (["kube-system", "ingress-nginx", "local-path-storage", "argocd"].includes(namespace)) return;
+
           const podName = String(podObj.name || podObj.id || "");
           if (!podName) return;
 
@@ -873,6 +661,7 @@ export const useTopologyStore = create<TopologyState>()(
           ) as K8sPodData["status"];
 
           let updatedNodes: Node[];
+          const updatedEdges = get().edges;
           if (existingIdx >= 0) {
             const existingNode = currentNodes[existingIdx];
             const existingData = existingNode.data as K8sPodData;
@@ -883,6 +672,9 @@ export const useTopologyStore = create<TopologyState>()(
               nodeName: podObj.nodeName ? String(podObj.nodeName) : existingData.nodeName,
               cpuUsage: podObj.cpuUsagePct !== undefined ? `${podObj.cpuUsagePct}%` : (podObj.cpuUsage ? String(podObj.cpuUsage) : existingData.cpuUsage),
               memoryUsage: podObj.memoryUsageMb !== undefined ? `${podObj.memoryUsageMb} MiB` : (podObj.memoryUsage ? String(podObj.memoryUsage) : existingData.memoryUsage),
+              ownerName: podObj.ownerName ? String(podObj.ownerName) : existingData.ownerName,
+              ownerKind: podObj.ownerKind ? String(podObj.ownerKind) : existingData.ownerKind,
+              ownerUid: podObj.ownerUid ? String(podObj.ownerUid) : existingData.ownerUid,
             };
 
             updatedNodes = [...currentNodes];
@@ -896,25 +688,32 @@ export const useTopologyStore = create<TopologyState>()(
             updatedNodes = [...existing, podNode];
           } else {
             const timestamp = Date.now();
+            const newPodId = podObj.id ? String(podObj.id) : `pod-${podName}-${timestamp}`;
+            const podNodeName = podObj.nodeName ? String(podObj.nodeName) : "minikube-worker-1";
             const newPodNode: Node = {
-              id: podObj.id ? String(podObj.id) : `pod-${podName}-${timestamp}`,
+              id: newPodId,
               type: "k8sPod",
               position: { x: 550, y: 100 + (currentNodes.length % 5) * 80 },
               data: {
                 name: podName,
                 namespace: podObj.namespace ? String(podObj.namespace) : "default",
-                nodeName: podObj.nodeName ? String(podObj.nodeName) : "minikube-worker-1",
+                nodeName: podNodeName,
                 status: validStatus,
                 restarts: podObj.restartCount ? Number(podObj.restartCount) : 0,
                 ip: podObj.ip ? String(podObj.ip) : "10.244.0.22",
                 cpuUsage: podObj.cpuUsagePct ? `${podObj.cpuUsagePct}%` : "32 mcores",
                 memoryUsage: podObj.memoryUsageMb ? `${podObj.memoryUsageMb} MiB` : "120 MiB",
+                labels: podObj.labels || {},
+                ownerName: podObj.ownerName ? String(podObj.ownerName) : "",
+                ownerKind: podObj.ownerKind ? String(podObj.ownerKind) : "",
+                ownerUid: podObj.ownerUid ? String(podObj.ownerUid) : "",
               } as K8sPodData,
             };
             updatedNodes = [...currentNodes, newPodNode];
           }
           set({
             nodes: updatedNodes,
+            edges: generateDynamicEdges(updatedNodes, updatedEdges),
             services: extractServices(updatedNodes),
             pods: extractPods(updatedNodes),
             selectedNode: syncSelectedNode(updatedNodes, get().selectedNode),
@@ -926,44 +725,7 @@ export const useTopologyStore = create<TopologyState>()(
           eventType === "ADD_NODE" ||
           eventType === "UPDATE_NODE"
         ) {
-          const nodeObj = (payloadData.node || payloadData) as Record<string, unknown>;
-          const nodeName = String(nodeObj.name || nodeObj.id || "");
-          if (!nodeName) return;
-
-          const currentNodes = get().nodes;
-          const existingIdx = currentNodes.findIndex(
-            (n) => n.id === nodeName || (n.data as K8sNodeData)?.name === nodeName
-          );
-
-          let updatedNodes: Node[];
-          if (existingIdx >= 0) {
-            const existingNode = currentNodes[existingIdx];
-            const existingData = existingNode.data as K8sNodeData;
-            const updatedNodeData: K8sNodeData = {
-              ...existingData,
-              status: nodeObj.status ? (String(nodeObj.status) as K8sNodeData["status"]) : existingData.status,
-              cpuCapacity: nodeObj.cpuCapacity ? String(nodeObj.cpuCapacity) : existingData.cpuCapacity,
-              memoryCapacity: nodeObj.memoryCapacity ? String(nodeObj.memoryCapacity) : existingData.memoryCapacity,
-            };
-
-            updatedNodes = [...currentNodes];
-            updatedNodes[existingIdx] = {
-              ...existingNode,
-              data: updatedNodeData,
-            };
-          } else if (nodeObj.type === "k8sWorker" && nodeObj.id) {
-            const workerNode = nodeObj as unknown as Node;
-            const existing = currentNodes.filter((n) => n.id !== workerNode.id);
-            updatedNodes = [...existing, workerNode];
-          } else {
-            updatedNodes = currentNodes;
-          }
-          set({
-            nodes: updatedNodes,
-            services: extractServices(updatedNodes),
-            pods: extractPods(updatedNodes),
-            selectedNode: syncSelectedNode(updatedNodes, get().selectedNode),
-          });
+          return; // [Option A] Hide physical worker nodes from visual traffic flow
         } else if (
           eventType === "EVENT_SERVICE_MUTATED" ||
           eventType === "EVENT_SERVICE_ADDED" ||
@@ -972,6 +734,9 @@ export const useTopologyStore = create<TopologyState>()(
           eventType === "UPDATE_SERVICE"
         ) {
           const svcObj = (payloadData.service || payloadData) as Record<string, unknown>;
+          const namespace = svcObj.namespace ? String(svcObj.namespace) : "default";
+          if (["kube-system", "ingress-nginx", "local-path-storage", "argocd", "default"].includes(namespace)) return;
+
           const svcName = String(svcObj.name || svcObj.id || "");
           if (!svcName) return;
 
@@ -983,25 +748,95 @@ export const useTopologyStore = create<TopologyState>()(
           let updatedNodes: Node[];
           if (existingIdx >= 0) {
             const existingNode = currentNodes[existingIdx];
-            const existingData = existingNode.data as K8sServiceData;
-            const updatedSvcData: K8sServiceData = {
-              ...existingData,
-              type: svcObj.type ? (String(svcObj.type) as K8sServiceData["type"]) : existingData.type,
-            };
             updatedNodes = [...currentNodes];
             updatedNodes[existingIdx] = {
               ...existingNode,
-              data: updatedSvcData,
+              data: { ...(existingNode.data as K8sServiceData), ...svcObj, selector: svcObj.selector || (existingNode.data as K8sServiceData).selector || {} },
             };
           } else if (svcObj.type === "k8sService" && svcObj.id) {
-            const serviceNode = svcObj as unknown as Node;
-            const existing = currentNodes.filter((n) => n.id !== serviceNode.id);
-            updatedNodes = [...existing, serviceNode];
+            const svcNode = svcObj as unknown as Node;
+            const existing = currentNodes.filter((n) => n.id !== svcNode.id);
+            updatedNodes = [...existing, svcNode];
           } else {
-            updatedNodes = currentNodes;
+            const timestamp = Date.now();
+            const newServiceNode: Node = {
+              id: svcObj.id ? String(svcObj.id) : `service-${svcName}-${timestamp}`,
+              type: "k8sService",
+              position: { x: 300, y: 150 + (currentNodes.length % 5) * 60 },
+              data: {
+                name: svcName,
+                type: svcObj.type ? String(svcObj.type) : "ClusterIP",
+                port: svcObj.port ? String(svcObj.port) : (
+                  Array.isArray(svcObj.targetPorts) && svcObj.targetPorts.length > 0
+                    ? `:${svcObj.targetPorts[0]}`
+                    : (Array.isArray(svcObj.ports) && svcObj.ports.length > 0
+                        ? `:${(svcObj.ports[0] as Record<string, unknown>).port || svcObj.ports[0]}`
+                        : ":8080")
+                ),
+                selector: svcObj.selector || {},
+              } as K8sServiceData,
+            };
+            updatedNodes = [...currentNodes, newServiceNode];
           }
           set({
             nodes: updatedNodes,
+            edges: generateDynamicEdges(updatedNodes, get().edges),
+            services: extractServices(updatedNodes),
+            pods: extractPods(updatedNodes),
+            selectedNode: syncSelectedNode(updatedNodes, get().selectedNode),
+          });
+        } else if (
+          eventType === "EVENT_DEPLOYMENT_MUTATED" ||
+          eventType === "EVENT_DEPLOYMENT_ADDED" ||
+          eventType === "EVENT_REPLICA_SET_MUTATED" ||
+          eventType === "EVENT_REPLICA_SET_ADDED" ||
+          eventType === "EVENT_STATEFUL_SET_MUTATED" ||
+          eventType === "EVENT_STATEFUL_SET_ADDED"
+        ) {
+          return; // [Option A] Hide abstract controllers from visual traffic flow
+        } else if (
+          eventType === "EVENT_INGRESS_MUTATED" ||
+          eventType === "EVENT_INGRESS_ADDED"
+        ) {
+          const ingObj = (payloadData.ingress || payloadData) as Record<string, unknown>;
+          const namespace = ingObj.namespace ? String(ingObj.namespace) : "default";
+          if (["kube-system", "ingress-nginx", "local-path-storage", "argocd", "default"].includes(namespace)) return;
+
+          const ingName = String(ingObj.name || ingObj.id || "");
+          if (!ingName) return;
+
+          const currentNodes = get().nodes;
+          const existingIdx = currentNodes.findIndex(
+            (n) => (n.id === ingName || (n.data as K8sIngressData)?.name === ingName) && n.type === "k8sIngress"
+          );
+
+          let updatedNodes: Node[];
+          if (existingIdx >= 0) {
+            const existingNode = currentNodes[existingIdx];
+            updatedNodes = [...currentNodes];
+            updatedNodes[existingIdx] = {
+              ...existingNode,
+              data: {
+                ...(existingNode.data as K8sIngressData),
+                ...ingObj,
+              },
+            };
+          } else {
+            const newIngressNode: Node = {
+              id: ingName,
+              type: "k8sIngress",
+              position: { x: 50, y: 150 + (currentNodes.length % 5) * 60 },
+              data: {
+                name: ingName,
+                namespace: namespace,
+                rules: (ingObj.rules as IngressRuleData[]) || [],
+              } as K8sIngressData,
+            };
+            updatedNodes = [...currentNodes, newIngressNode];
+          }
+          set({
+            nodes: updatedNodes,
+            edges: generateDynamicEdges(updatedNodes, get().edges),
             services: extractServices(updatedNodes),
             pods: extractPods(updatedNodes),
             selectedNode: syncSelectedNode(updatedNodes, get().selectedNode),

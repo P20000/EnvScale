@@ -12,22 +12,12 @@ export interface K8sPodData extends Record<string, unknown> {
   ip?: string;
   cpuUsage?: string;
   memoryUsage?: string;
+  ownerName?: string;
+  ownerKind?: string;
+  ownerUid?: string;
 }
 
-function formatPodName(name: string, maxLen = 20): string {
-  if (!name || name.length <= maxLen) return name;
-  const parts = name.split("-");
-  if (parts.length >= 2) {
-    const suffix = parts.slice(-2).join("-");
-    if (suffix.length < maxLen - 5) {
-      const prefix = name.slice(0, maxLen - suffix.length - 4);
-      return `${prefix}...-${suffix}`;
-    }
-  }
-  const start = name.slice(0, 8);
-  const end = name.slice(-6);
-  return `${start}...${end}`;
-}
+// Removed formatPodName to allow CSS truncate to handle it naturally using full width
 
 export const K8sPodNode = memo(({ id, data, selected }: NodeProps & { data: K8sPodData }) => {
   const deleteNode = useTopologyStore((s) => s.deleteNode);
@@ -89,19 +79,18 @@ export const K8sPodNode = memo(({ id, data, selected }: NodeProps & { data: K8sP
         className="!w-3 !h-3 !bg-neutral-800 !border-neutral-600 hover:!bg-blue-500 transition-colors"
       />
 
-      {/* Header: Pod Name & Namespace Badge & Delete */}
+      {/* Header: Pod Name & Delete */}
       <div className="flex items-center justify-between gap-2 border-b border-neutral-800/80 pb-2.5">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <Box className="h-4.5 w-4.5 shrink-0 text-neutral-400" />
-          <span className="text-base font-semibold text-neutral-100 truncate" title={data.name}>
-            {formatPodName(data.name)}
-          </span>
+          <div className="min-w-0 flex-1">
+            <span className="text-[13px] leading-tight font-semibold text-neutral-100 block truncate" title={data.name}>
+              {data.name}
+            </span>
+          </div>
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
-          <span className="rounded-md bg-neutral-800 px-2 py-0.5 text-xs font-mono text-neutral-300 border border-neutral-700/50">
-            {data.namespace}
-          </span>
           <button
             onClick={handleDelete}
             title="Delete Pod"
@@ -112,16 +101,37 @@ export const K8sPodNode = memo(({ id, data, selected }: NodeProps & { data: K8sP
         </div>
       </div>
 
-      {/* Body: Status Dot & Restarts Count */}
-      <div className="flex items-center justify-between pt-3">
-        <div className="flex items-center gap-2">
-          <span className={`h-2.5 w-2.5 rounded-full ${statusStyle.dot}`} />
-          <span className={`text-xs font-semibold ${statusStyle.text}`}>{data.status}</span>
+      {/* Body: Status Dot, Namespace & Restarts Count */}
+      <div className="flex items-center justify-between pt-3 gap-2">
+        <div className="flex items-center gap-2 shrink-0">
+          <span className={`h-2 w-2 rounded-full ${statusStyle.dot}`} />
+          <span className={`text-[11px] font-semibold ${statusStyle.text}`}>{data.status}</span>
         </div>
 
-        <div className="flex items-center gap-1.5 text-xs text-neutral-300 font-mono bg-neutral-950 px-2.5 py-1 rounded-md border border-neutral-800">
-          <RotateCcw className="h-3.5 w-3.5 text-neutral-400" />
-          <span>Restarts: {data.restarts}</span>
+        <div className="flex items-center gap-2 min-w-0 justify-end">
+          <span className="rounded bg-neutral-800/80 px-1.5 py-0.5 text-[10px] font-mono text-neutral-400 border border-neutral-700/50 truncate shrink" title={data.namespace}>
+            {data.namespace}
+          </span>
+          <div className="flex items-center gap-1 text-[11px] text-neutral-300 font-mono bg-neutral-950 px-1.5 py-0.5 rounded border border-neutral-800 shrink-0" title="Restarts">
+            <RotateCcw className="h-3 w-3 text-neutral-500" />
+            <span>{data.restarts}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Metrics & Node Info */}
+      <div className="flex items-center justify-between pt-2.5 mt-2.5 border-t border-neutral-800/80">
+        <div className="flex items-center gap-2">
+          {data.nodeName && (
+            <span className="text-[10px] text-neutral-400 font-mono truncate max-w-[100px]" title={data.nodeName}>
+              @{data.nodeName}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 text-[10px] text-neutral-400 font-mono">
+          <span title="CPU Usage">{data.cpuUsage || "0 mcores"}</span>
+          <span className="text-neutral-700">|</span>
+          <span title="Memory Usage">{data.memoryUsage || "0 MiB"}</span>
         </div>
       </div>
 

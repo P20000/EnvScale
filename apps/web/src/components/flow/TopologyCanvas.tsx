@@ -11,7 +11,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { Box, Server, Globe, Plus, LayoutGrid } from "lucide-react";
 
-import { K8sPodNode, K8sWorkerNode, K8sServiceNode } from "../canvas";
+import { K8sPodNode, K8sWorkerNode, K8sServiceNode, K8sWorkloadNode, K8sIngressNode } from "../canvas";
 import type { K8sPodData } from "../canvas/K8sPod";
 import type { K8sNodeData } from "../canvas/K8sNode";
 import type { K8sServiceData } from "../canvas/K8sService";
@@ -23,6 +23,10 @@ const nodeTypes = {
   k8sPod: K8sPodNode,
   k8sWorker: K8sWorkerNode,
   k8sService: K8sServiceNode,
+  k8sDeployment: K8sWorkloadNode,
+  k8sReplicaSet: K8sWorkloadNode,
+  k8sStatefulSet: K8sWorkloadNode,
+  k8sIngress: K8sIngressNode,
 };
 
 interface TopologyCanvasProps {
@@ -79,27 +83,24 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
   }, [setSelectedNode, onSelectTarget]);
 
   const handleAutoLayout = () => {
-    applyDagreLayout("TB");
+    applyDagreLayout("LR");
     setTimeout(() => {
       fitView({ duration: 400, padding: 0.08, minZoom: 0.95 });
     }, 50);
   };
 
-  const nodeIds = nodes.map((n) => n.id).join(",");
-  const edgeIds = edges.map((e) => `${e.source}-${e.target}`).join(",");
   const initialLayoutDone = useRef(false);
 
   useEffect(() => {
     if (nodes.length > 0) {
-      applyDagreLayout("TB");
       if (!initialLayoutDone.current) {
         setTimeout(() => {
           fitView({ duration: 400, padding: 0.08, minZoom: 0.95 });
-        }, 50);
+        }, 100);
         initialLayoutDone.current = true;
       }
     }
-  }, [nodeIds, edgeIds, applyDagreLayout, fitView, nodes.length]);
+  }, [nodes.length, fitView]);
 
   return (
     <div className="h-screen w-screen bg-[#09090b] relative">
@@ -129,6 +130,21 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#27272a" />
         <Controls position="bottom-left" showInteractive={false} />
       </ReactFlow>
+
+      {/* Empty State Overlay when no active cluster nodes are present */}
+      {nodes.length === 0 && (
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center p-6 text-center pointer-events-none">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 shadow-2xl mb-4 animate-pulse">
+            <Server className="h-8 w-8" />
+          </div>
+          <h3 className="text-lg font-semibold text-neutral-200 mb-1">
+            No Active Kubernetes Topology
+          </h3>
+          <p className="text-xs text-neutral-400 max-w-sm mb-4">
+            Connect a cluster or start your local Minikube environment to stream real-time Pods, Nodes, and Ingress resources.
+          </p>
+        </div>
+      )}
 
       {/* Auto Layout Action Button */}
       <div className="absolute top-24 right-6 z-40">

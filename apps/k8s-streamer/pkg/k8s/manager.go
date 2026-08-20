@@ -7,6 +7,7 @@ import (
 
 	"k8s.io/client-go/kubernetes"
 
+	"github.com/EnvScale/k8s-streamer/pkg/types"
 	"github.com/EnvScale/k8s-streamer/pkg/websocket"
 )
 
@@ -105,6 +106,28 @@ func (cm *ClusterManager) UnregisterCluster(clusterID string) error {
 	delete(cm.clusters, clusterID)
 	log.Printf("[ClusterManager] Unregistered and stopped informers for cluster: %s", clusterID)
 	return nil
+}
+
+// GetClusterSnapshot retrieves the current cached state of pods, nodes, services, and workloads for a given cluster.
+func (cm *ClusterManager) GetClusterSnapshot(clusterID string) (
+	[]types.PodStatusDelta,
+	[]types.NodeStatusDelta,
+	[]types.ServiceStatusDelta,
+	[]types.DeploymentStatusDelta,
+	[]types.ReplicaSetStatusDelta,
+	[]types.StatefulSetStatusDelta,
+	[]types.IngressStatusDelta,
+	error,
+) {
+	cm.mu.RLock()
+	im, ok := cm.clusters[clusterID]
+	cm.mu.RUnlock()
+
+	if !ok {
+		return nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("cluster %s not found", clusterID)
+	}
+	pods, nodes, services, deployments, replicaSets, statefulSets, ingresses := im.GetSnapshot()
+	return pods, nodes, services, deployments, replicaSets, statefulSets, ingresses, nil
 }
 
 // GetCluster returns the InformerManager associated with the given clusterID.

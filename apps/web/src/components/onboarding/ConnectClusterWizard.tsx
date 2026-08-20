@@ -1,5 +1,6 @@
 import { useState, type ChangeEvent, type DragEvent } from "react";
 import { Button } from "../ui/button";
+import { apiConnectCluster } from "../../config/api";
 
 type ConnectClusterWizardProps = {
   onClose: () => void;
@@ -75,19 +76,36 @@ export default function ConnectClusterWizard({
   const previousStep = () => {
     setStep((currentStep) => currentStep - 1);
   };
-  const handleConnect = () => {
-  if (!kubeconfigFile || !clusterName.trim()) {
-    return;
-  }
+  const handleConnect = async () => {
+    if (!kubeconfigFile || !clusterName.trim()) {
+      return;
+    }
 
-  setIsConnecting(true);
-  setConnectionError("");
+    setIsConnecting(true);
+    setConnectionError("");
 
-  setTimeout(() => {
-    setIsConnecting(false);
-    setIsConnected(true);
-  }, 1500);
-};
+    try {
+      const kubeconfigText = await kubeconfigFile.text();
+      const res = await apiConnectCluster({
+        name: clusterName.trim(),
+        environment: "development",
+        kubeconfig: kubeconfigText,
+      });
+
+      setIsConnecting(false);
+
+      if (res.error) {
+        setConnectionError(res.error);
+        setIsConnected(true);
+      } else {
+        setIsConnected(true);
+      }
+    } catch (err) {
+      setIsConnecting(false);
+      setConnectionError(err instanceof Error ? err.message : "Failed to read Kubeconfig file");
+      setIsConnected(true);
+    }
+  };
   if (isConnected) {
     if (connectionError) {
   return (

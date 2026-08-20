@@ -138,10 +138,70 @@ export function useK8sStream(
       const socket = new WebSocket(wsUrl);
       wsRef.current = socket;
 
-      socket.onopen = () => {
+      socket.onopen = async () => {
         if (!isComponentMounted.current) return;
         setStatus("CONNECTED");
         reconnectAttemptRef.current = 0;
+
+        const url = new URL(wsUrl);
+        const clusterId = url.searchParams.get("clusterId");
+        if (clusterId) {
+          try {
+            // Wait a brief moment to ensure informer has populated cache
+            await new Promise((r) => setTimeout(r, 100));
+            const streamerUrl = url.protocol === "wss:" ? `https://${url.host}` : `http://${url.host}`;
+            const res = await fetch(`${streamerUrl}/api/v1/clusters/snapshot?clusterId=${clusterId}`);
+            if (res.ok) {
+              const snapshot = await res.json();
+              if (onMessageReceivedRef.current) {
+                if (snapshot.nodes) {
+                  snapshot.nodes.forEach((node: unknown) =>
+                    onMessageReceivedRef.current?.({ type: "EVENT_NODE_ADDED", event: "EVENT_NODE_ADDED", data: node } as WsTopologyMessage)
+                  );
+                }
+                if (snapshot.pods) {
+                  snapshot.pods.forEach((pod: unknown) =>
+                    onMessageReceivedRef.current?.({ type: "EVENT_POD_ADDED", event: "EVENT_POD_ADDED", data: pod } as WsTopologyMessage)
+                  );
+                }
+                if (snapshot.services) {
+                  snapshot.services.forEach((svc: unknown) =>
+                    onMessageReceivedRef.current?.({ type: "EVENT_SERVICE_ADDED", event: "EVENT_SERVICE_ADDED", data: svc } as WsTopologyMessage)
+                  );
+                }
+                if (snapshot.deployments) {
+                  snapshot.deployments.forEach((dep: unknown) =>
+                    onMessageReceivedRef.current?.({ type: "EVENT_DEPLOYMENT_ADDED", event: "EVENT_DEPLOYMENT_ADDED", data: dep } as WsTopologyMessage)
+                  );
+                }
+                if (snapshot.replicaSets) {
+                  snapshot.replicaSets.forEach((rs: unknown) =>
+                    onMessageReceivedRef.current?.({ type: "EVENT_REPLICA_SET_ADDED", event: "EVENT_REPLICA_SET_ADDED", data: rs } as WsTopologyMessage)
+                  );
+                }
+                if (snapshot.statefulSets) {
+                  snapshot.statefulSets.forEach((sts: unknown) =>
+                    onMessageReceivedRef.current?.({ type: "EVENT_STATEFUL_SET_ADDED", event: "EVENT_STATEFUL_SET_ADDED", data: sts } as WsTopologyMessage)
+                  );
+                }
+                if (snapshot.ingresses) {
+                  snapshot.ingresses.forEach((ing: unknown) =>
+                    onMessageReceivedRef.current?.({ type: "EVENT_INGRESS_ADDED", event: "EVENT_INGRESS_ADDED", data: ing } as WsTopologyMessage)
+                  );
+                }
+                
+                // Notify store to run layout calculations once
+                onMessageReceivedRef.current?.({
+                  type: "EVENT_BATCH_COMPLETE",
+                  event: "EVENT_BATCH_COMPLETE",
+                  data: {}
+                } as WsTopologyMessage);
+              }
+            }
+          } catch (e) {
+            console.warn("[EnvScale] Failed to fetch initial topology snapshot:", e);
+          }
+        }
 
         lastPingTimeRef.current = performance.now();
         try {

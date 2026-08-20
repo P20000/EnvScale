@@ -36,9 +36,19 @@ export function getLayoutedElements(
     } else if (node.type === "k8sService") {
       width = 250;
       height = 75;
+    } else if (node.type === "k8sIngress") {
+      width = 280;
+      height = 130;
     } else if (node.type === "k8sPod") {
       width = 280;
       height = 110;
+    } else if (
+      node.type === "k8sDeployment" ||
+      node.type === "k8sReplicaSet" ||
+      node.type === "k8sStatefulSet"
+    ) {
+      width = 280;
+      height = 100;
     }
 
     dagreGraph.setNode(node.id, { width, height });
@@ -64,15 +74,45 @@ export function getLayoutedElements(
       return;
     }
 
-    // Ingress Gateway -> Service
+    // Ingress -> Service
+    if (sourceNode.type === "k8sIngress" && targetNode.type === "k8sService") {
+      dagreGraph.setEdge(edge.source, edge.target, { minlen: 1, weight: 6 });
+      return;
+    }
+
+    // Service -> Service (e.g. Ingress Gateway if modeled as Service, fallback)
     if (sourceNode.type === "k8sService" && targetNode.type === "k8sService") {
       dagreGraph.setEdge(edge.source, edge.target, { minlen: 1, weight: 5 });
       return;
     }
 
-    // Service -> Pod
-    if (sourceNode.type === "k8sService" && targetNode.type === "k8sPod") {
+    // Service -> Workload
+    if (
+      sourceNode.type === "k8sService" &&
+      (targetNode.type === "k8sDeployment" || targetNode.type === "k8sStatefulSet")
+    ) {
       dagreGraph.setEdge(edge.source, edge.target, { minlen: 1, weight: 4 });
+      return;
+    }
+
+    // Workload -> Workload (Deployment -> ReplicaSet)
+    if (sourceNode.type === "k8sDeployment" && targetNode.type === "k8sReplicaSet") {
+      dagreGraph.setEdge(edge.source, edge.target, { minlen: 1, weight: 3 });
+      return;
+    }
+
+    // Service -> Pod (Fallback)
+    if (sourceNode.type === "k8sService" && targetNode.type === "k8sPod") {
+      dagreGraph.setEdge(edge.source, edge.target, { minlen: 1, weight: 2 });
+      return;
+    }
+
+    // Workload -> Pod
+    if (
+      (sourceNode.type === "k8sReplicaSet" || sourceNode.type === "k8sStatefulSet") &&
+      targetNode.type === "k8sPod"
+    ) {
+      dagreGraph.setEdge(edge.source, edge.target, { minlen: 1, weight: 2 });
       return;
     }
 
@@ -128,6 +168,14 @@ export function getLayoutedElements(
     };
   });
 
-  return { nodes: layoutedNodes, edges };
+  const layoutedEdges: Edge[] = edges.map((edge) => {
+    return {
+      ...edge,
+      sourceHandle: isHorizontal ? "right-source" : "bottom-source",
+      targetHandle: isHorizontal ? "left-target" : "top-target",
+    };
+  });
+
+  return { nodes: layoutedNodes, edges: layoutedEdges };
 }
 

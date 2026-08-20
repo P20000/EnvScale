@@ -137,6 +137,37 @@ func main() {
 		})
 	})
 
+	// Snapshot Endpoint (REST API called by frontend on websocket connection)
+	mux.HandleFunc("/api/v1/clusters/snapshot", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		clusterID := r.URL.Query().Get("clusterId")
+		if clusterID == "" {
+			http.Error(w, "clusterId query parameter is required", http.StatusBadRequest)
+			return
+		}
+
+		pods, nodes, services, deployments, replicaSets, statefulSets, ingresses, err := clusterManager.GetClusterSnapshot(clusterID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"pods":         pods,
+			"nodes":        nodes,
+			"services":     services,
+			"deployments":  deployments,
+			"replicaSets":  replicaSets,
+			"statefulSets": statefulSets,
+			"ingresses":    ingresses,
+		})
+	})
+
 	// List Active Monitored Clusters
 	mux.HandleFunc("/api/v1/clusters", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
@@ -262,9 +293,22 @@ func main() {
 		}
 	})
 
+	corsHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, X-Requested-With")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		mux.ServeHTTP(w, r)
+	})
+
 	server := &http.Server{
 		Addr:         ":" + port,
-		Handler:      mux,
+		Handler:      corsHandler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,

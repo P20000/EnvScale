@@ -11,6 +11,10 @@ const (
 	EventAlertTriggered      = "EVENT_ALERT_TRIGGERED"
 	EventHeartbeat           = "EVENT_HEARTBEAT"
 	EventPodAnomalyDetected  = "EVENT_POD_ANOMALY_DETECTED"
+	EventDeploymentMutated   = "EVENT_DEPLOYMENT_MUTATED"
+	EventReplicaSetMutated   = "EVENT_REPLICA_SET_MUTATED"
+	EventStatefulSetMutated  = "EVENT_STATEFUL_SET_MUTATED"
+	EventIngressMutated      = "EVENT_INGRESS_MUTATED"
 )
 
 // WSEventEnvelope represents the standardized WebSocket JSON frame delivered to client subscribers
@@ -31,7 +35,42 @@ type PodStatusDelta struct {
 	CPUUsagePct    float64           `json:"cpuUsagePct,omitempty"`
 	MemoryUsageMb  float64           `json:"memoryUsageMb,omitempty"`
 	Labels         map[string]string `json:"labels"`
+	OwnerUID       string            `json:"ownerUid,omitempty"`
+	OwnerName      string            `json:"ownerName,omitempty"`
+	OwnerKind      string            `json:"ownerKind,omitempty"`
 	CreatedAt      time.Time         `json:"createdAt"`
+}
+
+// DeploymentStatusDelta encapsulates Deployment state updates
+type DeploymentStatusDelta struct {
+	Name          string            `json:"name"`
+	Namespace     string            `json:"namespace"`
+	Replicas      int32             `json:"replicas"`
+	ReadyReplicas int32             `json:"readyReplicas"`
+	Selector      map[string]string `json:"selector"`
+	Labels        map[string]string `json:"labels"`
+}
+
+// ReplicaSetStatusDelta encapsulates ReplicaSet state updates
+type ReplicaSetStatusDelta struct {
+	Name          string            `json:"name"`
+	Namespace     string            `json:"namespace"`
+	Replicas      int32             `json:"replicas"`
+	ReadyReplicas int32             `json:"readyReplicas"`
+	OwnerUID      string            `json:"ownerUid,omitempty"`
+	OwnerName     string            `json:"ownerName,omitempty"`
+	OwnerKind     string            `json:"ownerKind,omitempty"`
+	Labels        map[string]string `json:"labels"`
+}
+
+// StatefulSetStatusDelta encapsulates StatefulSet state updates
+type StatefulSetStatusDelta struct {
+	Name          string            `json:"name"`
+	Namespace     string            `json:"namespace"`
+	Replicas      int32             `json:"replicas"`
+	ReadyReplicas int32             `json:"readyReplicas"`
+	Selector      map[string]string `json:"selector"`
+	Labels        map[string]string `json:"labels"`
 }
 
 // NodeStatusDelta encapsulates node health state updates
@@ -52,6 +91,22 @@ type ServiceStatusDelta struct {
 	ClusterIP   string            `json:"clusterIP"`
 	Selector    map[string]string `json:"selector"`
 	TargetPorts []int32           `json:"targetPorts"`
+}
+
+// IngressRuleStatus represents a single routing rule path in an Ingress
+type IngressRuleStatus struct {
+	Host        string `json:"host"`
+	Path        string `json:"path"`
+	ServiceName string `json:"serviceName"`
+	ServicePort int32  `json:"servicePort"`
+}
+
+// IngressStatusDelta encapsulates K8s Ingress state updates
+type IngressStatusDelta struct {
+	Name      string              `json:"name"`
+	Namespace string              `json:"namespace"`
+	Rules     []IngressRuleStatus `json:"rules"`
+	Labels    map[string]string   `json:"labels"`
 }
 
 // LogStreamEvent encapsulates live stdout/stderr log lines
