@@ -67,7 +67,7 @@ git push origin feature/vinit-api-server
 ## 🛠️ How to Check Your Assigned Tasks
 
 Option A (Browser): Go to `https://github.com/P20000/EnvScale/issues`  
-Option B (Terminal): Run `./ghissue list <your_github_username>`
+Option B (Terminal): Run `./agent summary` or `./agent list <your_github_username>`
 
 ---
 
