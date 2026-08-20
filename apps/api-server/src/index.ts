@@ -2,8 +2,13 @@ import "dotenv/config";
 import cookieParser from "cookie-parser";
 import express, { type Express } from "express";
 import { authRouter } from "./routes/auth.routes.js";
+import { alertPolicyRouter, topLevelAlertPolicyRouter } from "./routes/alert-policy.routes.js";
+import { alertRouter, topLevelAlertRouter } from "./routes/alert.routes.js";
 import { clusterRouter } from "./routes/cluster.routes.js";
+import { incidentRouter, topLevelIncidentRouter } from "./routes/incident.routes.js";
+import { healthHistoryRouter, leaderboardRouter } from "./routes/leaderboard.routes.js";
 import { workspaceRouter } from "./routes/workspace.routes.js";
+import { startHealthSnapshotWorker } from "./workers/snapshot.worker.js";
 
 const app: Express = express();
 const port = Number(process.env.PORT ?? 3000);
@@ -16,6 +21,14 @@ app.get("/health", (_request, response) => {
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/workspaces", workspaceRouter);
 app.use("/api/v1/workspaces/:id/clusters", clusterRouter);
+app.use("/api/v1/workspaces/:id/alert-policies", alertPolicyRouter);
+app.use("/api/v1/alert-policies", topLevelAlertPolicyRouter);
+app.use("/api/v1/workspaces/:id/alerts", alertRouter);
+app.use("/api/v1/alerts", topLevelAlertRouter);
+app.use("/api/v1/workspaces/:id/incidents", incidentRouter);
+app.use("/api/v1/incidents", topLevelIncidentRouter);
+app.use("/api/v1/leaderboard", leaderboardRouter);
+app.use("/api/v1/workspaces/:id/health-history", healthHistoryRouter);
 
 app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
   console.error(error);
@@ -25,6 +38,7 @@ app.use((error: unknown, _request: express.Request, response: express.Response, 
 if (process.env.NODE_ENV !== "test") {
   app.listen(port, () => {
     console.log(`API server listening on port ${port}`);
+    startHealthSnapshotWorker();
   });
 }
 

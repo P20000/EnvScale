@@ -40,3 +40,37 @@ export const clusterParamsSchema = z.object({
   id: idSchema,
   clusterId: idSchema,
 });
+
+export const alertPolicySchema = z.object({
+  clusterId: idSchema,
+  name: z.string().trim().min(1).max(255),
+  description: z.string().trim().max(5000).nullable().optional(),
+  metric: z.enum(["CPU", "MEMORY", "POD_RESTART"]),
+  threshold: z.number().finite().min(-99_999_999.99).max(99_999_999.99),
+  operator: z.enum([">", "<", ">=", "<="]),
+  duration: z.number().int().positive(),
+  severity: z.enum(["info", "warning", "error", "critical"]).default("warning"),
+  isEnabled: z.boolean().default(true),
+  conditions: z.record(z.unknown()).nullable().optional(),
+  notificationChannels: z.array(z.string().trim().min(1).max(100)).optional(),
+});
+
+export const updateAlertPolicySchema = alertPolicySchema
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, "At least one field is required");
+
+export const alertPolicyParamsSchema = z.object({ policyId: idSchema });
+
+export const alertPolicyToggleSchema = z.object({
+  isEnabled: z.boolean(),
+});
+
+export const incidentParamsSchema = z.object({ incidentId: idSchema });
+
+export const incidentResolveSchema = z.object({
+  resolution: z.string().trim().max(5000).nullable().optional(),
+});
+
+export const healthHistoryQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(90).default(7),
+});
