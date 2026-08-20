@@ -379,11 +379,15 @@ def audit_single_task(task_id):
     if task_id == "VIN-08":
         has_schema = "export const alertPolicies" in schema_content
         audit_items.append({"item": "DB Schema table (alertPolicies in schema.ts)", "status": "PASS" if has_schema else "FAIL"})
-        ctrl_p = os.path.join(PROJECT_ROOT, "apps/api-server/src/controllers/alert.controller.ts")
-        audit_items.append({"item": "Alert Controller (alert.controller.ts)", "status": "PASS" if os.path.exists(ctrl_p) else "FAIL"})
-        route_p = os.path.join(PROJECT_ROOT, "apps/api-server/src/routes/alert.routes.ts")
-        audit_items.append({"item": "Alert Router (alert.routes.ts)", "status": "PASS" if os.path.exists(route_p) else "FAIL"})
-        has_mount = "alertPolicies" in index_content or "alertRouter" in index_content
+        ctrl_p1 = os.path.join(PROJECT_ROOT, "apps/api-server/src/controllers/alert.controller.ts")
+        ctrl_p2 = os.path.join(PROJECT_ROOT, "apps/api-server/src/controllers/alert-policy.controller.ts")
+        ctrl_exists = os.path.exists(ctrl_p1) or os.path.exists(ctrl_p2)
+        audit_items.append({"item": "Alert Controller (alert-policy.controller.ts / alert.controller.ts)", "status": "PASS" if ctrl_exists else "FAIL"})
+        route_p1 = os.path.join(PROJECT_ROOT, "apps/api-server/src/routes/alert.routes.ts")
+        route_p2 = os.path.join(PROJECT_ROOT, "apps/api-server/src/routes/alert-policy.routes.ts")
+        route_exists = os.path.exists(route_p1) or os.path.exists(route_p2)
+        audit_items.append({"item": "Alert Router (alert-policy.routes.ts / alert.routes.ts)", "status": "PASS" if route_exists else "FAIL"})
+        has_mount = "alertPolicies" in index_content or "alertRouter" in index_content or "alertPolicyRouter" in index_content
         audit_items.append({"item": "Mounted in apps/api-server/src/index.ts", "status": "PASS" if has_mount else "FAIL"})
 
     elif task_id == "VIN-09":
