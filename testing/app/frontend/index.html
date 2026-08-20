@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>EnvScale Minikube Test App — Multi-Tab Todo</title>
+  <style>
+    :root {
+      --bg-color: #0f172a;
+      --card-bg: #1e293b;
+      --text-color: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-hover: #0284c7;
+      --border-color: #334155;
+      --success: #22c55e;
+      --danger: #ef4444;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      display: flex;
+      justify-content: center;
+      padding: 40px 20px;
+      min-height: 100vh;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 600px;
+      background: var(--card-bg);
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+      padding: 24px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .header h1 {
+      font-size: 24px;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+
+    .header p {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .badge-ingress {
+      display: inline-block;
+      margin-top: 8px;
+      background: rgba(56, 189, 248, 0.1);
+      color: var(--accent);
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+
+    .input-group {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      background: #090d16;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: #fff;
+      font-size: 14px;
+      outline: none;
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+
+    button.btn-add {
+      background: var(--accent);
+      color: #0f172a;
+      font-weight: 700;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    button.btn-add:hover {
+      background: var(--accent-hover);
+    }
+
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 16px;
+    }
+
+    .tab {
+      padding: 10px 16px;
+      cursor: pointer;
+      color: var(--text-muted);
+      font-size: 14px;
+      font-weight: 600;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+
+    .tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    .todo-list {
+      list-style: none;
+      min-height: 150px;
+    }
+
+    .todo-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      margin-bottom: 8px;
+    }
+
+    .todo-item.completed span {
+      text-decoration: line-through;
+      color: var(--text-muted);
+    }
+
+    .todo-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .todo-left input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .btn-delete {
+      background: transparent;
+      border: none;
+      color: var(--danger);
+      font-size: 16px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+
+    .btn-delete:hover {
+      background: rgba(239, 68, 68, 0.1);
+    }
+
+    .empty-state {
+      text-align: center;
+      color: var(--text-muted);
+      padding: 40px 0;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>⚡ EnvScale Minikube Test App</h1>
+      <p>Multi-Tab Todo Microservice running on Kubernetes Ingress</p>
+      <div class="badge-ingress">Ingress Route: / → Frontend | /api → Backend API</div>
+    </div>
+
+    <div class="input-group">
+      <input type="text" id="todo-input" placeholder="Add a new task..." onkeydown="if(event.key==='Enter') addTodo()" />
+      <button class="btn-add" onclick="addTodo()">Add Task</button>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" onclick="setTab('all')" id="tab-all">All Tasks</div>
+      <div class="tab" onclick="setTab('active')" id="tab-active">Active</div>
+      <div class="tab" onclick="setTab('completed')" id="tab-completed">Completed</div>
+    </div>
+
+    <ul class="todo-list" id="todo-list">
+      <div class="empty-state">Loading tasks from Kubernetes backend API...</div>
+    </ul>
+  </div>
+
+  <script>
+    let currentTab = 'all';
+    let todos = [];
+
+    async function fetchTodos() {
+      try {
+        const res = await fetch('/api/todos');
+        if (!res.ok) throw new Error('API Error');
+        todos = await res.json();
+        render();
+      } catch (err) {
+        console.error('Failed to fetch todos:', err);
+        document.getElementById('todo-list').innerHTML = `
+          <div class="empty-state" style="color:#ef4444;">
+            ⚠️ Unable to connect to /api/todos. Ensure backend is running.
+          </div>`;
+      }
+    }
+
+    async function addTodo() {
+      const input = document.getElementById('todo-input');
+      const text = input.value.trim();
+      if (!text) return;
+
+      try {
+        const res = await fetch('/api/todos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: text })
+        });
+        if (res.ok) {
+          input.value = '';
+          await fetchTodos();
+        }
+      } catch (err) {
+        console.error('Failed to add todo:', err);
+      }
+    }
+
+    async function toggleTodo(id, currentStatus) {
+      try {
+        await fetch(`/api/todos/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ completed: !currentStatus })
+        });
+        await fetchTodos();
+      } catch (err) {
+        console.error('Failed to update todo:', err);
+      }
+    }
+
+    async function deleteTodo(id) {
+      try {
+        await fetch(`/api/todos/${id}`, { method: 'DELETE' });
+        await fetchTodos();
+      } catch (err) {
+        console.error('Failed to delete todo:', err);
+      }
+    }
+
+    function setTab(tab) {
+      currentTab = tab;
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.getElementById(`tab-${tab}`).classList.add('active');
+      render();
+    }
+
+    function render() {
+      const listEl = document.getElementById('todo-list');
+      const filtered = todos.filter(t => {
+        if (currentTab === 'active') return !t.completed;
+        if (currentTab === 'completed') return t.completed;
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        listEl.innerHTML = `<div class="empty-state">No tasks found in '${currentTab}' view.</div>`;
+        return;
+      }
+
+      listEl.innerHTML = filtered.map(t => `
+        <li class="todo-item ${t.completed ? 'completed' : ''}">
+          <div class="todo-left">
+            <input type="checkbox" ${t.completed ? 'checked' : ''} onchange="toggleTodo('${t.id}', ${t.completed})" />
+            <span>${escapeHtml(t.title)}</span>
+          </div>
+          <button class="btn-delete" onclick="deleteTodo('${t.id}')">✕</button>
+        </li>
+      `).join('');
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.innerText = text;
+      return div.innerHTML;
+    }
+
+    // Initial load
+    fetchTodos();
+  </script>
+</body>
+</html>
