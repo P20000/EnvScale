@@ -41,7 +41,7 @@ TASK_DB = {
     "VIN-02": {"owner": "Vinit", "module": "backend", "milestone": 1, "title": "Drizzle ORM Schema Declarations", "files": ["apps/api-server/src/db/schema.ts"], "deps": ["VIN-01"]},
     "VIN-03": {"owner": "Vinit", "module": "backend", "milestone": 1, "title": "Database Migration & Seeding Engine", "files": ["apps/api-server/src/db/seed.ts"], "deps": ["VIN-02"]},
     "VIN-04": {"owner": "Vinit", "module": "backend", "milestone": 2, "title": "JWT Authentication & Password Hashing", "files": ["apps/api-server/src/controllers/auth.controller.ts", "apps/api-server/src/routes/auth.routes.ts"], "deps": ["VIN-02"]},
-    "VIN-05": {"owner": "Vinit", "module": "backend", "milestone": 2, "title": "Workspace CRUD & RBAC Authorization Middleware", "files": ["apps/api-server/src/controllers/workspace.controller.ts", "apps/api-server/src/middleware/rbac.ts"], "deps": ["VIN-04"]},
+    "VIN-05": {"owner": "Vinit", "module": "backend", "milestone": 2, "title": "Workspace CRUD & RBAC Authorization Middleware", "files": ["apps/api-server/src/controllers/workspace.controller.ts", "apps/api-server/src/middleware/auth.middleware.ts"], "deps": ["VIN-04"]},
     "VIN-06": {"owner": "Vinit", "module": "backend", "milestone": 2, "title": "Kubeconfig AES-256-GCM Vault & Validation API", "files": ["apps/api-server/src/utils/crypto.ts", "apps/api-server/src/controllers/cluster.controller.ts"], "deps": ["VIN-05"]},
     "VIN-07": {"owner": "Vinit", "module": "backend", "milestone": 2, "title": "Zod API Payload Validation Middleware", "files": ["apps/api-server/src/middleware/validate.ts"], "deps": ["VIN-05"]},
     "VIN-08": {"owner": "Vinit", "module": "backend", "milestone": 3, "title": "Alert Policy Management REST API", "files": ["apps/api-server/src/controllers/alert.controller.ts", "apps/api-server/src/routes/alert.routes.ts"], "deps": ["VIN-05"]},
@@ -425,6 +425,10 @@ def audit_single_task(task_id):
     elif task_id == "VIN-05":
         ctrl_p = os.path.join(PROJECT_ROOT, "apps/api-server/src/controllers/workspace.controller.ts")
         audit_items.append({"item": "Workspace Controller (workspace.controller.ts)", "status": "PASS" if os.path.exists(ctrl_p) else "FAIL"})
+        rbac_p1 = os.path.join(PROJECT_ROOT, "apps/api-server/src/middleware/rbac.ts")
+        rbac_p2 = os.path.join(PROJECT_ROOT, "apps/api-server/src/middleware/auth.middleware.ts")
+        rbac_exists = os.path.exists(rbac_p1) or os.path.exists(rbac_p2)
+        audit_items.append({"item": "RBAC Middleware (auth.middleware.ts / rbac.ts)", "status": "PASS" if rbac_exists else "FAIL"})
         has_mount = "workspaceRouter" in index_content
         audit_items.append({"item": "Mounted in apps/api-server/src/index.ts", "status": "PASS" if has_mount else "FAIL"})
 
