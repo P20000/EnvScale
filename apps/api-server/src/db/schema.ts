@@ -131,7 +131,7 @@ export const workspaceMembers = pgTable(
 
     userId: uuid("user_id").notNull(),
 
-    role: varchar("role", { length: 50 }).default("member"),
+    role: varchar("role", { length: 50 }).default("MEMBER"),
 
     joinedAt: timestamp("joined_at").defaultNow().notNull(),
 
@@ -335,6 +335,11 @@ export const incidents = pgTable(
       table.workspaceId
     ),
 
+    workspaceStatusIdx: index("incidents_workspace_status_idx").on(
+      table.workspaceId,
+      table.status
+    ),
+
     clusterIdx: index("incidents_cluster_id_idx").on(table.clusterId),
 
     statusIdx: index("incidents_status_idx").on(table.status),
@@ -422,6 +427,10 @@ export const healthSnapshots = pgTable(
     clusterTimestampIdx: index(
       "health_snapshots_cluster_timestamp_idx"
     ).on(table.clusterId, table.timestamp),
+
+    clusterCreatedAtIdx: index(
+      "health_snapshots_cluster_created_at_idx"
+    ).on(table.clusterId, table.createdAt),
 
     clusterFk: foreignKey({
       columns: [table.clusterId],

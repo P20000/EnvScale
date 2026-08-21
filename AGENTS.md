@@ -87,13 +87,16 @@ When generating code or proposing implementations, AI assistants MUST strictly a
 
 ---
 
-## 5. Verification & Testing Requirements
+## 5. Verification, Task Audit & Testing Requirements
 
-Before declaring any task or feature complete, the AI assistant MUST verify:
-1. **Monorepo Build:** Run `pnpm build` to confirm zero TypeScript compilation errors.
-2. **Lint Cleanliness:** Run `pnpm lint` to ensure zero ESLint violations.
-3. **Database Consistency:** Run `drizzle-kit check` or migration scripts to verify schema sync.
-4. **Milestone Alignment:** Ensure deliverables strictly conform to the 16-week timeline detailed in `docs/milestones.md`.
+Before declaring any task complete, assessing task completion status, or checking assigned work, ALL AI Assistants MUST use the CLI command-center utility in a single execution instead of making repetitive granular search/file-viewing calls:
+
+1. **Mandatory Task Structural Audit (`./agent audit`):**
+   - Execute `./agent audit <TASK_ID>` (or `./agent audit --assignee <Developer> --review`) to perform instant, single-command structural checks for DB schemas, controllers, services, background workers, router mounts, and git commits.
+2. **Monorepo Build:** Run `pnpm build` or `./agent check` to confirm zero TypeScript compilation errors.
+3. **Lint Cleanliness:** Run `pnpm lint` to ensure zero ESLint violations.
+4. **Database Consistency:** Run `drizzle-kit check` or migration scripts to verify schema sync.
+5. **Milestone Alignment:** Ensure deliverables strictly conform to the 16-week timeline detailed in `docs/milestones.md`.
 
 ---
 

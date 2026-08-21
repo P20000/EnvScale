@@ -4,12 +4,13 @@ import "time"
 
 // Event Type Constants matching shared monorepo contracts
 const (
-	EventPodStatusChanged = "EVENT_POD_STATUS_CHANGED"
-	EventNodeMutated      = "EVENT_NODE_MUTATED"
-	EventServiceMutated   = "EVENT_SERVICE_MUTATED"
-	EventLogLine          = "EVENT_LOG_LINE"
-	EventAlertTriggered   = "EVENT_ALERT_TRIGGERED"
-	EventHeartbeat        = "EVENT_HEARTBEAT"
+	EventPodStatusChanged    = "EVENT_POD_STATUS_CHANGED"
+	EventNodeMutated         = "EVENT_NODE_MUTATED"
+	EventServiceMutated      = "EVENT_SERVICE_MUTATED"
+	EventLogLine             = "EVENT_LOG_LINE"
+	EventAlertTriggered      = "EVENT_ALERT_TRIGGERED"
+	EventHeartbeat           = "EVENT_HEARTBEAT"
+	EventPodAnomalyDetected  = "EVENT_POD_ANOMALY_DETECTED"
 )
 
 // WSEventEnvelope represents the standardized WebSocket JSON frame delivered to client subscribers
@@ -61,4 +62,27 @@ type LogStreamEvent struct {
 	Log       string `json:"log"`
 	Stream    string `json:"stream"` // "stdout" | "stderr"
 	Timestamp string `json:"timestamp"`
+}
+
+// AnomalySeverity classifies the urgency of a detected pod anomaly
+type AnomalySeverity string
+
+const (
+	SeverityCritical AnomalySeverity = "CRITICAL"
+	SeverityWarning  AnomalySeverity = "WARNING"
+)
+
+// PodAnomalyEvent encapsulates a real-time anomaly detection alert emitted
+// when the parser identifies a known failure pattern from either the Informer
+// pipeline (pod status phase) or the live log stream (regex-matched text).
+type PodAnomalyEvent struct {
+	PodName     string          `json:"podName"`
+	Namespace   string          `json:"namespace"`
+	Container   string          `json:"container,omitempty"`
+	AnomalyType string          `json:"anomalyType"` // "OOMKilled", "CrashLoopBackOff", "ImagePullBackOff", "PanicDetected", etc.
+	Severity    AnomalySeverity `json:"severity"`
+	Message     string          `json:"message"`              // Human-readable anomaly description
+	LogSnippet  string          `json:"logSnippet,omitempty"` // Triggering log line (for log-source detections only)
+	Source      string          `json:"source"`               // "informer" | "log_stream"
+	Timestamp   string          `json:"timestamp"`
 }

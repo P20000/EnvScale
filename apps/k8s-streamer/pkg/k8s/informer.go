@@ -245,6 +245,21 @@ func (im *InformerManager) extractPodDelta(pod *corev1.Pod) types.PodStatusDelta
 func (im *InformerManager) emitPodDelta(pod *corev1.Pod) {
 	delta := im.extractPodDelta(pod)
 	im.hub.BroadcastEvent(types.EventPodStatusChanged, im.clusterID, delta)
+
+	// Anomaly classification: check if the pod's current phase/reason represents
+	// a known failure state (OOMKilled, CrashLoopBackOff, ImagePullBackOff, etc.)
+	// or if the restart count exceeds the stability threshold.
+	if match := ClassifyPodAnomaly(delta.Phase, delta.RestartCount); match != nil {
+		im.hub.BroadcastEvent(types.EventPodAnomalyDetected, im.clusterID, types.PodAnomalyEvent{
+			PodName:     delta.Name,
+			Namespace:   delta.Namespace,
+			AnomalyType: match.AnomalyType,
+			Severity:    match.Severity,
+			Message:     match.Message,
+			Source:      "informer",
+			Timestamp:   time.Now().UTC().Format(time.RFC3339Nano),
+		})
+	}
 }
 
 func (im *InformerManager) emitNodeDelta(node *corev1.Node) {
