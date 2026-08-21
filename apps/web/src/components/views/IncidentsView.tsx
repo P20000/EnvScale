@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AlertTriangle, CheckCircle2, Filter, ShieldAlert, Server } from "lucide-react";
+import { Badge } from "../ui/badge";
 import { useTopologyStore } from "../../store/useTopologyStore";
 
 interface Incident {
@@ -10,7 +11,7 @@ interface Incident {
   severity: "CRITICAL" | "WARNING" | "INFO";
   message: string;
   time: string;
-  status: "ACTIVE" | "RESOLVED";
+  status: "TRIGGERED" | "RESOLVED";
 }
 
 const initialIncidents: Incident[] = [
@@ -22,7 +23,7 @@ const initialIncidents: Incident[] = [
     severity: "CRITICAL",
     message: "CrashLoopBackOff — Container exited with code 137 (OOMKilled)",
     time: "2 mins ago",
-    status: "ACTIVE",
+    status: "TRIGGERED",
   },
   {
     id: "INC-9044",
@@ -32,7 +33,7 @@ const initialIncidents: Incident[] = [
     severity: "WARNING",
     message: "High Latency Alert — P99 response time exceeded 450ms threshold",
     time: "8 mins ago",
-    status: "ACTIVE",
+    status: "TRIGGERED",
   },
   {
     id: "INC-9043",
@@ -42,7 +43,7 @@ const initialIncidents: Incident[] = [
     severity: "WARNING",
     message: "Frequent Restarts — Pod restarted 3 times in last 15 minutes",
     time: "15 mins ago",
-    status: "ACTIVE",
+    status: "TRIGGERED",
   },
   {
     id: "INC-9042",
@@ -52,7 +53,7 @@ const initialIncidents: Incident[] = [
     severity: "CRITICAL",
     message: "Database IOPS Limit Exceeded — Disk read queue length > 12",
     time: "22 mins ago",
-    status: "ACTIVE",
+    status: "TRIGGERED",
   },
   {
     id: "INC-9040",
@@ -82,7 +83,7 @@ const initialIncidents: Incident[] = [
     severity: "WARNING",
     message: "CPU Throttling Warning — Pod exceeded 80% CPU limit quota",
     time: "52 mins ago",
-    status: "ACTIVE",
+    status: "TRIGGERED",
   },
   {
     id: "INC-9036",
@@ -102,7 +103,7 @@ const initialIncidents: Incident[] = [
     severity: "WARNING",
     message: "Scrape Target Down — Endpoint metrics-exporter unreachable",
     time: "1 hour ago",
-    status: "ACTIVE",
+    status: "TRIGGERED",
   },
   {
     id: "INC-9034",
@@ -112,7 +113,7 @@ const initialIncidents: Incident[] = [
     severity: "CRITICAL",
     message: "UnderReplicatedPartitions — 4 partitions lagging behind leader",
     time: "2 hours ago",
-    status: "ACTIVE",
+    status: "TRIGGERED",
   },
   {
     id: "INC-9033",
@@ -210,7 +211,7 @@ export function IncidentsView() {
     return true;
   });
 
-  const activeAlertsCount = filteredIncidents.filter((i) => i.status === "ACTIVE").length;
+  const triggeredCount = filteredIncidents.filter((i) => i.status === "TRIGGERED").length;
 
   return (
     <div className="h-full max-h-screen flex flex-col w-full max-w-7xl px-6 lg:px-8 pt-24 pb-12 mx-auto space-y-5 overflow-hidden">
@@ -265,7 +266,7 @@ export function IncidentsView() {
               className="rounded-lg bg-neutral-900 border border-neutral-800 px-3 py-1.5 text-xs font-mono text-neutral-200 focus:outline-none focus:border-blue-500 cursor-pointer"
             >
               <option value="ALL">All Statuses</option>
-              <option value="ACTIVE">Active</option>
+              <option value="TRIGGERED">Triggered</option>
               <option value="RESOLVED">Resolved</option>
             </select>
           </div>
@@ -310,8 +311,8 @@ export function IncidentsView() {
             <AlertTriangle className="h-4 w-4" />
           </div>
           <div>
-            <div className="text-xl font-bold text-neutral-100 font-mono">{activeAlertsCount}</div>
-            <div className="text-[11px] text-neutral-400">Active Alerts</div>
+            <div className="text-xl font-bold text-neutral-100 font-mono">{triggeredCount}</div>
+            <div className="text-[11px] text-neutral-400">Triggered Incidents</div>
           </div>
         </div>
 
@@ -359,17 +360,22 @@ export function IncidentsView() {
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs font-bold text-neutral-200">{item.id}</span>
-                    <span
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                    <Badge
+                      variant={
                         item.severity === "CRITICAL"
-                          ? "bg-red-500/10 text-red-400 border border-red-500/30"
+                          ? "destructive"
                           : item.severity === "WARNING"
-                          ? "bg-amber-500/10 text-amber-400 border border-amber-500/30"
-                          : "bg-blue-500/10 text-blue-400 border border-blue-500/30"
-                      }`}
+                          ? "default"
+                          : "muted"
+                      }
+                      className={
+                        item.severity === "WARNING"
+                          ? "bg-amber-500/10 text-amber-400 border-amber-500/30 !border"
+                          : undefined
+                      }
                     >
                       {item.severity}
-                    </span>
+                    </Badge>
                     <span className="text-xs text-neutral-400 font-mono">[{item.namespace}]</span>
                     <span className="inline-flex items-center gap-1 text-[10px] font-mono text-neutral-400 bg-neutral-900 px-2 py-0.5 rounded border border-neutral-800 max-w-[160px] truncate">
                       <Server className="h-3 w-3 text-neutral-400 shrink-0" />
@@ -387,7 +393,7 @@ export function IncidentsView() {
                   <div>
                     <span
                       className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded border ${
-                        item.status === "ACTIVE"
+                        item.status === "TRIGGERED"
                           ? "bg-red-500/10 text-red-400 border-red-500/20"
                           : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
                       }`}
