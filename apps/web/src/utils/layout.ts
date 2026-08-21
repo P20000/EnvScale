@@ -19,8 +19,8 @@ export function getLayoutedElements(
   const isHorizontal = direction === "LR";
   dagreGraph.setGraph({
     rankdir: direction,
-    nodesep: 80,
-    ranksep: 100,
+    nodesep: 60,
+    ranksep: 150,
     marginx: 50,
     marginy: 50,
   });

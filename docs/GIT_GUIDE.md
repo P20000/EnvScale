@@ -64,24 +64,10 @@ git push origin feature/vinit-api-server
 
 ---
 
-## 🛠️ How to Check Your Assigned Tasks & Perform Instant Audits
+## 🛠️ How to Check Your Assigned Tasks
 
 Option A (Browser): Go to `https://github.com/P20000/EnvScale/issues`  
-Option B (Terminal CLI): Use the `./agent` command-center utility in `scripts/`:
-
-```bash
-# Check overall project task completion matrix
-./agent summary
-
-# Audit assigned tasks for a specific team member (e.g. Vinit, Neha, Ishika, Pranav)
-./agent audit --assignee Vinit
-
-# Audit specific tasks in batch before opening PR
-./agent audit VIN-08 VIN-09 VIN-10
-
-# Audit pending/review tasks for a team member
-./agent audit --assignee Vinit --review
-```
+Option B (Milestone SRS): Review task deliverables in `docs/milestones.md`
 
 ---
 

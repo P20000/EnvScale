@@ -119,7 +119,7 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         minZoom={0.3}
         maxZoom={2}
         defaultEdgeOptions={{
-          type: "smoothstep",
+          type: "bezier",
           style: { stroke: "#3f3f46", strokeWidth: 2 },
           markerEnd: {
             type: MarkerType.ArrowClosed,

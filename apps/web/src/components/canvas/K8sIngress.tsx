@@ -26,10 +26,10 @@ export const K8sIngressNode = memo(({ id, data, selected }: NodeProps & { data: 
 
   return (
     <div
-      className={`relative flex flex-col min-w-[280px] rounded-xl bg-[#141417] px-4.5 py-3 border text-left shadow-lg transition-all ${
+      className={`group relative flex flex-col w-[320px] rounded-xl bg-[#141417] p-4 border text-left shadow-xl transition-all ${
         selected
-          ? "border-blue-500 ring-1 ring-blue-500 shadow-blue-500/10"
-          : "border-neutral-800"
+          ? "border-violet-500 ring-1 ring-violet-500 shadow-violet-500/20"
+          : "border-neutral-800/80 hover:border-violet-500/50"
       }`}
     >
       {/* 4-Sided Handles: TOP */}
@@ -37,13 +37,13 @@ export const K8sIngressNode = memo(({ id, data, selected }: NodeProps & { data: 
         type="target"
         position={Position.Top}
         id="top-target"
-        className="!w-3 !h-3 !bg-neutral-800 !border-neutral-600 hover:!bg-blue-500 transition-colors"
+        className="!w-2.5 !h-2.5 !bg-violet-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
       />
       <Handle
         type="source"
         position={Position.Top}
         id="top-source"
-        className="!w-3 !h-3 !bg-neutral-800 !border-neutral-600 hover:!bg-blue-500 transition-colors"
+        className="!w-2.5 !h-2.5 !bg-violet-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
       />
 
       {/* 4-Sided Handles: LEFT */}
@@ -51,53 +51,60 @@ export const K8sIngressNode = memo(({ id, data, selected }: NodeProps & { data: 
         type="target"
         position={Position.Left}
         id="left-target"
-        className="!w-3 !h-3 !bg-neutral-800 !border-neutral-600 hover:!bg-blue-500 transition-colors"
+        className="!w-2.5 !h-2.5 !bg-violet-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
       />
       <Handle
         type="source"
         position={Position.Left}
         id="left-source"
-        className="!w-3 !h-3 !bg-neutral-800 !border-neutral-600 hover:!bg-blue-500 transition-colors"
+        className="!w-2.5 !h-2.5 !bg-violet-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
       />
 
-      <div className="flex items-center justify-between pb-2 mb-2 border-b border-neutral-800/80">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-500/10 text-violet-400 border border-violet-500/20 shrink-0">
-            <Network className="h-5 w-5" />
+      <div className="flex items-center justify-between pb-3 mb-3 border-b border-neutral-800/80">
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/10 text-violet-400 border border-violet-500/20 shrink-0">
+            <Network className="h-4.5 w-4.5" />
           </div>
           <div className="flex flex-col min-w-0 flex-1">
-            <span className="text-base font-semibold text-neutral-100 truncate" title={data.name}>
+            <span className="text-[13px] font-semibold text-neutral-100 truncate leading-tight" title={data.name}>
               {data.name}
             </span>
-            <span className="text-[10px] font-mono text-neutral-400 font-bold uppercase tracking-wider">
-              INGRESS
+            <span className="text-[10px] font-mono text-violet-400/90 font-medium tracking-wider uppercase mt-0.5">
+              Ingress Controller
             </span>
           </div>
         </div>
         <button
           onClick={handleDelete}
           title="Delete Ingress"
-          className="p-1 rounded-full text-neutral-400 hover:text-red-400 hover:bg-neutral-800 transition-colors"
+          className="p-1 rounded-md text-neutral-400 hover:text-red-400 hover:bg-neutral-800 transition-colors"
         >
           <Trash2 className="h-3.5 w-3.5" />
         </button>
       </div>
 
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-2">
+        <span className="text-[10px] font-mono font-medium text-neutral-400 uppercase tracking-wider">
+          Routing Rules
+        </span>
         {data.rules && data.rules.length > 0 ? (
-          data.rules.map((rule, idx) => (
-            <div key={idx} className="flex items-center justify-between text-xs font-mono">
-              <span className="text-neutral-300 truncate max-w-[120px]" title={rule.host || "*"}>
-                {rule.host || "*"}
-              </span>
-              <span className="text-neutral-500">➔</span>
-              <span className="text-blue-400 truncate max-w-[120px]" title={rule.serviceName}>
-                {rule.serviceName}:{rule.servicePort}
-              </span>
-            </div>
-          ))
+          <div className="flex flex-col gap-1.5 bg-neutral-900/80 rounded-lg p-2 border border-neutral-800/60">
+            {data.rules.map((rule, idx) => (
+              <div key={idx} className="flex items-center justify-between text-xs font-mono bg-neutral-950/60 px-2.5 py-1.5 rounded border border-neutral-800/50 gap-1.5">
+                <span className="text-neutral-300 truncate shrink-0 max-w-[80px]" title={rule.host ? `${rule.host}${rule.path || ""}` : rule.path || "*"}>
+                  {rule.host ? `${rule.host}` : "*"}
+                </span>
+                <span className="text-neutral-500 text-[10px] shrink-0">➔</span>
+                <span className="text-blue-400 font-semibold truncate text-right flex-1 min-w-0" title={`${rule.serviceName}:${rule.servicePort}`}>
+                  {rule.serviceName}:{rule.servicePort}
+                </span>
+              </div>
+            ))}
+          </div>
         ) : (
-          <span className="text-xs text-neutral-500 italic">No rules defined</span>
+          <div className="bg-neutral-900/60 rounded-lg p-2 border border-neutral-800/50 text-center">
+            <span className="text-xs text-neutral-500 italic">No routing rules defined</span>
+          </div>
         )}
       </div>
 
@@ -106,13 +113,13 @@ export const K8sIngressNode = memo(({ id, data, selected }: NodeProps & { data: 
         type="target"
         position={Position.Right}
         id="right-target"
-        className="!w-3 !h-3 !bg-neutral-800 !border-neutral-600 hover:!bg-blue-500 transition-colors"
+        className="!w-2.5 !h-2.5 !bg-violet-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
       />
       <Handle
         type="source"
         position={Position.Right}
         id="right-source"
-        className="!w-3 !h-3 !bg-neutral-800 !border-neutral-600 hover:!bg-blue-500 transition-colors"
+        className="!w-2.5 !h-2.5 !bg-violet-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
       />
 
       {/* 4-Sided Handles: BOTTOM */}
@@ -120,13 +127,13 @@ export const K8sIngressNode = memo(({ id, data, selected }: NodeProps & { data: 
         type="target"
         position={Position.Bottom}
         id="bottom-target"
-        className="!w-3 !h-3 !bg-neutral-800 !border-neutral-600 hover:!bg-blue-500 transition-colors"
+        className="!w-2.5 !h-2.5 !bg-violet-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
       />
       <Handle
         type="source"
         position={Position.Bottom}
         id="bottom-source"
-        className="!w-3 !h-3 !bg-neutral-800 !border-neutral-600 hover:!bg-blue-500 transition-colors"
+        className="!w-2.5 !h-2.5 !bg-violet-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
       />
     </div>
   );

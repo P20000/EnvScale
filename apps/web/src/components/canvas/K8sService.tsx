@@ -20,7 +20,7 @@ export const K8sServiceNode = memo(({ id, data, selected }: NodeProps & { data: 
 
   return (
     <div
-      className={`relative flex items-center gap-3.5 min-w-[250px] rounded-xl bg-[#141417] px-4.5 py-3 border text-left shadow-lg transition-all ${
+      className={`group relative flex items-center gap-3.5 min-w-[250px] rounded-xl bg-[#141417] px-4 py-3 border text-left shadow-lg transition-all ${
         selected
           ? "border-blue-500 ring-1 ring-blue-500 shadow-blue-500/10"
           : "border-neutral-800"
@@ -31,13 +31,13 @@ export const K8sServiceNode = memo(({ id, data, selected }: NodeProps & { data: 
         type="target"
         position={Position.Top}
         id="top-target"
-        className="!w-3 !h-3 !bg-neutral-800 !border-neutral-600 hover:!bg-blue-500 transition-colors"
+        className="!w-2.5 !h-2.5 !bg-blue-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
       />
       <Handle
         type="source"
         position={Position.Top}
         id="top-source"
-        className="!w-3 !h-3 !bg-neutral-800 !border-neutral-600 hover:!bg-blue-500 transition-colors"
+        className="!w-2.5 !h-2.5 !bg-blue-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
       />
 
       {/* 4-Sided Handles: LEFT */}
@@ -45,13 +45,13 @@ export const K8sServiceNode = memo(({ id, data, selected }: NodeProps & { data: 
         type="target"
         position={Position.Left}
         id="left-target"
-        className="!w-3 !h-3 !bg-neutral-800 !border-neutral-600 hover:!bg-blue-500 transition-colors"
+        className="!w-2.5 !h-2.5 !bg-blue-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
       />
       <Handle
         type="source"
         position={Position.Left}
         id="left-source"
-        className="!w-3 !h-3 !bg-neutral-800 !border-neutral-600 hover:!bg-blue-500 transition-colors"
+        className="!w-2.5 !h-2.5 !bg-blue-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
       />
 
       <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0">
@@ -85,13 +85,13 @@ export const K8sServiceNode = memo(({ id, data, selected }: NodeProps & { data: 
         type="target"
         position={Position.Right}
         id="right-target"
-        className="!w-3 !h-3 !bg-neutral-800 !border-neutral-600 hover:!bg-blue-500 transition-colors"
+        className="!w-2.5 !h-2.5 !bg-blue-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
       />
       <Handle
         type="source"
         position={Position.Right}
         id="right-source"
-        className="!w-3 !h-3 !bg-neutral-800 !border-neutral-600 hover:!bg-blue-500 transition-colors"
+        className="!w-2.5 !h-2.5 !bg-blue-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
       />
 
       {/* 4-Sided Handles: BOTTOM */}
@@ -99,13 +99,13 @@ export const K8sServiceNode = memo(({ id, data, selected }: NodeProps & { data: 
         type="target"
         position={Position.Bottom}
         id="bottom-target"
-        className="!w-3 !h-3 !bg-neutral-800 !border-neutral-600 hover:!bg-blue-500 transition-colors"
+        className="!w-2.5 !h-2.5 !bg-blue-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
       />
       <Handle
         type="source"
         position={Position.Bottom}
         id="bottom-source"
-        className="!w-3 !h-3 !bg-neutral-800 !border-neutral-600 hover:!bg-blue-500 transition-colors"
+        className="!w-2.5 !h-2.5 !bg-blue-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
       />
     </div>
   );
