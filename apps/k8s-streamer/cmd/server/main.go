@@ -16,7 +16,9 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"github.com/EnvScale/k8s-streamer/pkg/chaos"
 	"github.com/EnvScale/k8s-streamer/pkg/k8s"
+	envredis "github.com/EnvScale/k8s-streamer/pkg/redis"
 	"github.com/EnvScale/k8s-streamer/pkg/websocket"
 )
 
@@ -27,11 +29,22 @@ type registerClusterRequest struct {
 }
 
 type logStreamRequest struct {
-	ClusterID  string `json:"clusterId"`
-	Namespace  string `json:"namespace"`
-	PodName    string `json:"podName"`
-	Container  string `json:"container"`  // optional — defaults to first container
-	TailLines  int64  `json:"tailLines"`  // number of historical lines to tail before following
+	ClusterID string `json:"clusterId"`
+	Namespace string `json:"namespace"`
+	PodName   string `json:"podName"`
+	Container string `json:"container"` // optional — defaults to first container
+	TailLines int64  `json:"tailLines"` // number of historical lines to tail before following
+}
+
+type chaosInjectRequest struct {
+	ClusterID string `json:"clusterId"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`      // Pod name (crash, oom-pressure) or Deployment name (scale-down)
+	FaultType string `json:"faultType"` // "crash" | "oom-pressure" | "scale-down"
+}
+
+type chaosClearRequest struct {
+	FaultID string `json:"faultId"`
 }
 
 func main() {
@@ -62,10 +75,42 @@ func main() {
 	logStreamer := k8s.NewPodLogStreamer(hub)
 	log.Println("[LogStreamer] Pod log streaming engine initialized")
 
+	// ── Optional Redis Pub/Sub Adapter ──────────────────────────────────────────
+	// When REDIS_URL is set, the Hub will fan-out every BroadcastEvent to all
+	// peer k8s-streamer instances sharing the same Redis instance, enabling
+	// horizontal scaling without losing cross-replica event delivery.
+	// If Redis is unavailable or REDIS_URL is not set, the streamer falls back
+	// to single-instance mode gracefully — no crash, just a log warning.
+	var redisAdapter *envredis.Adapter
+	if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
+		adapter, err := envredis.NewAdapter(envredis.Config{URL: redisURL}, hub)
+		if err != nil {
+			log.Printf("[Redis Adapter] WARNING: Could not connect to Redis (%v) — running in single-instance mode", err)
+		} else {
+			adapter.Start(context.Background())
+			hub.SetPublisher(adapter)
+			redisAdapter = adapter
+			log.Printf("[Redis Adapter] Pub/Sub adapter active — multi-instance event fan-out enabled")
+		}
+	} else {
+		log.Println("[Redis Adapter] REDIS_URL not set — running in single-instance mode (no fan-out)")
+	}
+
+	// ── Chaos Fault Injection Engine ────────────────────────────────────────────
+	// The chaos injector uses real Kubernetes API calls to inject controlled
+	// failure scenarios (pod crashes, OOM pressure, scale-downs) for testing.
+	chaosInjector := chaos.NewInjector(clusterManager, hub)
+	log.Println("[Chaos Engine] Fault injection engine initialized")
+
 	mux := http.NewServeMux()
 
 	// Health Check Endpoint
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		redisStatus := "disabled"
+		if redisAdapter != nil && redisAdapter.IsRunning() {
+			redisStatus = "connected"
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -73,7 +118,9 @@ func main() {
 			"service":          "k8s-streamer",
 			"activeClients":    hub.ClientCount(),
 			"activeClusters":   clusterManager.ActiveClusterCount(),
-			"activeLogStreams": logStreamer.ActiveStreamCount(),
+			"activeLogStreams":  logStreamer.ActiveStreamCount(),
+			"activeChaosOps":   chaosInjector.ActiveFaultCount(),
+			"redisStatus":      redisStatus,
 			"timestamp":        time.Now().UTC().Format(time.RFC3339),
 		})
 	})
@@ -293,6 +340,96 @@ func main() {
 		}
 	})
 
+	// ── Chaos Fault Injection Endpoints ──────────────────────────────────────────
+	//
+	// POST   /api/v1/chaos/inject   — inject a fault (crash | oom-pressure | scale-down)
+	// DELETE /api/v1/chaos/inject   — clear/cancel a previously injected fault by faultId
+	// GET    /api/v1/chaos/faults   — list all active fault injections for a cluster
+	//
+	mux.HandleFunc("/api/v1/chaos/inject", func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Failed to read request body", http.StatusBadRequest)
+			return
+		}
+
+		switch r.Method {
+		case http.MethodPost:
+			var req chaosInjectRequest
+			if err := json.Unmarshal(body, &req); err != nil {
+				http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
+				return
+			}
+			if req.ClusterID == "" || req.Namespace == "" || req.Name == "" || req.FaultType == "" {
+				http.Error(w, "clusterId, namespace, name, and faultType are required", http.StatusBadRequest)
+				return
+			}
+
+			faultID, err := chaosInjector.InjectFault(
+				r.Context(),
+				req.ClusterID,
+				req.Namespace,
+				req.Name,
+				chaos.FaultType(req.FaultType),
+			)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Fault injection failed: %v", err), http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"status":    "injected",
+				"faultId":   faultID,
+				"faultType": req.FaultType,
+				"target":    req.Name,
+				"namespace": req.Namespace,
+				"clusterId": req.ClusterID,
+			})
+
+		case http.MethodDelete:
+			var req chaosClearRequest
+			if err := json.Unmarshal(body, &req); err != nil || req.FaultID == "" {
+				http.Error(w, "faultId is required in request body", http.StatusBadRequest)
+				return
+			}
+
+			if err := chaosInjector.ClearFault(r.Context(), req.FaultID); err != nil {
+				http.Error(w, fmt.Sprintf("Failed to clear fault: %v", err), http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"status":  "cleared",
+				"faultId": req.FaultID,
+			})
+
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// GET /api/v1/chaos/faults — list active fault injections for a cluster
+	mux.HandleFunc("/api/v1/chaos/faults", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		clusterID := r.URL.Query().Get("clusterId") // optional filter
+		faults := chaosInjector.ListFaults(clusterID)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"activeFaults": faults,
+			"total":        len(faults),
+		})
+	})
+
 	corsHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
@@ -340,6 +477,11 @@ func main() {
 		}
 		// Stop all active cluster informers
 		clusterManager.ShutdownAll()
+
+		// Stop Redis adapter if active
+		if redisAdapter != nil {
+			redisAdapter.Stop()
+		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

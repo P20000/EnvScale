@@ -170,3 +170,18 @@ func (cm *ClusterManager) ShutdownAll() {
 	}
 	log.Println("[ClusterManager] All cluster informers successfully shut down.")
 }
+
+// GetClientset returns the kubernetes.Interface for the registered cluster with the
+// given clusterID. This implements the chaos.ClientsetProvider interface, allowing the
+// chaos Injector to borrow an authenticated clientset for fault API calls without
+// needing to re-parse or store a second copy of the Kubeconfig.
+func (cm *ClusterManager) GetClientset(clusterID string) (kubernetes.Interface, error) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	im, ok := cm.clusters[clusterID]
+	if !ok {
+		return nil, fmt.Errorf("cluster %q is not registered", clusterID)
+	}
+	return im.Clientset(), nil
+}

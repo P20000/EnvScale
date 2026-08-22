@@ -4,17 +4,22 @@ import "time"
 
 // Event Type Constants matching shared monorepo contracts
 const (
-	EventPodStatusChanged    = "EVENT_POD_STATUS_CHANGED"
-	EventNodeMutated         = "EVENT_NODE_MUTATED"
-	EventServiceMutated      = "EVENT_SERVICE_MUTATED"
-	EventLogLine             = "EVENT_LOG_LINE"
-	EventAlertTriggered      = "EVENT_ALERT_TRIGGERED"
-	EventHeartbeat           = "EVENT_HEARTBEAT"
-	EventPodAnomalyDetected  = "EVENT_POD_ANOMALY_DETECTED"
-	EventDeploymentMutated   = "EVENT_DEPLOYMENT_MUTATED"
-	EventReplicaSetMutated   = "EVENT_REPLICA_SET_MUTATED"
-	EventStatefulSetMutated  = "EVENT_STATEFUL_SET_MUTATED"
-	EventIngressMutated      = "EVENT_INGRESS_MUTATED"
+	EventPodStatusChanged   = "EVENT_POD_STATUS_CHANGED"
+	EventNodeMutated        = "EVENT_NODE_MUTATED"
+	EventServiceMutated     = "EVENT_SERVICE_MUTATED"
+	EventLogLine            = "EVENT_LOG_LINE"
+	EventAlertTriggered     = "EVENT_ALERT_TRIGGERED"
+	EventHeartbeat          = "EVENT_HEARTBEAT"
+	EventPodAnomalyDetected = "EVENT_POD_ANOMALY_DETECTED"
+	EventDeploymentMutated  = "EVENT_DEPLOYMENT_MUTATED"
+	EventReplicaSetMutated  = "EVENT_REPLICA_SET_MUTATED"
+	EventStatefulSetMutated = "EVENT_STATEFUL_SET_MUTATED"
+	EventIngressMutated     = "EVENT_INGRESS_MUTATED"
+
+	// Chaos fault injection events — emitted by the chaos engine when a fault is
+	// injected into or cleared from a target workload.
+	EventChaosFaultInjected = "EVENT_CHAOS_FAULT_INJECTED"
+	EventChaosFaultCleared  = "EVENT_CHAOS_FAULT_CLEARED"
 )
 
 // WSEventEnvelope represents the standardized WebSocket JSON frame delivered to client subscribers
@@ -140,4 +145,19 @@ type PodAnomalyEvent struct {
 	LogSnippet  string          `json:"logSnippet,omitempty"` // Triggering log line (for log-source detections only)
 	Source      string          `json:"source"`               // "informer" | "log_stream"
 	Timestamp   string          `json:"timestamp"`
+}
+
+// ChaosFaultEvent is broadcast over WebSocket when the chaos engine injects or
+// clears a fault on a Kubernetes workload. The frontend topology canvas uses this
+// to visually highlight affected pods/deployments with a "chaos" badge overlay.
+type ChaosFaultEvent struct {
+	FaultID    string `json:"faultId"`    // Unique ID for this fault injection (used to track/cancel)
+	FaultType  string `json:"faultType"`  // "crash", "oom-pressure", "scale-down"
+	Target     string `json:"target"`     // "pod" | "deployment"
+	Name       string `json:"name"`       // Pod or Deployment name
+	Namespace  string `json:"namespace"`
+	ClusterID  string `json:"clusterId"`
+	Status     string `json:"status"`     // "injected" | "cleared" | "failed"
+	Message    string `json:"message"`    // Human-readable description
+	Timestamp  string `json:"timestamp"`
 }
