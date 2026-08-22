@@ -1,13 +1,13 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { Box, RotateCcw, Trash2 } from "lucide-react";
+import { Box, RotateCcw, Trash2, Loader2 } from "lucide-react";
 import { useTopologyStore } from "../../store/useTopologyStore";
 
 export interface K8sPodData extends Record<string, unknown> {
   name: string;
   namespace: string;
   nodeName?: string;
-  status: "Running" | "CrashLoopBackOff" | "Pending" | "Terminated" | "Failed" | "Unknown";
+  status: "Running" | "CrashLoopBackOff" | "Pending" | "ContainerCreating" | "Terminating" | "Terminated" | "Failed" | "Unknown";
   restarts: number;
   ip?: string;
   cpuUsage?: string;
@@ -17,20 +17,33 @@ export interface K8sPodData extends Record<string, unknown> {
   ownerUid?: string;
 }
 
-// Removed formatPodName to allow CSS truncate to handle it naturally using full width
-
 export const K8sPodNode = memo(({ id, data, selected }: NodeProps & { data: K8sPodData }) => {
   const deleteNode = useTopologyStore((s) => s.deleteNode);
+
+  const isCreating = data.status === "ContainerCreating" || data.status === "Pending";
+  const isTerminating = data.status === "Terminating" || data.status === "Terminated";
 
   const getStatusStyle = () => {
     switch (data.status) {
       case "Running":
         return { dot: "bg-emerald-500", text: "text-emerald-400", border: "border-neutral-800" };
+      case "ContainerCreating":
+      case "Pending":
+        return {
+          dot: "bg-blue-400 animate-ping",
+          text: "text-blue-400 font-semibold animate-pulse",
+          border: "border-blue-500/50 bg-blue-950/20 backdrop-blur-md animate-pulse shadow-blue-500/10",
+        };
+      case "Terminating":
+      case "Terminated":
+        return {
+          dot: "bg-red-400 animate-ping",
+          text: "text-red-400 font-semibold opacity-75",
+          border: "border-red-500/40 bg-neutral-900/40 opacity-40 scale-95 transition-all duration-500",
+        };
       case "CrashLoopBackOff":
       case "Failed":
         return { dot: "bg-red-500 animate-pulse", text: "text-red-400", border: "border-red-500/40" };
-      case "Pending":
-        return { dot: "bg-amber-500", text: "text-amber-400", border: "border-amber-500/40" };
       default:
         return { dot: "bg-neutral-500", text: "text-neutral-400", border: "border-neutral-800" };
     }
@@ -104,7 +117,13 @@ export const K8sPodNode = memo(({ id, data, selected }: NodeProps & { data: K8sP
       {/* Body: Status Dot, Namespace & Restarts Count */}
       <div className="flex items-center justify-between pt-3 gap-2">
         <div className="flex items-center gap-2 shrink-0">
-          <span className={`h-2 w-2 rounded-full ${statusStyle.dot}`} />
+          {isCreating ? (
+            <Loader2 className="h-3 w-3 text-blue-400 animate-spin" />
+          ) : isTerminating ? (
+            <Loader2 className="h-3 w-3 text-red-400 animate-spin" />
+          ) : (
+            <span className={`h-2 w-2 rounded-full ${statusStyle.dot}`} />
+          )}
           <span className={`text-[11px] font-semibold ${statusStyle.text}`}>{data.status}</span>
         </div>
 

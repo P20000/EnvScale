@@ -9,7 +9,8 @@ import {
   Copy,
   Check,
 } from "lucide-react";
-import { useTopologyStore } from "../../store/useTopologyStore";
+import { useTopologyStore, generateDynamicEdges } from "../../store/useTopologyStore";
+import { getLayoutedElements } from "../../utils/layout";
 
 interface CommandLog {
   id: string;
@@ -295,85 +296,136 @@ export function KubectlTerminal() {
       } else if (lower.startsWith("kubectl scale")) {
         const parts = cmd.split(/\s+/);
         let replicas = 1;
-        let deployName = "todo-backend";
 
         for (const p of parts) {
           if (p.startsWith("--replicas=")) {
             replicas = parseInt(p.split("=")[1], 10) || 1;
           }
         }
-        if (parts[2] && parts[2] !== "deployment" && parts[2] !== "deploy") {
-          deployName = parts[2].replace(/^deploy(ment)?\//, "");
-        } else if (parts[3]) {
-          deployName = parts[3].replace(/^deploy(ment)?\//, "");
-        }
+
+        const rawTarget =
+          parts.find(
+            (p) =>
+              !p.startsWith("kubectl") &&
+              !p.startsWith("scale") &&
+              !p.startsWith("--") &&
+              p !== "deployment" &&
+              p !== "deploy"
+          ) || "todo-backend";
+
+        const deployName = rawTarget.replace(/^deploy(ment)?\//, "");
 
         const store = useTopologyStore.getState();
         const currentNodes = store.nodes;
 
-        const targetDep = currentNodes.find(
-          (n) => n.type === "k8sDeployment" && (n.data as unknown as K8sNodeData).name?.includes(deployName)
-        );
+        // Match existing pods belonging to the target workload (e.g. backend vs frontend)
+        const isFrontend = deployName.includes("frontend");
+        const existingPods = currentNodes.filter((n) => {
+          if (n.type !== "k8sPod") return false;
+          const podName = ((n.data as unknown as K8sNodeData).name || n.id).toLowerCase();
+          if (isFrontend) return podName.includes("frontend");
+          return podName.includes("backend");
+        });
 
-        if (targetDep) {
-          const updatedNodes = currentNodes.map((n) => {
-            if (n.id === targetDep.id) {
+        const podPrefix = isFrontend ? "todo-frontend" : "todo-backend";
+
+        if (existingPods.length < replicas) {
+          // Scale Up: Create new ghost pod nodes with status = "ContainerCreating"
+          const toAddCount = replicas - existingPods.length;
+          const newPodNodes = Array.from({ length: toAddCount }).map((_, idx) => {
+            const hash = Math.random().toString(36).substring(2, 7);
+            const podId = `${podPrefix}-${hash}`;
+            return {
+              id: podId,
+              type: "k8sPod",
+              position: { x: 400 + (existingPods.length + idx) * 40, y: 300 },
+              data: {
+                name: podId,
+                namespace: "default",
+                status: "ContainerCreating",
+                phase: "ContainerCreating",
+                restarts: 0,
+                cpuUsage: "12m",
+                memoryUsage: "48Mi",
+                labels: { app: podPrefix },
+              },
+            };
+          });
+
+          // Layout combined graph immediately with ghost loader nodes & dynamic edges
+          const combinedNodes = [...currentNodes, ...newPodNodes];
+          const dynamicEdges = generateDynamicEdges(combinedNodes, store.edges);
+          const layoutResult = getLayoutedElements(combinedNodes, dynamicEdges, "LR");
+
+          store.setNodes(layoutResult.nodes);
+          store.setEdges(layoutResult.edges);
+
+          // Transition ghost ContainerCreating pods to Running after 1800ms
+          setTimeout(() => {
+            const currentStoreNodes = useTopologyStore.getState().nodes;
+            const transitioned = currentStoreNodes.map((n) => {
+              if (newPodNodes.some((np) => np.id === n.id)) {
+                return {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    status: "Running",
+                    phase: "Running",
+                  },
+                };
+              }
+              return n;
+            });
+            useTopologyStore.getState().setNodes(transitioned);
+          }, 1800);
+
+          output = (
+            <div className="text-emerald-400 font-mono text-[11px]">
+              deployment.apps/{deployName} scaled to {replicas} replicas ({toAddCount} ghost pod(s) initializing on canvas...)
+            </div>
+          );
+        } else if (existingPods.length > replicas) {
+          // Scale Down: Mark excess pods as "Terminating"
+          const toRemoveCount = existingPods.length - replicas;
+          const podsToTerminate = existingPods.slice(-toRemoveCount);
+          const terminateIds = new Set(podsToTerminate.map((p) => p.id));
+
+          const updatedNodesWithTerminating = currentNodes.map((n) => {
+            if (terminateIds.has(n.id)) {
               return {
                 ...n,
                 data: {
                   ...n.data,
-                  replicas,
-                  readyReplicas: replicas,
+                  status: "Terminating",
+                  phase: "Terminating",
                 },
               };
             }
             return n;
           });
 
-          const existingPods = updatedNodes.filter(
-            (n) => n.type === "k8sPod" && (n.data as unknown as K8sNodeData).name?.includes(deployName)
-          );
+          store.setNodes(updatedNodesWithTerminating);
 
-          let finalNodes = updatedNodes;
-          if (existingPods.length < replicas) {
-            const toAdd = replicas - existingPods.length;
-            const newPods = Array.from({ length: toAdd }).map((_, idx) => {
-              const hash = Math.random().toString(36).substring(2, 7);
-              const podId = `${deployName}-${hash}`;
-              return {
-                id: podId,
-                type: "k8sPod",
-                position: { x: 400 + (existingPods.length + idx) * 40, y: 300 },
-                data: {
-                  name: podId,
-                  phase: "Running",
-                  restartCount: 0,
-                  cpuUsage: "12m",
-                  memoryUsage: "48Mi",
-                  labels: { app: deployName },
-                },
-              };
-            });
-            finalNodes = [...updatedNodes, ...newPods];
-          } else if (existingPods.length > replicas) {
-            const toRemoveCount = existingPods.length - replicas;
-            const removeIds = new Set(existingPods.slice(-toRemoveCount).map((p) => p.id));
-            finalNodes = updatedNodes.filter((n) => !removeIds.has(n.id));
-          }
+          // Remove terminating pods from canvas after 1800ms and re-layout graph
+          setTimeout(() => {
+            const currentStoreNodes = useTopologyStore.getState().nodes;
+            const prunedNodes = currentStoreNodes.filter((n) => !terminateIds.has(n.id));
+            const dynamicEdges = generateDynamicEdges(prunedNodes, useTopologyStore.getState().edges);
+            const layoutResult = getLayoutedElements(prunedNodes, dynamicEdges, "LR");
 
-          if (store.setNodes) {
-            store.setNodes(finalNodes);
-          }
+            useTopologyStore.getState().setNodes(layoutResult.nodes);
+            useTopologyStore.getState().setEdges(layoutResult.edges);
+          }, 1800);
 
           output = (
-            <div className="text-emerald-400 font-mono text-[11px]">
-              deployment.apps/{deployName} scaled to {replicas} replicas (live topology updated)
+            <div className="text-amber-400 font-mono text-[11px]">
+              deployment.apps/{deployName} scaled down to {replicas} replicas ({toRemoveCount} pod(s) terminating...)
             </div>
           );
         } else {
           output = (
             <div className="text-emerald-400 font-mono text-[11px]">
-              deployment.apps/{deployName} scaled to {replicas} replicas
+              deployment.apps/{deployName} already at {replicas} replicas
             </div>
           );
         }
