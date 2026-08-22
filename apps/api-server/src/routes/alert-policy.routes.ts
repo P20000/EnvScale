@@ -11,7 +11,7 @@ import {
   workspaceParamsSchema,
 } from "../schemas/request.schemas.js";
 
-export const alertPolicyRouter = Router({ mergeParams: true });
+export const alertPolicyRouter: Router = Router({ mergeParams: true });
 
 alertPolicyRouter.use(requireAuth);
 alertPolicyRouter.get(
@@ -28,7 +28,7 @@ alertPolicyRouter.post(
   create
 );
 
-export const topLevelAlertPolicyRouter = Router();
+export const topLevelAlertPolicyRouter: Router = Router();
 topLevelAlertPolicyRouter.use(requireAuth);
 topLevelAlertPolicyRouter.get(
   "/:policyId",

@@ -4,11 +4,11 @@ import { requireAuth, requireWorkspaceRole } from "../middleware/auth.middleware
 import { validate } from "../middleware/validate.js";
 import { healthHistoryQuerySchema, workspaceParamsSchema } from "../schemas/request.schemas.js";
 
-export const leaderboardRouter = Router();
+export const leaderboardRouter: Router = Router();
 leaderboardRouter.use(requireAuth);
 leaderboardRouter.get("/", leaderboard);
 
-export const healthHistoryRouter = Router({ mergeParams: true });
+export const healthHistoryRouter: Router = Router({ mergeParams: true });
 healthHistoryRouter.use(requireAuth);
 healthHistoryRouter.get(
   "/",
