@@ -1,6 +1,6 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, or } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { incidents } from "../db/schema.js";
+import { incidents, workspaceMembers, workspaces } from "../db/schema.js";
 
 const publicIncidentFields = {
   id: incidents.id,
@@ -28,6 +28,21 @@ export const listIncidents = (workspaceId: string) =>
     .select(publicIncidentFields)
     .from(incidents)
     .where(eq(incidents.workspaceId, workspaceId))
+    .orderBy(desc(incidents.createdAt));
+
+export const listIncidentsForUser = (userId: string) =>
+  db
+    .select(publicIncidentFields)
+    .from(incidents)
+    .innerJoin(workspaces, eq(incidents.workspaceId, workspaces.id))
+    .leftJoin(
+      workspaceMembers,
+      and(
+        eq(workspaceMembers.workspaceId, incidents.workspaceId),
+        eq(workspaceMembers.userId, userId)
+      )
+    )
+    .where(or(eq(workspaces.ownerId, userId), eq(workspaceMembers.userId, userId)))
     .orderBy(desc(incidents.createdAt));
 
 export const getIncident = async (incidentId: string) => {

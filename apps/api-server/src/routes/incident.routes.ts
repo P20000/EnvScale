@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { list, resolve } from "../controllers/incident.controller.js";
+import { list, listAll, resolve } from "../controllers/incident.controller.js";
 import { requireIncidentRole } from "../middleware/incident.middleware.js";
 import { requireAuth, requireWorkspaceRole } from "../middleware/auth.middleware.js";
 import { validate } from "../middleware/validate.js";
@@ -20,6 +20,7 @@ incidentRouter.get(
 
 export const topLevelIncidentRouter = Router();
 topLevelIncidentRouter.use(requireAuth);
+topLevelIncidentRouter.get("/", listAll);
 topLevelIncidentRouter.patch(
   "/:incidentId/resolve",
   validate("params", incidentParamsSchema, "Invalid incident parameters"),

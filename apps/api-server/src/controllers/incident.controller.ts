@@ -1,8 +1,17 @@
 import type { Request, Response } from "express";
-import { getIncident, listIncidents, resolveIncident } from "../services/incident.service.js";
+import {
+  getIncident,
+  listIncidents,
+  listIncidentsForUser,
+  resolveIncident,
+} from "../services/incident.service.js";
 
 export const list = async (request: Request, response: Response) => {
   response.json(await listIncidents(request.params.id as string));
+};
+
+export const listAll = async (request: Request, response: Response) => {
+  response.json(await listIncidentsForUser(request.user!.id));
 };
 
 export const resolve = async (request: Request, response: Response) => {
