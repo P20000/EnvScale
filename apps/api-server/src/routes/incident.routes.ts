@@ -9,7 +9,7 @@ import {
   workspaceParamsSchema,
 } from "../schemas/request.schemas.js";
 
-export const incidentRouter = Router({ mergeParams: true });
+export const incidentRouter: Router = Router({ mergeParams: true });
 incidentRouter.use(requireAuth);
 incidentRouter.get(
   "/",
@@ -18,7 +18,7 @@ incidentRouter.get(
   list
 );
 
-export const topLevelIncidentRouter = Router();
+export const topLevelIncidentRouter: Router = Router();
 topLevelIncidentRouter.use(requireAuth);
 topLevelIncidentRouter.get("/", listAll);
 topLevelIncidentRouter.patch(
