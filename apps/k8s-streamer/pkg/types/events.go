@@ -161,3 +161,21 @@ type ChaosFaultEvent struct {
 	Message    string `json:"message"`    // Human-readable description
 	Timestamp  string `json:"timestamp"`
 }
+
+// AlertTriggeredEvent is broadcast when the background Metric Evaluator detects
+// a pod or node metric violation that has been sustained beyond the rule's
+// configured duration threshold. The frontend alert panel uses this to surface
+// real-time alerts and optionally record incidents via the api-server.
+type AlertTriggeredEvent struct {
+	RuleID     string `json:"ruleId"`     // Alert policy ID from api-server
+	RuleName   string `json:"ruleName"`   // Human-readable rule name
+	Severity   string `json:"severity"`   // "CRITICAL" | "WARNING"
+	MetricType string `json:"metricType"` // "pod_restarts" | "pod_phase" | "cpu_usage" | "memory_usage" | "node_status"
+	TargetKind string `json:"targetKind"` // "Pod" | "Node"
+	TargetName string `json:"targetName"` // Pod or Node name
+	Namespace  string `json:"namespace"`
+	Measured   string `json:"measured"`   // The actual measured value
+	Threshold  string `json:"threshold"`  // The threshold expression (e.g., "> 5")
+	Message    string `json:"message"`    // Full human-readable alert description
+	Timestamp  string `json:"timestamp"`
+}

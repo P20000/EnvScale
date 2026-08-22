@@ -28,6 +28,7 @@ type InformerManager struct {
 	stopCh    chan struct{}
 	running   bool
 	mu        sync.RWMutex
+	dedup     *DedupCache // FNV-hash dedup cache to suppress unchanged delta rebroadcasts
 }
 
 // NewInformerManager creates an InformerManager from raw Kubeconfig bytes
@@ -76,6 +77,7 @@ func NewInformerManagerWithClientset(clientset kubernetes.Interface, hub *websoc
 		clusterID: clusterID,
 		stopCh:    make(chan struct{}),
 		running:   false,
+		dedup:     NewDedupCache(),
 	}
 }
 
@@ -405,6 +407,13 @@ func (im *InformerManager) extractPodDelta(pod *corev1.Pod) types.PodStatusDelta
 
 func (im *InformerManager) emitPodDelta(pod *corev1.Pod) {
 	delta := im.extractPodDelta(pod)
+
+	// Dedup: skip broadcasting if the pod delta is identical to the last emitted version
+	key := fmt.Sprintf("Pod/%s/%s", pod.Namespace, pod.Name)
+	if !im.dedup.ShouldEmit(key, delta) {
+		return
+	}
+
 	im.hub.BroadcastEvent(types.EventPodStatusChanged, im.clusterID, delta)
 
 	// Anomaly classification: check if the pod's current phase/reason represents
@@ -443,6 +452,11 @@ func (im *InformerManager) emitNodeDelta(node *corev1.Node) {
 		PodCapacity:    node.Status.Capacity.Pods().Value(),
 		Labels:         node.Labels,
 	}
+
+	key := fmt.Sprintf("Node/%s", node.Name)
+	if !im.dedup.ShouldEmit(key, delta) {
+		return
+	}
 	im.hub.BroadcastEvent(types.EventNodeMutated, im.clusterID, delta)
 }
 
@@ -460,6 +474,11 @@ func (im *InformerManager) emitServiceDelta(svc *corev1.Service) {
 		Selector:    svc.Spec.Selector,
 		TargetPorts: ports,
 	}
+
+	key := fmt.Sprintf("Service/%s/%s", svc.Namespace, svc.Name)
+	if !im.dedup.ShouldEmit(key, delta) {
+		return
+	}
 	im.hub.BroadcastEvent(types.EventServiceMutated, im.clusterID, delta)
 }
 
@@ -476,6 +495,10 @@ func (im *InformerManager) extractDeploymentDelta(dep *appsv1.Deployment) types.
 
 func (im *InformerManager) emitDeploymentDelta(dep *appsv1.Deployment) {
 	delta := im.extractDeploymentDelta(dep)
+	key := fmt.Sprintf("Deployment/%s/%s", dep.Namespace, dep.Name)
+	if !im.dedup.ShouldEmit(key, delta) {
+		return
+	}
 	im.hub.BroadcastEvent(types.EventDeploymentMutated, im.clusterID, delta)
 }
 
@@ -501,6 +524,10 @@ func (im *InformerManager) extractReplicaSetDelta(rs *appsv1.ReplicaSet) types.R
 
 func (im *InformerManager) emitReplicaSetDelta(rs *appsv1.ReplicaSet) {
 	delta := im.extractReplicaSetDelta(rs)
+	key := fmt.Sprintf("ReplicaSet/%s/%s", rs.Namespace, rs.Name)
+	if !im.dedup.ShouldEmit(key, delta) {
+		return
+	}
 	im.hub.BroadcastEvent(types.EventReplicaSetMutated, im.clusterID, delta)
 }
 
@@ -517,6 +544,10 @@ func (im *InformerManager) extractStatefulSetDelta(sts *appsv1.StatefulSet) type
 
 func (im *InformerManager) emitStatefulSetDelta(sts *appsv1.StatefulSet) {
 	delta := im.extractStatefulSetDelta(sts)
+	key := fmt.Sprintf("StatefulSet/%s/%s", sts.Namespace, sts.Name)
+	if !im.dedup.ShouldEmit(key, delta) {
+		return
+	}
 	im.hub.BroadcastEvent(types.EventStatefulSetMutated, im.clusterID, delta)
 }
 
@@ -553,5 +584,9 @@ func (im *InformerManager) extractIngressDelta(ing *networkingv1.Ingress) types.
 
 func (im *InformerManager) emitIngressDelta(ing *networkingv1.Ingress) {
 	delta := im.extractIngressDelta(ing)
+	key := fmt.Sprintf("Ingress/%s/%s", ing.Namespace, ing.Name)
+	if !im.dedup.ShouldEmit(key, delta) {
+		return
+	}
 	im.hub.BroadcastEvent(types.EventIngressMutated, im.clusterID, delta)
 }
