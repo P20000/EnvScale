@@ -407,10 +407,14 @@ class LocalRunApp(Gtk.Window):
                     self.is_busy = False
                     return
 
-        # 2. Enable Ingress Addon
-        self.set_status("Enabling Minikube NGINX Ingress controller addon...", 0.4)
+        # 2. Enable Ingress Addon & Wait for Controller Readiness
+        self.set_status("Enabling Minikube NGINX Ingress controller addon...", 0.35)
         self.append_log("[MINIKUBE] Running 'minikube addons enable ingress'...")
         self._exec_cmd("minikube addons enable ingress")
+
+        self.set_status("Waiting for Ingress Controller admission webhook to be ready...", 0.45)
+        self.append_log("[MINIKUBE] Waiting for ingress-nginx controller rollout...")
+        self._exec_cmd("kubectl rollout status deployment/ingress-nginx-controller -n ingress-nginx --timeout=90s")
 
         # 3. Build Images inside Minikube Docker environment
         self.set_status("Building container images inside Minikube...", 0.6)
@@ -420,10 +424,17 @@ class LocalRunApp(Gtk.Window):
         self.append_log("[MINIKUBE] Building todo-frontend:latest...")
         self._exec_cmd("minikube image build -t todo-frontend:latest ./testing/app/frontend", cwd=PROJECT_ROOT)
 
-        # 4. Apply K8s Manifests
+        # 4. Apply K8s Manifests (with webhook readiness fallback & auto-fix)
         self.set_status("Applying Kubernetes manifests to 'testing-todo' namespace...", 0.8)
         self.append_log("[K8S] Running 'kubectl apply -f testing/k8s/'...")
         code = self._exec_cmd("kubectl apply -f testing/k8s/", cwd=PROJECT_ROOT)
+        if code != 0:
+            self.append_log("[WARNING] Manifest apply failed. Cleaning up non-responsive admission webhook and retrying...")
+            self._exec_cmd("kubectl delete validatingwebhookconfiguration ingress-nginx-admission --ignore-not-found=true")
+            time.sleep(2)
+            self.append_log("[K8S] Retrying 'kubectl apply -f testing/k8s/'...")
+            code = self._exec_cmd("kubectl apply -f testing/k8s/", cwd=PROJECT_ROOT)
+
         if code != 0:
             self.append_log("[ERROR] Failed to apply Kubernetes manifests!")
             self.set_status("Deploy Failed: Manifest apply error", 0.8)
