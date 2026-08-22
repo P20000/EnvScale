@@ -82,12 +82,12 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
   const handleAutoLayout = () => {
     applyDagreLayout("LR");
     setTimeout(() => {
-      fitView({ duration: 400, padding: 0.16, maxZoom: 0.90 });
+      fitView({ duration: 400, padding: 0.11, maxZoom: 0.92 });
     }, 50);
   };
 
   const handleRecenterView = () => {
-    fitView({ duration: 400, padding: 0.16, maxZoom: 0.90 });
+    fitView({ duration: 400, padding: 0.11, maxZoom: 0.92 });
   };
 
   const initialLayoutDone = useRef(false);
@@ -96,7 +96,7 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
     if (nodes.length > 0) {
       if (!initialLayoutDone.current) {
         setTimeout(() => {
-          fitView({ duration: 400, padding: 0.16, maxZoom: 0.90 });
+          fitView({ duration: 400, padding: 0.11, maxZoom: 0.92 });
         }, 100);
         initialLayoutDone.current = true;
       }
@@ -116,7 +116,7 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         onPaneClick={handlePaneClick}
         deleteKeyCode={["Delete", "Backspace"]}
         fitView
-        fitViewOptions={{ padding: 0.16, maxZoom: 0.90 }}
+        fitViewOptions={{ padding: 0.11, maxZoom: 0.92 }}
         minZoom={0.2}
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
