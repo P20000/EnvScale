@@ -151,20 +151,15 @@ export function TopNavbar({
         <div className="flex items-center gap-4">
           {/* Live WebSocket Status Indicator */}
           <div className="flex items-center gap-2 rounded-full bg-neutral-950/60 px-3 py-1 border border-neutral-800/80 text-[11px] font-medium text-neutral-300">
-            <span className="relative flex h-2 w-2">
-              {isConnected && (
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-              )}
-              <span
-                className={`relative inline-flex rounded-full h-2 w-2 ${
-                  isConnected
-                    ? "bg-emerald-500"
-                    : isConnecting
-                    ? "bg-amber-500 animate-pulse"
-                    : "bg-red-500"
-                }`}
-              />
-            </span>
+            <span
+              className={`h-2 w-2 rounded-full shrink-0 ${
+                isConnected
+                  ? "bg-emerald-500"
+                  : isConnecting
+                  ? "bg-amber-500"
+                  : "bg-red-500"
+              }`}
+            />
             <span className="font-mono">
               {isConnected
                 ? `Connected (${currentWsLatencyMs}ms)`
