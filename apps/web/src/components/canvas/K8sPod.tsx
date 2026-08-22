@@ -69,13 +69,13 @@ export const K8sPodNode = memo(({ id, data, selected }: NodeProps & { data: K8sP
         type="target"
         position={Position.Top}
         id="top-target"
-        className="!w-2.5 !h-2.5 !bg-blue-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
+        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
       />
       <Handle
         type="source"
         position={Position.Top}
         id="top-source"
-        className="!w-2.5 !h-2.5 !bg-blue-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
+        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
       />
 
       {/* 4-Sided Handles: LEFT */}
@@ -83,13 +83,13 @@ export const K8sPodNode = memo(({ id, data, selected }: NodeProps & { data: K8sP
         type="target"
         position={Position.Left}
         id="left-target"
-        className="!w-2.5 !h-2.5 !bg-blue-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
+        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
       />
       <Handle
         type="source"
         position={Position.Left}
         id="left-source"
-        className="!w-2.5 !h-2.5 !bg-blue-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
+        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
       />
 
       {/* Header: Pod Name & Delete */}
@@ -159,13 +159,13 @@ export const K8sPodNode = memo(({ id, data, selected }: NodeProps & { data: K8sP
         type="target"
         position={Position.Right}
         id="right-target"
-        className="!w-2.5 !h-2.5 !bg-blue-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
+        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
       />
       <Handle
         type="source"
         position={Position.Right}
         id="right-source"
-        className="!w-2.5 !h-2.5 !bg-blue-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
+        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
       />
 
       {/* 4-Sided Handles: BOTTOM */}
@@ -173,13 +173,13 @@ export const K8sPodNode = memo(({ id, data, selected }: NodeProps & { data: K8sP
         type="target"
         position={Position.Bottom}
         id="bottom-target"
-        className="!w-2.5 !h-2.5 !bg-blue-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
+        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
       />
       <Handle
         type="source"
         position={Position.Bottom}
         id="bottom-source"
-        className="!w-2.5 !h-2.5 !bg-blue-500 !border-none opacity-0 group-hover:opacity-100 hover:!scale-125 transition-all duration-200"
+        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
       />
     </div>
   );
