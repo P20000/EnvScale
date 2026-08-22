@@ -140,17 +140,9 @@
 
 /* React Flow Attribution */
 .react-flow__attribution {
-  background: rgba(9, 9, 11, 0.8) !important;
-  color: #52525b !important;
-  font-size: 10px !important;
-  padding: 2px 8px !important;
-  border-top-left-radius: 6px !important;
+  display: none !important;
 }
 
-.react-flow__attribution a {
-  color: #71717a !important;
-  text-decoration: none !important;
-}
 
 /* Custom Handles */
 .react-flow__handle {

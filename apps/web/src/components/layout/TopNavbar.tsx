@@ -3,7 +3,6 @@ import {
   ChevronDown,
   Plus,
   Bell,
-  Focus,
   User,
   Check,
   Server,
@@ -22,7 +21,6 @@ interface TopNavbarProps {
   clusters: string[];
   onSelectCluster: (cluster: string) => void;
   onOpenConnectModal: () => void;
-  onFitView?: () => void;
   activeIncidentsCount?: number;
   wsLatencyMs?: number;
   wsStatus?: WsConnectionStatus;
@@ -34,7 +32,6 @@ export function TopNavbar({
   clusters,
   onSelectCluster,
   onOpenConnectModal,
-  onFitView,
   wsStatus: propsWsStatus,
   wsLatencyMs: propsWsLatencyMs,
 }: TopNavbarProps) {
@@ -264,14 +261,6 @@ export function TopNavbar({
               )}
             </div>
 
-            {/* Topology Fit / Re-center Canvas */}
-            <button
-              onClick={onFitView}
-              title="Fit / Center Graph"
-              className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-colors active:scale-95"
-            >
-              <Focus className="h-4 w-4" />
-            </button>
 
             {/* User Profile / Auth & Workspace Actions */}
             <div className="relative" ref={userMenuRef}>

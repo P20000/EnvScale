@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
+import { ReactFlowProvider } from "@xyflow/react";
 
 import { TopNavbar } from "./components/layout/TopNavbar";
 import { LeftSidebar, type NavTab } from "./components/layout/LeftSidebar";
@@ -38,15 +38,8 @@ function AppContent() {
     isOpen: false,
     podName: null,
   });
-
-  const { fitView } = useReactFlow();
-
   const handleClusterConnected = (newClusterName: string) => {
     addCluster(newClusterName);
-  };
-
-  const handleFitView = () => {
-    fitView({ duration: 400, padding: 0.2 });
   };
 
   const handleOpenLogTerminal = (
@@ -72,7 +65,6 @@ function AppContent() {
         clusters={clusters}
         onSelectCluster={(cluster) => setActiveCluster(cluster)}
         onOpenConnectModal={() => setShowConnectWizard(true)}
-        onFitView={handleFitView}
         activeIncidentsCount={2}
         wsLatencyMs={wsLatencyMs}
         wsStatus={wsStatus}
