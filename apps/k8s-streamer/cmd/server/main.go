@@ -97,10 +97,16 @@ func main() {
 	}
 
 	// ── Chaos Fault Injection Engine ────────────────────────────────────────────
+	// ── Chaos Fault Injection Engine ────────────────────────────────────────────
 	// The chaos injector uses real Kubernetes API calls to inject controlled
 	// failure scenarios (pod crashes, OOM pressure, scale-downs) for testing.
 	chaosInjector := chaos.NewInjector(clusterManager, hub)
 	log.Println("[Chaos Engine] Fault injection engine initialized")
+
+	// ── Metric Evaluator Background Worker ──────────────────────────────────────
+	// Evaluates live pod snapshots against alert rules every 10s and emits EVENT_ALERT_TRIGGERED
+	metricEvaluator := k8s.NewMetricEvaluator(clusterManager, hub)
+	metricEvaluator.Start()
 
 	mux := http.NewServeMux()
 
@@ -120,6 +126,7 @@ func main() {
 			"activeClusters":   clusterManager.ActiveClusterCount(),
 			"activeLogStreams":  logStreamer.ActiveStreamCount(),
 			"activeChaosOps":   chaosInjector.ActiveFaultCount(),
+			"activeAlertRules": metricEvaluator.RuleCount(),
 			"redisStatus":      redisStatus,
 			"timestamp":        time.Now().UTC().Format(time.RFC3339),
 		})
@@ -430,6 +437,78 @@ func main() {
 		})
 	})
 
+	// ── Metric Evaluator Alert Policy Rules REST Endpoint ────────────────────────
+	//
+	// GET    /api/v1/evaluator/rules — list active evaluation rules
+	// POST   /api/v1/evaluator/rules — push a list of rules (sync) or add a single rule
+	// DELETE /api/v1/evaluator/rules — delete a rule by ruleId query parameter
+	//
+	mux.HandleFunc("/api/v1/evaluator/rules", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			rules := metricEvaluator.ListRules()
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"rules": rules,
+				"total": len(rules),
+			})
+
+		case http.MethodPost:
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				http.Error(w, "Failed to read request body", http.StatusBadRequest)
+				return
+			}
+
+			// Check if payload is an array of rules or a single rule
+			var rules []k8s.AlertRule
+			if err := json.Unmarshal(body, &rules); err == nil {
+				metricEvaluator.SetRules(rules)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"status": "rules_synced",
+					"count":  len(rules),
+				})
+				return
+			}
+
+			var singleRule k8s.AlertRule
+			if err := json.Unmarshal(body, &singleRule); err == nil && singleRule.RuleID != "" {
+				metricEvaluator.AddRule(singleRule)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"status": "rule_added",
+					"ruleId": singleRule.RuleID,
+				})
+				return
+			}
+
+			http.Error(w, "Invalid JSON payload — expected single AlertRule or array of AlertRules", http.StatusBadRequest)
+
+		case http.MethodDelete:
+			ruleID := r.URL.Query().Get("ruleId")
+			if ruleID == "" {
+				http.Error(w, "ruleId query parameter required", http.StatusBadRequest)
+				return
+			}
+
+			removed := metricEvaluator.RemoveRule(ruleID)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"status":  "deleted",
+				"ruleId":  ruleID,
+				"success": removed,
+			})
+
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
 	corsHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
@@ -470,6 +549,9 @@ func main() {
 
 	case sig := <-shutdown:
 		log.Printf("[Shutdown] Signal received: %v. Initiating graceful shutdown...", sig)
+
+		// Stop Metric Evaluator
+		metricEvaluator.Stop()
 
 		// Stop all active log streams before shutting down cluster informers
 		for clusterID := range clusterManager.ListClusters() {
