@@ -127,6 +127,8 @@ export function KubectlTerminal() {
               <span className="text-neutral-400">List workloads & replica status</span>
               <span className="text-blue-400">kubectl get ingress</span>
               <span className="text-neutral-400">List ingress controllers & routes</span>
+              <span className="text-blue-400">kubectl scale deploy &lt;name&gt; --replicas=N</span>
+              <span className="text-neutral-400">Scale pod replicas dynamically</span>
               <span className="text-blue-400">kubectl describe pod &lt;name&gt;</span>
               <span className="text-neutral-400">Detailed pod spec & event logs</span>
               <span className="text-blue-400">kubectl cluster-info</span>
@@ -290,6 +292,91 @@ export function KubectlTerminal() {
             })}
           </div>
         );
+      } else if (lower.startsWith("kubectl scale")) {
+        const parts = cmd.split(/\s+/);
+        let replicas = 1;
+        let deployName = "todo-backend";
+
+        for (const p of parts) {
+          if (p.startsWith("--replicas=")) {
+            replicas = parseInt(p.split("=")[1], 10) || 1;
+          }
+        }
+        if (parts[2] && parts[2] !== "deployment" && parts[2] !== "deploy") {
+          deployName = parts[2].replace(/^deploy(ment)?\//, "");
+        } else if (parts[3]) {
+          deployName = parts[3].replace(/^deploy(ment)?\//, "");
+        }
+
+        const store = useTopologyStore.getState();
+        const currentNodes = store.nodes;
+
+        const targetDep = currentNodes.find(
+          (n) => n.type === "k8sDeployment" && (n.data as unknown as K8sNodeData).name?.includes(deployName)
+        );
+
+        if (targetDep) {
+          const updatedNodes = currentNodes.map((n) => {
+            if (n.id === targetDep.id) {
+              return {
+                ...n,
+                data: {
+                  ...n.data,
+                  replicas,
+                  readyReplicas: replicas,
+                },
+              };
+            }
+            return n;
+          });
+
+          const existingPods = updatedNodes.filter(
+            (n) => n.type === "k8sPod" && (n.data as unknown as K8sNodeData).name?.includes(deployName)
+          );
+
+          let finalNodes = updatedNodes;
+          if (existingPods.length < replicas) {
+            const toAdd = replicas - existingPods.length;
+            const newPods = Array.from({ length: toAdd }).map((_, idx) => {
+              const hash = Math.random().toString(36).substring(2, 7);
+              const podId = `${deployName}-${hash}`;
+              return {
+                id: podId,
+                type: "k8sPod",
+                position: { x: 400 + (existingPods.length + idx) * 40, y: 300 },
+                data: {
+                  name: podId,
+                  phase: "Running",
+                  restartCount: 0,
+                  cpuUsage: "12m",
+                  memoryUsage: "48Mi",
+                  labels: { app: deployName },
+                },
+              };
+            });
+            finalNodes = [...updatedNodes, ...newPods];
+          } else if (existingPods.length > replicas) {
+            const toRemoveCount = existingPods.length - replicas;
+            const removeIds = new Set(existingPods.slice(-toRemoveCount).map((p) => p.id));
+            finalNodes = updatedNodes.filter((n) => !removeIds.has(n.id));
+          }
+
+          if (store.setNodes) {
+            store.setNodes(finalNodes);
+          }
+
+          output = (
+            <div className="text-emerald-400 font-mono text-[11px]">
+              deployment.apps/{deployName} scaled to {replicas} replicas (live topology updated)
+            </div>
+          );
+        } else {
+          output = (
+            <div className="text-emerald-400 font-mono text-[11px]">
+              deployment.apps/{deployName} scaled to {replicas} replicas
+            </div>
+          );
+        }
       } else if (lower.startsWith("kubectl describe pod")) {
         const targetName = cmd.split(" ")[3] || "";
         const targetNode = nodes.find((n) => n.type === "k8sPod" && (n.data as unknown as K8sNodeData).name?.includes(targetName));
