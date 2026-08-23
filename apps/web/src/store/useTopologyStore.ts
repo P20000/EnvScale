@@ -251,29 +251,31 @@ export const aggregateNodesWithWorkloads = (
     // High-replica pod aggregation threshold: >= 3 pods
     if (groupPods.length >= 3) {
       const isExpanded = Boolean(expandedWorkloads[prefix]);
-      if (isExpanded) {
-        processedPodNodes.push(...groupPods);
-      } else {
-        const readyCount = groupPods.filter(
-          (p) => (p.data as K8sPodData)?.status === "Running"
-        ).length;
-        const firstPodData = (groupPods[0].data as K8sPodData) || {};
+      const readyCount = groupPods.filter(
+        (p) => (p.data as K8sPodData)?.status === "Running"
+      ).length;
+      const firstPodData = (groupPods[0].data as K8sPodData) || {};
 
-        processedPodNodes.push({
-          id: `workload-${prefix}`,
-          type: "k8sWorkload",
-          position: groupPods[0].position || { x: 50, y: 300 },
-          data: {
-            name: prefix,
-            namespace: firstPodData.namespace || "testing-todo",
-            replicas: groupPods.length,
-            readyReplicas: readyCount,
-            workloadType: prefix.includes("cronjob") || prefix.includes("audit") ? "JobGroup" : "WorkloadGroup",
-            isAggregated: true,
-            isExpanded: false,
-            onToggleExpand,
-          },
-        });
+      const workloadNode: Node = {
+        id: `workload-${prefix}`,
+        type: "k8sWorkload",
+        position: groupPods[0].position || { x: 50, y: 300 },
+        data: {
+          name: prefix,
+          namespace: firstPodData.namespace || "testing-todo",
+          replicas: groupPods.length,
+          readyReplicas: readyCount,
+          workloadType: prefix.includes("cronjob") || prefix.includes("audit") ? "JobGroup" : "WorkloadGroup",
+          isAggregated: true,
+          isExpanded,
+          onToggleExpand,
+        },
+      };
+
+      if (isExpanded) {
+        processedPodNodes.push(workloadNode, ...groupPods);
+      } else {
+        processedPodNodes.push(workloadNode);
       }
     } else {
       processedPodNodes.push(...groupPods);
