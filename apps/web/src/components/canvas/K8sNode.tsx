@@ -1,6 +1,11 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { Cpu, HardDrive, Server, Trash2 } from "lucide-react";
+import {
+  MdMemory as Cpu,
+  MdSdStorage as HardDrive,
+  MdDns as Server,
+  MdDelete as Trash2,
+} from "react-icons/md";
 import { useTopologyStore } from "../../store/useTopologyStore";
 
 export interface K8sNodeData extends Record<string, unknown> {

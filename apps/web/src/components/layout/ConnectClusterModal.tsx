@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { X, Shield, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import {
+  MdClose as X,
+  MdShield as Shield,
+  MdCheckCircle as CheckCircle2,
+  MdError as AlertCircle,
+  MdAutorenew as Loader2,
+} from "react-icons/md";
 import { apiConnectCluster } from "../../config/api";
 import { EnvScaleLogo } from "../ui/EnvScaleLogo";
 

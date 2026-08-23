@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
-import { X, ShieldAlert, Sparkles } from "lucide-react";
+import {
+  MdClose as X,
+  MdSecurity as ShieldAlert,
+  MdAutoAwesome as Sparkles,
+} from "react-icons/md";
 import { useAlertStore } from "../../store/useAlertStore";
 import { AlertRuleBuilder } from "./AlertRuleBuilder";
 import { cn } from "../../lib/utils";

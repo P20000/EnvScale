@@ -1,10 +1,10 @@
 import {
-  Network,
-  AlertTriangle,
-  BarChart3,
-  Trophy,
-  Settings,
-} from "lucide-react";
+  MdHub,
+  MdWarning,
+  MdBarChart,
+  MdEmojiEvents,
+  MdSettings,
+} from "react-icons/md";
 import { EnvScaleLogo } from "../ui/EnvScaleLogo";
 
 export type NavTab = "topology" | "incidents" | "metrics" | "leaderboard" | "settings";
@@ -19,28 +19,28 @@ export function LeftSidebar({ activeTab, onTabChange }: LeftSidebarProps) {
     {
       id: "topology" as NavTab,
       label: "Topology Graph",
-      icon: Network,
+      icon: MdHub,
     },
     {
       id: "incidents" as NavTab,
       label: "Incidents & Alerts",
-      icon: AlertTriangle,
+      icon: MdWarning,
       badge: 2,
     },
     {
       id: "metrics" as NavTab,
       label: "Metrics Inspector",
-      icon: BarChart3,
+      icon: MdBarChart,
     },
     {
       id: "leaderboard" as NavTab,
       label: "Cluster Leaderboard",
-      icon: Trophy,
+      icon: MdEmojiEvents,
     },
     {
       id: "settings" as NavTab,
       label: "Workspace Settings",
-      icon: Settings,
+      icon: MdSettings,
     },
   ];
 

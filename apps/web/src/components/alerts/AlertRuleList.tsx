@@ -1,5 +1,13 @@
 import { useState } from "react";
-import { Cpu, HardDrive, RefreshCw, Edit2, Trash2, Play, Pause } from "lucide-react";
+import {
+  MdMemory as Cpu,
+  MdSdStorage as HardDrive,
+  MdRefresh as RefreshCw,
+  MdEdit as Edit2,
+  MdDelete as Trash2,
+  MdPlayArrow as Play,
+  MdPause as Pause,
+} from "react-icons/md";
 import { useAlertStore } from "../../store/useAlertStore";
 import { cn } from "../../lib/utils";
 import type { AlertRule } from "../../types/alerts";

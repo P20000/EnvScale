@@ -1,6 +1,10 @@
 import { memo } from "react";
 import { Handle, Position } from "@xyflow/react";
-import { Copy, Layers, Database } from "lucide-react";
+import {
+  MdContentCopy as Copy,
+  MdLayers as Layers,
+  MdStorage as Database,
+} from "react-icons/md";
 
 export interface K8sWorkloadData extends Record<string, unknown> {
   name: string;

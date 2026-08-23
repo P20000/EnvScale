@@ -1,14 +1,14 @@
 import { useState, useRef, useEffect } from "react";
 import {
-  ChevronDown,
-  Plus,
-  Bell,
-  User,
-  Check,
-  Server,
-  CheckCheck,
-  Lock,
-} from "lucide-react";
+  MdExpandMore as ChevronDown,
+  MdAdd as Plus,
+  MdNotifications as Bell,
+  MdPerson as User,
+  MdCheck as Check,
+  MdDns as Server,
+  MdDoneAll as CheckCheck,
+  MdLock as Lock,
+} from "react-icons/md";
 import { useTopologyStore, type NotificationItem } from "../../store/useTopologyStore";
 import { AuthModal } from "./AuthModal";
 import { WorkspaceModal } from "./WorkspaceModal";

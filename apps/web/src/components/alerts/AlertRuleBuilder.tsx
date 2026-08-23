@@ -1,4 +1,11 @@
-import { Cpu, HardDrive, RefreshCw, AlertTriangle, AlertCircle, Info } from "lucide-react";
+import {
+  MdMemory as Cpu,
+  MdSdStorage as HardDrive,
+  MdRefresh as RefreshCw,
+  MdWarning as AlertTriangle,
+  MdError as AlertCircle,
+  MdInfo as Info,
+} from "react-icons/md";
 import { useTopologyStore } from "../../store/useTopologyStore";
 import type { AlertRule, AlertMetric, AlertOperator, AlertSeverity } from "../../types/alerts";
 import { cn } from "../../lib/utils";

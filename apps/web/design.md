@@ -18,6 +18,7 @@ EnvScale is an enterprise-grade Kubernetes Observability and Gamified Governance
 - **Clean Floating Capsules**: Header Navbar and Navigation Sidebar float seamlessly as rounded capsule elements over a dark grid canvas.
 - **High-Contrast Dark Canvas**: Deep matte canvas backdrop (`#09090b`) with a subtle, non-intrusive 20px engineering grid.
 - **Frosted Glassmorphism**: Glass surfaces use clean backdrop blur (`backdrop-blur-md`) with ultra-thin neutral borders (`border-neutral-800/80`).
+- **Material Design Iconography System**: All UI navigation controls, node badges, drawers, terminals, and modals strictly consume standardized **Google Material Design Icons** (`react-icons/md`).
 - **Precision Typography**: Clean, legible typography using **Inter** / **Outfit** with strict hierarchy and uppercase status badges.
 
 ---

@@ -8,7 +8,11 @@ import {
   type Node,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Server, LayoutGrid, Focus } from "lucide-react";
+import {
+  MdDns as Server,
+  MdGridView as LayoutGrid,
+  MdFilterCenterFocus as Focus,
+} from "react-icons/md";
 
 import { K8sPodNode, K8sWorkerNode, K8sServiceNode, K8sWorkloadNode, K8sIngressNode } from "../canvas";
 import type { K8sPodData } from "../canvas/K8sPod";

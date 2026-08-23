@@ -1,5 +1,14 @@
 import { useState } from "react";
-import { Trophy, Flame, Star, ShieldCheck, Server, AlertTriangle, Activity, Users } from "lucide-react";
+import {
+  MdEmojiEvents as Trophy,
+  MdWhatshot as Flame,
+  MdStar as Star,
+  MdVerifiedUser as ShieldCheck,
+  MdDns as Server,
+  MdWarning as AlertTriangle,
+  MdPulse as Activity,
+  MdGroup as Users,
+} from "react-icons/md";
 import { useTopologyStore } from "../../store/useTopologyStore";
 import { EnvScaleLogo } from "../ui/EnvScaleLogo";
 

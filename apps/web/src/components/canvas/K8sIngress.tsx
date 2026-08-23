@@ -1,6 +1,9 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { Network, Trash2 } from "lucide-react";
+import {
+  MdRouter as Network,
+  MdDelete as Trash2,
+} from "react-icons/md";
 import { useTopologyStore } from "../../store/useTopologyStore";
 
 export interface IngressRuleData {
