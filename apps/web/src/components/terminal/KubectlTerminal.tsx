@@ -11,6 +11,7 @@ import {
 } from "react-icons/md";
 import { useTopologyStore, generateDynamicEdges } from "../../store/useTopologyStore";
 import { getLayoutedElements } from "../../utils/layout";
+import type { K8sPodData } from "../canvas/K8sPod";
 
 interface CommandLog {
   id: string;
