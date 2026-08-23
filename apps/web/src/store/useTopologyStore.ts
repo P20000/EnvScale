@@ -633,6 +633,26 @@ export const useTopologyStore = create<TopologyState>()(
             pods: extractPods(snapshotNodes),
             edges: generateDynamicEdges(snapshotNodes, (payloadData.edges as Edge[]) || get().edges),
           });
+        } else if (eventType === "EVENT_SNAPSHOT_SYNC" && payloadData) {
+          const snapshotPods = Array.isArray(payloadData.pods) ? (payloadData.pods as Record<string, unknown>[]) : [];
+          const activePodNames = new Set(snapshotPods.map((p) => String(p.name || p.id || "")).filter(Boolean));
+
+          const currentNodes = get().nodes;
+          // Purge stale pod nodes that no longer exist in live cluster snapshot
+          const syncedNodes = currentNodes.filter((n) => {
+            if (n.type === "k8sPod") {
+              const podName = (n.data as K8sPodData)?.name || n.id;
+              return activePodNames.has(podName);
+            }
+            return true;
+          });
+
+          set({
+            nodes: syncedNodes,
+            services: extractServices(syncedNodes),
+            pods: extractPods(syncedNodes),
+            edges: generateDynamicEdges(syncedNodes, get().edges),
+          });
         } else if (
           eventType === "EVENT_POD_STATUS_CHANGED" ||
           eventType === "EVENT_POD_ADDED" ||
