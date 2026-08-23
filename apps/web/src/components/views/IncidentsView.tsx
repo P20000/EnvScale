@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { AlertTriangle, CheckCircle2, Filter, ShieldAlert, Server, Plus, Settings } from "lucide-react";
+import { useState, useMemo } from "react";
+import { AlertTriangle, CheckCircle2, Filter, ShieldAlert, Server, Plus, Settings, ShieldCheck } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { useTopologyStore } from "../../store/useTopologyStore";
 import { useAlertStore } from "../../store/useAlertStore";
@@ -19,191 +19,12 @@ interface Incident {
   status: "TRIGGERED" | "RESOLVED";
 }
 
-const initialIncidents: Incident[] = [
-  {
-    id: "INC-9045",
-    pod: "payment-api-7b8f99-x2k4",
-    namespace: "default",
-    cluster: "minikube-prod",
-    severity: "CRITICAL",
-    message: "CrashLoopBackOff — Container exited with code 137 (OOMKilled)",
-    time: "2 mins ago",
-    status: "TRIGGERED",
-  },
-  {
-    id: "INC-9044",
-    pod: "ingress-nginx-controller-84fd",
-    namespace: "ingress-nginx",
-    cluster: "minikube-prod",
-    severity: "WARNING",
-    message: "High Latency Alert — P99 response time exceeded 450ms threshold",
-    time: "8 mins ago",
-    status: "TRIGGERED",
-  },
-  {
-    id: "INC-9043",
-    pod: "auth-service-7f8d-b2",
-    namespace: "default",
-    cluster: "staging-us-east",
-    severity: "WARNING",
-    message: "Frequent Restarts — Pod restarted 3 times in last 15 minutes",
-    time: "15 mins ago",
-    status: "TRIGGERED",
-  },
-  {
-    id: "INC-9042",
-    pod: "postgres-cluster-0",
-    namespace: "database",
-    cluster: "minikube-prod",
-    severity: "CRITICAL",
-    message: "Database IOPS Limit Exceeded — Disk read queue length > 12",
-    time: "22 mins ago",
-    status: "TRIGGERED",
-  },
-  {
-    id: "INC-9040",
-    pod: "redis-leader-0",
-    namespace: "database",
-    cluster: "minikube-prod",
-    severity: "INFO",
-    message: "Pod rescheduled on node minikube-worker-2",
-    time: "30 mins ago",
-    status: "RESOLVED",
-  },
-  {
-    id: "INC-9039",
-    pod: "worker-node-exporter",
-    namespace: "monitoring",
-    cluster: "eks-production",
-    severity: "CRITICAL",
-    message: "Disk Pressure Alert — Root filesystem volume utilization at 92%",
-    time: "45 mins ago",
-    status: "RESOLVED",
-  },
-  {
-    id: "INC-9037",
-    pod: "checkout-worker-99a1",
-    namespace: "ecommerce",
-    cluster: "minikube-prod",
-    severity: "WARNING",
-    message: "CPU Throttling Warning — Pod exceeded 80% CPU limit quota",
-    time: "52 mins ago",
-    status: "TRIGGERED",
-  },
-  {
-    id: "INC-9036",
-    pod: "vault-secrets-mgr-0",
-    namespace: "security",
-    cluster: "eks-production",
-    severity: "INFO",
-    message: "TLSCertificateAutoRenewed — Certificate renewed successfully",
-    time: "1 hour ago",
-    status: "RESOLVED",
-  },
-  {
-    id: "INC-9035",
-    pod: "prometheus-server-7b4d",
-    namespace: "monitoring",
-    cluster: "staging-us-east",
-    severity: "WARNING",
-    message: "Scrape Target Down — Endpoint metrics-exporter unreachable",
-    time: "1 hour ago",
-    status: "TRIGGERED",
-  },
-  {
-    id: "INC-9034",
-    pod: "kafka-broker-2",
-    namespace: "event-bus",
-    cluster: "eks-production",
-    severity: "CRITICAL",
-    message: "UnderReplicatedPartitions — 4 partitions lagging behind leader",
-    time: "2 hours ago",
-    status: "TRIGGERED",
-  },
-  {
-    id: "INC-9033",
-    pod: "elasticsearch-datanode-1",
-    namespace: "logging",
-    cluster: "minikube-prod",
-    severity: "WARNING",
-    message: "High Memory Usage — JVM heap usage sustained above 85%",
-    time: "2 hours ago",
-    status: "RESOLVED",
-  },
-  {
-    id: "INC-9032",
-    pod: "rabbitmq-node-0",
-    namespace: "messaging",
-    cluster: "staging-us-east",
-    severity: "INFO",
-    message: "Queue Memory Alarm Cleared — High watermark reset to normal",
-    time: "3 hours ago",
-    status: "RESOLVED",
-  },
-  {
-    id: "INC-9031",
-    pod: "frontend-web-capsule-44",
-    namespace: "default",
-    cluster: "minikube-prod",
-    severity: "WARNING",
-    message: "ImagePullBackOff — Failed to pull image registry.internal/app:v2.4",
-    time: "3 hours ago",
-    status: "RESOLVED",
-  },
-  {
-    id: "INC-9029",
-    pod: "graphql-gateway-55f2",
-    namespace: "api-layer",
-    cluster: "eks-production",
-    severity: "CRITICAL",
-    message: "Upstream Timeout — 504 Gateway Timeout rate spiked by +18%",
-    time: "4 hours ago",
-    status: "RESOLVED",
-  },
-  {
-    id: "INC-9028",
-    pod: "k8s-streamer-go-daemon",
-    namespace: "envscale-system",
-    cluster: "minikube-prod",
-    severity: "INFO",
-    message: "SharedInformerFactory initialized — Watching PodInformer events",
-    time: "5 hours ago",
-    status: "RESOLVED",
-  },
-  {
-    id: "INC-9027",
-    pod: "cert-manager-controller",
-    namespace: "kube-system",
-    cluster: "staging-us-east",
-    severity: "INFO",
-    message: "ACME Challenge Verified — Issued wildcard certificate *.envscale.io",
-    time: "6 hours ago",
-    status: "RESOLVED",
-  },
-  {
-    id: "INC-9025",
-    pod: "chaos-mesh-daemon-x8",
-    namespace: "chaos-testing",
-    cluster: "minikube-prod",
-    severity: "WARNING",
-    message: "Chaos Fault Injected — Simulated 500ms network delay on payment-api",
-    time: "7 hours ago",
-    status: "RESOLVED",
-  },
-  {
-    id: "INC-9021",
-    pod: "metrics-server-8f92",
-    namespace: "kube-system",
-    cluster: "eks-production",
-    severity: "INFO",
-    message: "Metrics Scrape Succeeded — 48 node metrics aggregated",
-    time: "8 hours ago",
-    status: "RESOLVED",
-  },
-];
-
 export function IncidentsView() {
   const clusters = useTopologyStore((s) => s.clusters);
+  const activeCluster = useTopologyStore((s) => s.activeCluster);
+  const pods = useTopologyStore((s) => s.pods);
+  const notifications = useTopologyStore((s) => s.notifications);
+
   const alertRules = useAlertStore((s) => s.alertRules);
   const setSelectedAlertRule = useAlertStore((s) => s.setSelectedAlertRule);
 
@@ -214,15 +35,74 @@ export function IncidentsView() {
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [clusterFilter, setClusterFilter] = useState<string>("ALL");
 
-  // Apply combined multi-filters
-  const filteredIncidents = initialIncidents.filter((item) => {
-    if (severityFilter !== "ALL" && item.severity !== severityFilter) return false;
-    if (statusFilter !== "ALL" && item.status !== statusFilter) return false;
-    if (clusterFilter !== "ALL" && item.cluster !== clusterFilter) return false;
-    return true;
-  });
+  // Derive incidents dynamically from live cluster state and notifications (no static hardcoded mocks)
+  const incidents = useMemo<Incident[]>(() => {
+    const list: Incident[] = [];
+    const seenIds = new Set<string>();
 
-  const triggeredCount = filteredIncidents.filter((i) => i.status === "TRIGGERED").length;
+    // 1. Pod anomalies & non-running statuses
+    pods.forEach((pod) => {
+      if (pod.status !== "Running" || pod.restarts > 0) {
+        const id = `INC-POD-${pod.name.slice(-4).toUpperCase()}`;
+        if (!seenIds.has(id)) {
+          seenIds.add(id);
+          const isCritical = pod.status === "CrashLoopBackOff" || pod.status === "Failed" || pod.status === "OOMKilled";
+          const isWarning = pod.restarts > 0 || pod.status === "Pending" || pod.status === "ImagePullBackOff";
+          list.push({
+            id,
+            pod: pod.name,
+            namespace: pod.namespace || "default",
+            cluster: activeCluster || "minikube-prod",
+            severity: isCritical ? "CRITICAL" : isWarning ? "WARNING" : "INFO",
+            message: `Pod status: ${pod.status}${pod.restarts > 0 ? ` (${pod.restarts} restart${pod.restarts > 1 ? "s" : ""})` : ""}`,
+            time: "Just now",
+            status: pod.status === "Terminated" ? "RESOLVED" : "TRIGGERED",
+          });
+        }
+      }
+    });
+
+    // 2. Telemetry alert notifications triggered by streamer
+    notifications.forEach((n) => {
+      const id = `INC-${n.id.slice(-6).toUpperCase()}`;
+      if (!seenIds.has(id)) {
+        seenIds.add(id);
+        list.push({
+          id,
+          pod: n.title,
+          namespace: "default",
+          cluster: n.cluster || activeCluster || "minikube-prod",
+          severity: n.severity,
+          message: n.message,
+          time: n.time || "Just now",
+          status: "TRIGGERED",
+        });
+      }
+    });
+
+    return list;
+  }, [pods, notifications, activeCluster]);
+
+  // Apply combined multi-filters
+  const filteredIncidents = useMemo(() => {
+    return incidents.filter((item) => {
+      if (severityFilter !== "ALL" && item.severity !== severityFilter) return false;
+      if (statusFilter !== "ALL" && item.status !== statusFilter) return false;
+      if (clusterFilter !== "ALL" && item.cluster !== clusterFilter) return false;
+      return true;
+    });
+  }, [incidents, severityFilter, statusFilter, clusterFilter]);
+
+  const triggeredCount = useMemo(() => {
+    return filteredIncidents.filter((i) => i.status === "TRIGGERED").length;
+  }, [filteredIncidents]);
+
+  const availabilityPercentage = useMemo(() => {
+    if (pods.length === 0) return "100.0%";
+    const healthyPods = pods.filter((p) => p.status === "Running").length;
+    const pct = ((healthyPods / pods.length) * 100).toFixed(1);
+    return `${pct}%`;
+  }, [pods]);
 
   const handleEditRule = (rule: AlertRule) => {
     setSelectedAlertRule(rule);
@@ -251,7 +131,7 @@ export function IncidentsView() {
         <div className="flex items-center gap-2 shrink-0">
           {activeSubTab === "log" ? (
             <span className="text-xs text-neutral-400 font-mono">
-              Showing {filteredIncidents.length} of {initialIncidents.length} Incidents
+              Showing {filteredIncidents.length} of {incidents.length} Incidents
             </span>
           ) : (
             <span className="text-xs text-neutral-400 font-mono">
@@ -388,7 +268,7 @@ export function IncidentsView() {
                 <CheckCircle2 className="h-4 w-4" />
               </div>
               <div>
-                <div className="text-xl font-bold text-neutral-100 font-mono">98.4%</div>
+                <div className="text-xl font-bold text-neutral-100 font-mono">{availabilityPercentage}</div>
                 <div className="text-[11px] text-neutral-400">Cluster Availability</div>
               </div>
             </div>
@@ -398,24 +278,30 @@ export function IncidentsView() {
                 <ShieldAlert className="h-4 w-4" />
               </div>
               <div>
-                <div className="text-xl font-bold text-neutral-100 font-mono">14m</div>
+                <div className="text-xl font-bold text-neutral-100 font-mono">
+                  {triggeredCount === 0 ? "0m" : "< 5m"}
+                </div>
                 <div className="text-[11px] text-neutral-400">Mean Time to Resolve</div>
               </div>
             </div>
           </div>
 
-          {/* Incident List Container with Constrained Height & Internal Scrollbar ONLY */}
+          {/* Incident List Container */}
           <div className="rounded-2xl border border-neutral-800 bg-[#141417] shadow-xl flex-1 min-h-0 flex flex-col overflow-hidden">
             {/* Fixed Header (shrink-0) */}
             <div className="px-6 py-3.5 border-b border-neutral-800 font-semibold text-xs text-neutral-300 flex items-center justify-between bg-neutral-900/50 shrink-0">
               <span>Incident Audit Log</span>
-              <span className="font-mono text-[10px] text-neutral-400">Live WebSockets</span>
+              <span className="font-mono text-[10px] text-neutral-400">Live Telemetry</span>
             </div>
 
             {/* Scrollable list area ONLY */}
             {filteredIncidents.length === 0 ? (
-              <div className="p-12 text-center text-xs text-neutral-400 font-mono flex-1 flex items-center justify-center">
-                No incidents found matching the selected filter criteria.
+              <div className="p-12 text-center text-xs text-neutral-400 font-mono flex-1 flex flex-col items-center justify-center space-y-3">
+                <ShieldCheck className="h-9 w-9 text-emerald-500/80 mb-1" />
+                <span className="text-neutral-200 font-semibold text-sm">No Active Incidents Detected</span>
+                <span className="text-neutral-500 max-w-sm text-center">
+                  All monitored pods and workload resources in the cluster are healthy and operating normally.
+                </span>
               </div>
             ) : (
               <div className="divide-y divide-neutral-800/60 flex-1 min-h-0 overflow-y-auto">
@@ -451,7 +337,7 @@ export function IncidentsView() {
                       </div>
                       <p className="text-xs text-neutral-300">{item.message}</p>
                       <div className="text-[10px] text-neutral-400 font-mono">
-                        Target Pod: <span className="text-neutral-200">{item.pod}</span>
+                        Target Resource: <span className="text-neutral-200">{item.pod}</span>
                       </div>
                     </div>
 
