@@ -64,10 +64,11 @@ export function getLayoutedElements(
     } else if (
       node.type === "k8sDeployment" ||
       node.type === "k8sReplicaSet" ||
-      node.type === "k8sStatefulSet"
+      node.type === "k8sStatefulSet" ||
+      node.type === "k8sWorkload"
     ) {
       width = 280;
-      height = 100;
+      height = 125;
     }
 
     dagreGraph.setNode(node.id, { width, height });
@@ -156,6 +157,26 @@ export function getLayoutedElements(
       position: { x: posX, y: posY },
     };
   });
+
+  // Symmetrically align Service column nodes vertically relative to Ingress node center Y
+  const ingressNodes = layoutedConnectedNodes.filter((n) => n.type === "k8sIngress");
+  const serviceNodes = layoutedConnectedNodes.filter((n) => n.type === "k8sService");
+
+  if (ingressNodes.length > 0 && serviceNodes.length >= 2) {
+    const ingNode = ingressNodes[0];
+    const ingHeight = dagreGraph.node(ingNode.id)?.height || 160;
+    const ingressMidY = ingNode.position.y + ingHeight / 2;
+
+    const svcHeight = 85;
+    const gap = 50;
+    const totalSvcHeight = serviceNodes.length * svcHeight + (serviceNodes.length - 1) * gap;
+    let startY = ingressMidY - totalSvcHeight / 2;
+
+    serviceNodes.forEach((svc) => {
+      svc.position.y = Math.round(startY);
+      startY += svcHeight + gap;
+    });
+  }
 
   if (minX === Infinity) minX = 50;
   if (maxY === 0) maxY = 300;

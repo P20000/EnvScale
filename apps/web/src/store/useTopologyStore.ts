@@ -211,6 +211,73 @@ export const syncSelectedNode = (nodes: Node[], currentSelected: SelectedTarget)
   return currentSelected;
 };
 
+export const aggregateNodesWithWorkloads = (
+  nodes: Node[],
+  expandedWorkloads: Record<string, boolean>,
+  onToggleExpand: (name: string) => void
+): Node[] => {
+  const podNodes = nodes.filter((n) => n.type === "k8sPod");
+  const nonPodNodes = nodes.filter((n) => n.type !== "k8sPod");
+
+  const podsByPrefix = new Map<string, Node[]>();
+
+  podNodes.forEach((pod) => {
+    const podData = pod.data as K8sPodData;
+    const name = podData?.name || pod.id;
+
+    let prefix = name;
+    if (name.includes("-")) {
+      const parts = name.split("-");
+      if (parts.length >= 3) {
+        prefix = parts.slice(0, parts.length - 2).join("-");
+      } else if (parts.length === 2) {
+        prefix = parts[0];
+      }
+    }
+
+    const existing = podsByPrefix.get(prefix) || [];
+    existing.push(pod);
+    podsByPrefix.set(prefix, existing);
+  });
+
+  const processedPodNodes: Node[] = [];
+
+  podsByPrefix.forEach((groupPods, prefix) => {
+    // High-replica pod aggregation threshold: >= 3 pods
+    if (groupPods.length >= 3) {
+      const isExpanded = Boolean(expandedWorkloads[prefix]);
+      if (isExpanded) {
+        processedPodNodes.push(...groupPods);
+      } else {
+        const readyCount = groupPods.filter(
+          (p) => (p.data as K8sPodData)?.status === "Running"
+        ).length;
+        const firstPodData = (groupPods[0].data as K8sPodData) || {};
+
+        processedPodNodes.push({
+          id: `workload-${prefix}`,
+          type: "k8sWorkload",
+          position: groupPods[0].position || { x: 50, y: 300 },
+          data: {
+            name: prefix,
+            namespace: firstPodData.namespace || "testing-todo",
+            replicas: groupPods.length,
+            readyReplicas: readyCount,
+            workloadType: prefix.includes("cronjob") || prefix.includes("audit") ? "JobGroup" : "WorkloadGroup",
+            isAggregated: true,
+            isExpanded: false,
+            onToggleExpand,
+          },
+        });
+      }
+    } else {
+      processedPodNodes.push(...groupPods);
+    }
+  });
+
+  return [...nonPodNodes, ...processedPodNodes];
+};
+
 export interface TopologyState {
   clusters: string[];
   activeCluster: string;
@@ -267,6 +334,9 @@ export interface TopologyState {
   generateToken: (name?: string) => void;
   revokeToken: (id: string) => void;
 
+  expandedWorkloads: Record<string, boolean>;
+  toggleWorkloadExpanded: (workloadName: string) => void;
+
   // Notification Actions
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
@@ -289,6 +359,17 @@ export const useTopologyStore = create<TopologyState>()(
       notifications: defaultInitialNotifications,
       wsStatus: "DISCONNECTED",
       wsLatencyMs: 12,
+      expandedWorkloads: {},
+
+      toggleWorkloadExpanded: (workloadName: string) => {
+        const current = get().expandedWorkloads[workloadName];
+        const updated = {
+          ...get().expandedWorkloads,
+          [workloadName]: !current,
+        };
+        set({ expandedWorkloads: updated });
+        get().applyDagreLayout("LR");
+      },
 
       setSelectedNode: (target) => {
         if (!target) {
@@ -668,10 +749,17 @@ export const useTopologyStore = create<TopologyState>()(
       },
 
       applyDagreLayout: (direction = "TB") => {
-        const { nodes, edges } = get();
+        const { nodes, edges, expandedWorkloads, toggleWorkloadExpanded } = get();
         if (nodes.length === 0) return;
-        const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
+
+        const aggregatedNodes = aggregateNodesWithWorkloads(
           nodes,
+          expandedWorkloads,
+          toggleWorkloadExpanded
+        );
+
+        const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
+          aggregatedNodes,
           edges,
           direction
         );

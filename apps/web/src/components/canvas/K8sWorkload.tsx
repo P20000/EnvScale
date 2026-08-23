@@ -4,6 +4,8 @@ import {
   MdContentCopy as Copy,
   MdLayers as Layers,
   MdStorage as Database,
+  MdUnfoldMore as ExpandIcon,
+  MdUnfoldLess as CollapseIcon,
 } from "react-icons/md";
 
 export interface K8sWorkloadData extends Record<string, unknown> {
@@ -11,7 +13,10 @@ export interface K8sWorkloadData extends Record<string, unknown> {
   namespace: string;
   replicas: number;
   readyReplicas: number;
-  workloadType: "Deployment" | "ReplicaSet" | "StatefulSet";
+  workloadType: "Deployment" | "ReplicaSet" | "StatefulSet" | "JobGroup" | "WorkloadGroup";
+  isAggregated?: boolean;
+  isExpanded?: boolean;
+  onToggleExpand?: (workloadName: string) => void;
 }
 
 export const K8sWorkloadNode = memo(({ data }: { data: K8sWorkloadData }) => {
@@ -29,6 +34,13 @@ export const K8sWorkloadNode = memo(({ data }: { data: K8sWorkloadData }) => {
     if (data.workloadType === "StatefulSet") return <Database className="h-4.5 w-4.5" />;
     if (data.workloadType === "Deployment") return <Layers className="h-4.5 w-4.5" />;
     return <Copy className="h-4.5 w-4.5" />; // ReplicaSet
+  };
+
+  const handleToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (data.onToggleExpand) {
+      data.onToggleExpand(data.name);
+    }
   };
 
   return (
@@ -104,9 +116,29 @@ export const K8sWorkloadNode = memo(({ data }: { data: K8sWorkloadData }) => {
               : "bg-amber-500/10 text-amber-400"
           }`}
         >
-          {data.readyReplicas} / {data.replicas}
+          {data.readyReplicas} / {data.replicas} Pods
         </span>
       </div>
+
+      {/* Expand / Collapse Toggle Button */}
+      {data.isAggregated && (
+        <button
+          onClick={handleToggle}
+          className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-lg bg-neutral-800/60 py-1 text-xs font-medium text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors border border-neutral-700/40"
+        >
+          {data.isExpanded ? (
+            <>
+              <CollapseIcon className="h-3.5 w-3.5 text-neutral-400" />
+              <span>Collapse Pods</span>
+            </>
+          ) : (
+            <>
+              <ExpandIcon className="h-3.5 w-3.5 text-blue-400" />
+              <span>Expand ({data.replicas} Pods)</span>
+            </>
+          )}
+        </button>
+      )}
 
       {/* 4-Sided Handles: RIGHT */}
       <Handle
