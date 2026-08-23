@@ -62,28 +62,73 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[]): Edge[
   const services = nodes.filter((n) => n.type === "k8sService");
   const ingresses = nodes.filter((n) => n.type === "k8sIngress");
 
-  // Ingress -> Service
+  // 1. Ingress -> Service (Grouped Multi-Path / Multi-Port edge labels)
   ingresses.forEach((ing) => {
     const rules = (ing.data as K8sIngressData).rules as IngressRuleData[];
     if (rules && rules.length > 0) {
+      const rulesBySvc = new Map<string, IngressRuleData[]>();
       rules.forEach((rule) => {
         if (rule.serviceName) {
-          const svc = services.find((s) => s.id === rule.serviceName || (s.data as K8sServiceData).name === rule.serviceName);
+          const svc = services.find(
+            (s) => s.id === rule.serviceName || (s.data as K8sServiceData).name === rule.serviceName
+          );
           if (svc) {
+            const existing = rulesBySvc.get(svc.id) || [];
+            existing.push(rule);
+            rulesBySvc.set(svc.id, existing);
+          }
+        }
+      });
+
+      rulesBySvc.forEach((svcRules, svcId) => {
+        const formattedPaths = svcRules.map((r) => {
+          const pathStr = r.path || "/";
+          const portStr = r.servicePort ? ` (:${r.servicePort})` : "";
+          return `${pathStr}${portStr}`;
+        });
+        const labelText = Array.from(new Set(formattedPaths)).join(", ");
+
+        sysEdges.push({
+          id: `e-sys-${ing.id}-${svcId}`,
+          source: ing.id,
+          target: svcId,
+          type: "bezier",
+          animated: true,
+          label: labelText,
+          labelStyle: { fill: "#c4b5fd", fontSize: 10, fontWeight: 600, fontFamily: "monospace" },
+          labelBgStyle: { fill: "#18181b", stroke: "#8b5cf6", strokeWidth: 1, fillOpacity: 0.95 },
+          labelBgPadding: [6, 4],
+          labelBgBorderRadius: 6,
+          sourceHandle: "right-source",
+          targetHandle: "left-target",
+          style: { stroke: "#8b5cf6", strokeWidth: 2 },
+        });
+      });
+    }
+  });
+
+  // 2. Service -> Pod (Traffic routing based on label selectors)
+  services.forEach((svc) => {
+    const svcData = svc.data as K8sServiceData;
+    const svcSelector = svcData.selector;
+    if (svcSelector && Object.keys(svcSelector).length > 0) {
+      pods.forEach((pod) => {
+        const podData = pod.data as K8sPodData;
+        const labels = podData.labels as Record<string, string>;
+        if (labels) {
+          const match = Object.keys(svcSelector).every(
+            (key) => labels[key] === svcSelector[key as keyof typeof svcSelector]
+          );
+          if (match) {
             sysEdges.push({
-              id: `e-sys-${ing.id}-${svc.id}-${rule.path || 'root'}`,
-              source: ing.id,
-              target: svc.id,
+              id: `e-sys-${svc.id}-${pod.id}`,
+              source: svc.id,
+              target: pod.id,
               type: "bezier",
               animated: true,
-              label: rule.path || "/",
-              labelStyle: { fill: "#c4b5fd", fontSize: 10, fontWeight: 600, fontFamily: "monospace" },
-              labelBgStyle: { fill: "#18181b", stroke: "#8b5cf6", strokeWidth: 1, fillOpacity: 0.95 },
-              labelBgPadding: [6, 4],
-              labelBgBorderRadius: 6,
               sourceHandle: "right-source",
               targetHandle: "left-target",
-              style: { stroke: "#8b5cf6", strokeWidth: 2 },
+              style: { stroke: "#0ea5e9", strokeWidth: 2 },
             });
           }
         }
@@ -91,29 +136,51 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[]): Edge[
     }
   });
 
-  // Service -> Pod (Direct traffic routing based on selectors)
-  services.forEach((svc) => {
-    const svcSelector = (svc.data as K8sServiceData).selector;
-    if (svcSelector && Object.keys(svcSelector).length > 0) {
-      pods.forEach((pod) => {
-        const labels = (pod.data as K8sPodData).labels as Record<string, string>;
-        if (labels) {
-          const match = Object.keys(svcSelector).every((key) => labels[key] === svcSelector[key as keyof typeof svcSelector]);
-          if (match) {
-             sysEdges.push({
-               id: `e-sys-${svc.id}-${pod.id}`,
-               source: svc.id,
-               target: pod.id,
-               type: "bezier",
-               animated: true,
-               sourceHandle: "right-source",
-               targetHandle: "left-target",
-               style: { stroke: "#0ea5e9", strokeWidth: 2 },
-             });
-          }
-        }
+  // 3. Pod -> Service (Strict container env var matching for internal TCP calls)
+  pods.forEach((pod) => {
+    const podData = pod.data as K8sPodData;
+    const containers: Array<{ env?: Array<{ name?: string; value?: string }> }> = (podData.containers as any) || [];
+    const envVars: Array<{ name?: string; value?: string }> = containers.flatMap((c) => c.env || []);
+
+    services.forEach((svc) => {
+      const svcData = svc.data as K8sServiceData;
+      const svcName = svcData.name;
+      if (!svcName) return;
+
+      // Skip if pod is already targeted by this service
+      const isTargetedByService = sysEdges.some((e) => e.source === svc.id && e.target === pod.id);
+      if (isTargetedByService) return;
+
+      // Strict match: exact service name or FQDN prefix (e.g. redis-headless-service.testing-todo.svc)
+      const hasExactEnvMatch = envVars.some((envItem: { name?: string; value?: string }) => {
+        if (!envItem.value) return false;
+        const val = envItem.value.trim();
+        return (
+          val === svcName ||
+          val.startsWith(`${svcName}.`) ||
+          val.startsWith(`http://${svcName}`) ||
+          val.startsWith(`https://${svcName}`)
+        );
       });
-    }
+
+      if (hasExactEnvMatch) {
+        sysEdges.push({
+          id: `e-sys-dep-${pod.id}-${svc.id}`,
+          source: pod.id,
+          target: svc.id,
+          type: "bezier",
+          animated: true,
+          label: "TCP/Internal",
+          labelStyle: { fill: "#60a5fa", fontSize: 9, fontWeight: 500, fontFamily: "monospace" },
+          labelBgStyle: { fill: "#09090b", stroke: "#3b82f6", strokeWidth: 1, fillOpacity: 0.8 },
+          labelBgPadding: [4, 2],
+          labelBgBorderRadius: 4,
+          sourceHandle: "right-source",
+          targetHandle: "left-target",
+          style: { stroke: "#3b82f6", strokeWidth: 1.5, strokeDasharray: "4,4" },
+        });
+      }
+    });
   });
 
   return [...baseEdges, ...sysEdges];
