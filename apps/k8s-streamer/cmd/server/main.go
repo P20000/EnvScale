@@ -72,6 +72,23 @@ func main() {
 	clusterManager := k8s.NewClusterManager(hub)
 	log.Println("[ClusterManager] Dynamic multi-tenant cluster registry initialized")
 
+	// Auto-register local Kubeconfig cluster 'mini-todo' if ~/.kube/config is available
+	kubeconfigPath := os.Getenv("KUBECONFIG")
+	if kubeconfigPath == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			kubeconfigPath = fmt.Sprintf("%s/.kube/config", home)
+		}
+	}
+	if kubeconfigPath != "" {
+		if rawKube, err := os.ReadFile(kubeconfigPath); err == nil && len(rawKube) > 0 {
+			if err := clusterManager.RegisterCluster("mini-todo", rawKube); err == nil {
+				log.Println("[ClusterManager] Auto-registered local Kubernetes cluster 'mini-todo'")
+			} else {
+				log.Printf("[ClusterManager] Warning auto-registering 'mini-todo': %v", err)
+			}
+		}
+	}
+
 	// Initialize PodLogStreamer — shared log tailing engine backed by the same Hub
 	logStreamer := k8s.NewPodLogStreamer(hub)
 	log.Println("[LogStreamer] Pod log streaming engine initialized")

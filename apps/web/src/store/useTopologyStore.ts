@@ -405,8 +405,8 @@ export interface TopologyState {
 export const useTopologyStore = create<TopologyState>()(
   persist(
     (set, get) => ({
-      clusters: defaultClusters,
-      activeCluster: "minikube-prod",
+      clusters: ["mini-todo", "minikube-prod"],
+      activeCluster: "mini-todo",
       rawNodes: defaultInitialNodes,
       nodes: defaultInitialNodes,
       edges: defaultInitialEdges,
