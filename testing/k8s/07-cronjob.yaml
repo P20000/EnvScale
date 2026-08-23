@@ -1,0 +1,36 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: db-audit-cronjob
+  namespace: testing-todo
+  labels:
+    app: db-audit
+    tier: batch
+spec:
+  schedule: "*/2 * * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: db-audit
+            tier: batch
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: db-auditor
+              image: alpine:latest
+              imagePullPolicy: IfNotPresent
+              command:
+                - sh
+                - -c
+                - "echo '[CronJob Audit] Database integrity check started...'; sleep 3; echo '[CronJob Audit] Status: OK. Exiting clean.'; exit 0"
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 16Mi
+                limits:
+                  cpu: 50m
+                  memory: 32Mi

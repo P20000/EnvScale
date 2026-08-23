@@ -19,6 +19,13 @@ spec:
                 name: todo-backend-service
                 port:
                   number: 3001
+          - path: /metrics
+            pathType: Prefix
+            backend:
+              service:
+                name: todo-backend-service
+                port:
+                  number: 9090
           - path: /
             pathType: Prefix
             backend:

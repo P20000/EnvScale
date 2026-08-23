@@ -1,23 +1,24 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: todo-backend
+  name: todo-backend-canary
   namespace: testing-todo
   labels:
     app: todo-backend
     tier: api
-    version: v1
+    version: canary
 spec:
   replicas: 1
   selector:
     matchLabels:
       app: todo-backend
+      version: canary
   template:
     metadata:
       labels:
         app: todo-backend
         tier: api
-        version: v1
+        version: canary
     spec:
       containers:
         - name: backend
@@ -41,7 +42,7 @@ spec:
           command:
             - sh
             - -c
-            - "while true; do echo '{\"level\":\"info\",\"event\":\"heartbeat\",\"service\":\"todo-backend\",\"timestamp\":\"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'\"}' >> /var/log/app.log; sleep 5; done"
+            - "while true; do echo '{\"level\":\"info\",\"event\":\"heartbeat\",\"service\":\"todo-backend-canary\",\"timestamp\":\"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'\"}' >> /var/log/app.log; sleep 5; done"
           resources:
             requests:
               cpu: 10m
@@ -49,24 +50,3 @@ spec:
             limits:
               cpu: 50m
               memory: 32Mi
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: todo-backend-service
-  namespace: testing-todo
-  labels:
-    app: todo-backend
-spec:
-  type: ClusterIP
-  ports:
-    - port: 3001
-      targetPort: 3001
-      protocol: TCP
-      name: http
-    - port: 9090
-      targetPort: 9090
-      protocol: TCP
-      name: metrics
-  selector:
-    app: todo-backend
