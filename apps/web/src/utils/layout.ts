@@ -35,8 +35,8 @@ export function getLayoutedElements(
   dagreGraph.setGraph({
     rankdir: direction,
     nodesep: 60,
-    ranksep: 150,
-    marginx: 60,
+    ranksep: 200,
+    marginx: 80,
     marginy: 60,
   });
 

@@ -225,12 +225,11 @@ export function useK8sStream(
               // Send ping frame
             }
           }
-        }, 5000);
+        }, 3000);
       };
 
       socket.onmessage = (event: MessageEvent) => {
         if (!isComponentMounted.current) return;
-        const startTime = performance.now();
 
         try {
           const parsed = JSON.parse(event.data);
@@ -243,15 +242,12 @@ export function useK8sStream(
               if (lastPingTimeRef.current > 0) {
                 measuredLatency = Math.max(1, Math.round(performance.now() - lastPingTimeRef.current));
               }
-            } else if (typeof parsed.latencyMs === "number" && parsed.latencyMs > 0) {
+            } else if (typeof parsed.latencyMs === "number" && parsed.latencyMs > 0 && parsed.latencyMs < 200) {
               measuredLatency = Math.round(parsed.latencyMs);
             }
 
-            const processingTime = Math.max(1, Math.round(performance.now() - startTime));
-            const finalLatency = measuredLatency > 0 ? measuredLatency : processingTime;
-
-            if (finalLatency > 0 && (eventType === "pong" || eventType === "EVENT_HEARTBEAT" || measuredLatency > 0)) {
-              setLatencyMs(finalLatency);
+            if (measuredLatency > 0) {
+              setLatencyMs(measuredLatency);
             }
 
             const normalizedMsg: WsTopologyMessage = {
@@ -261,7 +257,7 @@ export function useK8sStream(
               data: eventPayload,
               clusterId: typeof parsed.clusterId === "string" ? parsed.clusterId : undefined,
               timestamp: typeof parsed.timestamp === "string" ? parsed.timestamp : undefined,
-              latencyMs: finalLatency || undefined,
+              latencyMs: measuredLatency || undefined,
             };
 
             if (eventType) {
