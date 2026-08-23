@@ -1067,6 +1067,42 @@ export const useTopologyStore = create<TopologyState>()(
             cluster: String(payloadData.cluster || msg.clusterId || get().activeCluster),
           };
           set({ notifications: [alertNotif, ...get().notifications] });
+        } else if (eventType === "EVENT_CHAOS_INJECTED" || eventType === "CHAOS_INJECTED") {
+          const targetName = String(payloadData.target || payloadData.targetName || payloadData.name || "");
+          const faultType = String(payloadData.faultType || payloadData.action || "Chaos SIGKILL Fault");
+
+          if (targetName) {
+            const currentRaw = get().rawNodes && get().rawNodes.length > 0 ? get().rawNodes : get().nodes;
+            const updatedRaw = currentRaw.map((n) => {
+              if (n.id === targetName || (n.data as K8sPodData)?.name === targetName) {
+                return {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    status: "CrashLoopBackOff" as const,
+                    restarts: ((n.data as K8sPodData).restarts || 0) + 1,
+                  },
+                };
+              }
+              return n;
+            });
+
+            const alertNotif: NotificationItem = {
+              id: `alert-chaos-${Date.now()}`,
+              title: `Chaos Injected: ${faultType}`,
+              message: `Target ${targetName} was injected with ${faultType} simulation.`,
+              time: "Just now",
+              severity: "CRITICAL",
+              read: false,
+              cluster: String(payloadData.cluster || msg.clusterId || get().activeCluster),
+            };
+
+            set({
+              rawNodes: updatedRaw,
+              notifications: [alertNotif, ...get().notifications],
+            });
+            get().applyDagreLayout("LR");
+          }
         }
       },
 

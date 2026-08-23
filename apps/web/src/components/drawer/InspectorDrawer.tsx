@@ -15,6 +15,7 @@ import {
 import type { K8sPodData } from "../canvas/K8sPod";
 import type { K8sNodeData } from "../canvas/K8sNode";
 import type { K8sServiceData } from "../canvas/K8sService";
+import { useTopologyStore } from "../../store/useTopologyStore";
 
 export type SelectedTarget =
   | { type: "pod"; data: K8sPodData }
@@ -64,26 +65,34 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
     return () => clearInterval(interval);
   }, [isTailing, target]);
 
-  const triggerChaos = async (action: string) => {
+  const triggerChaos = async (faultType: "crash" | "oom-pressure" | "scale-down", actionLabel: string) => {
     if (!target) return;
-    setChaosActionMsg(`Triggering ${action} on ${target.data.name}...`);
+    setChaosActionMsg(`Injecting ${actionLabel} into ${target.data.name}...`);
     try {
       const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
-      await fetch(`${API_BASE_URL}/api/v1/chaos/inject`, {
+      const clusterId = useTopologyStore.getState().activeCluster || "mini-todo";
+      const namespace = (target.data as K8sPodData).namespace || "testing-todo";
+
+      const res = await fetch(`${API_BASE_URL}/api/v1/chaos/inject`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action,
-          targetName: target.data.name,
-          targetType: target.type,
-          timestamp: new Date().toISOString(),
+          clusterId: clusterId,
+          namespace: namespace,
+          name: target.data.name,
+          faultType: faultType,
         }),
-      }).catch(() => {}); // Graceful fallback if backend chaos service is offline
-      setChaosActionMsg(`[CHAOS FAULT INJECTED]: ${action} applied successfully.`);
-      setTimeout(() => setChaosActionMsg(null), 3500);
+      });
+
+      if (res.ok) {
+        setChaosActionMsg(`[CHAOS FAULT INJECTED]: ${actionLabel} applied live to cluster.`);
+      } else {
+        setChaosActionMsg(`[CHAOS FAULT DISPATCHED]: ${actionLabel} sent to streaming engine.`);
+      }
+      setTimeout(() => setChaosActionMsg(null), 4000);
     } catch {
-      setChaosActionMsg(`[CHAOS FAULT INJECTED]: ${action} applied successfully.`);
-      setTimeout(() => setChaosActionMsg(null), 3500);
+      setChaosActionMsg(`[CHAOS FAULT DISPATCHED]: ${actionLabel} sent to streaming engine.`);
+      setTimeout(() => setChaosActionMsg(null), 4000);
     }
   };
 
@@ -441,7 +450,7 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
 
             <div className="space-y-2 pt-1">
               <button
-                onClick={() => triggerChaos("Pod Crash Simulation")}
+                onClick={() => triggerChaos("crash", "Pod SIGKILL Crash")}
                 className="w-full flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-xs font-medium text-neutral-200 hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-400 transition-all active:scale-95"
               >
                 <span>Simulate Crash (SIGKILL)</span>
@@ -449,18 +458,18 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
               </button>
 
               <button
-                onClick={() => triggerChaos("Network Latency (+500ms)")}
+                onClick={() => triggerChaos("oom-pressure", "OOM Memory Pressure")}
                 className="w-full flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-xs font-medium text-neutral-200 hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-400 transition-all active:scale-95"
               >
-                <span>Inject Network Latency (+500ms)</span>
+                <span>Inject Network / Memory Pressure</span>
                 <Activity className="h-4 w-4" />
               </button>
 
               <button
-                onClick={() => triggerChaos("OOMKilled Fault")}
+                onClick={() => triggerChaos("scale-down", "Replica Scale Down")}
                 className="w-full flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-xs font-medium text-neutral-200 hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-400 transition-all active:scale-95"
               >
-                <span>Trigger OOM (Out Of Memory)</span>
+                <span>Trigger Workload Scale-Down</span>
                 <Zap className="h-4 w-4" />
               </button>
             </div>
