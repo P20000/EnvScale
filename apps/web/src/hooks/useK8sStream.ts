@@ -154,6 +154,11 @@ export function useK8sStream(
             if (res.ok) {
               const snapshot = await res.json();
               if (onMessageReceivedRef.current) {
+                onMessageReceivedRef.current?.({
+                  type: "EVENT_SNAPSHOT_SYNC",
+                  event: "EVENT_SNAPSHOT_SYNC",
+                  data: snapshot,
+                } as WsTopologyMessage);
                 if (snapshot.nodes) {
                   snapshot.nodes.forEach((node: unknown) =>
                     onMessageReceivedRef.current?.({ type: "EVENT_NODE_ADDED", event: "EVENT_NODE_ADDED", data: node } as WsTopologyMessage)

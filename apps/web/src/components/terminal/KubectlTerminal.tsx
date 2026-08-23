@@ -154,9 +154,10 @@ export function KubectlTerminal() {
                 <span>AGE</span>
               </div>
               {podNodes.map((pn) => {
-                const data = pn.data as unknown as K8sNodeData;
-                const isRunning = data.phase === "Running";
-                const isCrash = data.phase?.includes("Crash") || data.phase?.includes("OOM");
+                const data = pn.data as unknown as K8sPodData;
+                const statusStr = data.status || (data as unknown as { phase?: string }).phase || "Running";
+                const isRunning = statusStr === "Running";
+                const isCrash = statusStr.includes("Crash") || statusStr.includes("OOM") || statusStr.includes("Failed");
 
                 return (
                   <div
@@ -174,9 +175,9 @@ export function KubectlTerminal() {
                           : "text-amber-400"
                       }
                     >
-                      {data.phase || "Unknown"}
+                      {statusStr}
                     </span>
-                    <span className="text-neutral-300">{data.restartCount ?? 0}</span>
+                    <span className="text-neutral-300">{data.restarts ?? (data as unknown as { restartCount?: number }).restartCount ?? 0}</span>
                     <span className="text-neutral-400">12m</span>
                   </div>
                 );
@@ -259,9 +260,9 @@ export function KubectlTerminal() {
               return (
                 <div key={dn.id} className="grid grid-cols-[220px_80px_100px_100px_60px] gap-2 text-neutral-200">
                   <span className="text-purple-400 font-medium truncate">{data.name || dn.id}</span>
-                  <span className="text-emerald-400">{data.readyReplicas || 2}/{data.replicas || 2}</span>
-                  <span className="text-neutral-300">{data.replicas || 2}</span>
-                  <span className="text-neutral-300">{data.readyReplicas || 2}</span>
+                  <span className="text-emerald-400">{(data.readyReplicas ?? 1)}/{(data.replicas ?? 1)}</span>
+                  <span className="text-neutral-300">{(data.replicas ?? 1)}</span>
+                  <span className="text-neutral-300">{(data.readyReplicas ?? 1)}</span>
                   <span className="text-neutral-400">12m</span>
                 </div>
               );
