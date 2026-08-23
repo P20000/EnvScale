@@ -4,10 +4,10 @@ import type { K8sIngressData } from "../components/canvas/K8sIngress";
 
 /**
  * Calculates dynamic hierarchical layout using Dagre with:
- * 1. Stateless origin calculations (zero compound Y-offset accumulation)
+ * 1. Accordion Container Workload Cards (internal dynamic height expansion)
  * 2. Dynamic bounding box heights for Ingress cards (120 + N * 34px)
  * 3. Explicit nodesep (60px) and ranksep (200px)
- * 4. Stateless 60px orphan dock offset directly below fresh connected dagreMaxY
+ * 4. Stateless 60px orphan dock offset with dynamic row spacing for accordion expansion
  */
 export function getLayoutedElements(
   nodes: Node[],
@@ -41,6 +41,24 @@ export function getLayoutedElements(
     marginy: 60,
   });
 
+  // Helper to compute dynamic orphan workload node height
+  const getOrphanHeight = (n: Node) => {
+    if (
+      n.type === "k8sDeployment" ||
+      n.type === "k8sReplicaSet" ||
+      n.type === "k8sStatefulSet" ||
+      n.type === "k8sWorkload"
+    ) {
+      const wData = n.data as { isExpanded?: boolean; pods?: unknown[] };
+      if (wData?.isExpanded) {
+        const podCount = Array.isArray(wData?.pods) ? wData.pods.length : 0;
+        return 145 + Math.min(podCount, 8) * 38;
+      }
+      return 125;
+    }
+    return 120;
+  };
+
   // Set node dimensions in Dagre
   const nodesToLayout = connectedNodes.length > 0 ? connectedNodes : nodes;
   nodesToLayout.forEach((node) => {
@@ -67,8 +85,12 @@ export function getLayoutedElements(
       node.type === "k8sStatefulSet" ||
       node.type === "k8sWorkload"
     ) {
-      width = 280;
-      height = 125;
+      const wData = node.data as { isExpanded?: boolean; pods?: unknown[] };
+      const isExpanded = Boolean(wData?.isExpanded);
+      const podCount = Array.isArray(wData?.pods) ? wData.pods.length : 0;
+
+      width = isExpanded ? 340 : 320;
+      height = isExpanded ? 145 + Math.min(podCount, 8) * 38 : 125;
     }
 
     dagreGraph.setNode(node.id, { width, height });
@@ -181,19 +203,26 @@ export function getLayoutedElements(
     dagreMaxY = Math.max(...bottomYs);
   }
 
-  // Stateless 60px offset underneath dagreMaxY
+  // Dynamic 60px offset underneath dagreMaxY accounting for accordion expanded height of prior rows
   const dockStartY = dagreMaxY + 60;
   const layoutedOrphanNodes: Node[] = orphanNodes.map((node, idx) => {
     const col = idx % 2;
     const row = Math.floor(idx / 2);
-    const posX = dockStartX + col * 304; // 280px width + 24px gap
-    const posY = dockStartY + row * 145; // 125px height + 20px gap
+
+    let posY = dockStartY;
+    for (let r = 0; r < row; r++) {
+      const prevNodeInCol = orphanNodes[r * 2 + col];
+      const prevH = prevNodeInCol ? getOrphanHeight(prevNodeInCol) : 125;
+      posY += prevH + 24;
+    }
+
+    const posX = dockStartX + col * 360;
 
     return {
       ...node,
       targetPosition: isHorizontal ? Position.Left : Position.Top,
       sourcePosition: isHorizontal ? Position.Right : Position.Bottom,
-      position: { x: posX, y: posY },
+      position: { x: posX, y: Math.round(posY) },
     };
   });
 

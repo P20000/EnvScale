@@ -255,8 +255,9 @@ export const aggregateNodesWithWorkloads = (
         (p) => (p.data as K8sPodData)?.status === "Running"
       ).length;
       const firstPodData = (groupPods[0].data as K8sPodData) || {};
+      const podDataList = groupPods.map((p) => p.data as K8sPodData);
 
-      const workloadNode: Node = {
+      processedPodNodes.push({
         id: `workload-${prefix}`,
         type: "k8sWorkload",
         position: groupPods[0].position || { x: 50, y: 300 },
@@ -268,15 +269,10 @@ export const aggregateNodesWithWorkloads = (
           workloadType: prefix.includes("cronjob") || prefix.includes("audit") ? "JobGroup" : "WorkloadGroup",
           isAggregated: true,
           isExpanded,
+          pods: podDataList,
           onToggleExpand,
         },
-      };
-
-      if (isExpanded) {
-        processedPodNodes.push(workloadNode, ...groupPods);
-      } else {
-        processedPodNodes.push(workloadNode);
-      }
+      });
     } else {
       processedPodNodes.push(...groupPods);
     }

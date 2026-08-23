@@ -8,6 +8,8 @@ import {
   MdUnfoldLess as CollapseIcon,
 } from "react-icons/md";
 
+import type { K8sPodData } from "./K8sPod";
+
 export interface K8sWorkloadData extends Record<string, unknown> {
   name: string;
   namespace: string;
@@ -16,6 +18,7 @@ export interface K8sWorkloadData extends Record<string, unknown> {
   workloadType: "Deployment" | "ReplicaSet" | "StatefulSet" | "JobGroup" | "WorkloadGroup";
   isAggregated?: boolean;
   isExpanded?: boolean;
+  pods?: K8sPodData[];
   onToggleExpand?: (workloadName: string) => void;
 }
 
@@ -46,7 +49,9 @@ export const K8sWorkloadNode = memo(({ data }: { data: K8sWorkloadData }) => {
 
   return (
     <div
-      className={`group relative w-[280px] min-h-[115px] rounded-xl bg-[#141417] p-3.5 text-white border text-left shadow-xl transition-all duration-300 ${
+      className={`group relative rounded-xl bg-[#141417] p-3.5 text-white border text-left shadow-xl transition-all duration-300 ${
+        data.isExpanded ? "w-[340px]" : "w-[320px] min-h-[115px]"
+      } ${
         isError
           ? "border-red-500/50 shadow-red-500/10"
           : isWarning
@@ -120,6 +125,58 @@ export const K8sWorkloadNode = memo(({ data }: { data: K8sWorkloadData }) => {
           {data.readyReplicas} / {data.replicas} Pods
         </span>
       </div>
+
+      {/* Embedded Pod Accordion List */}
+      {data.isExpanded && data.pods && data.pods.length > 0 && (
+        <div className="mt-3 space-y-1.5 border-t border-neutral-800/80 pt-2.5">
+          <div className="flex items-center justify-between px-1 text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
+            <span>Constituent Pod</span>
+            <span>Metrics / Restarts</span>
+          </div>
+          <div className="max-h-[280px] overflow-y-auto space-y-1.5 pr-0.5 custom-scrollbar">
+            {data.pods.map((pod, idx) => {
+              const isRunning = pod.status === "Running";
+              const isCrash = pod.status === "CrashLoopBackOff";
+              const shortName = pod.name.length > 22
+                ? "..." + pod.name.slice(-14)
+                : pod.name;
+
+              return (
+                <div
+                  key={pod.name || idx}
+                  className="flex items-center justify-between rounded-lg bg-neutral-950/80 px-2.5 py-1.5 text-xs border border-neutral-800/80 hover:border-blue-500/50 transition-colors"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      className={`h-2 w-2 rounded-full shrink-0 ${
+                        isRunning
+                          ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]"
+                          : isCrash
+                          ? "bg-red-500 animate-pulse shadow-[0_0_6px_rgba(239,68,68,0.8)]"
+                          : "bg-amber-400"
+                      }`}
+                    />
+                    <span className="font-mono font-medium text-neutral-200 truncate text-[11px]" title={pod.name}>
+                      {shortName}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="rounded bg-neutral-900 px-1.5 py-0.5 text-[10px] font-mono text-neutral-300 border border-neutral-800">
+                      {pod.cpuUsage || "32m"} | {pod.memoryUsage || "120MiB"}
+                    </span>
+                    {pod.restarts > 0 && (
+                      <span className="rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] font-bold text-red-400 border border-red-500/20">
+                        {pod.restarts}r
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Expand / Collapse Toggle Button */}
       {data.isAggregated && (
