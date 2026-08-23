@@ -5,6 +5,7 @@ import "time"
 // Event Type Constants matching shared monorepo contracts
 const (
 	EventPodStatusChanged   = "EVENT_POD_STATUS_CHANGED"
+	EventPodDeleted         = "EVENT_POD_DELETED"
 	EventNodeMutated        = "EVENT_NODE_MUTATED"
 	EventServiceMutated     = "EVENT_SERVICE_MUTATED"
 	EventLogLine            = "EVENT_LOG_LINE"

@@ -107,8 +107,14 @@ func (im *InformerManager) Start(stopCh <-chan struct{}) {
 			pod := im.resolvePodObject(obj)
 			if pod != nil {
 				delta := im.extractPodDelta(pod)
-				delta.Phase = "Failed" // Mark as terminated
+				delta.Phase = "Terminated"
+				im.dedup.Remove(fmt.Sprintf("Pod/%s/%s", pod.Namespace, pod.Name))
 				im.hub.BroadcastEvent(types.EventPodStatusChanged, im.clusterID, delta)
+				im.hub.BroadcastEvent(types.EventPodDeleted, im.clusterID, map[string]interface{}{
+					"podId":     pod.Name,
+					"name":      pod.Name,
+					"namespace": pod.Namespace,
+				})
 			}
 		},
 	})
