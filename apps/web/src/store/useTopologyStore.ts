@@ -163,7 +163,12 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[]): Edge[
         );
       });
 
-      if (hasExactEnvMatch) {
+      const isBackendRedisMatch =
+        (svcName.includes("redis") || svcName.includes("db")) &&
+        ((podData.name && (podData.name.includes("backend") || podData.name.includes("api"))) ||
+          (pod.id && (pod.id.includes("backend") || pod.id.includes("api"))));
+
+      if (hasExactEnvMatch || isBackendRedisMatch) {
         sysEdges.push({
           id: `e-sys-dep-${pod.id}-${svc.id}`,
           source: pod.id,

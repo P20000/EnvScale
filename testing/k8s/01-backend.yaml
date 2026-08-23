@@ -28,6 +28,13 @@ spec:
               name: http
             - containerPort: 9090
               name: metrics
+          env:
+            - name: REDIS_HOST
+              value: redis-headless-service
+            - name: REDIS_PORT
+              value: "6379"
+            - name: DB_HOST
+              value: redis-headless-service.testing-todo.svc.cluster.local
           resources:
             requests:
               cpu: 50m
