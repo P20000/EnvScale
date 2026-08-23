@@ -12,47 +12,7 @@ interface AlertState {
   setSelectedAlertRule: (rule: AlertRule | null) => void;
 }
 
-const defaultRules: AlertRule[] = [
-  {
-    id: "rule-1",
-    name: "High CPU Usage Warning",
-    metric: "cpu",
-    operator: "greater_than",
-    threshold: 80,
-    duration: "5 minutes",
-    namespace: "all",
-    severity: "warning",
-    enabled: true,
-    createdAt: new Date(Date.now() - 86400000).toISOString(),
-    updatedAt: new Date(Date.now() - 3600000).toISOString(),
-  },
-  {
-    id: "rule-2",
-    name: "Auth Service Pod Crash",
-    metric: "pod_crash",
-    operator: "greater_than_or_equal",
-    threshold: 3,
-    duration: "Immediately",
-    namespace: "default",
-    severity: "critical",
-    enabled: true,
-    createdAt: new Date(Date.now() - 172800000).toISOString(),
-    updatedAt: new Date(Date.now() - 7200000).toISOString(),
-  },
-  {
-    id: "rule-3",
-    name: "Database Memory Threshold",
-    metric: "memory",
-    operator: "greater_than",
-    threshold: 90,
-    duration: "10 minutes",
-    namespace: "database",
-    severity: "critical",
-    enabled: false,
-    createdAt: new Date(Date.now() - 259200000).toISOString(),
-    updatedAt: new Date(Date.now() - 86400000).toISOString(),
-  },
-];
+const defaultRules: AlertRule[] = [];
 
 export const useAlertStore = create<AlertState>()(
   persist(
