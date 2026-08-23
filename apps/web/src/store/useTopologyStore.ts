@@ -1133,8 +1133,6 @@ export const useTopologyStore = create<TopologyState>()(
       partialize: (state) => ({
         activeCluster: state.activeCluster,
         clusters: state.clusters,
-        nodes: state.nodes,
-        edges: state.edges,
       }),
     }
   )

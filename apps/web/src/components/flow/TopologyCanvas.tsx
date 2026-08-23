@@ -63,6 +63,10 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
     setWsStatus(status, latencyMs);
   }, [status, latencyMs, setWsStatus]);
 
+  useEffect(() => {
+    applyDagreLayout("LR");
+  }, [applyDagreLayout]);
+
   const handleNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
       let target: SelectedTarget = null;
