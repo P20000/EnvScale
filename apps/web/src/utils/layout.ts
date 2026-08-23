@@ -171,26 +171,27 @@ export function getLayoutedElements(
     });
   }
 
-  // 1. Calculate minX and maxY strictly from connected DAG nodes in current pass
-  let minX = 50;
-  let maxY = 250;
+  // Position Orphan compute & workload nodes directly below Ingress in Column 1
+  let orphanStartX = 50;
+  let orphanStartY = 320;
 
-  if (layoutedConnectedNodes.length > 0) {
-    const xs = layoutedConnectedNodes.map((n) => n.position.x);
+  if (ingressNodes.length > 0) {
+    const ingNode = ingressNodes[0];
+    const ingHeight = dagreGraph.node(ingNode.id)?.height || 180;
+    orphanStartX = ingNode.position.x;
+    orphanStartY = ingNode.position.y + ingHeight + 40;
+  } else if (layoutedConnectedNodes.length > 0) {
     const bottomYs = layoutedConnectedNodes.map((n) => {
       const h = dagreGraph.node(n.id)?.height || 120;
       return n.position.y + h;
     });
-    minX = Math.min(...xs);
-    maxY = Math.max(...bottomYs);
+    orphanStartY = Math.max(...bottomYs) + 40;
   }
 
-  // 2. Position Orphan compute nodes starting strictly 60px below maxY aligned with minX
-  const orphanStartY = maxY + 60;
   const layoutedOrphanNodes: Node[] = orphanNodes.map((node, idx) => {
     const col = idx % 2;
     const row = Math.floor(idx / 2);
-    const posX = minX + col * 310;
+    const posX = orphanStartX + col * 310;
     const posY = orphanStartY + row * 140;
 
     return {
