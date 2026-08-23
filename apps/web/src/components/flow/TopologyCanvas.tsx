@@ -22,6 +22,7 @@ import { useTopologyStore } from "../../store/useTopologyStore";
 import type { SelectedTarget } from "../drawer/InspectorDrawer";
 import { useK8sStream, type WsTopologyMessage } from "../../hooks/useK8sStream";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
+import { DeleteConfirmationModal } from "../modals/DeleteConfirmationModal";
 
 const nodeTypes = {
   k8sPod: K8sPodNode,
@@ -49,6 +50,8 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
   const applyDelta = useTopologyStore((s) => s.applyDelta);
   const setSelectedNode = useTopologyStore((s) => s.setSelectedNode);
   const setWsStatus = useTopologyStore((s) => s.setWsStatus);
+  const deleteModal = useTopologyStore((s) => s.deleteModal);
+  const closeDeleteModal = useTopologyStore((s) => s.closeDeleteModal);
 
   const { fitView } = useReactFlow();
 
@@ -178,6 +181,16 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
           <span>Recenter View</span>
         </button>
       </div>
+
+      {/* Delete Intent Confirmation Modal */}
+      <DeleteConfirmationModal
+        isOpen={deleteModal.isOpen}
+        onClose={closeDeleteModal}
+        targetId={deleteModal.targetId}
+        targetName={deleteModal.targetName}
+        targetKind={deleteModal.targetKind}
+        namespace={deleteModal.namespace}
+      />
     </div>
   );
 }

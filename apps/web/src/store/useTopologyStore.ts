@@ -317,6 +317,14 @@ export const sanitizeManifestSnapshot = (node: Node): Record<string, unknown> =>
   return manifest;
 };
 
+export interface DeleteModalState {
+  isOpen: boolean;
+  targetId: string;
+  targetName: string;
+  targetKind: string;
+  namespace?: string;
+}
+
 export interface TopologyState {
   clusters: string[];
   activeCluster: string;
@@ -336,6 +344,10 @@ export interface TopologyState {
   redoStack: HistoryAction[];
   undoAction: () => Promise<void>;
   redoAction: () => Promise<void>;
+
+  deleteModal: DeleteModalState;
+  openDeleteModal: (targetId: string, targetName: string, targetKind: string, namespace?: string) => void;
+  closeDeleteModal: () => void;
 
   // Selected Node Actions
   setSelectedNode: (target: SelectedTarget) => void;
@@ -404,11 +416,42 @@ export const useTopologyStore = create<TopologyState>()(
       selectedNode: null,
       tokens: defaultInitialTokens,
       notifications: defaultInitialNotifications,
+      deleteModal: {
+        isOpen: false,
+        targetId: "",
+        targetName: "",
+        targetKind: "",
+        namespace: "testing-todo",
+      },
       undoStack: [],
       redoStack: [],
       wsStatus: "DISCONNECTED",
       wsLatencyMs: 12,
       expandedWorkloads: {},
+
+      openDeleteModal: (targetId, targetName, targetKind, namespace = "testing-todo") => {
+        set({
+          deleteModal: {
+            isOpen: true,
+            targetId,
+            targetName,
+            targetKind,
+            namespace,
+          },
+        });
+      },
+
+      closeDeleteModal: () => {
+        set({
+          deleteModal: {
+            isOpen: false,
+            targetId: "",
+            targetName: "",
+            targetKind: "",
+            namespace: "testing-todo",
+          },
+        });
+      },
 
       undoAction: async () => {
         const stack = get().undoStack;
@@ -588,7 +631,7 @@ export const useTopologyStore = create<TopologyState>()(
         });
       },
 
-      removeTarget: (targetId: string, options?: { skipHistory?: boolean }) => {
+      removeTarget: (targetId: string, options?: { skipHistory?: boolean; skipApi?: boolean }) => {
         if (!targetId) return;
         const currentRaw = get().rawNodes || [];
         const currentNodes = get().nodes || [];
@@ -608,29 +651,46 @@ export const useTopologyStore = create<TopologyState>()(
         };
 
         const targetNode = currentRaw.find(matchesTarget) || currentNodes.find(matchesTarget);
-        if (targetNode && !options?.skipHistory) {
+        if (targetNode) {
           const resData = (targetNode.data as Record<string, unknown>) || {};
           const resName = String(resData.name || targetNode.id);
           const resKind = targetNode.type?.replace("k8s", "") || "Resource";
           const ns = String(resData.namespace || "testing-todo");
 
-          const snapshot = sanitizeManifestSnapshot(targetNode);
-          const associatedEdges = (get().edges || []).filter(
-            (e) => e.source === targetNode.id || e.target === targetNode.id
-          );
+          if (!options?.skipApi) {
+            const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+            const clusterId = get().activeCluster || "mini-todo";
+            fetch(`${API_BASE_URL}/api/v1/resource/delete`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                clusterId,
+                namespace: ns,
+                resourceKind: resKind,
+                resourceName: resName,
+              }),
+            }).catch(() => {});
+          }
 
-          const historyItem: HistoryAction = {
-            type: "DELETE_RESOURCE",
-            resourceKind: resKind,
-            namespace: ns,
-            resourceName: resName,
-            manifestSnapshot: snapshot,
-            associatedEdges,
-            timestamp: Date.now(),
-          };
+          if (!options?.skipHistory) {
+            const snapshot = sanitizeManifestSnapshot(targetNode);
+            const associatedEdges = (get().edges || []).filter(
+              (e) => e.source === targetNode.id || e.target === targetNode.id
+            );
 
-          const newUndo = [historyItem, ...get().undoStack].slice(0, 20);
-          set({ undoStack: newUndo, redoStack: [] });
+            const historyItem: HistoryAction = {
+              type: "DELETE_RESOURCE",
+              resourceKind: resKind,
+              namespace: ns,
+              resourceName: resName,
+              manifestSnapshot: snapshot,
+              associatedEdges,
+              timestamp: Date.now(),
+            };
+
+            const newUndo = [historyItem, ...get().undoStack].slice(0, 20);
+            set({ undoStack: newUndo, redoStack: [] });
+          }
         }
 
         const remainingRaw = currentRaw.filter((n) => !matchesTarget(n));
@@ -879,7 +939,26 @@ export const useTopologyStore = create<TopologyState>()(
       },
 
       deleteNode: (nodeId) => {
-        get().removeTarget(nodeId);
+        const currentRaw = get().rawNodes || [];
+        const currentNodes = get().nodes || [];
+        const targetNode =
+          currentRaw.find(
+            (n) => n.id === nodeId || (n.data as Record<string, unknown>)?.name === nodeId
+          ) ||
+          currentNodes.find(
+            (n) => n.id === nodeId || (n.data as Record<string, unknown>)?.name === nodeId
+          );
+
+        if (targetNode) {
+          const resData = (targetNode.data as Record<string, unknown>) || {};
+          const resName = String(resData.name || targetNode.id);
+          const resKind = targetNode.type?.replace("k8s", "") || "Resource";
+          const ns = String(resData.namespace || "testing-todo");
+
+          get().openDeleteModal(nodeId, resName, resKind, ns);
+        } else {
+          get().removeTarget(nodeId);
+        }
       },
 
       setNodes: (nodesInput) => {
