@@ -21,6 +21,7 @@ import type { K8sServiceData } from "../canvas/K8sService";
 import { useTopologyStore } from "../../store/useTopologyStore";
 import type { SelectedTarget } from "../drawer/InspectorDrawer";
 import { useK8sStream, type WsTopologyMessage } from "../../hooks/useK8sStream";
+import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
 
 const nodeTypes = {
   k8sPod: K8sPodNode,
@@ -38,6 +39,7 @@ interface TopologyCanvasProps {
 }
 
 function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
+  useKeyboardShortcuts();
   const nodes = useTopologyStore((s) => s.nodes);
   const edges = useTopologyStore((s) => s.edges);
   const onNodesChange = useTopologyStore((s) => s.onNodesChange);

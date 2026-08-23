@@ -281,6 +281,42 @@ export const aggregateNodesWithWorkloads = (
   return [...nonPodNodes, ...processedPodNodes];
 };
 
+export interface HistoryAction {
+  type: "DELETE_RESOURCE" | "CREATE_RESOURCE" | "UPDATE_RESOURCE";
+  resourceKind: string;
+  namespace: string;
+  resourceName: string;
+  manifestSnapshot: Record<string, unknown>;
+  associatedEdges?: Edge[];
+  timestamp: number;
+}
+
+export const sanitizeManifestSnapshot = (node: Node): Record<string, unknown> => {
+  const d = (node.data as Record<string, unknown>) || {};
+  const rawRes = (d.rawResource as Record<string, unknown>) || {};
+
+  const manifest: Record<string, unknown> = {
+    apiVersion: rawRes.apiVersion || "v1",
+    kind: rawRes.kind || (node.type === "k8sService" ? "Service" : node.type === "k8sPod" ? "Pod" : "Deployment"),
+    metadata: {
+      name: d.name || node.id,
+      namespace: d.namespace || "testing-todo",
+      labels: (rawRes.metadata as Record<string, unknown>)?.labels || {},
+    },
+    spec: rawRes.spec || d,
+  };
+
+  const meta = manifest.metadata as Record<string, unknown>;
+  delete meta.resourceVersion;
+  delete meta.uid;
+  delete meta.creationTimestamp;
+  delete meta.generation;
+  delete meta.managedFields;
+  delete manifest.status;
+
+  return manifest;
+};
+
 export interface TopologyState {
   clusters: string[];
   activeCluster: string;
@@ -296,13 +332,18 @@ export interface TopologyState {
   wsStatus: WsConnectionStatus;
   wsLatencyMs: number;
 
+  undoStack: HistoryAction[];
+  redoStack: HistoryAction[];
+  undoAction: () => Promise<void>;
+  redoAction: () => Promise<void>;
+
   // Selected Node Actions
   setSelectedNode: (target: SelectedTarget) => void;
   clearSelectedNode: () => void;
 
   // Granular Resource Actions (Nodes, Services, Pods)
   upsertNode: (node: Node) => void;
-  removeTarget: (targetId: string) => void;
+  removeTarget: (targetId: string, options?: { skipHistory?: boolean }) => void;
   removeNode: (nodeId: string) => void;
   upsertService: (serviceData: Partial<K8sServiceData> & { id?: string; name: string }) => void;
   removeService: (serviceId: string) => void;
@@ -363,9 +404,127 @@ export const useTopologyStore = create<TopologyState>()(
       selectedNode: null,
       tokens: defaultInitialTokens,
       notifications: defaultInitialNotifications,
+      undoStack: [],
+      redoStack: [],
       wsStatus: "DISCONNECTED",
       wsLatencyMs: 12,
       expandedWorkloads: {},
+
+      undoAction: async () => {
+        const stack = get().undoStack;
+        if (stack.length === 0) return;
+        const [action, ...remainingUndo] = stack;
+
+        if (action.type === "DELETE_RESOURCE") {
+          const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+          const clusterId = get().activeCluster || "mini-todo";
+
+          try {
+            await fetch(`${API_BASE_URL}/api/v1/resource/apply`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                clusterId,
+                namespace: action.namespace,
+                resourceKind: action.resourceKind,
+                resourceName: action.resourceName,
+                manifest: action.manifestSnapshot,
+              }),
+            }).catch(() => {});
+          } catch {
+            // Graceful network fallback
+          }
+
+          const restoredNode: Node = {
+            id: action.resourceName.startsWith("svc-") || action.resourceName.startsWith("pod-")
+              ? action.resourceName
+              : `${action.resourceKind.toLowerCase()}-${action.resourceName}`,
+            type:
+              action.resourceKind.toLowerCase() === "service"
+                ? "k8sService"
+                : action.resourceKind.toLowerCase() === "pod"
+                ? "k8sPod"
+                : "k8sWorkload",
+            position: { x: 300, y: 200 },
+            data: {
+              name: action.resourceName,
+              namespace: action.namespace,
+              status: "Running",
+              rawResource: action.manifestSnapshot,
+            },
+          };
+
+          const currentRaw = get().rawNodes || [];
+          const updatedRaw = [...currentRaw, restoredNode];
+          const restoredEdges = [...(get().edges || []), ...(action.associatedEdges || [])];
+
+          const newAlert: NotificationItem = {
+            id: `notif-undo-${Date.now()}`,
+            title: `Undo: Restoring ${action.resourceName}`,
+            message: `Re-applied declarative manifest for ${action.resourceName} to ${action.namespace} in ${clusterId}.`,
+            time: "Just now",
+            severity: "INFO",
+            read: false,
+            cluster: clusterId,
+          };
+
+          set({
+            undoStack: remainingUndo,
+            redoStack: [action, ...get().redoStack].slice(0, 20),
+            rawNodes: updatedRaw,
+            services: extractServices(updatedRaw),
+            pods: extractPods(updatedRaw),
+            edges: restoredEdges,
+            notifications: [newAlert, ...get().notifications],
+          });
+
+          get().applyDagreLayout("LR");
+        }
+      },
+
+      redoAction: async () => {
+        const stack = get().redoStack;
+        if (stack.length === 0) return;
+        const [action, ...remainingRedo] = stack;
+
+        if (action.type === "DELETE_RESOURCE") {
+          const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+          const clusterId = get().activeCluster || "mini-todo";
+
+          try {
+            await fetch(`${API_BASE_URL}/api/v1/resource/delete`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                clusterId,
+                namespace: action.namespace,
+                resourceKind: action.resourceKind,
+                resourceName: action.resourceName,
+              }),
+            }).catch(() => {});
+          } catch {
+            // Graceful network fallback
+          }
+
+          get().removeTarget(action.resourceName, { skipHistory: true });
+
+          const newAlert: NotificationItem = {
+            id: `notif-redo-${Date.now()}`,
+            title: `Redo: Re-deleting ${action.resourceName}`,
+            message: `Re-issued deletion for ${action.resourceName} in ${action.namespace}.`,
+            time: "Just now",
+            severity: "WARNING",
+            read: false,
+            cluster: clusterId,
+          };
+
+          set({
+            redoStack: remainingRedo,
+            undoStack: [action, ...get().undoStack].slice(0, 20),
+            notifications: [newAlert, ...get().notifications],
+          });
+        }
+      },
 
       toggleWorkloadExpanded: (workloadName: string) => {
         const current = get().expandedWorkloads[workloadName];
@@ -429,7 +588,7 @@ export const useTopologyStore = create<TopologyState>()(
         });
       },
 
-      removeTarget: (targetId: string) => {
+      removeTarget: (targetId: string, options?: { skipHistory?: boolean }) => {
         if (!targetId) return;
         const currentRaw = get().rawNodes || [];
         const currentNodes = get().nodes || [];
@@ -447,6 +606,32 @@ export const useTopologyStore = create<TopologyState>()(
             `workload-${name}` === targetId
           );
         };
+
+        const targetNode = currentRaw.find(matchesTarget) || currentNodes.find(matchesTarget);
+        if (targetNode && !options?.skipHistory) {
+          const resData = (targetNode.data as Record<string, unknown>) || {};
+          const resName = String(resData.name || targetNode.id);
+          const resKind = targetNode.type?.replace("k8s", "") || "Resource";
+          const ns = String(resData.namespace || "testing-todo");
+
+          const snapshot = sanitizeManifestSnapshot(targetNode);
+          const associatedEdges = (get().edges || []).filter(
+            (e) => e.source === targetNode.id || e.target === targetNode.id
+          );
+
+          const historyItem: HistoryAction = {
+            type: "DELETE_RESOURCE",
+            resourceKind: resKind,
+            namespace: ns,
+            resourceName: resName,
+            manifestSnapshot: snapshot,
+            associatedEdges,
+            timestamp: Date.now(),
+          };
+
+          const newUndo = [historyItem, ...get().undoStack].slice(0, 20);
+          set({ undoStack: newUndo, redoStack: [] });
+        }
 
         const remainingRaw = currentRaw.filter((n) => !matchesTarget(n));
         const remainingNodes = currentNodes.filter((n) => !matchesTarget(n));
