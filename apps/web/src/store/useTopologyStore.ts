@@ -537,24 +537,20 @@ export const useTopologyStore = create<TopologyState>()(
 
       removePod: (podId) => {
         const targetId = podId;
-        const currentNodes = get().nodes;
-        const remaining = currentNodes.filter(
+        const currentRaw = get().rawNodes && get().rawNodes.length > 0 ? get().rawNodes : get().nodes;
+        const remaining = currentRaw.filter(
           (n) => n.id !== targetId && (n.data as K8sPodData)?.name !== targetId
-        );
-        const remainingIds = new Set(remaining.map((n) => n.id));
-        const remainingEdges = get().edges.filter(
-          (e) => remainingIds.has(e.source) && remainingIds.has(e.target)
         );
         const selected = get().selectedNode;
         const isSelected = selected && selected.data?.name === targetId;
 
         set({
-          nodes: remaining,
+          rawNodes: remaining,
           services: extractServices(remaining),
           pods: extractPods(remaining),
-          edges: remainingEdges,
           selectedNode: isSelected ? null : syncSelectedNode(remaining, selected),
         });
+        get().applyDagreLayout("LR");
       },
 
       setServices: (servicesInput) => {
@@ -800,21 +796,22 @@ export const useTopologyStore = create<TopologyState>()(
 
         if (!payloadData) return;
 
+        const currentRaw = get().rawNodes && get().rawNodes.length > 0 ? get().rawNodes : get().nodes;
+
         if (eventType === "EVENT_TOPOLOGY_SNAPSHOT" && Array.isArray(payloadData.nodes)) {
           const snapshotNodes = payloadData.nodes as Node[];
           set({
-            nodes: snapshotNodes,
+            rawNodes: snapshotNodes,
             services: extractServices(snapshotNodes),
             pods: extractPods(snapshotNodes),
-            edges: generateDynamicEdges(snapshotNodes, (payloadData.edges as Edge[]) || get().edges),
           });
+          get().applyDagreLayout("LR");
         } else if (eventType === "EVENT_SNAPSHOT_SYNC" && payloadData) {
           const snapshotPods = Array.isArray(payloadData.pods) ? (payloadData.pods as Record<string, unknown>[]) : [];
           const activePodNames = new Set(snapshotPods.map((p) => String(p.name || p.id || "")).filter(Boolean));
 
-          const currentNodes = get().nodes;
           // Purge stale pod nodes that no longer exist in live cluster snapshot
-          const syncedNodes = currentNodes.filter((n) => {
+          const syncedRawNodes = currentRaw.filter((n) => {
             if (n.type === "k8sPod") {
               const podName = (n.data as K8sPodData)?.name || n.id;
               return activePodNames.has(podName);
@@ -823,11 +820,11 @@ export const useTopologyStore = create<TopologyState>()(
           });
 
           set({
-            nodes: syncedNodes,
-            services: extractServices(syncedNodes),
-            pods: extractPods(syncedNodes),
-            edges: generateDynamicEdges(syncedNodes, get().edges),
+            rawNodes: syncedRawNodes,
+            services: extractServices(syncedRawNodes),
+            pods: extractPods(syncedRawNodes),
           });
+          get().applyDagreLayout("LR");
         } else if (
           eventType === "EVENT_POD_STATUS_CHANGED" ||
           eventType === "EVENT_POD_ADDED" ||
@@ -843,8 +840,7 @@ export const useTopologyStore = create<TopologyState>()(
           const podName = String(podObj.name || podObj.id || "");
           if (!podName) return;
 
-          const currentNodes = get().nodes;
-          const existingIdx = currentNodes.findIndex(
+          const existingIdx = currentRaw.findIndex(
             (n) => n.id === podName || (n.data as K8sPodData)?.name === podName
           );
 
@@ -855,10 +851,9 @@ export const useTopologyStore = create<TopologyState>()(
               : "Running"
           ) as K8sPodData["status"];
 
-          let updatedNodes: Node[];
-          const updatedEdges = get().edges;
+          let updatedRawNodes: Node[];
           if (existingIdx >= 0) {
-            const existingNode = currentNodes[existingIdx];
+            const existingNode = currentRaw[existingIdx];
             const existingData = existingNode.data as K8sPodData;
             const updatedPodData: K8sPodData = {
               ...existingData,
@@ -872,15 +867,15 @@ export const useTopologyStore = create<TopologyState>()(
               ownerUid: podObj.ownerUid ? String(podObj.ownerUid) : existingData.ownerUid,
             };
 
-            updatedNodes = [...currentNodes];
-            updatedNodes[existingIdx] = {
+            updatedRawNodes = [...currentRaw];
+            updatedRawNodes[existingIdx] = {
               ...existingNode,
               data: updatedPodData,
             };
           } else if (podObj.type === "k8sPod" && podObj.id) {
             const podNode = podObj as unknown as Node;
-            const existing = currentNodes.filter((n) => n.id !== podNode.id);
-            updatedNodes = [...existing, podNode];
+            const existing = currentRaw.filter((n) => n.id !== podNode.id);
+            updatedRawNodes = [...existing, podNode];
           } else {
             const timestamp = Date.now();
             const newPodId = podObj.id ? String(podObj.id) : `pod-${podName}-${timestamp}`;
@@ -888,7 +883,7 @@ export const useTopologyStore = create<TopologyState>()(
             const newPodNode: Node = {
               id: newPodId,
               type: "k8sPod",
-              position: { x: 550, y: 100 + (currentNodes.length % 5) * 80 },
+              position: { x: 550, y: 100 + (currentRaw.length % 5) * 80 },
               data: {
                 name: podName,
                 namespace: podObj.namespace ? String(podObj.namespace) : "default",
@@ -904,15 +899,15 @@ export const useTopologyStore = create<TopologyState>()(
                 ownerUid: podObj.ownerUid ? String(podObj.ownerUid) : "",
               } as K8sPodData,
             };
-            updatedNodes = [...currentNodes, newPodNode];
+            updatedRawNodes = [...currentRaw, newPodNode];
           }
           set({
-            nodes: updatedNodes,
-            edges: generateDynamicEdges(updatedNodes, updatedEdges),
-            services: extractServices(updatedNodes),
-            pods: extractPods(updatedNodes),
-            selectedNode: syncSelectedNode(updatedNodes, get().selectedNode),
+            rawNodes: updatedRawNodes,
+            services: extractServices(updatedRawNodes),
+            pods: extractPods(updatedRawNodes),
+            selectedNode: syncSelectedNode(updatedRawNodes, get().selectedNode),
           });
+          get().applyDagreLayout("LR");
         } else if (
           eventType === "EVENT_NODE_MUTATED" ||
           eventType === "EVENT_NODE_ADDED" ||
@@ -935,29 +930,28 @@ export const useTopologyStore = create<TopologyState>()(
           const svcName = String(svcObj.name || svcObj.id || "");
           if (!svcName) return;
 
-          const currentNodes = get().nodes;
-          const existingIdx = currentNodes.findIndex(
+          const existingIdx = currentRaw.findIndex(
             (n) => n.id === svcName || (n.data as K8sServiceData)?.name === svcName
           );
 
-          let updatedNodes: Node[];
+          let updatedRawNodes: Node[];
           if (existingIdx >= 0) {
-            const existingNode = currentNodes[existingIdx];
-            updatedNodes = [...currentNodes];
-            updatedNodes[existingIdx] = {
+            const existingNode = currentRaw[existingIdx];
+            updatedRawNodes = [...currentRaw];
+            updatedRawNodes[existingIdx] = {
               ...existingNode,
               data: { ...(existingNode.data as K8sServiceData), ...svcObj, selector: svcObj.selector || (existingNode.data as K8sServiceData).selector || {} },
             };
           } else if (svcObj.type === "k8sService" && svcObj.id) {
             const svcNode = svcObj as unknown as Node;
-            const existing = currentNodes.filter((n) => n.id !== svcNode.id);
-            updatedNodes = [...existing, svcNode];
+            const existing = currentRaw.filter((n) => n.id !== svcNode.id);
+            updatedRawNodes = [...existing, svcNode];
           } else {
             const timestamp = Date.now();
             const newServiceNode: Node = {
               id: svcObj.id ? String(svcObj.id) : `service-${svcName}-${timestamp}`,
               type: "k8sService",
-              position: { x: 300, y: 150 + (currentNodes.length % 5) * 60 },
+              position: { x: 300, y: 150 + (currentRaw.length % 5) * 60 },
               data: {
                 name: svcName,
                 type: svcObj.type ? String(svcObj.type) : "ClusterIP",
@@ -971,15 +965,15 @@ export const useTopologyStore = create<TopologyState>()(
                 selector: svcObj.selector || {},
               } as K8sServiceData,
             };
-            updatedNodes = [...currentNodes, newServiceNode];
+            updatedRawNodes = [...currentRaw, newServiceNode];
           }
           set({
-            nodes: updatedNodes,
-            edges: generateDynamicEdges(updatedNodes, get().edges),
-            services: extractServices(updatedNodes),
-            pods: extractPods(updatedNodes),
-            selectedNode: syncSelectedNode(updatedNodes, get().selectedNode),
+            rawNodes: updatedRawNodes,
+            services: extractServices(updatedRawNodes),
+            pods: extractPods(updatedRawNodes),
+            selectedNode: syncSelectedNode(updatedRawNodes, get().selectedNode),
           });
+          get().applyDagreLayout("LR");
         } else if (
           eventType === "EVENT_DEPLOYMENT_MUTATED" ||
           eventType === "EVENT_DEPLOYMENT_ADDED" ||
@@ -1000,16 +994,15 @@ export const useTopologyStore = create<TopologyState>()(
           const ingName = String(ingObj.name || ingObj.id || "");
           if (!ingName) return;
 
-          const currentNodes = get().nodes;
-          const existingIdx = currentNodes.findIndex(
+          const existingIdx = currentRaw.findIndex(
             (n) => (n.id === ingName || (n.data as K8sIngressData)?.name === ingName) && n.type === "k8sIngress"
           );
 
-          let updatedNodes: Node[];
+          let updatedRawNodes: Node[];
           if (existingIdx >= 0) {
-            const existingNode = currentNodes[existingIdx];
-            updatedNodes = [...currentNodes];
-            updatedNodes[existingIdx] = {
+            const existingNode = currentRaw[existingIdx];
+            updatedRawNodes = [...currentRaw];
+            updatedRawNodes[existingIdx] = {
               ...existingNode,
               data: {
                 ...(existingNode.data as K8sIngressData),
@@ -1020,22 +1013,22 @@ export const useTopologyStore = create<TopologyState>()(
             const newIngressNode: Node = {
               id: ingName,
               type: "k8sIngress",
-              position: { x: 50, y: 150 + (currentNodes.length % 5) * 60 },
+              position: { x: 50, y: 150 + (currentRaw.length % 5) * 60 },
               data: {
                 name: ingName,
                 namespace: namespace,
                 rules: (ingObj.rules as IngressRuleData[]) || [],
               } as K8sIngressData,
             };
-            updatedNodes = [...currentNodes, newIngressNode];
+            updatedRawNodes = [...currentRaw, newIngressNode];
           }
           set({
-            nodes: updatedNodes,
-            edges: generateDynamicEdges(updatedNodes, get().edges),
-            services: extractServices(updatedNodes),
-            pods: extractPods(updatedNodes),
-            selectedNode: syncSelectedNode(updatedNodes, get().selectedNode),
+            rawNodes: updatedRawNodes,
+            services: extractServices(updatedRawNodes),
+            pods: extractPods(updatedRawNodes),
+            selectedNode: syncSelectedNode(updatedRawNodes, get().selectedNode),
           });
+          get().applyDagreLayout("LR");
         } else if (
           eventType === "EVENT_POD_DELETED" ||
           eventType === "DELETE_POD"
