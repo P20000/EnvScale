@@ -38,6 +38,7 @@ export const K8sWorkloadNode = memo(({ data }: { data: K8sWorkloadData }) => {
 
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
+    e.preventDefault();
     if (data.onToggleExpand) {
       data.onToggleExpand(data.name);
     }
@@ -124,7 +125,7 @@ export const K8sWorkloadNode = memo(({ data }: { data: K8sWorkloadData }) => {
       {data.isAggregated && (
         <button
           onClick={handleToggle}
-          className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-lg bg-neutral-800/60 py-1 text-xs font-medium text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors border border-neutral-700/40"
+          className="nodrag nopan mt-2.5 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-neutral-800/60 py-1 text-xs font-medium text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors border border-neutral-700/40"
         >
           {data.isExpanded ? (
             <>

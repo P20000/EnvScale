@@ -286,6 +286,7 @@ export const aggregateNodesWithWorkloads = (
 export interface TopologyState {
   clusters: string[];
   activeCluster: string;
+  rawNodes: Node[];
   nodes: Node[];
   edges: Edge[];
   services: K8sServiceData[];
@@ -354,6 +355,7 @@ export const useTopologyStore = create<TopologyState>()(
     (set, get) => ({
       clusters: defaultClusters,
       activeCluster: "minikube-prod",
+      rawNodes: defaultInitialNodes,
       nodes: defaultInitialNodes,
       edges: defaultInitialEdges,
       services: extractServices(defaultInitialNodes),
@@ -754,18 +756,21 @@ export const useTopologyStore = create<TopologyState>()(
       },
 
       applyDagreLayout: (direction = "TB") => {
-        const { nodes, edges, expandedWorkloads, toggleWorkloadExpanded } = get();
-        if (nodes.length === 0) return;
+        const { rawNodes, nodes, edges, expandedWorkloads, toggleWorkloadExpanded } = get();
+        const baseNodes = rawNodes && rawNodes.length > 0 ? rawNodes : nodes;
+        if (baseNodes.length === 0) return;
 
         const aggregatedNodes = aggregateNodesWithWorkloads(
-          nodes,
+          baseNodes,
           expandedWorkloads,
           toggleWorkloadExpanded
         );
 
+        const dynamicEdges = generateDynamicEdges(aggregatedNodes, edges);
+
         const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
           aggregatedNodes,
-          edges,
+          dynamicEdges,
           direction
         );
         set({ nodes: layoutedNodes, edges: layoutedEdges });
