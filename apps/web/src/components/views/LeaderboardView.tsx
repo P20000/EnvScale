@@ -6,7 +6,7 @@ import {
   MdVerifiedUser as ShieldCheck,
   MdDns as Server,
   MdWarning as AlertTriangle,
-  MdPulse as Activity,
+  MdShowChart as Activity,
   MdGroup as Users,
 } from "react-icons/md";
 import { useTopologyStore } from "../../store/useTopologyStore";

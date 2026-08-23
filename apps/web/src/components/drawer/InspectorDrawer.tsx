@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   MdClose as X,
-  MdPulse as Activity,
+  MdShowChart as Activity,
   MdTerminal as Terminal,
   MdFlashOn as Zap,
   MdRefresh as RotateCcw,

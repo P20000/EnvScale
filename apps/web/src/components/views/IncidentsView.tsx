@@ -55,8 +55,9 @@ export function IncidentsView() {
         const id = `INC-POD-${pod.name.slice(-4).toUpperCase()}`;
         if (!seenIds.has(id)) {
           seenIds.add(id);
-          const isCritical = pod.status === "CrashLoopBackOff" || pod.status === "Failed" || pod.status === "OOMKilled";
-          const isWarning = pod.restarts > 0 || pod.status === "Pending" || pod.status === "ImagePullBackOff";
+          const statusStr = pod.status as string;
+          const isCritical = statusStr === "CrashLoopBackOff" || statusStr === "Failed" || statusStr === "OOMKilled";
+          const isWarning = pod.restarts > 0 || statusStr === "Pending" || statusStr === "ImagePullBackOff";
           list.push({
             id,
             pod: pod.name,
