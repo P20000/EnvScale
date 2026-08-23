@@ -302,6 +302,7 @@ export interface TopologyState {
 
   // Granular Resource Actions (Nodes, Services, Pods)
   upsertNode: (node: Node) => void;
+  removeTarget: (targetId: string) => void;
   removeNode: (nodeId: string) => void;
   upsertService: (serviceData: Partial<K8sServiceData> & { id?: string; name: string }) => void;
   removeService: (serviceId: string) => void;
@@ -428,13 +429,59 @@ export const useTopologyStore = create<TopologyState>()(
         });
       },
 
+      removeTarget: (targetId: string) => {
+        if (!targetId) return;
+        const currentRaw = get().rawNodes || [];
+        const currentNodes = get().nodes || [];
+
+        const matchesTarget = (n: Node) => {
+          if (n.id === targetId) return true;
+          const d = n.data as Record<string, unknown> | undefined;
+          if (!d) return false;
+          const name = String(d.name || d.podName || d.serviceName || d.nodeName || "");
+          return (
+            name === targetId ||
+            `svc-${name}` === targetId ||
+            `pod-${name}` === targetId ||
+            `node-${name}` === targetId ||
+            `workload-${name}` === targetId
+          );
+        };
+
+        const remainingRaw = currentRaw.filter((n) => !matchesTarget(n));
+        const remainingNodes = currentNodes.filter((n) => !matchesTarget(n));
+
+        const remainingRawIds = new Set(remainingRaw.map((n) => n.id));
+        const remainingEdges = get().edges.filter(
+          (e) => remainingRawIds.has(e.source) && remainingRawIds.has(e.target)
+        );
+
+        const selected = get().selectedNode;
+        const isSelected =
+          selected &&
+          (selected.data?.name === targetId ||
+            (selected as unknown as Node).id === targetId);
+
+        set({
+          rawNodes: remainingRaw,
+          nodes: remainingNodes,
+          services: extractServices(remainingRaw),
+          pods: extractPods(remainingRaw),
+          ingresses: get().ingresses.filter((i) => i.name !== targetId),
+          edges: remainingEdges,
+          selectedNode: isSelected ? null : syncSelectedNode(remainingRaw, selected),
+        });
+
+        get().applyDagreLayout("LR");
+      },
+
       removeNode: (nodeId) => {
-        get().deleteNode(nodeId);
+        get().removeTarget(nodeId);
       },
 
       upsertService: (serviceData) => {
         const name = serviceData.name;
-        const current = get().nodes;
+        const current = get().rawNodes && get().rawNodes.length > 0 ? get().rawNodes : get().nodes;
         const idx = current.findIndex(
           (n) => n.id === serviceData.id || (n.data as K8sServiceData)?.name === name
         );
@@ -462,38 +509,21 @@ export const useTopologyStore = create<TopologyState>()(
           updated = [...current, newServiceNode];
         }
         set({
-          nodes: updated,
+          rawNodes: updated,
           services: extractServices(updated),
           pods: extractPods(updated),
           selectedNode: syncSelectedNode(updated, get().selectedNode),
         });
+        get().applyDagreLayout("LR");
       },
 
       removeService: (serviceId) => {
-        const targetId = serviceId;
-        const currentNodes = get().nodes;
-        const remaining = currentNodes.filter(
-          (n) => n.id !== targetId && (n.data as K8sServiceData)?.name !== targetId
-        );
-        const remainingIds = new Set(remaining.map((n) => n.id));
-        const remainingEdges = get().edges.filter(
-          (e) => remainingIds.has(e.source) && remainingIds.has(e.target)
-        );
-        const selected = get().selectedNode;
-        const isSelected = selected && selected.data?.name === targetId;
-
-        set({
-          nodes: remaining,
-          services: extractServices(remaining),
-          pods: extractPods(remaining),
-          edges: remainingEdges,
-          selectedNode: isSelected ? null : syncSelectedNode(remaining, selected),
-        });
+        get().removeTarget(serviceId);
       },
 
       upsertPod: (podData) => {
         const name = podData.name;
-        const current = get().nodes;
+        const current = get().rawNodes && get().rawNodes.length > 0 ? get().rawNodes : get().nodes;
         const idx = current.findIndex(
           (n) => n.id === podData.id || (n.data as K8sPodData)?.name === name
         );
@@ -526,29 +556,16 @@ export const useTopologyStore = create<TopologyState>()(
           updated = [...current, newPodNode];
         }
         set({
-          nodes: updated,
+          rawNodes: updated,
           services: extractServices(updated),
           pods: extractPods(updated),
           selectedNode: syncSelectedNode(updated, get().selectedNode),
         });
+        get().applyDagreLayout("LR");
       },
 
       removePod: (podId) => {
-        const targetId = podId;
-        const currentRaw = get().rawNodes && get().rawNodes.length > 0 ? get().rawNodes : get().nodes;
-        const remaining = currentRaw.filter(
-          (n) => n.id !== targetId && (n.data as K8sPodData)?.name !== targetId
-        );
-        const selected = get().selectedNode;
-        const isSelected = selected && selected.data?.name === targetId;
-
-        set({
-          rawNodes: remaining,
-          services: extractServices(remaining),
-          pods: extractPods(remaining),
-          selectedNode: isSelected ? null : syncSelectedNode(remaining, selected),
-        });
-        get().applyDagreLayout("LR");
+        get().removeTarget(podId);
       },
 
       setServices: (servicesInput) => {
@@ -677,24 +694,7 @@ export const useTopologyStore = create<TopologyState>()(
       },
 
       deleteNode: (nodeId) => {
-        const remainingNodes = get().nodes.filter(
-          (n) => n.id !== nodeId && (n.data as Record<string, unknown>)?.name !== nodeId
-        );
-        const remainingNodeIds = new Set(remainingNodes.map((n) => n.id));
-        const remainingEdges = get().edges.filter(
-          (e) => remainingNodeIds.has(e.source) && remainingNodeIds.has(e.target)
-        );
-
-        const selected = get().selectedNode;
-        const isSelected = selected && (selected.data?.name === nodeId);
-
-        set({
-          nodes: remainingNodes,
-          services: extractServices(remainingNodes),
-          pods: extractPods(remainingNodes),
-          edges: remainingEdges,
-          ...(isSelected ? { selectedNode: null } : {}),
-        });
+        get().removeTarget(nodeId);
       },
 
       setNodes: (nodesInput) => {
@@ -712,17 +712,14 @@ export const useTopologyStore = create<TopologyState>()(
       },
 
       onNodesChange: (changes) => {
+        const removedChanges = changes.filter((c) => c.type === "remove");
+        if (removedChanges.length > 0) {
+          removedChanges.forEach((c) => get().removeTarget(c.id));
+          return;
+        }
+
         const updatedNodes = applyNodeChanges(changes, get().nodes);
-        const remainingNodeIds = new Set(updatedNodes.map((n) => n.id));
-        const updatedEdges = get().edges.filter(
-          (e) => remainingNodeIds.has(e.source) && remainingNodeIds.has(e.target)
-        );
-        set({
-          nodes: updatedNodes,
-          services: extractServices(updatedNodes),
-          pods: extractPods(updatedNodes),
-          edges: updatedEdges,
-        });
+        set({ nodes: updatedNodes });
       },
 
       onEdgesChange: (changes) => {
@@ -1033,7 +1030,7 @@ export const useTopologyStore = create<TopologyState>()(
         ) {
           const targetId = String(payloadData.podId || payloadData.name || payloadData.id || "");
           if (targetId) {
-            get().removePod(targetId);
+            get().removeTarget(targetId);
           }
         } else if (
           eventType === "EVENT_NODE_DELETED" ||
@@ -1041,7 +1038,7 @@ export const useTopologyStore = create<TopologyState>()(
         ) {
           const targetId = String(payloadData.nodeId || payloadData.name || payloadData.id || "");
           if (targetId) {
-            get().removeNode(targetId);
+            get().removeTarget(targetId);
           }
         } else if (
           eventType === "EVENT_SERVICE_DELETED" ||
@@ -1049,7 +1046,15 @@ export const useTopologyStore = create<TopologyState>()(
         ) {
           const targetId = String(payloadData.serviceId || payloadData.name || payloadData.id || "");
           if (targetId) {
-            get().removeService(targetId);
+            get().removeTarget(targetId);
+          }
+        } else if (
+          eventType === "EVENT_INGRESS_DELETED" ||
+          eventType === "DELETE_INGRESS"
+        ) {
+          const targetId = String(payloadData.ingressId || payloadData.name || payloadData.id || "");
+          if (targetId) {
+            get().removeTarget(targetId);
           }
         } else if (eventType === "EVENT_ALERT_TRIGGERED") {
           const rawSeverity = String(payloadData.severity || "WARNING");
@@ -1149,10 +1154,12 @@ export const useTopologyStore = create<TopologyState>()(
         set({
           clusters: defaultClusters,
           activeCluster: "minikube-prod",
+          rawNodes: defaultInitialNodes,
           nodes: defaultInitialNodes,
           edges: defaultInitialEdges,
           services: extractServices(defaultInitialNodes),
           pods: extractPods(defaultInitialNodes),
+          ingresses: [],
           selectedNode: null,
           tokens: defaultInitialTokens,
           notifications: defaultInitialNotifications,
