@@ -1,5 +1,14 @@
 import { useState, useMemo } from "react";
-import { AlertTriangle, CheckCircle2, Filter, ShieldAlert, Server, Plus, Settings, ShieldCheck } from "lucide-react";
+import {
+  MdWarning as AlertTriangle,
+  MdCheckCircle as CheckCircle2,
+  MdFilterList as Filter,
+  MdSecurity as ShieldAlert,
+  MdDns as Server,
+  MdAdd as Plus,
+  MdSettings as Settings,
+  MdVerifiedUser as ShieldCheck,
+} from "react-icons/md";
 import { Badge } from "../ui/badge";
 import { useTopologyStore } from "../../store/useTopologyStore";
 import { useAlertStore } from "../../store/useAlertStore";

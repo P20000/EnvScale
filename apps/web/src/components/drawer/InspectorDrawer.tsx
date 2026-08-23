@@ -1,17 +1,17 @@
 import { useState, useEffect } from "react";
 import {
-  X,
-  Activity,
-  Terminal,
-  Zap,
-  RotateCcw,
-  CheckCircle2,
-  AlertTriangle,
-  Play,
-  Pause,
-  Copy,
-  Check,
-} from "lucide-react";
+  MdClose as X,
+  MdPulse as Activity,
+  MdTerminal as Terminal,
+  MdFlashOn as Zap,
+  MdRefresh as RotateCcw,
+  MdCheckCircle as CheckCircle2,
+  MdWarning as AlertTriangle,
+  MdPlayArrow as Play,
+  MdPause as Pause,
+  MdContentCopy as Copy,
+  MdCheck as Check,
+} from "react-icons/md";
 import type { K8sPodData } from "../canvas/K8sPod";
 import type { K8sNodeData } from "../canvas/K8sNode";
 import type { K8sServiceData } from "../canvas/K8sService";

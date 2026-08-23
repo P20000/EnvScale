@@ -1,4 +1,9 @@
-import { BarChart3, Cpu, HardDrive, Zap } from "lucide-react";
+import {
+  MdBarChart as BarChart3,
+  MdMemory as Cpu,
+  MdSdStorage as HardDrive,
+  MdFlashOn as Zap,
+} from "react-icons/md";
 
 export function MetricsView() {
   return (

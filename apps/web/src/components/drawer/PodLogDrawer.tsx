@@ -1,16 +1,16 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import {
-  X,
-  Terminal,
-  Search,
-  Play,
-  Pause,
-  Trash2,
-  Copy,
-  Check,
-  ArrowDown,
-  Filter,
-} from "lucide-react";
+  MdClose as X,
+  MdTerminal as Terminal,
+  MdSearch as Search,
+  MdPlayArrow as Play,
+  MdPause as Pause,
+  MdDelete as Trash2,
+  MdContentCopy as Copy,
+  MdCheck as Check,
+  MdArrowDownward as ArrowDown,
+  MdFilterList as Filter,
+} from "react-icons/md";
 import { usePodLogs } from "../../hooks/usePodLogs";
 import type { LogLevel } from "../../types/logs";
 

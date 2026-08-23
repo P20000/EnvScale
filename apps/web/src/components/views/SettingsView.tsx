@@ -1,5 +1,14 @@
 import { useState } from "react";
-import { Settings, Key, Shield, Lock, Copy, Check, Trash2, Plus } from "lucide-react";
+import {
+  MdSettings as Settings,
+  MdVpnKey as Key,
+  MdShield as Shield,
+  MdLock as Lock,
+  MdContentCopy as Copy,
+  MdCheck as Check,
+  MdDelete as Trash2,
+  MdAdd as Plus,
+} from "react-icons/md";
 import { useTopologyStore } from "../../store/useTopologyStore";
 
 export function SettingsView() {

@@ -1,11 +1,11 @@
 import * as React from "react"
 import {
-  X,
-  AlertCircle,
-  CheckCircle2,
-  AlertTriangle,
-  Info,
-} from "lucide-react"
+  MdClose as X,
+  MdError as AlertCircle,
+  MdCheckCircle as CheckCircle2,
+  MdWarning as AlertTriangle,
+  MdInfo as Info,
+} from "react-icons/md"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"

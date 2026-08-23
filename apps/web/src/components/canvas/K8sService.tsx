@@ -1,6 +1,10 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { Globe, ArrowRightLeft, Trash2 } from "lucide-react";
+import {
+  MdPublic as Globe,
+  MdCompareArrows as ArrowRightLeft,
+  MdDelete as Trash2,
+} from "react-icons/md";
 import { useTopologyStore } from "../../store/useTopologyStore";
 
 export interface K8sServiceData extends Record<string, unknown> {

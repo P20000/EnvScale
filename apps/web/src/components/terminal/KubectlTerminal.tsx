@@ -1,14 +1,14 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
-  Terminal as TerminalIcon,
-  X,
-  Minus,
-  Trash2,
-  Maximize2,
-  ChevronRight,
-  Copy,
-  Check,
-} from "lucide-react";
+  MdTerminal as TerminalIcon,
+  MdClose as X,
+  MdRemove as Minus,
+  MdDelete as Trash2,
+  MdFullscreen as Maximize2,
+  MdChevronRight as ChevronRight,
+  MdContentCopy as Copy,
+  MdCheck as Check,
+} from "react-icons/md";
 import { useTopologyStore, generateDynamicEdges } from "../../store/useTopologyStore";
 import { getLayoutedElements } from "../../utils/layout";
 

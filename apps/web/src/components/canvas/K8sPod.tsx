@@ -1,6 +1,11 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { Box, RotateCcw, Trash2, Loader2 } from "lucide-react";
+import {
+  MdViewInAr as Box,
+  MdRefresh as RotateCcw,
+  MdDelete as Trash2,
+  MdAutorenew as Loader2,
+} from "react-icons/md";
 import { useTopologyStore } from "../../store/useTopologyStore";
 
 export interface K8sPodData extends Record<string, unknown> {

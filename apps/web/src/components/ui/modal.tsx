@@ -1,5 +1,5 @@
 import * as React from "react"
-import { X } from "lucide-react"
+import { MdClose as X } from "react-icons/md"
 
 import { cn } from "@/lib/utils"
 
