@@ -34,10 +34,10 @@ export function getLayoutedElements(
 
   dagreGraph.setGraph({
     rankdir: direction,
-    nodesep: 50,
-    ranksep: 80,
-    marginx: 50,
-    marginy: 50,
+    nodesep: 60,
+    ranksep: 150,
+    marginx: 60,
+    marginy: 60,
   });
 
   // Set nodes with exact dynamic UI component bounding dimensions

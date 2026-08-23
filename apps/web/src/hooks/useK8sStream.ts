@@ -243,17 +243,14 @@ export function useK8sStream(
               if (lastPingTimeRef.current > 0) {
                 measuredLatency = Math.max(1, Math.round(performance.now() - lastPingTimeRef.current));
               }
-            } else if (parsed.timestamp && typeof parsed.timestamp === "string") {
-              const msgTime = new Date(parsed.timestamp).getTime();
-              if (!isNaN(msgTime) && msgTime > 0) {
-                measuredLatency = Math.max(1, Math.round(Date.now() - msgTime));
-              }
+            } else if (typeof parsed.latencyMs === "number" && parsed.latencyMs > 0) {
+              measuredLatency = Math.round(parsed.latencyMs);
             }
 
             const processingTime = Math.max(1, Math.round(performance.now() - startTime));
             const finalLatency = measuredLatency > 0 ? measuredLatency : processingTime;
 
-            if (finalLatency > 0) {
+            if (finalLatency > 0 && (eventType === "pong" || eventType === "EVENT_HEARTBEAT" || measuredLatency > 0)) {
               setLatencyMs(finalLatency);
             }
 
