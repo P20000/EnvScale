@@ -29,6 +29,7 @@ const nodeTypes = {
   k8sDeployment: K8sWorkloadNode,
   k8sReplicaSet: K8sWorkloadNode,
   k8sStatefulSet: K8sWorkloadNode,
+  k8sWorkload: K8sWorkloadNode,
   k8sIngress: K8sIngressNode,
 };
 

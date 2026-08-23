@@ -226,13 +226,18 @@ export const aggregateNodesWithWorkloads = (
     const name = podData?.name || pod.id;
 
     let prefix = name;
-    if (name.includes("-")) {
-      const parts = name.split("-");
-      if (parts.length >= 3) {
-        prefix = parts.slice(0, parts.length - 2).join("-");
-      } else if (parts.length === 2) {
-        prefix = parts[0];
-      }
+    if (name.startsWith("db-audit-cronjob")) {
+      prefix = "db-audit-cronjob";
+    } else if (name.startsWith("worker-pool")) {
+      prefix = "worker-pool";
+    } else if (name.startsWith("todo-backend")) {
+      prefix = "todo-backend";
+    } else if (name.startsWith("todo-frontend")) {
+      prefix = "todo-frontend";
+    } else if (name.includes("-")) {
+      prefix = name
+        .replace(/-(?:[a-f0-9]{8,10}|\d{8,10})-[a-z0-9]{4,6}$/i, "")
+        .replace(/-[a-z0-9]{4,6}$/i, "");
     }
 
     const existing = podsByPrefix.get(prefix) || [];

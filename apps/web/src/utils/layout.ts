@@ -179,10 +179,19 @@ export function getLayoutedElements(
   }
 
   if (minX === Infinity) minX = 50;
-  if (maxY === 0) maxY = 300;
 
-  // Position Orphan compute nodes in a 2 x N grid offset >= 100px below maxY
-  const orphanStartY = maxY + 140; // 140px vertical offset guarantees zero clipping into stateful/db nodes
+  // Calculate max Y strictly from connected DAG nodes in current layout pass
+  let calculatedMaxY = 350;
+  if (layoutedConnectedNodes.length > 0) {
+    const bottomYs = layoutedConnectedNodes.map((n) => {
+      const h = dagreGraph.node(n.id)?.height || 120;
+      return n.position.y + h;
+    });
+    calculatedMaxY = Math.max(...bottomYs);
+  }
+
+  // Hardcap orphan dock Y offset to a clean static value (max 520px) to prevent vertical drift
+  const orphanStartY = Math.min(Math.max(calculatedMaxY + 120, 420), 520);
   const layoutedOrphanNodes: Node[] = orphanNodes.map((node, idx) => {
     const col = idx % 2;
     const row = Math.floor(idx / 2);

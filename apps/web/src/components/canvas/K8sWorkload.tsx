@@ -45,12 +45,12 @@ export const K8sWorkloadNode = memo(({ data }: { data: K8sWorkloadData }) => {
 
   return (
     <div
-      className={`group relative w-[280px] rounded-xl bg-neutral-900/90 p-3.5 backdrop-blur-xl border transition-all duration-300 ${
+      className={`group relative w-[280px] min-h-[115px] rounded-xl bg-[#141417] p-3.5 text-white border text-left shadow-xl transition-all duration-300 ${
         isError
           ? "border-red-500/50 shadow-red-500/10"
           : isWarning
           ? "border-amber-500/50 shadow-amber-500/10"
-          : "border-emerald-500/30 hover:border-blue-500 hover:ring-1 hover:ring-blue-500 hover:shadow-blue-500/10"
+          : "border-neutral-800/80 hover:border-blue-500 hover:ring-1 hover:ring-blue-500 hover:shadow-blue-500/10"
       }`}
     >
       {/* 4-Sided Handles: TOP */}
