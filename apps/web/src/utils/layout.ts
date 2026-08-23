@@ -4,9 +4,10 @@ import type { K8sIngressData } from "../components/canvas/K8sIngress";
 
 /**
  * Calculates dynamic hierarchical layout using Dagre with:
- * 1. Dynamic bounding box heights for Ingress cards (120 + N * 34px)
- * 2. Explicit nodesep (50px) and ranksep (80px)
- * 3. Separate 2 x N grid layout for orphan compute workers >= 100px below main DAG Y-max
+ * 1. Stateless origin calculations (zero compound Y-offset accumulation)
+ * 2. Dynamic bounding box heights for Ingress cards (120 + N * 34px)
+ * 3. Explicit nodesep (60px) and ranksep (200px)
+ * 4. Stateless 60px orphan dock offset directly below fresh connected dagreMaxY
  */
 export function getLayoutedElements(
   nodes: Node[],
@@ -18,17 +19,17 @@ export function getLayoutedElements(
   const isHorizontal = direction === "LR";
   const connectedNodeIds = new Set<string>();
 
-  // Collect connected node IDs from valid edges
+  // 1. Collect connected node IDs from valid edges
   edges.forEach((e) => {
-    connectedNodeIds.add(e.source);
-    connectedNodeIds.add(e.target);
+    if (e.source) connectedNodeIds.add(e.source);
+    if (e.target) connectedNodeIds.add(e.target);
   });
 
   // Separate connected nodes vs orphan compute nodes
   const connectedNodes = nodes.filter((n) => connectedNodeIds.has(n.id));
   const orphanNodes = nodes.filter((n) => !connectedNodeIds.has(n.id));
 
-  // Initialize Dagre graph for connected nodes
+  // Initialize Dagre graph ONLY for connected nodes
   const dagreGraph = new dagre.graphlib.Graph();
   dagreGraph.setDefaultEdgeLabel(() => ({}));
 
@@ -40,7 +41,7 @@ export function getLayoutedElements(
     marginy: 60,
   });
 
-  // Set nodes with exact dynamic UI component bounding dimensions
+  // Set node dimensions in Dagre
   const nodesToLayout = connectedNodes.length > 0 ? connectedNodes : nodes;
   nodesToLayout.forEach((node) => {
     let width = 280;
@@ -56,7 +57,6 @@ export function getLayoutedElements(
       width = 320;
       const ingressData = node.data as K8sIngressData;
       const rulesCount = Array.isArray(ingressData?.rules) ? ingressData.rules.length : 1;
-      // Dynamic bounding box height accounting for ingress rules list
       height = 120 + Math.max(1, rulesCount) * 34;
     } else if (node.type === "k8sPod") {
       width = 280;
@@ -76,15 +76,11 @@ export function getLayoutedElements(
 
   const nodeMap = new Map<string, Node>(nodesToLayout.map((n) => [n.id, n]));
 
-  // Add edges to Dagre graph with explicit rank constraints
+  // Add edges to Dagre graph
   edges.forEach((edge) => {
     const sourceNode = nodeMap.get(edge.source);
     const targetNode = nodeMap.get(edge.target);
-
-    if (!sourceNode || !targetNode) {
-      dagreGraph.setEdge(edge.source, edge.target, { minlen: 1, weight: 1 });
-      return;
-    }
+    if (!sourceNode || !targetNode) return;
 
     // Ignore direct Service -> Worker Node edges
     if (
@@ -135,7 +131,7 @@ export function getLayoutedElements(
 
   dagre.layout(dagreGraph);
 
-  // Position connected nodes
+  // Compute fresh stateless position coordinates for connected nodes
   const layoutedConnectedNodes: Node[] = nodesToLayout.map((node) => {
     const nodeWithPosition = dagreGraph.node(node.id);
     if (!nodeWithPosition) return node;
@@ -171,28 +167,27 @@ export function getLayoutedElements(
     });
   }
 
-  // Position Orphan compute & workload nodes directly below Ingress in Column 1
-  let orphanStartX = 50;
-  let orphanStartY = 320;
+  // Calculate dagreMaxY and dockStartX strictly from freshly computed layoutedConnectedNodes
+  let dagreMaxY = 300;
+  let dockStartX = 50;
 
-  if (ingressNodes.length > 0) {
-    const ingNode = ingressNodes[0];
-    const ingHeight = dagreGraph.node(ingNode.id)?.height || 180;
-    orphanStartX = ingNode.position.x;
-    orphanStartY = ingNode.position.y + ingHeight + 40;
-  } else if (layoutedConnectedNodes.length > 0) {
+  if (layoutedConnectedNodes.length > 0) {
+    const xs = layoutedConnectedNodes.map((n) => n.position.x);
     const bottomYs = layoutedConnectedNodes.map((n) => {
       const h = dagreGraph.node(n.id)?.height || 120;
       return n.position.y + h;
     });
-    orphanStartY = Math.max(...bottomYs) + 40;
+    dockStartX = Math.min(...xs);
+    dagreMaxY = Math.max(...bottomYs);
   }
 
+  // Stateless 60px offset underneath dagreMaxY
+  const dockStartY = dagreMaxY + 60;
   const layoutedOrphanNodes: Node[] = orphanNodes.map((node, idx) => {
     const col = idx % 2;
     const row = Math.floor(idx / 2);
-    const posX = orphanStartX + col * 310;
-    const posY = orphanStartY + row * 140;
+    const posX = dockStartX + col * 304; // 280px width + 24px gap
+    const posY = dockStartY + row * 145; // 125px height + 20px gap
 
     return {
       ...node,
