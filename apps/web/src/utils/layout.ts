@@ -135,20 +135,13 @@ export function getLayoutedElements(
 
   dagre.layout(dagreGraph);
 
-  // Position connected nodes and track DAG max Y / min X
-  let maxY = 0;
-  let minX = Infinity;
-
+  // Position connected nodes
   const layoutedConnectedNodes: Node[] = nodesToLayout.map((node) => {
     const nodeWithPosition = dagreGraph.node(node.id);
     if (!nodeWithPosition) return node;
 
     const posX = Math.round(nodeWithPosition.x - nodeWithPosition.width / 2);
     const posY = Math.round(nodeWithPosition.y - nodeWithPosition.height / 2);
-
-    const bottomY = posY + nodeWithPosition.height;
-    if (bottomY > maxY) maxY = bottomY;
-    if (posX < minX) minX = posX;
 
     return {
       ...node,
@@ -178,25 +171,27 @@ export function getLayoutedElements(
     });
   }
 
-  if (minX === Infinity) minX = 50;
+  // 1. Calculate minX and maxY strictly from connected DAG nodes in current pass
+  let minX = 50;
+  let maxY = 250;
 
-  // Calculate max Y strictly from connected DAG nodes in current layout pass
-  let calculatedMaxY = 350;
   if (layoutedConnectedNodes.length > 0) {
+    const xs = layoutedConnectedNodes.map((n) => n.position.x);
     const bottomYs = layoutedConnectedNodes.map((n) => {
       const h = dagreGraph.node(n.id)?.height || 120;
       return n.position.y + h;
     });
-    calculatedMaxY = Math.max(...bottomYs);
+    minX = Math.min(...xs);
+    maxY = Math.max(...bottomYs);
   }
 
-  // Hardcap orphan dock Y offset to a clean static value (max 520px) to prevent vertical drift
-  const orphanStartY = Math.min(Math.max(calculatedMaxY + 120, 420), 520);
+  // 2. Position Orphan compute nodes starting strictly 60px below maxY aligned with minX
+  const orphanStartY = maxY + 60;
   const layoutedOrphanNodes: Node[] = orphanNodes.map((node, idx) => {
     const col = idx % 2;
     const row = Math.floor(idx / 2);
     const posX = minX + col * 310;
-    const posY = orphanStartY + row * 145;
+    const posY = orphanStartY + row * 140;
 
     return {
       ...node,
