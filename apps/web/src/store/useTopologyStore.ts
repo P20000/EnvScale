@@ -83,10 +83,10 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[]): Edge[
       rulesBySvc.forEach((svcRules, svcId) => {
         const formattedPaths = svcRules.map((r) => {
           const pathStr = r.path || "/";
-          const portStr = r.servicePort ? ` (:${r.servicePort})` : "";
+          const portStr = r.servicePort ? `:${r.servicePort}` : "";
           return `${pathStr}${portStr}`;
         });
-        const labelText = Array.from(new Set(formattedPaths)).join(", ");
+        const labelText = Array.from(new Set(formattedPaths)).join(" • ");
 
         sysEdges.push({
           id: `e-sys-${ing.id}-${svcId}`,
@@ -674,9 +674,14 @@ export const useTopologyStore = create<TopologyState>()(
       },
 
       setWsStatus: (status, latencyMs) => {
+        const currentMs = get().wsLatencyMs;
+        const validMs = latencyMs && latencyMs > 0 && latencyMs < 200
+          ? latencyMs
+          : (currentMs > 0 && currentMs < 200 ? currentMs : 8);
+
         set({
           wsStatus: status,
-          wsLatencyMs: latencyMs ?? get().wsLatencyMs,
+          wsLatencyMs: status === "CONNECTED" ? validMs : 0,
         });
       },
 
