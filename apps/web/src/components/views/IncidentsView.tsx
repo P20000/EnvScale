@@ -38,35 +38,35 @@ export function IncidentSeverityCell({ severity }: { severity: Severity }) {
       bg: "bg-red-500/5",
       text: "text-red-400",
       border: "border-red-500/20",
-      label: "HIGH",
+      label: "Critical",
     },
     warning: {
       path: mdiAlert,
       bg: "bg-amber-500/5",
       text: "text-amber-400",
       border: "border-amber-500/20",
-      label: "HIGH",
+      label: "High",
     },
     minor: {
       path: mdiInformation,
       bg: "bg-yellow-500/5",
       text: "text-yellow-400",
       border: "border-yellow-500/20",
-      label: "MINOR",
+      label: "Minor",
     },
     info: {
       path: mdiCheckCircle,
       bg: "bg-blue-500/5",
       text: "text-blue-400",
       border: "border-blue-500/20",
-      label: "INFO",
+      label: "Info",
     },
   };
 
   const current = configs[sevKey] || configs.info;
 
   return (
-    <div className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold tracking-wider uppercase border rounded-full ${current.bg} ${current.text} ${current.border}`}>
+    <div className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold border rounded-full ${current.bg} ${current.text} ${current.border}`}>
       <Icon path={current.path} size={0.55} />
       <span>{current.label}</span>
     </div>
@@ -333,8 +333,8 @@ export function IncidentsView() {
               <div className="flex items-center gap-4 flex-1 min-w-0">
                 <span className="w-28 font-mono shrink-0">Incident ID</span>
                 <span className="w-20 shrink-0">Severity</span>
-                <span className="w-56 font-mono shrink-0">Target Resource</span>
-                <span className="w-48 font-mono shrink-0">Context (NS • Cluster)</span>
+                <span className="w-48 font-mono shrink-0">Target Resource</span>
+                <span className="w-52 font-mono shrink-0">Context (NS • Cluster)</span>
                 <span className="flex-1 truncate">Telemetry Context</span>
               </div>
               <div className="flex items-center gap-4 shrink-0">
@@ -380,11 +380,11 @@ export function IncidentsView() {
                       <div className="w-20 shrink-0">
                         <IncidentSeverityCell severity={item.severity} />
                       </div>
-                      <span className="w-56 font-mono text-xs text-neutral-300 truncate shrink-0">{item.pod}</span>
-                      <span className="w-48 font-mono text-xs text-neutral-500 truncate shrink-0">
+                      <span className="w-48 font-mono text-xs text-neutral-300 truncate block shrink-0">{item.pod}</span>
+                      <span className="w-52 max-w-[210px] font-mono text-xs text-neutral-500 truncate block shrink-0">
                         ns/{item.namespace} • {item.cluster}
                       </span>
-                      <span className="flex-1 text-xs text-neutral-300 truncate min-w-0">{item.message}</span>
+                      <span className="flex-1 text-xs text-neutral-300 truncate block min-w-0">{item.message}</span>
                     </div>
 
                     <div className="flex items-center gap-4 shrink-0">
