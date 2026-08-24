@@ -14,97 +14,136 @@ function TelemetryAreaChart({
   data,
   color,
   unit,
+  title,
 }: {
   data: number[];
   color: "blue" | "emerald";
   unit: string;
+  title: string;
 }) {
-  const maxVal = Math.max(...data, 100);
-  const pointCoords = data.map((val, idx) => {
-    const x = (idx / (data.length - 1)) * 100;
-    const y = 100 - (val / maxVal) * 80 - 5; // keep within 5% to 85% range
-    return { x: x.toFixed(2), y: y.toFixed(2), rawVal: val };
-  });
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
-  const linePathString = pointCoords.reduce((acc, p, idx) => {
-    return idx === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`;
-  }, "");
+  const maxVal = Math.max(...data, 100);
+  const pointCoords = useMemo(() => {
+    return data.map((val, idx) => {
+      const x = (idx / (data.length - 1)) * 100;
+      const y = 100 - (val / maxVal) * 80 - 5;
+      return { x, y, rawVal: val, idx };
+    });
+  }, [data, maxVal]);
+
+  const linePathString = useMemo(() => {
+    return pointCoords.reduce((acc, p, idx) => {
+      return idx === 0 ? `M ${p.x.toFixed(2)} ${p.y.toFixed(2)}` : `${acc} L ${p.x.toFixed(2)} ${p.y.toFixed(2)}`;
+    }, "");
+  }, [pointCoords]);
 
   const areaPathString = `${linePathString} L 100 100 L 0 100 Z`;
 
   const strokeHex = color === "blue" ? "#3b82f6" : "#10b981";
-  const areaFillHex = color === "blue" ? "rgba(59, 130, 246, 0.08)" : "rgba(16, 185, 129, 0.08)";
+  const areaFillHex = color === "blue" ? "rgba(59, 130, 246, 0.05)" : "rgba(16, 185, 129, 0.05)";
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const pct = Math.max(0, Math.min(1, mouseX / rect.width));
+    const closestIdx = Math.round(pct * (data.length - 1));
+    setHoverIndex(closestIdx);
+  };
+
+  const handleMouseLeave = () => {
+    setHoverIndex(null);
+  };
+
+  const hoveredPoint = hoverIndex !== null ? pointCoords[hoverIndex] : null;
 
   return (
-    <div className="relative h-56 w-full rounded-xl bg-background p-4 border border-neutral-800 flex flex-col justify-between overflow-hidden">
-      {/* Y-Axis Labels & Background Grid Lines */}
+    <div
+      className="relative h-56 w-full rounded-xl bg-background p-4 border border-neutral-800 flex flex-col justify-between overflow-hidden select-none"
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+    >
+      {/* Y-Axis Labels & Technical Background Grid Lines */}
       <div className="absolute inset-x-4 top-4 bottom-8 flex flex-col justify-between pointer-events-none z-0">
         <div className="w-full border-b border-neutral-800/80 flex items-center justify-between">
-          <span className="text-[9px] font-mono text-neutral-500 select-none">100%</span>
+          <span className="text-[9px] font-mono text-neutral-500">100%</span>
         </div>
         <div className="w-full border-b border-neutral-800/80 flex items-center justify-between">
-          <span className="text-[9px] font-mono text-neutral-500 select-none">50%</span>
+          <span className="text-[9px] font-mono text-neutral-500">50%</span>
         </div>
         <div className="w-full border-b border-neutral-800/80 flex items-center justify-between">
-          <span className="text-[9px] font-mono text-neutral-500 select-none">0%</span>
+          <span className="text-[9px] font-mono text-neutral-500">0%</span>
         </div>
       </div>
 
-      {/* Histogram Bar Overlay */}
-      <div className="absolute left-11 right-4 top-4 bottom-8 flex items-end gap-1.5 z-10">
-        {data.map((val, i) => (
-          <div key={i} className="flex-1 h-full flex flex-col justify-end group relative cursor-pointer">
-            {/* Tooltip on hover */}
-            <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:block z-40 rounded bg-[#18181c] border border-neutral-700 px-2 py-1 text-[10px] font-mono text-neutral-100 shadow-xl whitespace-nowrap pointer-events-none font-heading">
-              {val.toFixed(1)}{unit}
-            </div>
-            <div
-              className={`w-full rounded-t-xs transition-all duration-300 ${
-                color === "blue"
-                  ? "bg-blue-500/15 group-hover:bg-blue-500/40"
-                  : "bg-emerald-500/15 group-hover:bg-emerald-500/40"
-              }`}
-              style={{ height: `${Math.max((val / maxVal) * 80, 4)}%` }}
-            />
-          </div>
-        ))}
-      </div>
-
-      {/* Prominent Floating SVG Line Chart Layer (Rendered ON TOP of bars) */}
-      <div className="absolute left-11 right-4 top-4 bottom-8 z-30 pointer-events-none">
+      {/* Stackdriver-Style Technical Grid System & Continuous Line Canvas */}
+      <div className="relative flex-1 w-full pt-2 pl-7 z-10">
         <svg className="w-full h-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
-          {/* 1. Muted Area Fill */}
+          {/* Vertical Technical Gridlines (Dashed) */}
+          <line x1="25" y1="0" x2="25" y2="100" stroke="#27272a" strokeDasharray="2 2" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+          <line x1="50" y1="0" x2="50" y2="100" stroke="#27272a" strokeDasharray="2 2" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+          <line x1="75" y1="0" x2="75" y2="100" stroke="#27272a" strokeDasharray="2 2" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+
+          {/* 1. Muted Micro-Opacity Area Fill */}
           <path d={areaPathString} fill={areaFillHex} stroke="none" />
 
-          {/* 2. Crisp Vibrant Trend Line */}
+          {/* 2. Sharp 1.5px Continuous Line Chart (Zero Columns/Pills) */}
           <path
             d={linePathString}
             fill="none"
             stroke={strokeHex}
-            strokeWidth="2.5"
+            strokeWidth="1.5"
             vectorEffect="non-scaling-stroke"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
 
-          {/* 3. Highlight Vertices */}
-          {pointCoords.map((p, i) => (
+          {/* Hover Vertex Highlight Circle */}
+          {hoveredPoint && (
             <circle
-              key={i}
-              cx={`${p.x}%`}
-              cy={`${p.y}%`}
-              r="2.5"
+              cx={`${hoveredPoint.x}%`}
+              cy={`${hoveredPoint.y}%`}
+              r="3.5"
               fill={strokeHex}
               stroke="#09090b"
-              strokeWidth="1"
+              strokeWidth="1.5"
               vectorEffect="non-scaling-stroke"
             />
-          ))}
+          )}
         </svg>
       </div>
 
+      {/* Flat Hover-Crosshair Tracking Guide Line */}
+      {hoveredPoint && (
+        <div
+          className="absolute top-4 bottom-8 border-l border-dashed border-neutral-500 pointer-events-none z-20"
+          style={{ left: `calc(1.75rem + ${hoveredPoint.x}% * (100% - 2.75rem) / 100)` }}
+        />
+      )}
+
+      {/* Hover Precision Tooltip Card */}
+      {hoveredPoint && (
+        <div
+          className="absolute z-30 rounded-md bg-[#18181c] border border-neutral-700 p-2 shadow-2xl pointer-events-none font-mono text-xs space-y-0.5"
+          style={{
+            top: "1rem",
+            left: hoveredPoint.x > 70 ? "auto" : `calc(2.5rem + ${hoveredPoint.x}%)`,
+            right: hoveredPoint.x > 70 ? `calc(100% - ${hoveredPoint.x}% - 0.5rem)` : "auto",
+          }}
+        >
+          <div className="text-[10px] text-neutral-400 font-heading uppercase">{title}</div>
+          <div className="flex items-center gap-2">
+            <span className={`h-2 w-2 rounded-full ${color === "blue" ? "bg-blue-400" : "bg-emerald-400"}`} />
+            <span className="text-neutral-100 font-bold">{hoveredPoint.rawVal.toFixed(1)}{unit}</span>
+          </div>
+          <div className="text-[9px] text-neutral-500">
+            {15 - Math.round((hoveredPoint.idx / (data.length - 1)) * 15)}m ago
+          </div>
+        </div>
+      )}
+
       {/* X-axis Timeline Labels */}
-      <div className="flex items-center justify-between text-[10px] font-mono text-neutral-500 pt-2 pl-7 border-t border-neutral-800/80 z-20">
+      <div className="flex items-center justify-between text-[10px] font-mono text-neutral-500 pt-2 pl-7 border-t border-neutral-800/80 z-10">
         <span>15m ago</span>
         <span>10m ago</span>
         <span>5m ago</span>
@@ -240,6 +279,7 @@ export function MetricsView() {
             data={cpuHistory}
             color="blue"
             unit="%"
+            title="CPU Telemetry"
           />
         </div>
 
@@ -268,6 +308,7 @@ export function MetricsView() {
             data={memoryHistory}
             color="emerald"
             unit="%"
+            title="RAM Pressure"
           />
         </div>
       </div>
