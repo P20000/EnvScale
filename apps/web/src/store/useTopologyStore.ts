@@ -231,9 +231,19 @@ export const syncSelectedNode = (nodes: Node[], currentSelected: SelectedTarget)
 };
 
 export const aggregateNodesWithWorkloads = (
-  nodes: Node[]
+  nodes: Node[],
+  showCompletedPods: boolean = false
 ): Node[] => {
-  const podNodes = nodes.filter((n) => n.type === "k8sPod");
+  const podNodes = nodes.filter((n) => {
+    if (n.type !== "k8sPod") return false;
+    if (!showCompletedPods) {
+      const podData = n.data as K8sPodData;
+      if (podData?.status === "Succeeded" || podData?.status === "Completed") {
+        return false;
+      }
+    }
+    return true;
+  });
   const nonPodNodes = nodes.filter((n) => n.type !== "k8sPod");
 
   const podsByPrefix = new Map<string, Node[]>();
@@ -340,6 +350,9 @@ export interface TopologyState {
   wsStatus: WsConnectionStatus;
   wsLatencyMs: number;
 
+  showCompletedPods: boolean;
+  setShowCompletedPods: (show: boolean) => void;
+
   undoStack: HistoryAction[];
   redoStack: HistoryAction[];
   undoAction: () => Promise<void>;
@@ -427,7 +440,13 @@ export const useTopologyStore = create<TopologyState>()(
       redoStack: [],
       wsStatus: "DISCONNECTED",
       wsLatencyMs: 12,
+      showCompletedPods: false,
       expandedWorkloads: {},
+
+      setShowCompletedPods: (show) => {
+        set({ showCompletedPods: show });
+        get().applyDagreLayout("LR");
+      },
 
       openDeleteModal: (targetId, targetName, targetKind, namespace = "testing-todo") => {
         set({
@@ -1011,12 +1030,13 @@ export const useTopologyStore = create<TopologyState>()(
       },
 
       applyDagreLayout: (direction = "TB") => {
-        const { rawNodes, nodes, edges } = get();
+        const { rawNodes, nodes, edges, showCompletedPods } = get();
         const baseNodes = rawNodes && rawNodes.length > 0 ? rawNodes : nodes;
         if (baseNodes.length === 0) return;
 
         const aggregatedNodes = aggregateNodesWithWorkloads(
-          baseNodes
+          baseNodes,
+          showCompletedPods
         );
 
         const dynamicEdges = generateDynamicEdges(aggregatedNodes, edges);
@@ -1103,7 +1123,7 @@ export const useTopologyStore = create<TopologyState>()(
 
           const rawStatus = String(podObj.phase || podObj.status || "Running");
           const validStatus: K8sPodData["status"] = (
-            ["Running", "CrashLoopBackOff", "Pending", "Terminated", "Failed", "Unknown"].includes(rawStatus)
+            ["Running", "CrashLoopBackOff", "Pending", "Terminated", "Failed", "Unknown", "Succeeded", "Completed"].includes(rawStatus)
               ? rawStatus
               : "Running"
           ) as K8sPodData["status"];
