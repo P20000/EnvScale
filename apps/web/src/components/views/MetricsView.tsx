@@ -13,12 +13,10 @@ import { useTopologyStore } from "../../store/useTopologyStore";
 function TelemetryAreaChart({
   data,
   color,
-  gradientId,
   unit,
 }: {
   data: number[];
   color: "blue" | "emerald";
-  gradientId: string;
   unit: string;
 }) {
   const maxVal = Math.max(...data, 100);
@@ -31,33 +29,34 @@ function TelemetryAreaChart({
     .join(" ");
 
   const areaPoints = `0,100 ${points} 100,100`;
-
-  const strokeColor = color === "blue" ? "#60a5fa" : "#34d399";
-  const stopColor = color === "blue" ? "#3b82f6" : "#10b981";
+  const strokeColor = color === "blue" ? "#3b82f6" : "#10b981";
 
   return (
     <div className="relative h-56 w-full rounded-xl bg-background p-4 border border-neutral-800 flex flex-col justify-between overflow-hidden">
-      {/* Background Grid Lines */}
-      <div className="absolute inset-x-4 top-4 bottom-8 flex flex-col justify-between pointer-events-none opacity-25">
-        <div className="w-full h-px bg-neutral-700" />
-        <div className="w-full h-px bg-neutral-700" />
-        <div className="w-full h-px bg-neutral-700" />
+      {/* Y-Axis Labels & Background Grid Lines */}
+      <div className="absolute inset-x-4 top-4 bottom-8 flex flex-col justify-between pointer-events-none z-0">
+        <div className="w-full border-b border-neutral-800/80 flex items-center justify-between">
+          <span className="text-[9px] font-mono text-neutral-500 select-none">100%</span>
+        </div>
+        <div className="w-full border-b border-neutral-800/80 flex items-center justify-between">
+          <span className="text-[9px] font-mono text-neutral-500 select-none">50%</span>
+        </div>
+        <div className="w-full border-b border-neutral-800/80 flex items-center justify-between">
+          <span className="text-[9px] font-mono text-neutral-500 select-none">0%</span>
+        </div>
       </div>
 
-      {/* SVG Line & Gradient Area */}
-      <div className="relative flex-1 w-full pt-2">
+      {/* SVG Line & Flat Micro-Opacity Area Fill */}
+      <div className="relative flex-1 w-full pt-2 pl-7 z-10">
         <svg className="w-full h-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
-          <defs>
-            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={stopColor} stopOpacity="0.4" />
-              <stop offset="100%" stopColor={stopColor} stopOpacity="0.0" />
-            </linearGradient>
-          </defs>
-          <polygon points={areaPoints} fill={`url(#${gradientId})`} />
+          <polygon
+            points={areaPoints}
+            className={color === "blue" ? "fill-blue-500/5" : "fill-emerald-500/5"}
+          />
           <polyline
             fill="none"
             stroke={strokeColor}
-            strokeWidth="2.5"
+            strokeWidth="1.5"
             strokeLinecap="round"
             strokeLinejoin="round"
             points={points}
@@ -66,7 +65,7 @@ function TelemetryAreaChart({
       </div>
 
       {/* Interactive Bar Overlay with Tooltips */}
-      <div className="absolute inset-x-4 top-4 bottom-8 flex items-end gap-1.5 z-10">
+      <div className="absolute left-11 right-4 top-4 bottom-8 flex items-end gap-1.5 z-20">
         {data.map((val, i) => (
           <div key={i} className="flex-1 h-full flex flex-col justify-end group relative cursor-pointer">
             {/* Tooltip on hover */}
@@ -76,8 +75,8 @@ function TelemetryAreaChart({
             <div
               className={`w-full rounded-t-xs transition-all duration-300 ${
                 color === "blue"
-                  ? "bg-blue-500/30 group-hover:bg-blue-400/90"
-                  : "bg-emerald-500/30 group-hover:bg-emerald-400/90"
+                  ? "bg-blue-500/10 group-hover:bg-blue-500/40"
+                  : "bg-emerald-500/10 group-hover:bg-emerald-500/40"
               }`}
               style={{ height: `${Math.max((val / maxVal) * 85, 4)}%` }}
             />
@@ -86,7 +85,7 @@ function TelemetryAreaChart({
       </div>
 
       {/* X-axis Timeline Labels */}
-      <div className="flex items-center justify-between text-[10px] font-mono text-neutral-500 pt-2 border-t border-neutral-800/80 z-20">
+      <div className="flex items-center justify-between text-[10px] font-mono text-neutral-500 pt-2 pl-7 border-t border-neutral-800/80 z-20">
         <span>15m ago</span>
         <span>10m ago</span>
         <span>5m ago</span>
@@ -172,7 +171,7 @@ export function MetricsView() {
             <Icon path={mdiChartLine} size={1} className="text-blue-500" />
             Metrics Inspector
           </h1>
-          <p className="text-sm text-neutral-400 mt-1">
+          <p className="text-xs text-neutral-400 mt-1">
             Cluster-wide resource utilization, CPU mcore telemetry, and RAM pressure analysis.
           </p>
         </div>
@@ -198,53 +197,57 @@ export function MetricsView() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* CPU Telemetry Card */}
-        <div className="rounded-2xl border border-neutral-800 bg-surface p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                <Icon path={mdiCpu64Bit} size={0.75} />
-              </div>
+        <div className="rounded-2xl border border-neutral-800 bg-surface p-4 space-y-3">
+          <div className="flex items-center justify-between border-b border-neutral-800/80 pb-3">
+            <div className="flex items-center gap-2">
+              <Icon path={mdiCpu64Bit} size={0.8} className="text-neutral-400" />
               <div>
                 <h3 className="text-sm font-semibold text-neutral-200 font-heading">Aggregate CPU Usage</h3>
-                <p className="text-[11px] text-neutral-400">Total mcore workload allocation</p>
+                <p className="text-xs text-neutral-500 mt-0.5">Total mcore workload allocation</p>
               </div>
             </div>
-            <div className="text-right font-mono">
-              <div className="text-base text-blue-400 font-bold">{totalMcores} / 4.0 Cores</div>
-              <div className="text-[11px] text-neutral-400">({currentCpuPct.toFixed(1)}% load)</div>
+            <div className="text-right font-mono flex items-center gap-2">
+              <div>
+                <div className="text-base text-neutral-100 font-semibold">{totalMcores} / 4.0 Cores</div>
+                <div className="text-xs text-neutral-500">({currentCpuPct.toFixed(1)}% load)</div>
+              </div>
+              {currentCpuPct > 85 && (
+                <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse shrink-0" title="High CPU Load > 85%" />
+              )}
             </div>
           </div>
 
           <TelemetryAreaChart
             data={cpuHistory}
             color="blue"
-            gradientId="cpuGradient"
             unit="%"
           />
         </div>
 
         {/* Memory Telemetry Card */}
-        <div className="rounded-2xl border border-neutral-800 bg-surface p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                <Icon path={mdiMemory} size={0.75} />
-              </div>
+        <div className="rounded-2xl border border-neutral-800 bg-surface p-4 space-y-3">
+          <div className="flex items-center justify-between border-b border-neutral-800/80 pb-3">
+            <div className="flex items-center gap-2">
+              <Icon path={mdiMemory} size={0.8} className="text-neutral-400" />
               <div>
                 <h3 className="text-sm font-semibold text-neutral-200 font-heading">RAM Consumption</h3>
-                <p className="text-[11px] text-neutral-400">Memory working set pressure</p>
+                <p className="text-xs text-neutral-500 mt-0.5">Memory working set pressure</p>
               </div>
             </div>
-            <div className="text-right font-mono">
-              <div className="text-base text-emerald-400 font-bold">{totalRamGB} GB / 8.0 GB</div>
-              <div className="text-[11px] text-neutral-400">({currentMemoryPct.toFixed(1)}% pressure)</div>
+            <div className="text-right font-mono flex items-center gap-2">
+              <div>
+                <div className="text-base text-neutral-100 font-semibold">{totalRamGB} GB / 8.0 GB</div>
+                <div className="text-xs text-neutral-500">({currentMemoryPct.toFixed(1)}% pressure)</div>
+              </div>
+              {currentMemoryPct > 85 && (
+                <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse shrink-0" title="High RAM Pressure > 85%" />
+              )}
             </div>
           </div>
 
           <TelemetryAreaChart
             data={memoryHistory}
             color="emerald"
-            gradientId="memoryGradient"
             unit="%"
           />
         </div>
@@ -277,8 +280,8 @@ export function MetricsView() {
             >
               <span className="w-64 font-medium text-neutral-200 truncate">{pod.name}</span>
               <span className="w-32 text-neutral-400 truncate">ns/{pod.namespace}</span>
-              <span className="w-32 text-right text-blue-400 font-semibold">{pod.mcores} mcores</span>
-              <span className="w-32 text-right text-emerald-400 font-semibold">{pod.memoryMiB} MiB</span>
+              <span className="w-32 text-right text-neutral-200 font-semibold">{pod.mcores} mcores</span>
+              <span className="w-32 text-right text-neutral-200 font-semibold">{pod.memoryMiB} MiB</span>
             </div>
           ))}
         </div>
