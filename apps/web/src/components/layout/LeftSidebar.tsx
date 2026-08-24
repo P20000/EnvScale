@@ -51,7 +51,7 @@ export function LeftSidebar({ activeTab, onTabChange, activeIncidentsCount }: Le
       {/* Brand Emblem Logo Header */}
       <div className="group relative flex h-10 w-10 items-center justify-center rounded-md bg-blue-500/10 border border-blue-500/20 text-blue-400 cursor-pointer hover:bg-blue-500/20 transition-all">
         <EnvScaleLogo className="h-5 w-5 text-blue-400" />
-        <div className="absolute left-full ml-3 hidden rounded-sm bg-panel px-2.5 py-1 text-xs font-bold text-neutral-100 border border-neutral-800 whitespace-nowrap group-hover:block z-50 font-heading">
+        <div className="absolute left-full ml-3 hidden rounded-md bg-[#18181c] px-3 py-1.5 text-xs font-bold text-neutral-100 border border-neutral-700 whitespace-nowrap group-hover:block z-[70] shadow-xl pointer-events-none font-heading">
           EnvScale Platform
         </div>
       </div>
@@ -81,7 +81,7 @@ export function LeftSidebar({ activeTab, onTabChange, activeIncidentsCount }: Le
             )}
 
             {/* Tooltip on hover */}
-            <div className="absolute left-full ml-3 hidden rounded-sm bg-panel px-2.5 py-1 text-xs font-medium text-neutral-100 border border-neutral-800 whitespace-nowrap group-hover:block z-50">
+            <div className="absolute left-full ml-3 hidden rounded-md bg-[#18181c] px-3 py-1.5 text-xs font-medium text-neutral-100 border border-neutral-700 whitespace-nowrap group-hover:block z-[70] shadow-xl pointer-events-none font-heading">
               {item.label}
             </div>
           </button>
