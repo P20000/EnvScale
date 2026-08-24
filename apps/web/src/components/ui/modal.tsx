@@ -1,5 +1,6 @@
 import * as React from "react"
-import { MdClose as X } from "react-icons/md"
+import Icon from "@mdi/react"
+import { mdiClose } from "@mdi/js"
 
 import { cn } from "@/lib/utils"
 
@@ -63,7 +64,7 @@ function Modal({
   return (
     <div
       data-slot="modal-backdrop"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -72,7 +73,7 @@ function Modal({
       <div
         data-slot="modal-content"
         className={cn(
-          "relative flex flex-col rounded-xl border border-border bg-card p-6 text-card-foreground shadow-lg",
+          "relative flex flex-col rounded-3xl border border-neutral-800 bg-surface p-6 text-card-foreground",
           sizeClasses[size],
           contentClassName
         )}
@@ -80,7 +81,7 @@ function Modal({
       >
         {title && (
           <div className="mb-4 flex items-center justify-between">
-            <h2 id="modal-title" className="text-lg font-semibold">
+            <h2 id="modal-title" className="text-lg font-semibold font-heading">
               {title}
             </h2>
 
@@ -88,10 +89,10 @@ function Modal({
               <button
                 type="button"
                 onClick={onClose}
-                className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-transparent bg-transparent text-muted-foreground transition-all hover:bg-muted hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                className="inline-flex size-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground transition-all hover:bg-neutral-800 hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                 aria-label="Close modal"
               >
-                <X className="size-4" />
+                <Icon path={mdiClose} size={0.8} />
               </button>
             )}
           </div>
@@ -101,10 +102,10 @@ function Modal({
           <button
             type="button"
             onClick={onClose}
-            className="absolute right-4 top-4 inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-transparent bg-transparent text-muted-foreground transition-all hover:bg-muted hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="absolute right-4 top-4 inline-flex size-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground transition-all hover:bg-neutral-800 hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             aria-label="Close modal"
           >
-            <X className="size-4" />
+            <Icon path={mdiClose} size={0.8} />
           </button>
         )}
 

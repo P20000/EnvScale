@@ -139,7 +139,7 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[]): Edge[
   // 3. Pod -> Service (Strict container env var matching for internal TCP calls)
   pods.forEach((pod) => {
     const podData = pod.data as K8sPodData;
-    const containers: Array<{ env?: Array<{ name?: string; value?: string }> }> = (podData.containers as any) || [];
+    const containers: Array<{ env?: Array<{ name?: string; value?: string }> }> = (podData.containers as Array<{ env?: Array<{ name?: string; value?: string }> }>) || [];
     const envVars: Array<{ name?: string; value?: string }> = containers.flatMap((c) => c.env || []);
 
     services.forEach((svc) => {

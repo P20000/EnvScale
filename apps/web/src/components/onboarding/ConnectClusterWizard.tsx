@@ -1,4 +1,6 @@
 import { useState, type ChangeEvent, type DragEvent } from "react";
+import Icon from "@mdi/react";
+import { mdiCheckCircle, mdiClose, mdiUpload } from "@mdi/js";
 import { Button } from "../ui/button";
 import { apiConnectCluster } from "../../config/api";
 
@@ -142,22 +144,22 @@ export default function ConnectClusterWizard({
   );
 }
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-4 text-white shadow-2xl sm:p-6">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 text-3xl text-emerald-400">
-          ✓
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-neutral-800 bg-surface p-4 text-white sm:p-6">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          <Icon path={mdiCheckCircle} size={1.2} />
         </div>
 
-        <h2 className="mt-4 text-2xl font-semibold">
+        <h2 className="mt-4 text-2xl font-semibold font-heading text-center">
           Cluster Connected!
         </h2>
 
-        <p className="mt-2 text-sm text-slate-400">
+        <p className="mt-2 text-sm text-neutral-400 text-center">
           {clusterName} has been connected successfully.
         </p>
 
         <Button
-          className="mt-6"
+          className="mt-6 w-full"
           onClick={() => {
             onClusterConnected?.(clusterName);
             onClose();
@@ -169,31 +171,32 @@ export default function ConnectClusterWizard({
     </div>
   );
 }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className="w-full max-w-lg rounded-xl border border-slate-700 bg-slate-900 p-6 text-white shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+      <div className="w-full max-w-lg rounded-3xl border border-neutral-800 bg-surface p-6 text-white">
         <div className="mb-6 flex items-start gap-4">
           <div>
-            <p className="text-sm text-cyan-400">
+            <p className="text-sm text-blue-400 font-mono">
               Step {step} of 3
             </p>
 
-            <h2 className="mt-1 text-2xl font-semibold">
+            <h2 className="mt-1 text-2xl font-semibold font-heading">
               Connect Cluster
             </h2>
 
-            <p className="mt-1 max-w-full break-words text-sm leading-5 text-slate-400">
-  Connect your Kubernetes cluster to EnvScale.
-</p>
+            <p className="mt-1 max-w-full break-words text-sm leading-5 text-neutral-400">
+              Connect your Kubernetes cluster to EnvScale.
+            </p>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            className="ml-auto shrink-0 text-xl text-slate-400 hover:text-white"
+            className="ml-auto shrink-0 p-1 text-neutral-400 hover:text-white rounded-md transition-colors"
             aria-label="Close"
           >
-            ×
+            <Icon path={mdiClose} size={0.8} />
           </button>
         </div>
 
@@ -202,31 +205,31 @@ export default function ConnectClusterWizard({
             <div>
               <label
                 htmlFor="cluster-name"
-                className="mb-2 block text-sm font-medium"
+                className="mb-2 block text-sm font-medium text-neutral-200"
               >
                 Cluster Name
               </label>
 
               <input
-  id="cluster-name"
-  type="text"
-  value={clusterName}
-  onChange={(event) => {
-  setClusterName(event.target.value);
+                id="cluster-name"
+                type="text"
+                value={clusterName}
+                onChange={(event) => {
+                  setClusterName(event.target.value);
 
-  if (event.target.value.trim()) {
-    setClusterError("");
-  }
-}}
-  placeholder="e.g. production-cluster"
-  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-white outline-none placeholder:text-slate-500 focus:border-cyan-400"
-/>
+                  if (event.target.value.trim()) {
+                    setClusterError("");
+                  }
+                }}
+                placeholder="e.g. production-cluster"
+                className="w-full rounded-sm border border-neutral-800 bg-background px-3 py-2 text-white outline-none placeholder:text-neutral-500 focus:border-blue-500"
+              />
 
-{clusterError && (
-  <p className="mt-2 text-sm text-red-400">
-    {clusterError}
-  </p>
-)}
+              {clusterError && (
+                <p className="mt-2 text-sm text-red-400">
+                  {clusterError}
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -234,7 +237,7 @@ export default function ConnectClusterWizard({
         {step === 2 && (
           <div className="space-y-4">
             <div>
-              <p className="mb-2 text-sm font-medium">
+              <p className="mb-2 text-sm font-medium text-neutral-200">
                 Kubeconfig File
               </p>
 
@@ -245,57 +248,60 @@ export default function ConnectClusterWizard({
                 }}
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={handleDrop}
-                className={`rounded-xl border-2 border-dashed p-8 text-center transition-colors ${
+                className={`rounded-2xl border-2 border-dashed p-8 text-center transition-colors ${
                   isDragging
-                    ? "border-cyan-400 bg-cyan-400/10"
-                    : "border-slate-700 bg-slate-800"
+                    ? "border-blue-500 bg-blue-500/10"
+                    : "border-neutral-800 bg-background"
                 }`}
               >
-                <p className="text-slate-300">
+                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                  <Icon path={mdiUpload} size={0.83} />
+                </div>
+                <p className="text-neutral-300 text-sm">
                   Drag & drop your kubeconfig here
                 </p>
 
-                <p className="my-2 text-sm text-slate-500">
-  or
-</p>
+                <p className="my-1.5 text-xs text-neutral-500">
+                  or
+                </p>
 
-<p className="mb-3 text-xs text-slate-500">
-  YAML files only (.yaml, .yml)
-</p>
-                <label className="inline-flex cursor-pointer rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
+                <p className="mb-3 text-xs text-neutral-500">
+                  YAML files only (.yaml, .yml)
+                </p>
+                <label className="inline-flex cursor-pointer rounded-md bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 transition-colors">
                   Browse File
 
                   <input
                     type="file"
-                  accept=".yaml,.yml"
-                  className="hidden"
-                  onChange={handleFileChange}
-/>
+                    accept=".yaml,.yml"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
                 </label>
 
-                 {kubeconfigFile && (
-  <div className="mt-4 flex items-center justify-center gap-3">
-    <p className="text-sm text-emerald-400">
-      Selected: {kubeconfigFile.name}
-    </p>
+                {kubeconfigFile && (
+                  <div className="mt-4 flex items-center justify-center gap-3">
+                    <p className="text-sm text-emerald-400 font-mono">
+                      Selected: {kubeconfigFile.name}
+                    </p>
 
-    <button
-      type="button"
-      onClick={() => {
-        setKubeconfigFile(null);
-        setFileError("");
-      }}
-      className="text-sm text-red-400 hover:text-red-300"
-    >
-      Remove
-    </button>
-  </div>
-)}
-{fileError && (
-  <p className="mt-4 text-sm text-red-400">
-    {fileError}
-  </p>
-)}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setKubeconfigFile(null);
+                        setFileError("");
+                      }}
+                      className="text-sm text-red-400 hover:text-red-300"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+                {fileError && (
+                  <p className="mt-4 text-sm text-red-400">
+                    {fileError}
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -303,29 +309,28 @@ export default function ConnectClusterWizard({
 
         {step === 3 && (
           <div className="space-y-4">
-            <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
-              <p className="text-sm text-slate-400">
-                Cluster
+            <div className="rounded-2xl border border-neutral-800 bg-background p-4">
+              <p className="text-xs text-neutral-400">
+                Cluster Name
               </p>
 
-              <p className="font-medium">
+              <p className="font-medium font-mono text-neutral-100">
                 {clusterName}
               </p>
             </div>
 
-            <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
-              <p className="text-sm text-slate-400">
-                Kubeconfig
+            <div className="rounded-2xl border border-neutral-800 bg-background p-4">
+              <p className="text-xs text-neutral-400">
+                Kubeconfig Payload
               </p>
 
-              <p className="font-medium">
+              <p className="font-medium font-mono text-neutral-100">
                 {kubeconfigFile?.name}
               </p>
             </div>
 
-            <p className="text-sm text-slate-400">
-              Review the details above and connect your
-              Kubernetes cluster.
+            <p className="text-sm text-neutral-400">
+              Review the details above and connect your Kubernetes cluster.
             </p>
           </div>
         )}
@@ -343,12 +348,12 @@ export default function ConnectClusterWizard({
               Next
             </Button>
           ) : (
-             <Button
-  onClick={handleConnect}
-  disabled={isConnecting}
->
-  {isConnecting ? "Connecting..." : "Connect Cluster"}
-</Button>
+            <Button
+              onClick={handleConnect}
+              disabled={isConnecting}
+            >
+              {isConnecting ? "Connecting..." : "Connect Cluster"}
+            </Button>
           )}
         </div>
       </div>

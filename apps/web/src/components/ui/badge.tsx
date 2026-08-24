@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const badgeVariants = cva(
-  "inline-flex shrink-0 items-center justify-center rounded-md border font-medium text-xs px-2 py-1 gap-1",
+  "inline-flex shrink-0 items-center justify-center rounded-full border font-medium text-xs px-2.5 py-0.5 gap-1",
   {
     variants: {
       variant: {

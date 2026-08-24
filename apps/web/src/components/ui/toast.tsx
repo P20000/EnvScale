@@ -1,28 +1,29 @@
 import * as React from "react"
+import Icon from "@mdi/react"
 import {
-  MdClose as X,
-  MdError as AlertCircle,
-  MdCheckCircle as CheckCircle2,
-  MdWarning as AlertTriangle,
-  MdInfo as Info,
-} from "react-icons/md"
+  mdiCheckCircle,
+  mdiAlertCircle,
+  mdiAlert,
+  mdiInformation,
+  mdiClose,
+} from "@mdi/js"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
 
 const toastVariants = cva(
-  "group pointer-events-auto relative flex w-full items-center justify-between gap-4 rounded-lg border p-4 shadow-md transition-all",
+  "group pointer-events-auto relative flex w-full items-center justify-between gap-4 rounded-xl border p-4 transition-all",
   {
     variants: {
       variant: {
-        default: "border-border bg-card text-foreground",
+        default: "border-neutral-800 bg-surface text-foreground",
         success:
-          "border-status-running/30 bg-status-running/10 text-status-running",
+          "border-emerald-500/30 bg-emerald-500/10 text-emerald-400",
         error:
-          "border-status-error/30 bg-status-error/10 text-status-error",
+          "border-red-500/30 bg-red-500/10 text-red-400",
         warning:
-          "border-status-warning/30 bg-status-warning/10 text-status-warning",
-        info: "border-primary/30 bg-primary/10 text-primary",
+          "border-amber-500/30 bg-amber-500/10 text-amber-400",
+        info: "border-blue-500/30 bg-blue-500/10 text-blue-400",
       },
     },
     defaultVariants: {
@@ -42,10 +43,10 @@ export interface ToastProps
 }
 
 const iconMap = {
-  success: CheckCircle2,
-  error: AlertCircle,
-  warning: AlertTriangle,
-  info: Info,
+  success: mdiCheckCircle,
+  error: mdiAlertCircle,
+  warning: mdiAlert,
+  info: mdiInformation,
   default: null,
 }
 
@@ -60,14 +61,14 @@ function Toast({
   children,
   ...props
 }: ToastProps) {
-  const DefaultIcon =
+  const iconPath =
     variant && variant !== "default"
       ? iconMap[variant as keyof typeof iconMap]
       : null
 
   const displayIcon =
     icon ||
-    (DefaultIcon ? <DefaultIcon className="size-5 shrink-0" /> : null)
+    (iconPath ? <Icon path={iconPath} size={0.83} className="shrink-0" /> : null)
 
   return (
     <div
@@ -101,7 +102,7 @@ function Toast({
           className="shrink-0 rounded-md p-1 opacity-70 outline-none transition-opacity hover:opacity-100 focus-visible:opacity-100"
           aria-label="Close notification"
         >
-          <X className="size-4" />
+          <Icon path={mdiClose} size={0.7} />
         </button>
       )}
     </div>

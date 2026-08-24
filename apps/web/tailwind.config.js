@@ -11,6 +11,8 @@ export default {
     extend: {
       colors: {
         background: "#09090b",
+        surface: "#141417",
+        panel: "#1f1f23",
         foreground: "#f4f4f5",
 
         card: {
@@ -19,7 +21,7 @@ export default {
         },
 
         popover: {
-          DEFAULT: "#141417",
+          DEFAULT: "#1f1f23",
           foreground: "#f4f4f5",
         },
 
@@ -52,16 +54,10 @@ export default {
         input: "#27272a",
         ring: "#3b82f6",
 
-        /* Design.md Design System Tokens */
+        /* K8s Status Tokens */
         canvas: {
           bg: "#09090b",
           dot: "#27272a",
-        },
-
-        surface: {
-          capsule: "rgba(23, 23, 23, 0.85)",
-          card: "#141417",
-          drawer: "#141417",
         },
 
         status: {
@@ -72,15 +68,12 @@ export default {
         },
       },
 
-      boxShadow: {
-        "capsule": "0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)",
-        "drawer": "-10px 0 30px rgba(0, 0, 0, 0.5)",
-      },
-
       borderRadius: {
-        "xl": "0.75rem",
-        "2xl": "1rem",
-        "3xl": "1.5rem",
+        "sm": "0.25rem",  /* 4px - Inputs, form fields */
+        "md": "0.5rem",   /* 8px - Buttons, filter chips */
+        "xl": "0.75rem",  /* 12px - Snackbars, popovers */
+        "2xl": "1rem",    /* 16px - Dashboard cards */
+        "3xl": "1.75rem", /* 28px - Heavy modals */
       },
 
       fontFamily: {
@@ -91,21 +84,5 @@ export default {
     },
   },
 
-  plugins: [
-    function ({ addUtilities }) {
-      addUtilities({
-        ".glass-capsule": {
-          background: "rgba(23, 23, 23, 0.85)",
-          backdropFilter: "blur(12px)",
-          "-webkit-backdrop-filter": "blur(12px)",
-          border: "1px solid rgba(39, 39, 42, 0.8)",
-        },
-        ".glass-card": {
-          background: "#141417",
-          border: "1px solid #27272a",
-          boxShadow: "0 10px 30px -10px rgba(0, 0, 0, 0.5)",
-        },
-      });
-    },
-  ],
+  plugins: [],
 };

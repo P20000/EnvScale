@@ -1,13 +1,17 @@
 import { useState } from "react";
+import Icon from "@mdi/react";
 import {
-  MdMemory as Cpu,
-  MdSdStorage as HardDrive,
-  MdRefresh as RefreshCw,
-  MdEdit as Edit2,
-  MdDelete as Trash2,
-  MdPlayArrow as Play,
-  MdPause as Pause,
-} from "react-icons/md";
+  mdiCpu64Bit,
+  mdiMemory,
+  mdiRefresh,
+  mdiPencil,
+  mdiTrashCanOutline,
+  mdiPlay,
+  mdiPause,
+  mdiAlertCircle,
+  mdiAlert,
+  mdiCheckCircle,
+} from "@mdi/js";
 import { useAlertStore } from "../../store/useAlertStore";
 import { cn } from "../../lib/utils";
 import type { AlertRule } from "../../types/alerts";
@@ -23,16 +27,16 @@ export function AlertRuleList({ onEditRule }: AlertRuleListProps) {
 
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  const getMetricIcon = (metric: string) => {
+  const getMetricIconPath = (metric: string) => {
     switch (metric) {
       case "cpu":
-        return Cpu;
+        return mdiCpu64Bit;
       case "memory":
-        return HardDrive;
+        return mdiMemory;
       case "pod_crash":
-        return RefreshCw;
+        return mdiRefresh;
       default:
-        return Cpu;
+        return mdiCpu64Bit;
     }
   };
 
@@ -71,11 +75,11 @@ export function AlertRuleList({ onEditRule }: AlertRuleListProps) {
 
   if (alertRules.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 text-center border border-neutral-850 rounded-2xl bg-neutral-900/10">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-neutral-800 text-neutral-500 border border-neutral-700/50 mb-4 animate-pulse">
-          <RefreshCw className="h-6 w-6" />
+      <div className="flex flex-col items-center justify-center p-12 text-center border border-neutral-800 rounded-2xl bg-surface">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-background text-neutral-400 border border-neutral-800 mb-4">
+          <Icon path={mdiRefresh} size={1} />
         </div>
-        <h4 className="text-sm font-semibold text-neutral-300">No Alert Rules Configured</h4>
+        <h4 className="text-sm font-semibold text-neutral-300 font-heading">No Alert Rules Configured</h4>
         <p className="text-xs text-neutral-500 max-w-sm mt-1 mb-5">
           Add custom evaluation thresholds for CPU, memory, and container restarts to secure your cluster workloads.
         </p>
@@ -86,50 +90,45 @@ export function AlertRuleList({ onEditRule }: AlertRuleListProps) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {alertRules.map((rule) => {
-        const MetricIcon = getMetricIcon(rule.metric);
+        const metricPath = getMetricIconPath(rule.metric);
         const opSymbol = getOperatorSymbol(rule.operator);
         const isConfirmingDelete = deleteConfirmId === rule.id;
 
-        // Colors based on severity
-        const borderLeftColor =
-          rule.severity === "critical"
-            ? "border-l-red-500"
-            : rule.severity === "warning"
-            ? "border-l-amber-500"
-            : "border-l-blue-500";
-
-        const badgeColor =
-          rule.severity === "critical"
-            ? "bg-red-500/15 text-red-400 border-red-500/25"
-            : rule.severity === "warning"
-            ? "bg-amber-500/15 text-amber-400 border-amber-500/25"
-            : "bg-blue-500/15 text-blue-400 border-blue-500/25";
+        const sevBadge =
+          rule.severity === "critical" ? (
+            <div className="inline-flex items-center gap-1 px-2.5 py-0.5 text-[10px] font-semibold border rounded-full bg-red-500/5 text-red-400 border-red-500/20">
+              <Icon path={mdiAlertCircle} size={0.5} />
+              <span>Critical</span>
+            </div>
+          ) : rule.severity === "warning" ? (
+            <div className="inline-flex items-center gap-1 px-2.5 py-0.5 text-[10px] font-semibold border rounded-full bg-amber-500/5 text-amber-400 border-amber-500/20">
+              <Icon path={mdiAlert} size={0.5} />
+              <span>High</span>
+            </div>
+          ) : (
+            <div className="inline-flex items-center gap-1 px-2.5 py-0.5 text-[10px] font-semibold border rounded-full bg-blue-500/5 text-blue-400 border-blue-500/20">
+              <Icon path={mdiCheckCircle} size={0.5} />
+              <span>Info</span>
+            </div>
+          );
 
         return (
           <div
             key={rule.id}
             className={cn(
-              "relative rounded-xl border border-neutral-800 bg-[#141417]/80 backdrop-blur-sm p-4 flex flex-col justify-between shadow-lg transition-all duration-200 hover:border-neutral-700/80 hover:shadow-xl border-l-4",
-              borderLeftColor,
-              !rule.enabled && "opacity-75"
+              "relative rounded-2xl border border-neutral-800 bg-surface p-4 flex flex-col justify-between transition-colors",
+              !rule.enabled && "opacity-60"
             )}
           >
             {/* Header row */}
             <div className="flex items-start justify-between gap-3 mb-3">
               <div className="min-w-0">
-                <h4 className="text-sm font-bold text-neutral-100 truncate" title={rule.name}>
+                <h4 className="text-sm font-bold text-neutral-100 truncate font-heading" title={rule.name}>
                   {rule.name}
                 </h4>
-                <div className="flex items-center gap-1.5 mt-1">
-                  <span
-                    className={cn(
-                      "px-2 py-0.5 rounded text-[9px] font-extrabold tracking-wide uppercase border font-mono",
-                      badgeColor
-                    )}
-                  >
-                    {rule.severity}
-                  </span>
-                  <span className="text-[10px] text-neutral-500 font-medium">
+                <div className="flex items-center gap-2 mt-1">
+                  {sevBadge}
+                  <span className="text-[10px] text-neutral-400 font-mono">
                     in {rule.namespace === "all" ? "All Namespaces" : `"${rule.namespace}"`}
                   </span>
                 </div>
@@ -140,20 +139,20 @@ export function AlertRuleList({ onEditRule }: AlertRuleListProps) {
                 onClick={() => toggleAlertRule(rule.id)}
                 title={rule.enabled ? "Disable Rule" : "Enable Rule"}
                 className={cn(
-                  "flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[10px] font-extrabold uppercase tracking-wider transition-all",
+                  "flex items-center gap-1 px-2.5 py-1 rounded-md border text-[10px] font-bold uppercase tracking-wider transition-colors",
                   rule.enabled
-                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"
-                    : "bg-neutral-800/80 text-neutral-500 border-neutral-700 hover:bg-neutral-800"
+                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20"
+                    : "bg-background text-neutral-500 border-neutral-800 hover:bg-neutral-800"
                 )}
               >
                 {rule.enabled ? (
                   <>
-                    <Play className="h-3 w-3 fill-current shrink-0" />
+                    <Icon path={mdiPlay} size={0.5} />
                     <span>Active</span>
                   </>
                 ) : (
                   <>
-                    <Pause className="h-3 w-3 shrink-0" />
+                    <Icon path={mdiPause} size={0.5} />
                     <span>Paused</span>
                   </>
                 )}
@@ -161,9 +160,9 @@ export function AlertRuleList({ onEditRule }: AlertRuleListProps) {
             </div>
 
             {/* Condition row */}
-            <div className="flex items-center gap-2 rounded-lg bg-neutral-950/60 border border-neutral-900 px-3 py-2.5 mb-4 text-xs font-mono">
-              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-neutral-900 border border-neutral-800 text-neutral-400 shrink-0">
-                <MetricIcon className="h-3.5 w-3.5" />
+            <div className="flex items-center gap-2.5 rounded-md bg-background border border-neutral-800 px-3 py-2.5 mb-4 text-xs font-mono">
+              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-surface border border-neutral-800 text-neutral-400 shrink-0">
+                <Icon path={metricPath} size={0.65} />
               </div>
               <div className="min-w-0 flex-1 leading-normal">
                 <span className="font-bold text-neutral-200">{getMetricLabel(rule.metric)}</span>{" "}
@@ -178,25 +177,25 @@ export function AlertRuleList({ onEditRule }: AlertRuleListProps) {
               </div>
             </div>
 
-            {/* Footer row (Actions / Confirmations) */}
-            <div className="flex items-center justify-between border-t border-neutral-800/80 pt-3 mt-auto shrink-0">
-              <span className="text-[10px] text-neutral-500 font-mono">
+            {/* Footer row */}
+            <div className="flex items-center justify-between border-t border-neutral-800 pt-3 mt-auto shrink-0">
+              <span className="text-[10px] text-neutral-400 font-mono">
                 Updated {new Date(rule.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
 
               <div className="flex items-center gap-2">
                 {isConfirmingDelete ? (
-                  <div className="flex items-center gap-1.5 animate-in slide-in-from-right-1 duration-150">
-                    <span className="text-[10px] text-red-400 font-semibold font-sans">Delete policy?</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-red-400 font-medium">Delete policy?</span>
                     <button
                       onClick={() => handleConfirmDelete(rule.id)}
-                      className="rounded bg-red-500/20 border border-red-500/40 px-2 py-0.5 text-[10px] font-bold text-red-400 hover:bg-red-500/30 transition-all"
+                      className="rounded-md bg-red-500/20 border border-red-500/40 px-2 py-0.5 text-[10px] font-bold text-red-400 hover:bg-red-500/30 transition-colors"
                     >
                       Delete
                     </button>
                     <button
                       onClick={() => setDeleteConfirmId(null)}
-                      className="rounded bg-neutral-800 border border-neutral-700 px-2 py-0.5 text-[10px] font-semibold text-neutral-400 hover:bg-neutral-750 transition-all"
+                      className="rounded-md bg-background border border-neutral-800 px-2 py-0.5 text-[10px] font-medium text-neutral-400 hover:bg-neutral-800 transition-colors"
                     >
                       Cancel
                     </button>
@@ -205,16 +204,16 @@ export function AlertRuleList({ onEditRule }: AlertRuleListProps) {
                   <>
                     <button
                       onClick={() => onEditRule(rule)}
-                      className="flex items-center gap-1 rounded-lg border border-neutral-800 bg-neutral-900/60 px-2.5 py-1 text-[11px] font-semibold text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 hover:border-neutral-700 transition-all"
+                      className="flex items-center gap-1 rounded-md border border-neutral-800 bg-background px-2.5 py-1 text-[11px] font-medium text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-colors"
                     >
-                      <Edit2 className="h-3 w-3" />
+                      <Icon path={mdiPencil} size={0.55} />
                       <span>Edit</span>
                     </button>
                     <button
                       onClick={() => setDeleteConfirmId(rule.id)}
-                      className="flex items-center gap-1 rounded-lg border border-transparent bg-transparent px-2.5 py-1 text-[11px] font-semibold text-red-500/80 hover:bg-red-500/10 hover:text-red-400 transition-all"
+                      className="flex items-center gap-1 rounded-md border border-transparent px-2.5 py-1 text-[11px] font-medium text-red-400 hover:bg-red-500/10 transition-colors"
                     >
-                      <Trash2 className="h-3 w-3" />
+                      <Icon path={mdiTrashCanOutline} size={0.55} />
                       <span>Delete</span>
                     </button>
                   </>

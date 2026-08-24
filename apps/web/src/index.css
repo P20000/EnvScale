@@ -99,12 +99,9 @@
 
 /* Controls */
 .react-flow__controls {
-  background: rgba(23, 23, 23, 0.85) !important;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
+  background: #141417 !important;
   border: 1px solid #27272a !important;
-  border-radius: 0.75rem !important;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5) !important;
+  border-radius: 0.5rem !important;
   overflow: hidden;
   margin-bottom: 24px !important;
   margin-left: 24px !important;
@@ -128,7 +125,7 @@
 }
 
 .react-flow__controls-button:hover {
-  background: rgba(39, 39, 42, 0.7) !important;
+  background: #27272a !important;
   color: #f4f4f5 !important;
 }
 
@@ -141,10 +138,9 @@
 
 /* React Flow MiniMap */
 .react-flow__minimap {
-  background: rgba(20, 20, 23, 0.9) !important;
-  backdrop-filter: blur(12px) !important;
+  background: #141417 !important;
   border: 1px solid #27272a !important;
-  border-radius: 0.75rem !important;
+  border-radius: 0.5rem !important;
   overflow: hidden;
   margin-bottom: 24px !important;
   margin-right: 24px !important;
@@ -207,21 +203,17 @@
 
 .react-flow__node.selected > div {
   border-color: #3b82f6 !important;
-  box-shadow: 0 0 0 1px #3b82f6 !important;
 }
 
-/* Glassmorphism Utilities */
-.glass-capsule {
-  background: rgba(23, 23, 23, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(39, 39, 42, 0.8);
-}
-
-.glass-card {
+/* Flat Structural Card Utilities */
+.flat-capsule {
   background: #141417;
   border: 1px solid #27272a;
-  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+}
+
+.flat-card {
+  background: #141417;
+  border: 1px solid #27272a;
 }
 
 /* Scrollbar Customization */

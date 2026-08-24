@@ -1,14 +1,15 @@
 import { useState, useRef, useEffect } from "react";
+import Icon from "@mdi/react";
 import {
-  MdExpandMore as ChevronDown,
-  MdAdd as Plus,
-  MdNotifications as Bell,
-  MdPerson as User,
-  MdCheck as Check,
-  MdDns as Server,
-  MdDoneAll as CheckCheck,
-  MdLock as Lock,
-} from "react-icons/md";
+  mdiChevronDown,
+  mdiPlus,
+  mdiBell,
+  mdiAccount,
+  mdiCheck,
+  mdiServer,
+  mdiCheckAll,
+  mdiLock,
+} from "@mdi/js";
 import { useTopologyStore, type NotificationItem } from "../../store/useTopologyStore";
 import { AuthModal } from "./AuthModal";
 import { WorkspaceModal } from "./WorkspaceModal";
@@ -77,14 +78,14 @@ export function TopNavbar({
 
   return (
     <>
-      <header className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center justify-between gap-6 rounded-full bg-neutral-900/85 backdrop-blur-md border border-neutral-800 px-5 py-2 shadow-2xl min-w-[640px] max-w-4xl w-[calc(100%-2rem)]">
+      <header className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center justify-between gap-6 rounded-full bg-surface border border-neutral-800 px-5 py-2 min-w-[640px] max-w-4xl w-[calc(100%-2rem)]">
         {/* Left Group: Cluster Selector Dropdown */}
         <div className="flex items-center gap-3 relative" ref={dropdownRef}>
           <div className="flex items-center gap-2.5">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20 shadow-sm">
+            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20">
               <EnvScaleLogo className="h-4 w-4 text-blue-400" />
             </div>
-            <span className="text-xs font-bold tracking-wider uppercase bg-gradient-to-r from-blue-400 via-indigo-300 to-sky-400 bg-clip-text text-transparent">
+            <span className="text-xs font-bold tracking-wider uppercase font-heading text-neutral-100">
               EnvScale
             </span>
           </div>
@@ -93,17 +94,17 @@ export function TopNavbar({
 
           <button
             onClick={() => setDropdownOpen((prev) => !prev)}
-            className="flex items-center gap-2 rounded-full bg-neutral-950/80 px-3 py-1.5 text-xs font-medium text-neutral-200 border border-neutral-800 hover:border-neutral-700 hover:bg-neutral-800/60 transition-all active:scale-95"
+            className="flex items-center gap-2 rounded-full bg-background px-3 py-1 text-xs font-medium text-neutral-200 border border-neutral-800 hover:border-neutral-700 transition-colors"
           >
-            <Server className="h-3.5 w-3.5 text-blue-400" />
+            <Icon path={mdiServer} size={0.65} className="text-blue-400" />
             <span className="font-mono">{activeCluster}</span>
-            <ChevronDown className="h-3.5 w-3.5 text-neutral-400" />
+            <Icon path={mdiChevronDown} size={0.65} className="text-neutral-400" />
           </button>
 
           {/* Dropdown Menu with scrollable options list */}
           {dropdownOpen && (
-            <div className="absolute top-full left-0 mt-2 w-64 rounded-2xl border border-neutral-800 bg-[#141417] p-2 shadow-2xl animate-in fade-in zoom-in-95 duration-150 z-50">
-              <div className="px-2 py-1.5 text-[10px] font-bold tracking-wider text-neutral-400 uppercase">
+            <div className="absolute top-full left-0 mt-2 w-64 rounded-xl border border-neutral-800 bg-panel p-2 z-50">
+              <div className="px-2 py-1.5 text-[10px] font-bold tracking-wider text-neutral-400 uppercase font-heading">
                 Active Kubernetes Clusters
               </div>
 
@@ -116,17 +117,17 @@ export function TopNavbar({
                       onSelectCluster(cluster);
                       setDropdownOpen(false);
                     }}
-                    className={`w-full flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-mono transition-colors ${
+                    className={`w-full flex items-center justify-between rounded-md px-2.5 py-1.5 text-xs font-mono transition-colors ${
                       activeCluster === cluster
                         ? "bg-blue-500/10 text-blue-400 font-semibold"
-                        : "text-neutral-300 hover:bg-neutral-800/80 hover:text-neutral-100"
+                        : "text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100"
                     }`}
                   >
                     <span className="flex items-center gap-2 truncate">
                       <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${activeCluster === cluster ? "bg-emerald-500" : "bg-neutral-600"}`} />
                       <span className="truncate">{cluster}</span>
                     </span>
-                    {activeCluster === cluster && <Check className="h-3.5 w-3.5 text-blue-400 shrink-0" />}
+                    {activeCluster === cluster && <Icon path={mdiCheck} size={0.65} className="text-blue-400 shrink-0" />}
                   </button>
                 ))}
               </div>
@@ -138,19 +139,19 @@ export function TopNavbar({
                   setDropdownOpen(false);
                   onOpenConnectModal();
                 }}
-                className="w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium text-blue-400 hover:bg-blue-500/10 transition-colors"
+                className="w-full flex items-center gap-2 rounded-md px-2.5 py-2 text-xs font-medium text-blue-400 hover:bg-blue-500/10 transition-colors"
               >
-                <Plus className="h-3.5 w-3.5" />
+                <Icon path={mdiPlus} size={0.65} />
                 <span>Connect New Cluster</span>
               </button>
             </div>
           )}
         </div>
 
-        {/* Right Group: Status, Alert Bell, Re-center, Profile */}
+        {/* Right Group: Status, Alert Bell, Profile */}
         <div className="flex items-center gap-4">
           {/* Live WebSocket Status Indicator */}
-          <div className="flex items-center gap-2 rounded-full bg-neutral-950/60 px-3 py-1 border border-neutral-800/80 text-[11px] font-medium text-neutral-300">
+          <div className="flex items-center gap-2 rounded-full bg-background px-3 py-1 border border-neutral-800 text-[11px] font-medium text-neutral-300">
             <span
               className={`h-2 w-2 rounded-full shrink-0 ${
                 isConnected
@@ -180,11 +181,11 @@ export function TopNavbar({
               <button
                 onClick={() => setNotifMenuOpen((prev) => !prev)}
                 title="Notifications"
-                className="relative flex h-8 w-8 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-colors active:scale-95"
+                className="relative flex h-8 w-8 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-colors"
               >
-                <Bell className="h-4 w-4" />
+                <Icon path={mdiBell} size={0.7} />
                 {unreadCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm">
+                  <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
                     {unreadCount}
                   </span>
                 )}
@@ -192,11 +193,11 @@ export function TopNavbar({
 
               {/* Notification Panel with scrollable items list */}
               {notifMenuOpen && (
-                <div className="absolute top-full right-0 mt-2 w-80 rounded-2xl border border-neutral-800 bg-[#141417] p-3 shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-150 space-y-2">
+                <div className="absolute top-full right-0 mt-2 w-80 rounded-xl border border-neutral-800 bg-panel p-3 z-50 space-y-2">
                   <div className="flex items-center justify-between px-1 pb-2 border-b border-neutral-800">
                     <div className="flex items-center gap-2">
-                      <Bell className="h-4 w-4 text-blue-400" />
-                      <span className="text-xs font-semibold text-neutral-100">Notifications</span>
+                      <Icon path={mdiBell} size={0.7} className="text-blue-400" />
+                      <span className="text-xs font-semibold text-neutral-100 font-heading">Notifications</span>
                       {unreadCount > 0 && (
                         <span className="rounded-full bg-blue-500/10 px-1.5 py-0.2 text-[10px] font-semibold text-blue-400 border border-blue-500/20">
                           {unreadCount} unread
@@ -210,7 +211,7 @@ export function TopNavbar({
                         className="flex items-center gap-1 text-[10px] text-neutral-400 hover:text-blue-400 transition-colors"
                         title="Mark all as read"
                       >
-                        <CheckCheck className="h-3 w-3" />
+                        <Icon path={mdiCheckAll} size={0.65} />
                         <span>Mark all read</span>
                       </button>
                     )}
@@ -226,10 +227,10 @@ export function TopNavbar({
                         <div
                           key={item.id}
                           onClick={() => markNotificationRead(item.id)}
-                          className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
+                          className={`p-2.5 rounded-md border transition-all cursor-pointer ${
                             !item.read
                               ? "bg-neutral-900 border-blue-500/30"
-                              : "bg-neutral-950/60 border-neutral-800/80 opacity-75 hover:opacity-100"
+                              : "bg-background border-neutral-800 opacity-75 hover:opacity-100"
                           }`}
                         >
                           <div className="flex items-start justify-between gap-2">
@@ -256,18 +257,17 @@ export function TopNavbar({
               )}
             </div>
 
-
             {/* User Profile / Auth & Workspace Actions */}
             <div className="relative" ref={userMenuRef}>
               <button
                 onClick={() => setUserMenuOpen((prev) => !prev)}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-800 border border-neutral-700 text-neutral-200 hover:border-neutral-500 transition-all active:scale-95"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-800 border border-neutral-700 text-neutral-200 hover:border-neutral-500 transition-all"
               >
-                <User className="h-4 w-4" />
+                <Icon path={mdiAccount} size={0.7} />
               </button>
 
               {userMenuOpen && (
-                <div className="absolute top-full right-0 mt-2 w-52 rounded-xl border border-neutral-800 bg-[#141417] p-2 shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-150 space-y-1">
+                <div className="absolute top-full right-0 mt-2 w-52 rounded-xl border border-neutral-800 bg-panel p-2 z-50 space-y-1">
                   <div className="px-2 py-1.5">
                     <div className="text-xs font-medium text-neutral-100">Dev Team Lead</div>
                     <div className="text-[10px] text-neutral-400 font-mono">admin@envscale.internal</div>
@@ -280,9 +280,9 @@ export function TopNavbar({
                       setUserMenuOpen(false);
                       setAuthModalOpen(true);
                     }}
-                    className="w-full flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100 transition-colors"
+                    className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100 transition-colors"
                   >
-                    <Lock className="h-3.5 w-3.5 text-blue-400" />
+                    <Icon path={mdiLock} size={0.65} className="text-blue-400" />
                     <span>Sign In (Auth API)</span>
                   </button>
 
@@ -291,9 +291,9 @@ export function TopNavbar({
                       setUserMenuOpen(false);
                       setWorkspaceModalOpen(true);
                     }}
-                    className="w-full flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100 transition-colors"
+                    className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100 transition-colors"
                   >
-                    <EnvScaleLogo className="h-3.5 w-3.5 text-purple-400" />
+                    <EnvScaleLogo className="h-3.5 w-3.5 text-blue-400" />
                     <span>New Workspace</span>
                   </button>
                 </div>
