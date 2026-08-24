@@ -8,11 +8,12 @@ import {
   type Node,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { Icon } from "../ui/Icon";
 import {
-  MdDns as Server,
-  MdGridView as LayoutGrid,
-  MdFilterCenterFocus as Focus,
-} from "react-icons/md";
+  mdiServer,
+  mdiViewGrid,
+  mdiCrosshairsGps,
+} from "@mdi/js";
 
 import { K8sPodNode, K8sWorkerNode, K8sServiceNode, K8sWorkloadNode, K8sIngressNode } from "../canvas";
 import type { K8sPodData } from "../canvas/K8sPod";
@@ -149,10 +150,10 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
       {/* Empty State Overlay when no active cluster nodes are present */}
       {nodes.length === 0 && (
         <div className="absolute inset-0 z-30 flex flex-col items-center justify-center p-6 text-center pointer-events-none">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 shadow-2xl mb-4 animate-pulse">
-            <Server className="h-8 w-8" />
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 mb-4 animate-pulse">
+            <Icon path={mdiServer} size={1.8} />
           </div>
-          <h3 className="text-lg font-semibold text-neutral-200 mb-1">
+          <h3 className="text-lg font-semibold text-neutral-200 mb-1 font-heading">
             No Active Kubernetes Topology
           </h3>
           <p className="text-xs text-neutral-400 max-w-sm mb-4">
@@ -162,22 +163,22 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
       )}
 
       {/* Top Right Canvas Actions Capsule (Auto Layout + Recenter View) */}
-      <div className="absolute top-24 right-6 z-40 flex flex-col gap-2 rounded-2xl bg-neutral-900/85 backdrop-blur-md border border-neutral-800 p-2 shadow-2xl">
+      <div className="absolute top-20 right-6 z-40 flex flex-col gap-1.5 rounded-2xl bg-surface border border-neutral-800 p-2">
         <button
           onClick={handleAutoLayout}
-          className="flex items-center gap-2 rounded-xl bg-neutral-950/80 border border-neutral-800/80 px-3.5 py-2 text-xs font-semibold text-neutral-200 shadow-md hover:border-blue-500/50 hover:bg-neutral-800/80 hover:text-blue-400 transition-all active:scale-95"
+          className="flex items-center gap-2 rounded-md bg-background border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:border-blue-500/50 hover:bg-neutral-800 hover:text-blue-400 transition-colors font-heading"
           title="Auto Layout Topology Graph (Dagre Engine)"
         >
-          <LayoutGrid className="h-4 w-4 text-blue-400" />
+          <Icon path={mdiViewGrid} size={0.65} className="text-blue-400" />
           <span>Auto Layout</span>
         </button>
 
         <button
           onClick={handleRecenterView}
-          className="flex items-center gap-2 rounded-xl bg-neutral-950/80 border border-neutral-800/80 px-3.5 py-2 text-xs font-semibold text-neutral-200 shadow-md hover:border-blue-500/50 hover:bg-neutral-800/80 hover:text-blue-400 transition-all active:scale-95"
+          className="flex items-center gap-2 rounded-md bg-background border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:border-blue-500/50 hover:bg-neutral-800 hover:text-blue-400 transition-colors font-heading"
           title="Fit / Center Graph View"
         >
-          <Focus className="h-4 w-4 text-blue-400" />
+          <Icon path={mdiCrosshairsGps} size={0.65} className="text-blue-400" />
           <span>Recenter View</span>
         </button>
       </div>
