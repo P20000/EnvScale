@@ -94,7 +94,7 @@ The current repository demonstrates substantial frontend functionality, while se
 
 EnvScale is a monorepo platform with four principal layers:
 
-1. **Web frontend:** React, TypeScript, Vite, Tailwind CSS, React Flow, Zustand, and icon libraries. The current shell is assembled in `apps/web/src/App.tsx` and `apps/web/src/main.tsx`.
+1. **Web frontend:** React, TypeScript, Vite, Tailwind CSS, React Flow, Zustand, and icon libraries. The current shell is assembled in `apps/web/src/App.tsx` and `apps/web/src/main.tsx`. The interface strictly adheres to a high-contrast Material Design 3 engineering aesthetic and a Nested Hybrid Topology Layout for visual clarity of microservice hierarchies.
 2. **API server:** Express and TypeScript services with Drizzle ORM, PostgreSQL, request validation, and workspace-oriented controllers and routes.
 3. **Kubernetes streamer:** Go service using Kubernetes client-go concepts, informers, a WebSocket gateway, Redis support, and a crypto package. Its documented local port is `8080`.
 4. **Persistence and messaging:** PostgreSQL is the schema-backed persistence target; Redis is the intended event-bus/cache component for scaled streaming.
