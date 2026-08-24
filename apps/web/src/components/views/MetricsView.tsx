@@ -20,16 +20,20 @@ function TelemetryAreaChart({
   unit: string;
 }) {
   const maxVal = Math.max(...data, 100);
-  const points = data
-    .map((val, idx) => {
-      const x = (idx / (data.length - 1)) * 100;
-      const y = 100 - (val / maxVal) * 85;
-      return `${x},${y}`;
-    })
-    .join(" ");
+  const pointCoords = data.map((val, idx) => {
+    const x = (idx / (data.length - 1)) * 100;
+    const y = 100 - (val / maxVal) * 85;
+    return { x: x.toFixed(2), y: y.toFixed(2) };
+  });
 
-  const areaPoints = `0,100 ${points} 100,100`;
-  const strokeColor = color === "blue" ? "#3b82f6" : "#10b981";
+  const linePathString = pointCoords.reduce((acc, p, idx) => {
+    return idx === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`;
+  }, "");
+
+  const areaPathString = `${linePathString} L 100 100 L 0 100 Z`;
+
+  const strokeClass = color === "blue" ? "stroke-blue-500" : "stroke-emerald-500";
+  const fillClass = color === "blue" ? "fill-blue-500/5" : "fill-emerald-500/5";
 
   return (
     <div className="relative h-56 w-full rounded-xl bg-background p-4 border border-neutral-800 flex flex-col justify-between overflow-hidden">
@@ -49,17 +53,17 @@ function TelemetryAreaChart({
       {/* SVG Line & Flat Micro-Opacity Area Fill */}
       <div className="relative flex-1 w-full pt-2 pl-7 z-10">
         <svg className="w-full h-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
-          <polygon
-            points={areaPoints}
-            className={color === "blue" ? "fill-blue-500/5" : "fill-emerald-500/5"}
-          />
-          <polyline
+          {/* 1. The Area Fill Background */}
+          <path d={areaPathString} className={fillClass} stroke="none" />
+
+          {/* 2. The Explicit Trend Line */}
+          <path
+            d={linePathString}
             fill="none"
-            stroke={strokeColor}
-            strokeWidth="1.5"
+            className={strokeClass}
+            strokeWidth={1.5}
             strokeLinecap="round"
             strokeLinejoin="round"
-            points={points}
           />
         </svg>
       </div>
