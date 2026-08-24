@@ -5,7 +5,6 @@ import {
   mdiAlert,
   mdiInformation,
   mdiCheckCircle,
-  mdiServer,
   mdiPlus,
   mdiCog,
   mdiShieldCheck,
@@ -175,8 +174,8 @@ export function IncidentsView() {
       {/* Top Header & Navigation Bar */}
       <div className="flex items-center justify-between shrink-0">
         <div>
-          <h1 className="text-xl font-bold text-neutral-100 font-heading">Incidents & Alert Policies</h1>
-          <p className="text-xs text-neutral-400">
+          <h1 className="text-2xl font-bold text-neutral-100 font-heading">Incidents & Alert Policies</h1>
+          <p className="text-xs text-neutral-400 mt-1">
             Real-time incident log monitoring and custom metric threshold configuration.
           </p>
         </div>
@@ -327,15 +326,15 @@ export function IncidentsView() {
             </div>
           </div>
 
-          {/* Incident List Container */}
+          {/* Incident Table Container — High Density Data Table Grid */}
           <div className="rounded-2xl border border-neutral-800 bg-surface flex-1 min-h-0 flex flex-col overflow-hidden">
-            {/* Fixed Header */}
-            <div className="px-6 py-3.5 border-b border-neutral-800 font-semibold text-xs text-neutral-300 flex items-center justify-between bg-background shrink-0 font-heading">
+            {/* Table Header */}
+            <div className="px-4 py-2 border-b border-neutral-800 font-semibold text-xs text-neutral-300 flex items-center justify-between bg-background shrink-0 font-heading">
               <span>Incident Audit Log</span>
               <span className="font-mono text-[10px] text-neutral-400">Live Telemetry</span>
             </div>
 
-            {/* Scrollable list area */}
+            {/* Scrollable dense list area */}
             {filteredIncidents.length === 0 ? (
               <EmptyState
                 className="flex-1"
@@ -365,37 +364,28 @@ export function IncidentsView() {
                 {filteredIncidents.map((item) => (
                   <div
                     key={item.id}
-                    className="p-4 flex items-center justify-between hover:bg-neutral-900 transition-colors"
+                    className="py-1.5 px-4 flex items-center justify-between gap-4 hover:bg-neutral-900/60 transition-colors text-xs"
                   >
-                    <div className="space-y-1.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-bold text-neutral-200">{item.id}</span>
-                        <IncidentSeverityCell severity={item.severity} />
-                        <span className="text-xs text-neutral-400 font-mono">[{item.namespace}]</span>
-                        <span className="inline-flex items-center gap-1 text-[10px] font-mono text-neutral-400 bg-background px-2 py-0.5 rounded-sm border border-neutral-800 max-w-[160px] truncate">
-                          <Icon path={mdiServer} size={0.55} className="text-neutral-400 shrink-0" />
-                          <span className="truncate">{item.cluster}</span>
-                        </span>
-                      </div>
-                      <p className="text-xs text-neutral-300">{item.message}</p>
-                      <div className="text-[10px] text-neutral-400 font-mono">
-                        Target Resource: <span className="text-neutral-200">{item.pod}</span>
-                      </div>
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <span className="font-mono text-xs font-semibold text-neutral-200 shrink-0">{item.id}</span>
+                      <IncidentSeverityCell severity={item.severity} />
+                      <span className="font-mono text-xs text-neutral-300 shrink-0">{item.pod}</span>
+                      <span className="font-mono text-xs text-neutral-500 shrink-0">ns/{item.namespace}</span>
+                      <span className="font-mono text-xs text-neutral-500 truncate shrink-0 max-w-[130px]">{item.cluster}</span>
+                      <span className="text-neutral-300 text-xs truncate min-w-0 flex-1">{item.message}</span>
                     </div>
 
-                    <div className="text-right space-y-1 shrink-0">
-                      <span className="text-xs text-neutral-400 font-mono">{item.time}</span>
-                      <div>
-                        <span
-                          className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full border ${
-                            item.status === "TRIGGERED"
-                              ? "bg-red-500/10 text-red-400 border-red-500/20"
-                              : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                          }`}
-                        >
-                          {item.status}
-                        </span>
-                      </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="text-neutral-400 font-mono text-xs">{item.time}</span>
+                      <span
+                        className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full border ${
+                          item.status === "TRIGGERED"
+                            ? "bg-red-500/10 text-red-400 border-red-500/20"
+                            : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                        }`}
+                      >
+                        {item.status}
+                      </span>
                     </div>
                   </div>
                 ))}
