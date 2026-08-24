@@ -4,7 +4,6 @@ import {
   mdiChartLine,
   mdiCpu64Bit,
   mdiMemory,
-  mdiFlash,
   mdiServer,
   mdiRefresh,
 } from "@mdi/js";
@@ -264,8 +263,10 @@ export function MetricsView() {
         {/* CPU Telemetry Card */}
         <div className="rounded-2xl border border-neutral-800 bg-surface p-4 space-y-3">
           <div className="flex items-center justify-between border-b border-neutral-800/80 pb-3">
-            <div className="flex items-center gap-2">
-              <Icon path={mdiCpu64Bit} size={0.8} className="text-neutral-400" />
+            <div className="flex items-center gap-2.5">
+              <div className="flex items-center justify-center shrink-0 w-5 h-5 text-neutral-400">
+                <Icon path={mdiCpu64Bit} size={0.85} className="text-neutral-400" />
+              </div>
               <div>
                 <h3 className="text-sm font-semibold text-neutral-200 font-heading">Aggregate CPU Usage</h3>
                 <p className="text-xs text-neutral-500 mt-0.5">Total mcore workload allocation</p>
@@ -293,8 +294,10 @@ export function MetricsView() {
         {/* Memory Telemetry Card */}
         <div className="rounded-2xl border border-neutral-800 bg-surface p-4 space-y-3">
           <div className="flex items-center justify-between border-b border-neutral-800/80 pb-3">
-            <div className="flex items-center gap-2">
-              <Icon path={mdiMemory} size={0.8} className="text-neutral-400" />
+            <div className="flex items-center gap-2.5">
+              <div className="flex items-center justify-center shrink-0 w-5 h-5 text-neutral-400">
+                <Icon path={mdiMemory} size={0.85} className="text-neutral-400" />
+              </div>
               <div>
                 <h3 className="text-sm font-semibold text-neutral-200 font-heading">RAM Consumption</h3>
                 <p className="text-xs text-neutral-500 mt-0.5">Memory working set pressure</p>
@@ -323,9 +326,8 @@ export function MetricsView() {
       {/* Top Resource Consuming Pods Table */}
       <div className="rounded-2xl border border-neutral-800 bg-surface p-5 space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-neutral-200 flex items-center gap-2 font-heading">
-            <Icon path={mdiFlash} size={0.7} className="text-amber-400" />
-            <span>Top Resource Consuming Pods</span>
+          <h3 className="text-sm font-semibold text-neutral-200 font-heading">
+            Top Resource Consuming Pods
           </h3>
           <span className="text-xs font-mono text-neutral-400">
             {podResourceMetrics.length} Pods Monitored
