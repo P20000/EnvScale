@@ -23,14 +23,15 @@ function TelemetryAreaChart({
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
-  const maxVal = Math.max(...data, 100);
   const pointCoords = useMemo(() => {
     return data.map((val, idx) => {
       const x = (idx / (data.length - 1)) * 100;
-      const y = 100 - (val / maxVal) * 80 - 5;
+      // Clamp Y coordinate strictly within 0% (y = 100) to 100% (y = 0)
+      const clampedVal = Math.min(100, Math.max(0, val));
+      const y = 100 - clampedVal;
       return { x, y, rawVal: val, idx };
     });
-  }, [data, maxVal]);
+  }, [data]);
 
   const linePathString = useMemo(() => {
     return pointCoords.reduce((acc, p, idx) => {
@@ -41,7 +42,7 @@ function TelemetryAreaChart({
   const areaPathString = `${linePathString} L 100 100 L 0 100 Z`;
 
   const strokeHex = color === "blue" ? "#3b82f6" : "#10b981";
-  const areaFillHex = color === "blue" ? "rgba(59, 130, 246, 0.05)" : "rgba(16, 185, 129, 0.05)";
+  const areaFillHex = color === "blue" ? "rgba(59, 130, 246, 0.08)" : "rgba(16, 185, 129, 0.08)";
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -58,92 +59,98 @@ function TelemetryAreaChart({
   const hoveredPoint = hoverIndex !== null ? pointCoords[hoverIndex] : null;
 
   return (
-    <div
-      className="relative h-56 w-full rounded-xl bg-background p-4 border border-neutral-800 flex flex-col justify-between overflow-hidden select-none"
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-    >
-      {/* Y-Axis Labels & Technical Background Grid Lines */}
-      <div className="absolute inset-x-4 top-4 bottom-8 flex flex-col justify-between pointer-events-none z-0">
-        <div className="w-full border-b border-neutral-800/80 flex items-center justify-between">
-          <span className="text-[9px] font-mono text-neutral-500">100%</span>
+    <div className="relative w-full rounded-xl bg-background p-4 border border-neutral-800 space-y-2 select-none">
+      {/* Upper Chart Container with Y-Axis and Plot Box */}
+      <div className="flex h-44 w-full relative">
+        {/* Y-Axis Labels (Left) */}
+        <div className="w-8 h-full flex flex-col justify-between py-0 text-[9px] font-mono text-neutral-500 pr-2 select-none">
+          <span>100%</span>
+          <span>50%</span>
+          <span>0%</span>
         </div>
-        <div className="w-full border-b border-neutral-800/80 flex items-center justify-between">
-          <span className="text-[9px] font-mono text-neutral-500">50%</span>
-        </div>
-        <div className="w-full border-b border-neutral-800/80 flex items-center justify-between">
-          <span className="text-[9px] font-mono text-neutral-500">0%</span>
-        </div>
-      </div>
 
-      {/* Stackdriver-Style Technical Grid System & Continuous Line Canvas */}
-      <div className="relative flex-1 w-full pt-2 pl-7 z-10">
-        <svg className="w-full h-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
+        {/* Plot Box Area (Bounded Grid + SVG Line) */}
+        <div
+          className="flex-1 h-full relative overflow-hidden"
+          onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
+        >
+          {/* Horizontal Grid Lines */}
+          <div className="absolute inset-0 flex flex-col justify-between pointer-events-none z-0">
+            <div className="w-full border-b border-neutral-800/80" />
+            <div className="w-full border-b border-neutral-800/80" />
+            <div className="w-full border-b border-neutral-800/80" />
+          </div>
+
           {/* Vertical Technical Gridlines (Dashed) */}
-          <line x1="25" y1="0" x2="25" y2="100" stroke="#27272a" strokeDasharray="2 2" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-          <line x1="50" y1="0" x2="50" y2="100" stroke="#27272a" strokeDasharray="2 2" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-          <line x1="75" y1="0" x2="75" y2="100" stroke="#27272a" strokeDasharray="2 2" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+          <div className="absolute inset-0 flex justify-between pointer-events-none z-0 px-[25%]">
+            <div className="h-full border-r border-dashed border-neutral-800/80" />
+            <div className="h-full border-r border-dashed border-neutral-800/80" />
+          </div>
 
-          {/* 1. Muted Micro-Opacity Area Fill */}
-          <path d={areaPathString} fill={areaFillHex} stroke="none" />
+          {/* SVG Continuous Line Canvas */}
+          <svg className="w-full h-full overflow-visible z-10 relative" viewBox="0 0 100 100" preserveAspectRatio="none">
+            {/* 1. Muted Micro-Opacity Area Fill */}
+            <path d={areaPathString} fill={areaFillHex} stroke="none" />
 
-          {/* 2. Sharp 1.5px Continuous Line Chart (Zero Columns/Pills) */}
-          <path
-            d={linePathString}
-            fill="none"
-            stroke={strokeHex}
-            strokeWidth="1.5"
-            vectorEffect="non-scaling-stroke"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-
-          {/* Hover Vertex Highlight Circle */}
-          {hoveredPoint && (
-            <circle
-              cx={`${hoveredPoint.x}%`}
-              cy={`${hoveredPoint.y}%`}
-              r="3.5"
-              fill={strokeHex}
-              stroke="#09090b"
+            {/* 2. Sharp 1.5px Continuous Line Chart */}
+            <path
+              d={linePathString}
+              fill="none"
+              stroke={strokeHex}
               strokeWidth="1.5"
               vectorEffect="non-scaling-stroke"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+
+            {/* Hover Vertex Highlight Circle */}
+            {hoveredPoint && (
+              <circle
+                cx={`${hoveredPoint.x}%`}
+                cy={`${hoveredPoint.y}%`}
+                r="3.5"
+                fill={strokeHex}
+                stroke="#09090b"
+                strokeWidth="1.5"
+                vectorEffect="non-scaling-stroke"
+              />
+            )}
+          </svg>
+
+          {/* Flat Hover-Crosshair Tracking Guide Line */}
+          {hoveredPoint && (
+            <div
+              className="absolute top-0 bottom-0 border-l border-dashed border-neutral-500 pointer-events-none z-20"
+              style={{ left: `${hoveredPoint.x}%` }}
             />
           )}
-        </svg>
+
+          {/* Hover Precision Tooltip Card */}
+          {hoveredPoint && (
+            <div
+              className="absolute z-30 rounded-md bg-[#18181c] border border-neutral-700 p-2 shadow-2xl pointer-events-none font-mono text-xs space-y-0.5"
+              style={{
+                top: "0.5rem",
+                left: hoveredPoint.x > 70 ? "auto" : `calc(${hoveredPoint.x}% + 0.5rem)`,
+                right: hoveredPoint.x > 70 ? `calc(100% - ${hoveredPoint.x}% + 0.5rem)` : "auto",
+              }}
+            >
+              <div className="text-[10px] text-neutral-400 font-heading uppercase">{title}</div>
+              <div className="flex items-center gap-2">
+                <span className={`h-2 w-2 rounded-full ${color === "blue" ? "bg-blue-400" : "bg-emerald-400"}`} />
+                <span className="text-neutral-100 font-bold">{hoveredPoint.rawVal.toFixed(1)}{unit}</span>
+              </div>
+              <div className="text-[9px] text-neutral-500">
+                {15 - Math.round((hoveredPoint.idx / (data.length - 1)) * 15)}m ago
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Flat Hover-Crosshair Tracking Guide Line */}
-      {hoveredPoint && (
-        <div
-          className="absolute top-4 bottom-8 border-l border-dashed border-neutral-500 pointer-events-none z-20"
-          style={{ left: `calc(1.75rem + ${hoveredPoint.x}% * (100% - 2.75rem) / 100)` }}
-        />
-      )}
-
-      {/* Hover Precision Tooltip Card */}
-      {hoveredPoint && (
-        <div
-          className="absolute z-30 rounded-md bg-[#18181c] border border-neutral-700 p-2 shadow-2xl pointer-events-none font-mono text-xs space-y-0.5"
-          style={{
-            top: "1rem",
-            left: hoveredPoint.x > 70 ? "auto" : `calc(2.5rem + ${hoveredPoint.x}%)`,
-            right: hoveredPoint.x > 70 ? `calc(100% - ${hoveredPoint.x}% - 0.5rem)` : "auto",
-          }}
-        >
-          <div className="text-[10px] text-neutral-400 font-heading uppercase">{title}</div>
-          <div className="flex items-center gap-2">
-            <span className={`h-2 w-2 rounded-full ${color === "blue" ? "bg-blue-400" : "bg-emerald-400"}`} />
-            <span className="text-neutral-100 font-bold">{hoveredPoint.rawVal.toFixed(1)}{unit}</span>
-          </div>
-          <div className="text-[9px] text-neutral-500">
-            {15 - Math.round((hoveredPoint.idx / (data.length - 1)) * 15)}m ago
-          </div>
-        </div>
-      )}
-
       {/* X-axis Timeline Labels */}
-      <div className="flex items-center justify-between text-[10px] font-mono text-neutral-500 pt-2 pl-7 border-t border-neutral-800/80 z-10">
+      <div className="flex items-center justify-between text-[10px] font-mono text-neutral-500 pt-1.5 pl-8 border-t border-neutral-800/80">
         <span>15m ago</span>
         <span>10m ago</span>
         <span>5m ago</span>
