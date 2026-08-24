@@ -103,12 +103,14 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
     const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
     const podData = target.data as K8sPodData;
 
+    const clusterId = useTopologyStore.getState().activeCluster || "mini-todo";
+
     // Call POST /api/v1/logs/stream to initiate backend kubectl logs -f stream
     fetch(`${API_BASE_URL}/api/v1/logs/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        clusterId: "minikube-prod",
+        clusterId,
         namespace: podData.namespace || "default",
         podName: podData.name,
         tailLines: 50,
@@ -123,7 +125,7 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          clusterId: "minikube-prod",
+          clusterId,
           namespace: podData.namespace || "default",
           podName: podData.name,
         }),

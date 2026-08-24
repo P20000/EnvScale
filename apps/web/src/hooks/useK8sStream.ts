@@ -66,7 +66,7 @@ export function useK8sStream(
   const onMessageReceivedRef = useRef(onMessageReceived);
 
   const activeCluster = useTopologyStore((state) => state.activeCluster);
-  const targetClusterId = clusterId || activeCluster || "minikube-prod";
+  const targetClusterId = clusterId || activeCluster || "mini-todo";
 
   const wsUrl = useMemo(() => {
     const rawUrl = urlOverride || import.meta.env.VITE_WS_URL || DEFAULT_WS_URL;

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { PodLogLine, LogLevel, LogStreamStatus } from "../types/logs";
+import { useTopologyStore } from "../store/useTopologyStore";
 
 interface UsePodLogsOptions {
   podName: string | null;
@@ -99,6 +100,8 @@ export function usePodLogs({
     ? "paused"
     : "streaming";
 
+  const activeCluster = useTopologyStore((s) => s.activeCluster) || "mini-todo";
+
   // Live log tailing effect with cleanup & backend integration fallback
   useEffect(() => {
     if (!podName || !enabled || !isTailing) {
@@ -112,7 +115,7 @@ export function usePodLogs({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        clusterId: "minikube-prod",
+        clusterId: activeCluster,
         namespace,
         podName,
         tailLines: 50,
@@ -149,13 +152,13 @@ export function usePodLogs({
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          clusterId: "minikube-prod",
+          clusterId: activeCluster,
           namespace,
           podName,
         }),
       }).catch(() => {});
     };
-  }, [podName, namespace, enabled, isTailing, maxLogs]);
+  }, [podName, namespace, enabled, isTailing, maxLogs, activeCluster]);
 
   const clearLogs = useCallback(() => {
     setLogs([]);

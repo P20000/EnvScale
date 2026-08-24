@@ -40,7 +40,7 @@ export interface NotificationItem {
 
 export const defaultInitialNodes: Node[] = [];
 export const defaultInitialEdges: Edge[] = [];
-const defaultClusters: string[] = [];
+const defaultClusters: string[] = ["mini-todo"];
 const defaultInitialTokens: ApiToken[] = [];
 const defaultInitialNotifications: NotificationItem[] = [];
 
@@ -405,7 +405,7 @@ export interface TopologyState {
 export const useTopologyStore = create<TopologyState>()(
   persist(
     (set, get) => ({
-      clusters: ["mini-todo", "minikube-prod"],
+      clusters: ["mini-todo"],
       activeCluster: "mini-todo",
       rawNodes: defaultInitialNodes,
       nodes: defaultInitialNodes,
@@ -1417,7 +1417,7 @@ export const useTopologyStore = create<TopologyState>()(
       resetTopology: () => {
         set({
           clusters: defaultClusters,
-          activeCluster: "minikube-prod",
+          activeCluster: "mini-todo",
           rawNodes: defaultInitialNodes,
           nodes: defaultInitialNodes,
           edges: defaultInitialEdges,
