@@ -82,6 +82,12 @@ export default {
         "2xl": "1rem",
         "3xl": "1.5rem",
       },
+
+      fontFamily: {
+        sans: ["'Plus Jakarta Sans'", "'Plus Jakarta Sans Variable'", "system-ui", "-apple-system", "sans-serif"],
+        heading: ["'Google Sans'", "'Plus Jakarta Sans'", "sans-serif"],
+        mono: ["'Google Sans Code'", "'JetBrains Mono'", "ui-monospace", "SFMono-Regular", "Menlo", "Monaco", "Consolas", "monospace"],
+      },
     },
   },
 
