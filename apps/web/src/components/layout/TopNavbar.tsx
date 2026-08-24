@@ -76,9 +76,41 @@ export function TopNavbar({
   const isConnected = currentWsStatus === "CONNECTED";
   const isConnecting = currentWsStatus === "CONNECTING" || currentWsStatus === "RECONNECTING";
 
+  const toggleDropdown = () => {
+    setDropdownOpen((prev) => !prev);
+    setNotifMenuOpen(false);
+    setUserMenuOpen(false);
+  };
+
+  const toggleNotif = () => {
+    setNotifMenuOpen((prev) => !prev);
+    setDropdownOpen(false);
+    setUserMenuOpen(false);
+  };
+
+  const toggleUser = () => {
+    setUserMenuOpen((prev) => !prev);
+    setDropdownOpen(false);
+    setNotifMenuOpen(false);
+  };
+
+  const closeAllMenus = () => {
+    setDropdownOpen(false);
+    setNotifMenuOpen(false);
+    setUserMenuOpen(false);
+  };
+
   return (
     <>
-      <header className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center justify-between gap-6 rounded-full bg-surface border border-neutral-800 px-5 py-2 min-w-[640px] max-w-4xl w-[calc(100%-2rem)]">
+      {/* Click-outside dimming backdrop overlay for popover menus */}
+      {(dropdownOpen || notifMenuOpen || userMenuOpen) && (
+        <div
+          className="fixed inset-0 z-40 bg-black/60"
+          onClick={closeAllMenus}
+        />
+      )}
+
+      <header className="fixed top-4 left-1/2 -translate-x-1/2 z-[60] flex items-center justify-between gap-6 rounded-full bg-surface border border-neutral-800 px-5 py-2 min-w-[640px] max-w-4xl w-[calc(100%-2rem)]">
         {/* Left Group: Cluster Selector Dropdown */}
         <div className="flex items-center gap-3 relative" ref={dropdownRef}>
           <div className="flex items-center gap-2.5">
@@ -93,7 +125,7 @@ export function TopNavbar({
           <div className="h-4 w-px bg-neutral-800" />
 
           <button
-            onClick={() => setDropdownOpen((prev) => !prev)}
+            onClick={toggleDropdown}
             className="flex items-center gap-2 rounded-full bg-background px-3 py-1 text-xs font-medium text-neutral-200 border border-neutral-800 hover:border-neutral-700 transition-colors"
           >
             <Icon path={mdiServer} size={0.65} className="text-blue-400" />
@@ -103,7 +135,7 @@ export function TopNavbar({
 
           {/* Dropdown Menu with scrollable options list */}
           {dropdownOpen && (
-            <div className="absolute top-full left-0 mt-2 w-64 rounded-xl border border-neutral-800 bg-panel p-2 z-50">
+            <div className="absolute top-full left-0 mt-2 w-64 rounded-xl border border-neutral-700 bg-[#18181c] p-2 z-[70] shadow-2xl">
               <div className="px-2 py-1.5 text-[10px] font-bold tracking-wider text-neutral-400 uppercase font-heading">
                 Active Kubernetes Clusters
               </div>
@@ -179,7 +211,7 @@ export function TopNavbar({
             {/* Notifications Dropdown Panel */}
             <div className="relative" ref={notifMenuRef}>
               <button
-                onClick={() => setNotifMenuOpen((prev) => !prev)}
+                onClick={toggleNotif}
                 title="Notifications"
                 className="relative flex h-8 w-8 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-colors"
               >
@@ -193,7 +225,7 @@ export function TopNavbar({
 
               {/* Notification Panel with scrollable items list */}
               {notifMenuOpen && (
-                <div className="absolute top-full right-0 mt-2 w-80 rounded-xl border border-neutral-800 bg-panel p-3 z-50 space-y-2">
+                <div className="absolute top-full right-0 mt-2 w-80 rounded-xl border border-neutral-700 bg-[#18181c] p-3 z-[70] shadow-2xl space-y-2">
                   <div className="flex items-center justify-between px-1 pb-2 border-b border-neutral-800">
                     <div className="flex items-center gap-2">
                       <Icon path={mdiBell} size={0.7} className="text-blue-400" />
@@ -260,14 +292,14 @@ export function TopNavbar({
             {/* User Profile / Auth & Workspace Actions */}
             <div className="relative" ref={userMenuRef}>
               <button
-                onClick={() => setUserMenuOpen((prev) => !prev)}
+                onClick={toggleUser}
                 className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-800 border border-neutral-700 text-neutral-200 hover:border-neutral-500 transition-all"
               >
                 <Icon path={mdiAccount} size={0.7} />
               </button>
 
               {userMenuOpen && (
-                <div className="absolute top-full right-0 mt-2 w-52 rounded-xl border border-neutral-800 bg-panel p-2 z-50 space-y-1">
+                <div className="absolute top-full right-0 mt-2 w-52 rounded-xl border border-neutral-700 bg-[#18181c] p-2 z-[70] shadow-2xl space-y-1">
                   <div className="px-2 py-1.5">
                     <div className="text-xs font-medium text-neutral-100">Dev Team Lead</div>
                     <div className="text-[10px] text-neutral-400 font-mono">admin@envscale.internal</div>
