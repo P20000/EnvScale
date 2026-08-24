@@ -13,6 +13,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 
+	appsv1 "k8s.io/api/apps/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"github.com/EnvScale/k8s-streamer/pkg/types"
 	"github.com/EnvScale/k8s-streamer/pkg/websocket"
 )
@@ -26,6 +28,7 @@ type InformerManager struct {
 	stopCh    chan struct{}
 	running   bool
 	mu        sync.RWMutex
+	dedup     *DedupCache // FNV-hash dedup cache to suppress unchanged delta rebroadcasts
 }
 
 // NewInformerManager creates an InformerManager from raw Kubeconfig bytes
@@ -74,6 +77,7 @@ func NewInformerManagerWithClientset(clientset kubernetes.Interface, hub *websoc
 		clusterID: clusterID,
 		stopCh:    make(chan struct{}),
 		running:   false,
+		dedup:     NewDedupCache(),
 	}
 }
 
@@ -103,8 +107,14 @@ func (im *InformerManager) Start(stopCh <-chan struct{}) {
 			pod := im.resolvePodObject(obj)
 			if pod != nil {
 				delta := im.extractPodDelta(pod)
-				delta.Phase = "Failed" // Mark as terminated
+				delta.Phase = "Terminated"
+				im.dedup.Remove(fmt.Sprintf("Pod/%s/%s", pod.Namespace, pod.Name))
 				im.hub.BroadcastEvent(types.EventPodStatusChanged, im.clusterID, delta)
+				im.hub.BroadcastEvent(types.EventPodDeleted, im.clusterID, map[string]interface{}{
+					"podId":     pod.Name,
+					"name":      pod.Name,
+					"namespace": pod.Namespace,
+				})
 			}
 		},
 	})
@@ -144,6 +154,62 @@ func (im *InformerManager) Start(stopCh <-chan struct{}) {
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			if svc, ok := newObj.(*corev1.Service); ok {
 				im.emitServiceDelta(svc)
+			}
+		},
+	})
+
+	deploymentInformer := im.factory.Apps().V1().Deployments().Informer()
+	deploymentInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			if dep, ok := obj.(*appsv1.Deployment); ok {
+				im.emitDeploymentDelta(dep)
+			}
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			if dep, ok := newObj.(*appsv1.Deployment); ok {
+				im.emitDeploymentDelta(dep)
+			}
+		},
+	})
+
+	replicaSetInformer := im.factory.Apps().V1().ReplicaSets().Informer()
+	replicaSetInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			if rs, ok := obj.(*appsv1.ReplicaSet); ok {
+				im.emitReplicaSetDelta(rs)
+			}
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			if rs, ok := newObj.(*appsv1.ReplicaSet); ok {
+				im.emitReplicaSetDelta(rs)
+			}
+		},
+	})
+
+	statefulSetInformer := im.factory.Apps().V1().StatefulSets().Informer()
+	statefulSetInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			if sts, ok := obj.(*appsv1.StatefulSet); ok {
+				im.emitStatefulSetDelta(sts)
+			}
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			if sts, ok := newObj.(*appsv1.StatefulSet); ok {
+				im.emitStatefulSetDelta(sts)
+			}
+		},
+	})
+
+	ingressInformer := im.factory.Networking().V1().Ingresses().Informer()
+	ingressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			if ing, ok := obj.(*networkingv1.Ingress); ok {
+				im.emitIngressDelta(ing)
+			}
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			if ing, ok := newObj.(*networkingv1.Ingress); ok {
+				im.emitIngressDelta(ing)
 			}
 		},
 	})
@@ -215,6 +281,99 @@ func (im *InformerManager) resolveNodeObject(obj interface{}) *corev1.Node {
 	return nil
 }
 
+// GetSnapshot retrieves the current local cache of all nodes, pods, services, and workloads and formats them as delta events.
+func (im *InformerManager) GetSnapshot() (
+	pods []types.PodStatusDelta,
+	nodes []types.NodeStatusDelta,
+	services []types.ServiceStatusDelta,
+	deployments []types.DeploymentStatusDelta,
+	replicaSets []types.ReplicaSetStatusDelta,
+	statefulSets []types.StatefulSetStatusDelta,
+	ingresses []types.IngressStatusDelta,
+) {
+	// Block until all informer caches are fully synced to prevent returning empty snapshots right after startup
+	im.factory.WaitForCacheSync(im.stopCh)
+
+	podList := im.factory.Core().V1().Pods().Informer().GetStore().List()
+	for _, obj := range podList {
+		if pod, ok := obj.(*corev1.Pod); ok {
+			pods = append(pods, im.extractPodDelta(pod))
+		}
+	}
+
+	nodeList := im.factory.Core().V1().Nodes().Informer().GetStore().List()
+	for _, obj := range nodeList {
+		if node, ok := obj.(*corev1.Node); ok {
+			status := "Unknown"
+			for _, cond := range node.Status.Conditions {
+				if cond.Type == corev1.NodeReady {
+					if cond.Status == corev1.ConditionTrue {
+						status = "Ready"
+					} else {
+						status = "NotReady"
+					}
+				}
+			}
+			nodes = append(nodes, types.NodeStatusDelta{
+				Name:           node.Name,
+				Status:         status,
+				CPUCapacity:    node.Status.Capacity.Cpu().String(),
+				MemoryCapacity: node.Status.Capacity.Memory().String(),
+				PodCapacity:    node.Status.Capacity.Pods().Value(),
+				Labels:         node.Labels,
+			})
+		}
+	}
+
+	svcList := im.factory.Core().V1().Services().Informer().GetStore().List()
+	for _, obj := range svcList {
+		if svc, ok := obj.(*corev1.Service); ok {
+			ports := make([]int32, len(svc.Spec.Ports))
+			for i, p := range svc.Spec.Ports {
+				ports[i] = p.Port
+			}
+			services = append(services, types.ServiceStatusDelta{
+				Name:        svc.Name,
+				Namespace:   svc.Namespace,
+				Type:        string(svc.Spec.Type),
+				ClusterIP:   svc.Spec.ClusterIP,
+				Selector:    svc.Spec.Selector,
+				TargetPorts: ports,
+			})
+		}
+	}
+
+	depList := im.factory.Apps().V1().Deployments().Informer().GetStore().List()
+	for _, obj := range depList {
+		if dep, ok := obj.(*appsv1.Deployment); ok {
+			deployments = append(deployments, im.extractDeploymentDelta(dep))
+		}
+	}
+
+	rsList := im.factory.Apps().V1().ReplicaSets().Informer().GetStore().List()
+	for _, obj := range rsList {
+		if rs, ok := obj.(*appsv1.ReplicaSet); ok {
+			replicaSets = append(replicaSets, im.extractReplicaSetDelta(rs))
+		}
+	}
+
+	stsList := im.factory.Apps().V1().StatefulSets().Informer().GetStore().List()
+	for _, obj := range stsList {
+		if sts, ok := obj.(*appsv1.StatefulSet); ok {
+			statefulSets = append(statefulSets, im.extractStatefulSetDelta(sts))
+		}
+	}
+
+	ingressList := im.factory.Networking().V1().Ingresses().Informer().GetStore().List()
+	for _, obj := range ingressList {
+		if ing, ok := obj.(*networkingv1.Ingress); ok {
+			ingresses = append(ingresses, im.extractIngressDelta(ing))
+		}
+	}
+
+	return pods, nodes, services, deployments, replicaSets, statefulSets, ingresses
+}
+
 func (im *InformerManager) extractPodDelta(pod *corev1.Pod) types.PodStatusDelta {
 	var totalRestarts int32 = 0
 	for _, cs := range pod.Status.ContainerStatuses {
@@ -231,6 +390,13 @@ func (im *InformerManager) extractPodDelta(pod *corev1.Pod) types.PodStatusDelta
 		}
 	}
 
+	var ownerUID, ownerName, ownerKind string
+	if len(pod.OwnerReferences) > 0 {
+		ownerUID = string(pod.OwnerReferences[0].UID)
+		ownerName = pod.OwnerReferences[0].Name
+		ownerKind = pod.OwnerReferences[0].Kind
+	}
+
 	return types.PodStatusDelta{
 		Name:         pod.Name,
 		Namespace:    pod.Namespace,
@@ -238,13 +404,38 @@ func (im *InformerManager) extractPodDelta(pod *corev1.Pod) types.PodStatusDelta
 		Phase:        phase,
 		RestartCount: totalRestarts,
 		Labels:       pod.Labels,
+		OwnerUID:     ownerUID,
+		OwnerName:    ownerName,
+		OwnerKind:    ownerKind,
 		CreatedAt:    pod.CreationTimestamp.Time,
 	}
 }
 
 func (im *InformerManager) emitPodDelta(pod *corev1.Pod) {
 	delta := im.extractPodDelta(pod)
+
+	// Dedup: skip broadcasting if the pod delta is identical to the last emitted version
+	key := fmt.Sprintf("Pod/%s/%s", pod.Namespace, pod.Name)
+	if !im.dedup.ShouldEmit(key, delta) {
+		return
+	}
+
 	im.hub.BroadcastEvent(types.EventPodStatusChanged, im.clusterID, delta)
+
+	// Anomaly classification: check if the pod's current phase/reason represents
+	// a known failure state (OOMKilled, CrashLoopBackOff, ImagePullBackOff, etc.)
+	// or if the restart count exceeds the stability threshold.
+	if match := ClassifyPodAnomaly(delta.Phase, delta.RestartCount); match != nil {
+		im.hub.BroadcastEvent(types.EventPodAnomalyDetected, im.clusterID, types.PodAnomalyEvent{
+			PodName:     delta.Name,
+			Namespace:   delta.Namespace,
+			AnomalyType: match.AnomalyType,
+			Severity:    match.Severity,
+			Message:     match.Message,
+			Source:      "informer",
+			Timestamp:   time.Now().UTC().Format(time.RFC3339Nano),
+		})
+	}
 }
 
 func (im *InformerManager) emitNodeDelta(node *corev1.Node) {
@@ -267,6 +458,11 @@ func (im *InformerManager) emitNodeDelta(node *corev1.Node) {
 		PodCapacity:    node.Status.Capacity.Pods().Value(),
 		Labels:         node.Labels,
 	}
+
+	key := fmt.Sprintf("Node/%s", node.Name)
+	if !im.dedup.ShouldEmit(key, delta) {
+		return
+	}
 	im.hub.BroadcastEvent(types.EventNodeMutated, im.clusterID, delta)
 }
 
@@ -284,6 +480,119 @@ func (im *InformerManager) emitServiceDelta(svc *corev1.Service) {
 		Selector:    svc.Spec.Selector,
 		TargetPorts: ports,
 	}
+
+	key := fmt.Sprintf("Service/%s/%s", svc.Namespace, svc.Name)
+	if !im.dedup.ShouldEmit(key, delta) {
+		return
+	}
 	im.hub.BroadcastEvent(types.EventServiceMutated, im.clusterID, delta)
 }
 
+func (im *InformerManager) extractDeploymentDelta(dep *appsv1.Deployment) types.DeploymentStatusDelta {
+	return types.DeploymentStatusDelta{
+		Name:          dep.Name,
+		Namespace:     dep.Namespace,
+		Replicas:      *dep.Spec.Replicas,
+		ReadyReplicas: dep.Status.ReadyReplicas,
+		Selector:      dep.Spec.Selector.MatchLabels,
+		Labels:        dep.Labels,
+	}
+}
+
+func (im *InformerManager) emitDeploymentDelta(dep *appsv1.Deployment) {
+	delta := im.extractDeploymentDelta(dep)
+	key := fmt.Sprintf("Deployment/%s/%s", dep.Namespace, dep.Name)
+	if !im.dedup.ShouldEmit(key, delta) {
+		return
+	}
+	im.hub.BroadcastEvent(types.EventDeploymentMutated, im.clusterID, delta)
+}
+
+func (im *InformerManager) extractReplicaSetDelta(rs *appsv1.ReplicaSet) types.ReplicaSetStatusDelta {
+	var ownerUID, ownerName, ownerKind string
+	if len(rs.OwnerReferences) > 0 {
+		ownerUID = string(rs.OwnerReferences[0].UID)
+		ownerName = rs.OwnerReferences[0].Name
+		ownerKind = rs.OwnerReferences[0].Kind
+	}
+
+	return types.ReplicaSetStatusDelta{
+		Name:          rs.Name,
+		Namespace:     rs.Namespace,
+		Replicas:      *rs.Spec.Replicas,
+		ReadyReplicas: rs.Status.ReadyReplicas,
+		OwnerUID:      ownerUID,
+		OwnerName:     ownerName,
+		OwnerKind:     ownerKind,
+		Labels:        rs.Labels,
+	}
+}
+
+func (im *InformerManager) emitReplicaSetDelta(rs *appsv1.ReplicaSet) {
+	delta := im.extractReplicaSetDelta(rs)
+	key := fmt.Sprintf("ReplicaSet/%s/%s", rs.Namespace, rs.Name)
+	if !im.dedup.ShouldEmit(key, delta) {
+		return
+	}
+	im.hub.BroadcastEvent(types.EventReplicaSetMutated, im.clusterID, delta)
+}
+
+func (im *InformerManager) extractStatefulSetDelta(sts *appsv1.StatefulSet) types.StatefulSetStatusDelta {
+	return types.StatefulSetStatusDelta{
+		Name:          sts.Name,
+		Namespace:     sts.Namespace,
+		Replicas:      *sts.Spec.Replicas,
+		ReadyReplicas: sts.Status.ReadyReplicas,
+		Selector:      sts.Spec.Selector.MatchLabels,
+		Labels:        sts.Labels,
+	}
+}
+
+func (im *InformerManager) emitStatefulSetDelta(sts *appsv1.StatefulSet) {
+	delta := im.extractStatefulSetDelta(sts)
+	key := fmt.Sprintf("StatefulSet/%s/%s", sts.Namespace, sts.Name)
+	if !im.dedup.ShouldEmit(key, delta) {
+		return
+	}
+	im.hub.BroadcastEvent(types.EventStatefulSetMutated, im.clusterID, delta)
+}
+
+func (im *InformerManager) extractIngressDelta(ing *networkingv1.Ingress) types.IngressStatusDelta {
+	rules := make([]types.IngressRuleStatus, 0)
+	for _, rule := range ing.Spec.Rules {
+		if rule.HTTP != nil {
+			for _, path := range rule.HTTP.Paths {
+				var svcName string
+				var svcPort int32
+				if path.Backend.Service != nil {
+					svcName = path.Backend.Service.Name
+					if path.Backend.Service.Port.Number != 0 {
+						svcPort = path.Backend.Service.Port.Number
+					}
+				}
+				rules = append(rules, types.IngressRuleStatus{
+					Host:        rule.Host,
+					Path:        path.Path,
+					ServiceName: svcName,
+					ServicePort: svcPort,
+				})
+			}
+		}
+	}
+
+	return types.IngressStatusDelta{
+		Name:      ing.Name,
+		Namespace: ing.Namespace,
+		Rules:     rules,
+		Labels:    ing.Labels,
+	}
+}
+
+func (im *InformerManager) emitIngressDelta(ing *networkingv1.Ingress) {
+	delta := im.extractIngressDelta(ing)
+	key := fmt.Sprintf("Ingress/%s/%s", ing.Namespace, ing.Name)
+	if !im.dedup.ShouldEmit(key, delta) {
+		return
+	}
+	im.hub.BroadcastEvent(types.EventIngressMutated, im.clusterID, delta)
+}
