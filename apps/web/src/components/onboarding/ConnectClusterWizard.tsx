@@ -111,8 +111,8 @@ export default function ConnectClusterWizard({
   if (isConnected) {
     if (connectionError) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-4 text-white shadow-2xl sm:p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-zinc-800 bg-[#141417] shadow-none p-4 text-white sm:p-6">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-500/10 text-3xl text-red-400">
           ×
         </div>
@@ -144,8 +144,8 @@ export default function ConnectClusterWizard({
   );
 }
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-neutral-800 bg-surface p-4 text-white sm:p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-zinc-800 bg-[#141417] shadow-none p-4 text-white sm:p-6">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
           <Icon path={mdiCheckCircle} size={1.2} />
         </div>
@@ -173,8 +173,8 @@ export default function ConnectClusterWizard({
 }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-      <div className="w-full max-w-lg rounded-3xl border border-neutral-800 bg-surface p-6 text-white">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
+      <div className="w-full max-w-lg rounded-3xl border border-zinc-800 bg-[#141417] shadow-none p-6 text-white">
         <div className="mb-6 flex items-start gap-4">
           <div>
             <p className="text-sm text-blue-400 font-mono">
@@ -222,7 +222,7 @@ export default function ConnectClusterWizard({
                   }
                 }}
                 placeholder="e.g. production-cluster"
-                className="w-full rounded-sm border border-neutral-800 bg-background px-3 py-2 text-white outline-none placeholder:text-neutral-500 focus:border-blue-500"
+                className="w-full bg-[#09090b] border border-zinc-800 text-xs font-mono py-2 px-3 focus:border-zinc-600 focus:outline-none rounded-md text-white placeholder:text-neutral-500"
               />
 
               {clusterError && (
@@ -248,10 +248,10 @@ export default function ConnectClusterWizard({
                 }}
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={handleDrop}
-                className={`rounded-2xl border-2 border-dashed p-8 text-center transition-colors ${
+                className={`rounded-xl border border-dashed p-8 text-center transition-colors ${
                   isDragging
                     ? "border-blue-500 bg-blue-500/10"
-                    : "border-neutral-800 bg-background"
+                    : "border-zinc-800 bg-[#09090b]"
                 }`}
               >
                 <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20">
@@ -309,22 +309,20 @@ export default function ConnectClusterWizard({
 
         {step === 3 && (
           <div className="space-y-4">
-            <div className="rounded-2xl border border-neutral-800 bg-background p-4">
-              <p className="text-xs text-neutral-400">
+            <div className="rounded-xl border border-zinc-800 bg-[#09090b] p-3 text-zinc-300 font-mono text-xs">
+              <p className="mb-1 text-zinc-500">
                 Cluster Name
               </p>
-
-              <p className="font-medium font-mono text-neutral-100">
+              <p className="font-semibold text-zinc-200">
                 {clusterName}
               </p>
             </div>
 
-            <div className="rounded-2xl border border-neutral-800 bg-background p-4">
-              <p className="text-xs text-neutral-400">
+            <div className="rounded-xl border border-zinc-800 bg-[#09090b] p-3 text-zinc-300 font-mono text-xs">
+              <p className="mb-1 text-zinc-500">
                 Kubeconfig Payload
               </p>
-
-              <p className="font-medium font-mono text-neutral-100">
+              <p className="font-semibold text-zinc-200">
                 {kubeconfigFile?.name}
               </p>
             </div>

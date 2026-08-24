@@ -1,11 +1,5 @@
-import { memo } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
-import {
-  MdPublic as Globe,
-  MdCompareArrows as ArrowRightLeft,
-  MdDelete as Trash2,
-} from "react-icons/md";
-import { useTopologyStore } from "../../store/useTopologyStore";
+import { Handle, Position } from '@xyflow/react';
+import { MdCompareArrows as Icon } from 'react-icons/md';
 
 export interface K8sServiceData extends Record<string, unknown> {
   name: string;
@@ -14,105 +8,24 @@ export interface K8sServiceData extends Record<string, unknown> {
   targetPort?: string;
 }
 
-export const K8sServiceNode = memo(({ id, data, selected }: NodeProps & { data: K8sServiceData }) => {
-  const deleteNode = useTopologyStore((s) => s.deleteNode);
-
-  const handleDelete = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    deleteNode(id);
-  };
-
+export function K8sServiceNode({ data }: { data: K8sServiceData }) {
   return (
-    <div
-      className={`group relative flex items-center gap-3.5 min-w-[250px] rounded-xl bg-[#141417] px-4 py-3 border text-left shadow-lg transition-all ${
-        selected
-          ? "border-blue-500 ring-1 ring-blue-500 shadow-blue-500/10"
-          : "border-neutral-800"
-      }`}
-    >
-      {/* 4-Sided Handles: TOP */}
-      <Handle
-        type="target"
-        position={Position.Top}
-        id="top-target"
-        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
-      />
-      <Handle
-        type="source"
-        position={Position.Top}
-        id="top-source"
-        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
-      />
+    <div className="h-11 w-[240px] border border-zinc-800 bg-[#141417] flex items-center justify-between px-3 rounded-md select-none group hover:border-zinc-700 transition-colors">
+      <Handle type="target" position={Position.Left} id="left-target" isConnectable={false} className="!w-1.5 !h-1.5 !bg-zinc-700 !border-zinc-900 rounded-full" />
+      <Handle type="source" position={Position.Right} id="right-source" isConnectable={false} className="!w-1.5 !h-1.5 !bg-zinc-700 !border-zinc-900 rounded-full" />
 
-      {/* 4-Sided Handles: LEFT */}
-      <Handle
-        type="target"
-        position={Position.Left}
-        id="left-target"
-        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
-      />
-      <Handle
-        type="source"
-        position={Position.Left}
-        id="left-source"
-        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
-      />
-
-      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0">
-        {data.type === "Ingress" || data.type === "LoadBalancer" ? (
-          <Globe className="h-5 w-5" />
-        ) : (
-          <ArrowRightLeft className="h-5 w-5" />
-        )}
+      <div className="flex items-center gap-2 min-w-0">
+        <Icon size={16} className="text-zinc-400 shrink-0" />
+        <span className="text-xs font-mono font-medium truncate text-zinc-300 max-w-[140px]">
+          {data.name}
+        </span>
       </div>
 
-      <div className="flex flex-col min-w-0 flex-1">
-        <div className="flex items-center gap-2 justify-between">
-          <span className="text-base font-semibold text-neutral-100 truncate" title={data.name}>
-            {data.name}
-          </span>
-          <span className="text-xs font-mono text-blue-400 font-bold ml-1">{data.port}</span>
-        </div>
-        <span className="text-xs text-neutral-400 font-mono">{data.type}</span>
-      </div>
-
-      <button
-        onClick={handleDelete}
-        title="Delete Service"
-        className="p-1 rounded-full text-neutral-400 hover:text-red-400 hover:bg-neutral-800 transition-colors ml-1"
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </button>
-
-      {/* 4-Sided Handles: RIGHT */}
-      <Handle
-        type="target"
-        position={Position.Right}
-        id="right-target"
-        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
-      />
-      <Handle
-        type="source"
-        position={Position.Right}
-        id="right-source"
-        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
-      />
-
-      {/* 4-Sided Handles: BOTTOM */}
-      <Handle
-        type="target"
-        position={Position.Bottom}
-        id="bottom-target"
-        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
-      />
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        id="bottom-source"
-        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
-      />
+      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-blue-500/20 bg-blue-500/10 text-blue-400 shrink-0">
+        {data.port}
+      </span>
     </div>
   );
-});
+}
 
 K8sServiceNode.displayName = "K8sServiceNode";
