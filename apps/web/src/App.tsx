@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 
 import { TopNavbar } from "./components/layout/TopNavbar";
@@ -27,6 +27,20 @@ function AppContent() {
   const selectedNode = useTopologyStore((s) => s.selectedNode);
   const setSelectedNode = useTopologyStore((s) => s.setSelectedNode);
   const clearSelectedNode = useTopologyStore((s) => s.clearSelectedNode);
+  const pods = useTopologyStore((s) => s.pods);
+  const notifications = useTopologyStore((s) => s.notifications);
+
+  const activeIncidentsCount = useMemo(() => {
+    const unhealthyPodsCount = pods.filter(
+      (p) => p.status === "Failed" || (p.restarts && p.restarts > 0)
+    ).length;
+
+    const unreadAlertsCount = notifications.filter(
+      (n) => !n.read && (n.severity === "CRITICAL" || n.severity === "WARNING")
+    ).length;
+
+    return unhealthyPodsCount + unreadAlertsCount;
+  }, [pods, notifications]);
 
   const [activeTab, setActiveTab] = useState<NavTab>("topology");
   const [showConnectWizard, setShowConnectWizard] = useState(false);
@@ -66,7 +80,7 @@ function AppContent() {
         clusters={clusters}
         onSelectCluster={(cluster) => setActiveCluster(cluster)}
         onOpenConnectModal={() => setShowConnectWizard(true)}
-        activeIncidentsCount={2}
+        activeIncidentsCount={activeIncidentsCount}
         wsLatencyMs={wsLatencyMs}
         wsStatus={wsStatus}
       />
@@ -75,6 +89,7 @@ function AppContent() {
       <LeftSidebar
         activeTab={activeTab}
         onTabChange={(tab) => setActiveTab(tab)}
+        activeIncidentsCount={activeIncidentsCount}
       />
 
       {/* Region 3: Center Canvas & Auxiliary Views */}

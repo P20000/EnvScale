@@ -13,9 +13,10 @@ export type NavTab = "topology" | "incidents" | "metrics" | "leaderboard" | "set
 interface LeftSidebarProps {
   activeTab: NavTab;
   onTabChange: (tab: NavTab) => void;
+  activeIncidentsCount?: number;
 }
 
-export function LeftSidebar({ activeTab, onTabChange }: LeftSidebarProps) {
+export function LeftSidebar({ activeTab, onTabChange, activeIncidentsCount }: LeftSidebarProps) {
   const navItems = [
     {
       id: "topology" as NavTab,
@@ -26,7 +27,7 @@ export function LeftSidebar({ activeTab, onTabChange }: LeftSidebarProps) {
       id: "incidents" as NavTab,
       label: "Incidents & Alerts",
       iconPath: mdiAlertOctagon,
-      badge: 2,
+      badge: activeIncidentsCount && activeIncidentsCount > 0 ? activeIncidentsCount : undefined,
     },
     {
       id: "metrics" as NavTab,

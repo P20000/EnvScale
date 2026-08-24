@@ -35,7 +35,7 @@ export function SettingsView() {
   };
 
   return (
-    <div className="w-full max-w-6xl px-6 lg:px-8 pt-24 pb-12 mx-auto space-y-6 bg-background">
+    <div className="h-screen w-full max-w-6xl pt-20 pl-20 pr-6 pb-14 mx-auto space-y-6 bg-background overflow-y-auto">
       <div>
         <h1 className="text-xl font-bold text-neutral-100 flex items-center gap-2 font-heading">
           <Icon path={mdiCog} size={0.83} className="text-neutral-300" />

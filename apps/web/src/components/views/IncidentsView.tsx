@@ -171,7 +171,7 @@ export function IncidentsView() {
   };
 
   return (
-    <div className="h-full w-full flex flex-col p-6 space-y-4 bg-background overflow-hidden">
+    <div className="h-screen w-full flex flex-col pt-20 pl-20 pr-6 pb-14 space-y-4 bg-background overflow-y-auto">
       {/* Top Header & Navigation Bar */}
       <div className="flex items-center justify-between shrink-0">
         <div>

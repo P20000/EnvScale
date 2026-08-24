@@ -8,7 +8,7 @@ import {
 
 export function MetricsView() {
   return (
-    <div className="w-full max-w-7xl px-6 lg:px-8 pt-24 pb-12 mx-auto space-y-8 bg-background">
+    <div className="h-screen w-full max-w-7xl pt-20 pl-20 pr-6 pb-14 mx-auto space-y-8 bg-background overflow-y-auto">
       <div>
         <h1 className="text-2xl font-bold text-neutral-100 flex items-center gap-2.5 font-heading">
           <Icon path={mdiChartLine} size={1} className="text-blue-500" />

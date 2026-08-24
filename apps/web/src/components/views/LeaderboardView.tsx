@@ -65,7 +65,7 @@ export function LeaderboardView() {
   const sortedClusters = [...clusterMetrics].sort((a, b) => b.healthScore - a.healthScore);
 
   return (
-    <div className="w-full max-w-7xl px-6 lg:px-8 pt-24 pb-12 mx-auto space-y-6 bg-background">
+    <div className="h-screen w-full max-w-7xl pt-20 pl-20 pr-6 pb-14 mx-auto space-y-6 bg-background overflow-y-auto">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
