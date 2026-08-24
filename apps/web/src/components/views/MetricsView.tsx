@@ -22,8 +22,8 @@ function TelemetryAreaChart({
   const maxVal = Math.max(...data, 100);
   const pointCoords = data.map((val, idx) => {
     const x = (idx / (data.length - 1)) * 100;
-    const y = 100 - (val / maxVal) * 85;
-    return { x: x.toFixed(2), y: y.toFixed(2) };
+    const y = 100 - (val / maxVal) * 80 - 5; // keep within 5% to 85% range
+    return { x: x.toFixed(2), y: y.toFixed(2), rawVal: val };
   });
 
   const linePathString = pointCoords.reduce((acc, p, idx) => {
@@ -32,8 +32,8 @@ function TelemetryAreaChart({
 
   const areaPathString = `${linePathString} L 100 100 L 0 100 Z`;
 
-  const strokeClass = color === "blue" ? "stroke-blue-500" : "stroke-emerald-500";
-  const fillClass = color === "blue" ? "fill-blue-500/5" : "fill-emerald-500/5";
+  const strokeHex = color === "blue" ? "#3b82f6" : "#10b981";
+  const areaFillHex = color === "blue" ? "rgba(59, 130, 246, 0.08)" : "rgba(16, 185, 129, 0.08)";
 
   return (
     <div className="relative h-56 w-full rounded-xl bg-background p-4 border border-neutral-800 flex flex-col justify-between overflow-hidden">
@@ -50,42 +50,57 @@ function TelemetryAreaChart({
         </div>
       </div>
 
-      {/* SVG Line & Flat Micro-Opacity Area Fill */}
-      <div className="relative flex-1 w-full pt-2 pl-7 z-10">
-        <svg className="w-full h-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
-          {/* 1. The Area Fill Background */}
-          <path d={areaPathString} className={fillClass} stroke="none" />
-
-          {/* 2. The Explicit Trend Line */}
-          <path
-            d={linePathString}
-            fill="none"
-            className={strokeClass}
-            strokeWidth={1.5}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </div>
-
-      {/* Interactive Bar Overlay with Tooltips */}
-      <div className="absolute left-11 right-4 top-4 bottom-8 flex items-end gap-1.5 z-20">
+      {/* Histogram Bar Overlay */}
+      <div className="absolute left-11 right-4 top-4 bottom-8 flex items-end gap-1.5 z-10">
         {data.map((val, i) => (
           <div key={i} className="flex-1 h-full flex flex-col justify-end group relative cursor-pointer">
             {/* Tooltip on hover */}
-            <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:block z-30 rounded bg-[#18181c] border border-neutral-700 px-2 py-1 text-[10px] font-mono text-neutral-100 shadow-xl whitespace-nowrap pointer-events-none font-heading">
+            <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:block z-40 rounded bg-[#18181c] border border-neutral-700 px-2 py-1 text-[10px] font-mono text-neutral-100 shadow-xl whitespace-nowrap pointer-events-none font-heading">
               {val.toFixed(1)}{unit}
             </div>
             <div
               className={`w-full rounded-t-xs transition-all duration-300 ${
                 color === "blue"
-                  ? "bg-blue-500/10 group-hover:bg-blue-500/40"
-                  : "bg-emerald-500/10 group-hover:bg-emerald-500/40"
+                  ? "bg-blue-500/15 group-hover:bg-blue-500/40"
+                  : "bg-emerald-500/15 group-hover:bg-emerald-500/40"
               }`}
-              style={{ height: `${Math.max((val / maxVal) * 85, 4)}%` }}
+              style={{ height: `${Math.max((val / maxVal) * 80, 4)}%` }}
             />
           </div>
         ))}
+      </div>
+
+      {/* Prominent Floating SVG Line Chart Layer (Rendered ON TOP of bars) */}
+      <div className="absolute left-11 right-4 top-4 bottom-8 z-30 pointer-events-none">
+        <svg className="w-full h-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
+          {/* 1. Muted Area Fill */}
+          <path d={areaPathString} fill={areaFillHex} stroke="none" />
+
+          {/* 2. Crisp Vibrant Trend Line */}
+          <path
+            d={linePathString}
+            fill="none"
+            stroke={strokeHex}
+            strokeWidth="2.5"
+            vectorEffect="non-scaling-stroke"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+
+          {/* 3. Highlight Vertices */}
+          {pointCoords.map((p, i) => (
+            <circle
+              key={i}
+              cx={`${p.x}%`}
+              cy={`${p.y}%`}
+              r="2.5"
+              fill={strokeHex}
+              stroke="#09090b"
+              strokeWidth="1"
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+        </svg>
       </div>
 
       {/* X-axis Timeline Labels */}
