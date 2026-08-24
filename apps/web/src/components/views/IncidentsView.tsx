@@ -16,6 +16,7 @@ import { AlertRuleList } from "../alerts/AlertRuleList";
 import { AlertRuleModal } from "../alerts/AlertRuleModal";
 import { cn } from "../../lib/utils";
 import type { AlertRule } from "../../types/alerts";
+import { EmptyState } from "../ui/empty-state";
 
 interface Incident {
   id: string;
@@ -306,13 +307,29 @@ export function IncidentsView() {
 
             {/* Scrollable list area ONLY */}
             {filteredIncidents.length === 0 ? (
-              <div className="p-12 text-center text-xs text-neutral-400 font-mono flex-1 flex flex-col items-center justify-center space-y-3">
-                <ShieldCheck className="h-9 w-9 text-emerald-500/80 mb-1" />
-                <span className="text-neutral-200 font-semibold text-sm">No Active Incidents Detected</span>
-                <span className="text-neutral-500 max-w-sm text-center">
-                  All monitored pods and workload resources in the cluster are healthy and operating normally.
-                </span>
-              </div>
+              <EmptyState
+                className="flex-1"
+                icon={<ShieldCheck className="text-emerald-500/80" />}
+                title={incidents.length === 0 ? "No Active Incidents Detected" : "No Matching Incidents"}
+                description={
+                  incidents.length === 0
+                    ? "All monitored pods and workload resources in the cluster are healthy and operating normally."
+                    : "No incidents match the current filters. Adjust the filters to see more results."
+                }
+                action={
+                  incidents.length !== 0 &&
+                  (severityFilter !== "ALL" || statusFilter !== "ALL" || clusterFilter !== "ALL")
+                    ? {
+                        label: "Reset filters",
+                        onClick: () => {
+                          setSeverityFilter("ALL");
+                          setStatusFilter("ALL");
+                          setClusterFilter("ALL");
+                        },
+                      }
+                    : undefined
+                }
+              />
             ) : (
               <div className="divide-y divide-neutral-800/60 flex-1 min-h-0 overflow-y-auto">
                 {filteredIncidents.map((item) => (
