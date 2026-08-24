@@ -1,5 +1,5 @@
 import { useState, type ChangeEvent, type DragEvent } from "react";
-import Icon from "@mdi/react";
+import { Icon } from "../ui/Icon";
 import { mdiCheckCircle, mdiClose, mdiUpload } from "@mdi/js";
 import { Button } from "../ui/button";
 import { apiConnectCluster } from "../../config/api";

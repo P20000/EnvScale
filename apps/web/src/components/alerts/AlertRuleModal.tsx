@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import Icon from "@mdi/react";
+import { Icon } from "../ui/Icon";
 import {
   mdiClose,
   mdiAlertOctagon,

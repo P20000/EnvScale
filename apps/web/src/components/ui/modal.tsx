@@ -1,5 +1,5 @@
 import * as React from "react"
-import Icon from "@mdi/react"
+import { Icon } from "./Icon"
 import { mdiClose } from "@mdi/js"
 
 import { cn } from "@/lib/utils"

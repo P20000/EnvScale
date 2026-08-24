@@ -1,4 +1,4 @@
-import Icon from "@mdi/react";
+import { Icon } from "../ui/Icon";
 import {
   mdiCpu64Bit,
   mdiMemory,
