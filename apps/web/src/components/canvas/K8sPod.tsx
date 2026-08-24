@@ -4,7 +4,7 @@ export interface K8sPodData extends Record<string, unknown> {
   name: string;
   namespace: string;
   nodeName?: string;
-  status: "Running" | "CrashLoopBackOff" | "Pending" | "ContainerCreating" | "Terminating" | "Terminated" | "Failed" | "Unknown";
+  status: "Running" | "CrashLoopBackOff" | "Pending" | "ContainerCreating" | "Terminating" | "Terminated" | "Failed" | "Unknown" | "Succeeded" | "Completed";
   restarts: number;
   ip?: string;
   cpuUsage?: string;
