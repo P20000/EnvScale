@@ -54,6 +54,20 @@ export const extractPods = (nodes: Node[]): K8sPodData[] =>
     .filter((n) => n.type === "k8sPod" && Boolean(n.data))
     .map((n) => n.data as K8sPodData);
 
+export const getPodPrefix = (name: string) => {
+  let prefix = name;
+  if (name.startsWith("db-audit-cronjob")) return "db-audit-cronjob";
+  if (name.startsWith("worker-pool")) return "worker-pool";
+  if (name.startsWith("todo-backend")) return "todo-backend";
+  if (name.startsWith("todo-frontend")) return "todo-frontend";
+  if (name.includes("-")) {
+    prefix = name
+      .replace(/-(?:[a-f0-9]{8,10}|\d{8,10})-[a-z0-9]{4,6}$/i, "")
+      .replace(/-[a-z0-9]{4,6}$/i, "");
+  }
+  return prefix;
+};
+
 export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[]): Edge[] => {
   const baseEdges = currentEdges.filter((e) => !e.id.startsWith("e-sys-"));
   const sysEdges: Edge[] = [];
@@ -62,7 +76,7 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[]): Edge[
   const services = nodes.filter((n) => n.type === "k8sService");
   const ingresses = nodes.filter((n) => n.type === "k8sIngress");
 
-  // 1. Ingress -> Service (Grouped Multi-Path / Multi-Port edge labels)
+  // 1. Ingress -> Service
   ingresses.forEach((ing) => {
     const rules = (ing.data as K8sIngressData).rules as IngressRuleData[];
     if (rules && rules.length > 0) {
@@ -92,7 +106,7 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[]): Edge[
           id: `e-sys-${ing.id}-${svcId}`,
           source: ing.id,
           target: svcId,
-          type: "bezier",
+          type: "argo",
           animated: true,
           label: labelText,
           labelStyle: { fill: "#c4b5fd", fontSize: 9.5, fontWeight: 600, fontFamily: "monospace" },
@@ -107,11 +121,12 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[]): Edge[
     }
   });
 
-  // 2. Service -> Pod (Traffic routing based on label selectors)
+  // 2. Service -> Group (Parent)
   services.forEach((svc) => {
     const svcData = svc.data as K8sServiceData;
     const svcSelector = svcData.selector;
     if (svcSelector && Object.keys(svcSelector).length > 0) {
+      const targetedGroups = new Set<string>();
       pods.forEach((pod) => {
         const podData = pod.data as K8sPodData;
         const labels = podData.labels as Record<string, string>;
@@ -120,25 +135,30 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[]): Edge[
             (key) => labels[key] === svcSelector[key as keyof typeof svcSelector]
           );
           if (match) {
-            sysEdges.push({
-              id: `e-sys-${svc.id}-${pod.id}`,
-              source: svc.id,
-              target: pod.id,
-              type: "bezier",
-              animated: true,
-              sourceHandle: "right-source",
-              targetHandle: "left-target",
-              style: { stroke: "#0ea5e9", strokeWidth: 2 },
-            });
+            targetedGroups.add(`group-${getPodPrefix(podData.name || pod.id)}`);
           }
         }
+      });
+      targetedGroups.forEach((groupId) => {
+        sysEdges.push({
+          id: `e-sys-${svc.id}-${groupId}`,
+          source: svc.id,
+          target: groupId,
+          type: "argo",
+          animated: true,
+          sourceHandle: "right-source",
+          targetHandle: "left-target",
+          style: { stroke: "#0ea5e9", strokeWidth: 2 },
+        });
       });
     }
   });
 
-  // 3. Pod -> Service (Strict container env var matching for internal TCP calls)
+  // 3. Group -> Service (Internal TCP)
+  const groupTargetedServices = new Set<string>();
   pods.forEach((pod) => {
     const podData = pod.data as K8sPodData;
+    const groupId = `group-${getPodPrefix(podData.name || pod.id)}`;
     const containers: Array<{ env?: Array<{ name?: string; value?: string }> }> = (podData.containers as Array<{ env?: Array<{ name?: string; value?: string }> }>) || [];
     const envVars: Array<{ name?: string; value?: string }> = containers.flatMap((c) => c.env || []);
 
@@ -147,11 +167,6 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[]): Edge[
       const svcName = svcData.name;
       if (!svcName) return;
 
-      // Skip if pod is already targeted by this service
-      const isTargetedByService = sysEdges.some((e) => e.source === svc.id && e.target === pod.id);
-      if (isTargetedByService) return;
-
-      // Strict match: exact service name or FQDN prefix (e.g. redis-headless-service.testing-todo.svc)
       const hasExactEnvMatch = envVars.some((envItem: { name?: string; value?: string }) => {
         if (!envItem.value) return false;
         const val = envItem.value.trim();
@@ -169,21 +184,25 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[]): Edge[
           (pod.id && (pod.id.includes("backend") || pod.id.includes("api"))));
 
       if (hasExactEnvMatch || isBackendRedisMatch) {
-        sysEdges.push({
-          id: `e-sys-dep-${pod.id}-${svc.id}`,
-          source: pod.id,
-          target: svc.id,
-          type: "bezier",
-          animated: true,
-          label: "TCP/Internal",
-          labelStyle: { fill: "#60a5fa", fontSize: 9, fontWeight: 500, fontFamily: "monospace" },
-          labelBgStyle: { fill: "#09090b", stroke: "#3b82f6", strokeWidth: 1, fillOpacity: 0.8 },
-          labelBgPadding: [4, 2],
-          labelBgBorderRadius: 4,
-          sourceHandle: "right-source",
-          targetHandle: "left-target",
-          style: { stroke: "#3b82f6", strokeWidth: 1.5, strokeDasharray: "4,4" },
-        });
+        const edgeId = `e-sys-dep-${groupId}-${svc.id}`;
+        if (!groupTargetedServices.has(edgeId)) {
+          groupTargetedServices.add(edgeId);
+          sysEdges.push({
+            id: edgeId,
+            source: groupId,
+            target: svc.id,
+            type: "argo",
+            animated: true,
+            label: "TCP/Internal",
+            labelStyle: { fill: "#60a5fa", fontSize: 9, fontWeight: 500, fontFamily: "monospace" },
+            labelBgStyle: { fill: "#09090b", stroke: "#3b82f6", strokeWidth: 1, fillOpacity: 0.8 },
+            labelBgPadding: [4, 2],
+            labelBgBorderRadius: 4,
+            sourceHandle: "right-source",
+            targetHandle: "left-target",
+            style: { stroke: "#3b82f6", strokeWidth: 1.5, strokeDasharray: "4,4" },
+          });
+        }
       }
     });
   });
@@ -212,9 +231,7 @@ export const syncSelectedNode = (nodes: Node[], currentSelected: SelectedTarget)
 };
 
 export const aggregateNodesWithWorkloads = (
-  nodes: Node[],
-  expandedWorkloads: Record<string, boolean>,
-  onToggleExpand: (name: string) => void
+  nodes: Node[]
 ): Node[] => {
   const podNodes = nodes.filter((n) => n.type === "k8sPod");
   const nonPodNodes = nodes.filter((n) => n.type !== "k8sPod");
@@ -224,61 +241,44 @@ export const aggregateNodesWithWorkloads = (
   podNodes.forEach((pod) => {
     const podData = pod.data as K8sPodData;
     const name = podData?.name || pod.id;
-
-    let prefix = name;
-    if (name.startsWith("db-audit-cronjob")) {
-      prefix = "db-audit-cronjob";
-    } else if (name.startsWith("worker-pool")) {
-      prefix = "worker-pool";
-    } else if (name.startsWith("todo-backend")) {
-      prefix = "todo-backend";
-    } else if (name.startsWith("todo-frontend")) {
-      prefix = "todo-frontend";
-    } else if (name.includes("-")) {
-      prefix = name
-        .replace(/-(?:[a-f0-9]{8,10}|\d{8,10})-[a-z0-9]{4,6}$/i, "")
-        .replace(/-[a-z0-9]{4,6}$/i, "");
-    }
+    const prefix = getPodPrefix(name);
 
     const existing = podsByPrefix.get(prefix) || [];
     existing.push(pod);
     podsByPrefix.set(prefix, existing);
   });
 
-  const processedPodNodes: Node[] = [];
+  const processedNodes: Node[] = [];
 
   podsByPrefix.forEach((groupPods, prefix) => {
-    // High-replica pod aggregation threshold: >= 3 pods
-    if (groupPods.length >= 3) {
-      const isExpanded = Boolean(expandedWorkloads[prefix]);
-      const readyCount = groupPods.filter(
-        (p) => (p.data as K8sPodData)?.status === "Running"
-      ).length;
-      const firstPodData = (groupPods[0].data as K8sPodData) || {};
-      const podDataList = groupPods.map((p) => p.data as K8sPodData);
+    const groupId = `group-${prefix}`;
+    
+    // Generate parent container
+    processedNodes.push({
+      id: groupId,
+      type: "k8sGroup",
+      position: { x: 0, y: 0 }, // Dagre handles macroscopic positioning
+      data: { name: prefix },
+    });
 
-      processedPodNodes.push({
-        id: `workload-${prefix}`,
-        type: "k8sWorkload",
-        position: groupPods[0].position || { x: 50, y: 300 },
-        data: {
-          name: prefix,
-          namespace: firstPodData.namespace || "testing-todo",
-          replicas: groupPods.length,
-          readyReplicas: readyCount,
-          workloadType: prefix.includes("cronjob") || prefix.includes("audit") ? "JobGroup" : "WorkloadGroup",
-          isAggregated: true,
-          isExpanded,
-          pods: podDataList,
-          onToggleExpand,
-        },
+    // Attach children to parent
+    groupPods.forEach((pod, index) => {
+      // Grid math: 2 columns, width 208px, padding 16px (p-4), gap 10px (gap-2.5), header offset 40px
+      const col = index % 2;
+      const row = Math.floor(index / 2);
+      const x = 16 + col * (208 + 10);
+      const y = 40 + row * (32 + 10);
+
+      processedNodes.push({
+        ...pod,
+        parentId: groupId,
+        extent: "parent",
+        position: { x, y },
       });
-    } else {
-      processedPodNodes.push(...groupPods);
-    }
+    });
   });
 
-  return [...nonPodNodes, ...processedPodNodes];
+  return [...nonPodNodes, ...processedNodes];
 };
 
 export interface HistoryAction {
@@ -1011,14 +1011,12 @@ export const useTopologyStore = create<TopologyState>()(
       },
 
       applyDagreLayout: (direction = "TB") => {
-        const { rawNodes, nodes, edges, expandedWorkloads, toggleWorkloadExpanded } = get();
+        const { rawNodes, nodes, edges } = get();
         const baseNodes = rawNodes && rawNodes.length > 0 ? rawNodes : nodes;
         if (baseNodes.length === 0) return;
 
         const aggregatedNodes = aggregateNodesWithWorkloads(
-          baseNodes,
-          expandedWorkloads,
-          toggleWorkloadExpanded
+          baseNodes
         );
 
         const dynamicEdges = generateDynamicEdges(aggregatedNodes, edges);

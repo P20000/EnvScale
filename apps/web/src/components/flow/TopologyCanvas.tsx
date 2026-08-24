@@ -15,7 +15,8 @@ import {
   mdiCrosshairsGps,
 } from "@mdi/js";
 
-import { K8sPodNode, K8sWorkerNode, K8sServiceNode, K8sWorkloadNode, K8sIngressNode } from "../canvas";
+import { K8sPodNode, K8sWorkerNode, K8sServiceNode, K8sWorkloadNode, K8sIngressNode, K8sGroupNode } from "../canvas";
+import { ArgoEdge } from "./ArgoEdge";
 import type { K8sPodData } from "../canvas/K8sPod";
 import type { K8sNodeData } from "../canvas/K8sNode";
 import type { K8sServiceData } from "../canvas/K8sService";
@@ -34,6 +35,11 @@ const nodeTypes = {
   k8sStatefulSet: K8sWorkloadNode,
   k8sWorkload: K8sWorkloadNode,
   k8sIngress: K8sIngressNode,
+  k8sGroup: K8sGroupNode,
+};
+
+const edgeTypes = {
+  argo: ArgoEdge,
 };
 
 interface TopologyCanvasProps {
@@ -124,6 +130,7 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
@@ -136,7 +143,7 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
         defaultEdgeOptions={{
-          type: "bezier",
+          type: "argo",
           style: { stroke: "#3f3f46", strokeWidth: 2 },
           markerEnd: {
             type: MarkerType.ArrowClosed,

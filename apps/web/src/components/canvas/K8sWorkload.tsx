@@ -1,13 +1,5 @@
-import { memo } from "react";
-import { Handle, Position } from "@xyflow/react";
-import {
-  MdContentCopy as Copy,
-  MdLayers as Layers,
-  MdStorage as Database,
-  MdUnfoldMore as ExpandIcon,
-  MdUnfoldLess as CollapseIcon,
-} from "react-icons/md";
-
+import { Handle, Position } from '@xyflow/react';
+import { MdLayers as Icon } from 'react-icons/md';
 import type { K8sPodData } from "./K8sPod";
 
 export interface K8sWorkloadData extends Record<string, unknown> {
@@ -22,211 +14,31 @@ export interface K8sWorkloadData extends Record<string, unknown> {
   onToggleExpand?: (workloadName: string) => void;
 }
 
-export const K8sWorkloadNode = memo(({ data }: { data: K8sWorkloadData }) => {
-  const isHealthy = data.readyReplicas >= data.replicas;
-  const isWarning = data.readyReplicas > 0 && data.readyReplicas < data.replicas;
-  const isError = data.readyReplicas === 0 && data.replicas > 0;
-
-  const getStatusDot = () => {
-    if (isError) return "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]";
-    if (isWarning) return "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]";
-    return "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]";
-  };
-
-  const getIcon = () => {
-    if (data.workloadType === "StatefulSet") return <Database className="h-4.5 w-4.5" />;
-    if (data.workloadType === "Deployment") return <Layers className="h-4.5 w-4.5" />;
-    return <Copy className="h-4.5 w-4.5" />; // ReplicaSet
-  };
-
-  const handleToggle = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    if (data.onToggleExpand) {
-      data.onToggleExpand(data.name);
-    }
-  };
+export function K8sWorkloadNode({ data }: { data: K8sWorkloadData }) {
+  const ready = data.readyReplicas || 0;
+  const total = data.replicas || 0;
+  const isHealthy = ready === total && total > 0;
 
   return (
-    <div
-      className={`group relative rounded-xl bg-[#141417] p-3.5 text-white border text-left shadow-xl transition-all duration-300 ${
-        data.isExpanded ? "w-[340px]" : "w-[320px] min-h-[115px]"
-      } ${
-        isError
-          ? "border-red-500/50 shadow-red-500/10"
-          : isWarning
-          ? "border-amber-500/50 shadow-amber-500/10"
-          : "border-neutral-800/80 hover:border-blue-500 hover:ring-1 hover:ring-blue-500 hover:shadow-blue-500/10"
-      }`}
-    >
-      {/* 4-Sided Handles: TOP */}
-      <Handle
-        type="target"
-        position={Position.Top}
-        id="top-target"
-        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
-      />
-      <Handle
-        type="source"
-        position={Position.Top}
-        id="top-source"
-        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
-      />
+    <div className="h-11 w-[240px] border border-zinc-800 bg-[#141417] flex items-center justify-between px-3 rounded-md select-none group hover:border-zinc-700 transition-colors">
+      <Handle type="target" position={Position.Left} id="left-target" isConnectable={false} className="!w-1.5 !h-1.5 !bg-zinc-700 !border-zinc-900 rounded-full" />
+      <Handle type="source" position={Position.Right} id="right-source" isConnectable={false} className="!w-1.5 !h-1.5 !bg-zinc-700 !border-zinc-900 rounded-full" />
 
-      {/* 4-Sided Handles: LEFT */}
-      <Handle
-        type="target"
-        position={Position.Left}
-        id="left-target"
-        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
-      />
-      <Handle
-        type="source"
-        position={Position.Left}
-        id="left-source"
-        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
-      />
-
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-neutral-800/80 pb-2.5">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-neutral-800 text-neutral-300 shrink-0 border border-neutral-700/50">
-            {getIcon()}
-          </div>
-          <div className="min-w-0 flex-1">
-            <span className="text-[13px] leading-tight font-semibold text-neutral-100 block truncate" title={data.name}>
-              {data.name}
-            </span>
-            <span className="text-[10px] text-neutral-400 font-medium uppercase tracking-wider block">
-              {data.workloadType}
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-1.5 shrink-0 pl-2">
-          <span className={`h-2.5 w-2.5 rounded-full ${getStatusDot()}`} />
-        </div>
-      </div>
-
-      {/* Body: Replicas & Namespace */}
-      <div className="mt-2.5 flex items-center justify-between gap-2">
-        <span className="rounded bg-neutral-800/80 px-1.5 py-0.5 text-[10px] font-mono text-neutral-400 border border-neutral-700/50 truncate shrink" title={data.namespace}>
-          {data.namespace}
-        </span>
-        <span
-          className={`rounded-full px-2 py-0.5 text-xs font-bold ${
-            isHealthy
-              ? "bg-emerald-500/10 text-emerald-400"
-              : isError
-              ? "bg-red-500/10 text-red-400"
-              : "bg-amber-500/10 text-amber-400"
-          }`}
-        >
-          {data.readyReplicas} / {data.replicas} Pods
+      <div className="flex items-center gap-2 min-w-0">
+        <Icon size={16} className="text-zinc-400 shrink-0" />
+        <span className="text-xs font-mono font-medium truncate text-zinc-300 max-w-[140px]">
+          {data.name}
         </span>
       </div>
 
-      {/* Embedded Pod Accordion List */}
-      {data.isExpanded && data.pods && data.pods.length > 0 && (
-        <div className="mt-3 space-y-1.5 border-t border-neutral-800/80 pt-2.5">
-          <div className="flex items-center justify-between px-1 text-[10px] font-semibold tracking-wider text-neutral-400 uppercase">
-            <span>Constituent Pod</span>
-            <span>Metrics / Restarts</span>
-          </div>
-          <div className="max-h-[280px] overflow-y-auto space-y-1.5 pr-0.5 custom-scrollbar">
-            {data.pods.map((pod, idx) => {
-              const isRunning = pod.status === "Running";
-              const isCrash = pod.status === "CrashLoopBackOff";
-              const shortName = pod.name.length > 22
-                ? "..." + pod.name.slice(-14)
-                : pod.name;
-
-              return (
-                <div
-                  key={pod.name || idx}
-                  className="flex items-center justify-between rounded-lg bg-neutral-950/80 px-2.5 py-1.5 text-xs border border-neutral-800/80 hover:border-blue-500/50 transition-colors"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span
-                      className={`h-2 w-2 rounded-full shrink-0 ${
-                        isRunning
-                          ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]"
-                          : isCrash
-                          ? "bg-red-500 animate-pulse shadow-[0_0_6px_rgba(239,68,68,0.8)]"
-                          : "bg-amber-400"
-                      }`}
-                    />
-                    <span className="font-mono font-medium text-neutral-200 truncate text-[11px]" title={pod.name}>
-                      {shortName}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="rounded bg-neutral-900 px-1.5 py-0.5 text-[10px] font-mono text-neutral-300 border border-neutral-800">
-                      {pod.cpuUsage || "32m"} | {pod.memoryUsage || "120MiB"}
-                    </span>
-                    {pod.restarts > 0 && (
-                      <span className="rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] font-bold text-red-400 border border-red-500/20">
-                        {pod.restarts}r
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Expand / Collapse Toggle Button */}
-      {data.isAggregated && (
-        <button
-          onClick={handleToggle}
-          className="nodrag nopan mt-2.5 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-neutral-800/60 py-1 text-xs font-medium text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors border border-neutral-700/40"
-        >
-          {data.isExpanded ? (
-            <>
-              <CollapseIcon className="h-3.5 w-3.5 text-neutral-400" />
-              <span>Collapse Pods</span>
-            </>
-          ) : (
-            <>
-              <ExpandIcon className="h-3.5 w-3.5 text-blue-400" />
-              <span>Expand ({data.replicas} Pods)</span>
-            </>
-          )}
-        </button>
-      )}
-
-      {/* 4-Sided Handles: RIGHT */}
-      <Handle
-        type="target"
-        position={Position.Right}
-        id="right-target"
-        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
-      />
-      <Handle
-        type="source"
-        position={Position.Right}
-        id="right-source"
-        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
-      />
-
-      {/* 4-Sided Handles: BOTTOM */}
-      <Handle
-        type="target"
-        position={Position.Bottom}
-        id="bottom-target"
-        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
-      />
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        id="bottom-source"
-        className="!w-0 !h-0 !border-none !bg-transparent !opacity-0 !pointer-events-none"
-      />
+      {/* High-Density Structural Replica Token Counter */}
+      <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+        isHealthy 
+          ? 'text-emerald-400 border-emerald-500/10 bg-emerald-500/5' 
+          : 'text-amber-400 border-amber-500/10 bg-amber-500/5'
+      }`}>
+        {ready}/{total}
+      </span>
     </div>
   );
-});
-
-K8sWorkloadNode.displayName = "K8sWorkloadNode";
+}

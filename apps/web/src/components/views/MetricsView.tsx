@@ -200,7 +200,7 @@ export function MetricsView() {
 
     return pods
       .map((pod) => {
-        const hash = pod.name.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
+        const hash = pod.name.split("").reduce((acc: number, c: string) => acc + c.charCodeAt(0), 0);
         const mcores = (hash % 350) + 80;
         const memoryMiB = (hash % 400) + 120;
         return {
