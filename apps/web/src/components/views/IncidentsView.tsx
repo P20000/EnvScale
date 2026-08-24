@@ -38,36 +38,36 @@ export function IncidentSeverityCell({ severity }: { severity: Severity }) {
       bg: "bg-red-500/5",
       text: "text-red-400",
       border: "border-red-500/20",
-      label: "Critical",
+      label: "HIGH",
     },
     warning: {
       path: mdiAlert,
       bg: "bg-amber-500/5",
       text: "text-amber-400",
       border: "border-amber-500/20",
-      label: "High",
+      label: "HIGH",
     },
     minor: {
       path: mdiInformation,
       bg: "bg-yellow-500/5",
       text: "text-yellow-400",
       border: "border-yellow-500/20",
-      label: "Minor",
+      label: "MINOR",
     },
     info: {
       path: mdiCheckCircle,
       bg: "bg-blue-500/5",
       text: "text-blue-400",
       border: "border-blue-500/20",
-      label: "Info",
+      label: "INFO",
     },
   };
 
   const current = configs[sevKey] || configs.info;
 
   return (
-    <div className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium border rounded-full ${current.bg} ${current.text} ${current.border}`}>
-      <Icon path={current.path} size={0.65} />
+    <div className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold tracking-wider uppercase border rounded-full ${current.bg} ${current.text} ${current.border}`}>
+      <Icon path={current.path} size={0.55} />
       <span>{current.label}</span>
     </div>
   );
@@ -328,10 +328,19 @@ export function IncidentsView() {
 
           {/* Incident Table Container — High Density Data Table Grid */}
           <div className="rounded-2xl border border-neutral-800 bg-surface flex-1 min-h-0 flex flex-col overflow-hidden">
-            {/* Table Header */}
-            <div className="px-4 py-2 border-b border-neutral-800 font-semibold text-xs text-neutral-300 flex items-center justify-between bg-background shrink-0 font-heading">
-              <span>Incident Audit Log</span>
-              <span className="font-mono text-[10px] text-neutral-400">Live Telemetry</span>
+            {/* Table Column Header */}
+            <div className="px-4 py-2 border-b border-neutral-800 text-[10px] font-bold tracking-wider uppercase text-neutral-400 flex items-center justify-between bg-background shrink-0 font-heading">
+              <div className="flex items-center gap-4 flex-1 min-w-0">
+                <span className="w-28 font-mono shrink-0">Incident ID</span>
+                <span className="w-20 shrink-0">Severity</span>
+                <span className="w-56 font-mono shrink-0">Target Resource</span>
+                <span className="w-48 font-mono shrink-0">Context (NS • Cluster)</span>
+                <span className="flex-1 truncate">Telemetry Context</span>
+              </div>
+              <div className="flex items-center gap-4 shrink-0">
+                <span className="w-16 text-right font-mono shrink-0">Time</span>
+                <span className="w-20 text-center shrink-0">Status</span>
+              </div>
             </div>
 
             {/* Scrollable dense list area */}
@@ -366,26 +375,31 @@ export function IncidentsView() {
                     key={item.id}
                     className="py-1.5 px-4 flex items-center justify-between gap-4 hover:bg-neutral-900/60 transition-colors text-xs"
                   >
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <span className="font-mono text-xs font-semibold text-neutral-200 shrink-0">{item.id}</span>
-                      <IncidentSeverityCell severity={item.severity} />
-                      <span className="font-mono text-xs text-neutral-300 shrink-0">{item.pod}</span>
-                      <span className="font-mono text-xs text-neutral-500 shrink-0">ns/{item.namespace}</span>
-                      <span className="font-mono text-xs text-neutral-500 truncate shrink-0 max-w-[130px]">{item.cluster}</span>
-                      <span className="text-neutral-300 text-xs truncate min-w-0 flex-1">{item.message}</span>
+                    <div className="flex items-center gap-4 flex-1 min-w-0">
+                      <span className="w-28 font-mono text-xs font-semibold text-neutral-200 shrink-0">{item.id}</span>
+                      <div className="w-20 shrink-0">
+                        <IncidentSeverityCell severity={item.severity} />
+                      </div>
+                      <span className="w-56 font-mono text-xs text-neutral-300 truncate shrink-0">{item.pod}</span>
+                      <span className="w-48 font-mono text-xs text-neutral-500 truncate shrink-0">
+                        ns/{item.namespace} • {item.cluster}
+                      </span>
+                      <span className="flex-1 text-xs text-neutral-300 truncate min-w-0">{item.message}</span>
                     </div>
 
-                    <div className="flex items-center gap-3 shrink-0">
-                      <span className="text-neutral-400 font-mono text-xs">{item.time}</span>
-                      <span
-                        className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full border ${
-                          item.status === "TRIGGERED"
-                            ? "bg-red-500/10 text-red-400 border-red-500/20"
-                            : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                        }`}
-                      >
-                        {item.status}
-                      </span>
+                    <div className="flex items-center gap-4 shrink-0">
+                      <span className="w-16 text-right text-neutral-400 font-mono text-xs">{item.time}</span>
+                      <div className="w-20 text-center">
+                        <span
+                          className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full border ${
+                            item.status === "TRIGGERED"
+                              ? "bg-red-500/10 text-red-400 border-red-500/20"
+                              : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                          }`}
+                        >
+                          {item.status}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 ))}

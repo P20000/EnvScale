@@ -47,7 +47,7 @@ export function LeftSidebar({ activeTab, onTabChange, activeIncidentsCount }: Le
   ];
 
   return (
-    <aside className="fixed left-4 top-1/2 -translate-y-1/2 z-40 flex flex-col rounded-2xl bg-surface border border-neutral-800 p-2.5 gap-2.5 items-center">
+    <aside className="fixed left-0 top-0 h-screen w-14 z-40 flex flex-col items-center py-4 bg-background border-r border-neutral-800 gap-3">
       {/* Brand Emblem Logo Header */}
       <div className="group relative flex h-10 w-10 items-center justify-center rounded-md bg-blue-500/10 border border-blue-500/20 text-blue-400 cursor-pointer hover:bg-blue-500/20 transition-all">
         <EnvScaleLogo className="h-5 w-5 text-blue-400" />
