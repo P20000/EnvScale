@@ -87,9 +87,10 @@ When generating code or proposing implementations, AI assistants MUST strictly a
 
 ---
 
-## 5. Verification & Testing Requirements
+## 5. Verification, Task Audit & Testing Requirements
 
-Before declaring any task or feature complete, the AI assistant MUST verify:
+Before declaring any task complete, assessing task completion status, or checking assigned work, ALL AI Assistants MUST perform standard monorepo verification:
+
 1. **Monorepo Build:** Run `pnpm build` to confirm zero TypeScript compilation errors.
 2. **Lint Cleanliness:** Run `pnpm lint` to ensure zero ESLint violations.
 3. **Database Consistency:** Run `drizzle-kit check` or migration scripts to verify schema sync.

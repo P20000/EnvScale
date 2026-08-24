@@ -6,7 +6,14 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": path.resolve(import.meta.dirname, "./src"),
+    },
+  },
+  server: {
+    watch: {
+      usePolling: true,
+      interval: 500,
+      ignored: ["**/node_modules/**", "**/.git/**", "**/dist/**"],
     },
   },
 })

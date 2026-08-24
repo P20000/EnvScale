@@ -1,0 +1,708 @@
+#!/usr/bin/env python3
+import os
+import sys
+import time
+import socket
+import signal
+import shutil
+import threading
+import subprocess
+import webbrowser
+
+import gi
+gi.require_version('Gtk', '3.0')
+from gi.repository import Gtk, Gdk, GLib, GObject
+
+# Set working directory to project root
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+os.chdir(PROJECT_ROOT)
+
+# Dark Theme CSS
+CSS_STYLES = b"""
+window {
+    background-color: #111827;
+    color: #f9fafb;
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+}
+
+headerbar {
+    background-color: #1f2937;
+    color: #f9fafb;
+    border-bottom: 1px solid #374151;
+}
+
+.title-label {
+    font-size: 16px;
+    font-weight: bold;
+    color: #38bdf8;
+}
+
+.subtitle-label {
+    font-size: 12px;
+    color: #9ca3af;
+}
+
+.card {
+    background-color: #1f2937;
+    border: 1px solid #374151;
+    border-radius: 8px;
+    padding: 12px;
+}
+
+.card-title {
+    font-weight: bold;
+    font-size: 13px;
+    color: #e5e7eb;
+}
+
+.badge-online {
+    background-color: #065f46;
+    color: #34d399;
+    border-radius: 12px;
+    padding: 2px 10px;
+    font-weight: bold;
+    font-size: 11px;
+}
+
+.badge-offline {
+    background-color: #7f1d1d;
+    color: #f87171;
+    border-radius: 12px;
+    padding: 2px 10px;
+    font-weight: bold;
+    font-size: 11px;
+}
+
+.btn-test {
+    background-image: none;
+    background-color: #2563eb;
+    color: #ffffff;
+    font-weight: bold;
+    border-radius: 6px;
+    padding: 8px 16px;
+}
+.btn-test:hover { background-color: #1d4ed8; }
+
+.btn-start {
+    background-image: none;
+    background-color: #059669;
+    color: #ffffff;
+    font-weight: bold;
+    border-radius: 6px;
+    padding: 8px 16px;
+}
+.btn-start:hover { background-color: #047857; }
+
+.btn-stop {
+    background-image: none;
+    background-color: #dc2626;
+    color: #ffffff;
+    font-weight: bold;
+    border-radius: 6px;
+    padding: 8px 16px;
+}
+.btn-stop:hover { background-color: #b91c1c; }
+
+.btn-open {
+    background-image: none;
+    background-color: #0891b2;
+    color: #ffffff;
+    font-weight: bold;
+    border-radius: 6px;
+    padding: 8px 16px;
+}
+.btn-open:hover { background-color: #0e7490; }
+
+.btn-k8s-deploy {
+    background-image: none;
+    background-color: #7c3aed;
+    color: #ffffff;
+    font-weight: bold;
+    border-radius: 6px;
+    padding: 8px 16px;
+}
+.btn-k8s-deploy:hover { background-color: #6d28d9; }
+
+.btn-k8s-teardown {
+    background-image: none;
+    background-color: #d97706;
+    color: #ffffff;
+    font-weight: bold;
+    border-radius: 6px;
+    padding: 8px 16px;
+}
+.btn-k8s-teardown:hover { background-color: #b45309; }
+
+textview text {
+    background-color: #030712;
+    color: #38bdf8;
+    font-family: 'Monospace', 'Courier New';
+    font-size: 12px;
+}
+"""
+
+class LocalRunApp(Gtk.Window):
+    def __init__(self):
+        super().__init__(title="EnvScale — Local Environment Manager")
+        self.set_default_size(1024, 768)
+        self.set_position(Gtk.WindowPosition.CENTER)
+
+        # Track running subprocesses
+        self.running_processes = []
+        self.is_busy = False
+
+        # Load Custom CSS
+        style_provider = Gtk.CssProvider()
+        style_provider.load_from_data(CSS_STYLES)
+        Gtk.StyleContext.add_provider_for_screen(
+            Gdk.Screen.get_default(),
+            style_provider,
+            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+
+        # Main Layout Box
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self.add(main_box)
+
+        # Header Bar
+        header = Gtk.HeaderBar()
+        header.set_show_close_button(True)
+        header.set_title("EnvScale Local Manager")
+        header.set_subtitle("Multi-Tenant Kubernetes Observability Platform")
+        self.set_titlebar(header)
+
+        # Top Control Bar (Stack Action Buttons)
+        control_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        control_bar.set_margin_start(16)
+        control_bar.set_margin_end(16)
+        control_bar.set_margin_top(14)
+        control_bar.set_margin_bottom(6)
+
+        self.btn_test = Gtk.Button(label="🧪 Run Full Tests")
+        self.btn_test.get_style_context().add_class("btn-test")
+        self.btn_test.connect("clicked", self.on_run_tests_clicked)
+
+        self.btn_start = Gtk.Button(label="🚀 Launch App Stack")
+        self.btn_start.get_style_context().add_class("btn-start")
+        self.btn_start.connect("clicked", self.on_start_stack_clicked)
+
+        self.btn_stop = Gtk.Button(label="🛑 Stop Stack")
+        self.btn_stop.get_style_context().add_class("btn-stop")
+        self.btn_stop.connect("clicked", self.on_stop_stack_clicked)
+
+        self.btn_open = Gtk.Button(label="🌐 Open Web UI")
+        self.btn_open.get_style_context().add_class("btn-open")
+        self.btn_open.connect("clicked", self.on_open_web_clicked)
+
+        control_bar.pack_start(self.btn_test, False, False, 0)
+        control_bar.pack_start(self.btn_start, False, False, 0)
+        control_bar.pack_start(self.btn_stop, False, False, 0)
+        control_bar.pack_end(self.btn_open, False, False, 0)
+        main_box.pack_start(control_bar, False, False, 0)
+
+        # Minikube Isolated Testing Control Bar
+        k8s_control_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        k8s_control_bar.set_margin_start(16)
+        k8s_control_bar.set_margin_end(16)
+        k8s_control_bar.set_margin_top(4)
+        k8s_control_bar.set_margin_bottom(12)
+
+        self.btn_deploy_k8s = Gtk.Button(label="☸️ Deploy Minikube Todo App")
+        self.btn_deploy_k8s.get_style_context().add_class("btn-k8s-deploy")
+        self.btn_deploy_k8s.connect("clicked", self.on_deploy_k8s_clicked)
+
+        self.btn_teardown_k8s = Gtk.Button(label="🗑️ Teardown Minikube Todo App")
+        self.btn_teardown_k8s.get_style_context().add_class("btn-k8s-teardown")
+        self.btn_teardown_k8s.connect("clicked", self.on_teardown_k8s_clicked)
+
+        self.btn_open_ingress = Gtk.Button(label="🌐 Open Todo Ingress")
+        self.btn_open_ingress.get_style_context().add_class("btn-open")
+        self.btn_open_ingress.connect("clicked", self.on_open_ingress_clicked)
+
+        k8s_control_bar.pack_start(self.btn_deploy_k8s, False, False, 0)
+        k8s_control_bar.pack_start(self.btn_teardown_k8s, False, False, 0)
+        k8s_control_bar.pack_end(self.btn_open_ingress, False, False, 0)
+        main_box.pack_start(k8s_control_bar, False, False, 0)
+
+        # Pipeline Progress Section
+        progress_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        progress_box.set_margin_start(16)
+        progress_box.set_margin_end(16)
+        progress_box.set_margin_bottom(12)
+
+        self.lbl_progress = Gtk.Label(label="Status: Ready")
+        self.lbl_progress.set_xalign(0)
+        self.lbl_progress.get_style_context().add_class("subtitle-label")
+
+        self.progress_bar = Gtk.ProgressBar()
+        self.progress_bar.set_fraction(0.0)
+
+        progress_box.pack_start(self.lbl_progress, False, False, 0)
+        progress_box.pack_start(self.progress_bar, False, False, 0)
+        main_box.pack_start(progress_box, False, False, 0)
+
+        # Service Health Cards Grid
+        cards_grid = Gtk.Grid()
+        cards_grid.set_column_spacing(12)
+        cards_grid.set_row_spacing(12)
+        cards_grid.set_column_homogeneous(True)
+        cards_grid.set_margin_start(16)
+        cards_grid.set_margin_end(16)
+        cards_grid.set_margin_bottom(16)
+
+        self.services = {
+            "postgres": {"name": "PostgreSQL DB", "port": 5432, "badge": None},
+            "redis": {"name": "Redis Cache", "port": 6379, "badge": None},
+            "api": {"name": "REST API Server", "port": 3000, "badge": None},
+            "streamer": {"name": "K8s Streamer", "port": 8080, "badge": None},
+            "web": {"name": "Web Frontend", "port": 5173, "badge": None},
+        }
+
+        col = 0
+        for key, s in self.services.items():
+            card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+            card.get_style_context().add_class("card")
+
+            title = Gtk.Label(label=s["name"])
+            title.get_style_context().add_class("card-title")
+            title.set_xalign(0)
+
+            badge = Gtk.Label(label="OFFLINE")
+            badge.get_style_context().add_class("badge-offline")
+            badge.set_xalign(0)
+            s["badge"] = badge
+
+            card.pack_start(title, False, False, 0)
+            card.pack_start(badge, False, False, 0)
+            cards_grid.attach(card, col, 0, 1, 1)
+            col += 1
+
+        main_box.pack_start(cards_grid, False, False, 0)
+
+        # Log Viewer Pane
+        log_frame = Gtk.Frame(label=" Live Output Log ")
+        log_frame.set_margin_start(16)
+        log_frame.set_margin_end(16)
+        log_frame.set_margin_bottom(16)
+
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_hexpand(True)
+        scrolled.set_vexpand(True)
+
+        self.text_view = Gtk.TextView()
+        self.text_view.set_editable(False)
+        self.text_view.set_cursor_visible(False)
+        self.text_buffer = self.text_view.get_buffer()
+
+        scrolled.add(self.text_view)
+        log_frame.add(scrolled)
+        main_box.pack_start(log_frame, True, True, 0)
+
+        # Handle window destroy / close cleanly
+        self.connect("destroy", self.on_window_destroy)
+
+        # Start Health Monitor Timer (Every 3 seconds)
+        GLib.timeout_add(3000, self.update_health_badges)
+        self.update_health_badges()
+
+        self.append_log("=== EnvScale Local Environment Manager Initialized ===")
+        self.append_log(f"Project Root: {PROJECT_ROOT}\n")
+
+    def append_log(self, text):
+        def _update():
+            end_iter = self.text_buffer.get_end_iter()
+            self.text_buffer.insert(end_iter, text + "\n")
+            # Auto scroll to bottom
+            mark = self.text_buffer.create_mark(None, self.text_buffer.get_end_iter(), False)
+            self.text_view.scroll_to_mark(mark, 0.0, True, 0.0, 1.0)
+            return False
+        GLib.idle_add(_update)
+
+    def set_status(self, text, fraction=0.0):
+        def _update():
+            self.lbl_progress.set_text(f"Status: {text}")
+            self.progress_bar.set_fraction(fraction)
+            return False
+        GLib.idle_add(_update)
+
+    def update_health_badges(self):
+        for s in self.services.values():
+            port = s["port"]
+            badge = s["badge"]
+            is_up = self._check_port(port)
+            if is_up:
+                badge.set_text(f"ONLINE (:{port})")
+                badge.get_style_context().remove_class("badge-offline")
+                badge.get_style_context().add_class("badge-online")
+            else:
+                badge.set_text(f"OFFLINE (:{port})")
+                badge.get_style_context().remove_class("badge-online")
+                badge.get_style_context().add_class("badge-offline")
+        return True
+
+    def _check_port(self, port):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(0.4)
+        res = sock.connect_ex(('127.0.0.1', port))
+        sock.close()
+        return res == 0
+
+    # --- ACTION HANDLERS ---
+    def on_run_tests_clicked(self, widget):
+        if self.is_busy:
+            return
+        threading.Thread(target=self._worker_run_tests, daemon=True).start()
+
+    def on_start_stack_clicked(self, widget):
+        if self.is_busy:
+            return
+        threading.Thread(target=self._worker_start_stack, daemon=True).start()
+
+    def on_stop_stack_clicked(self, widget):
+        threading.Thread(target=self._worker_stop_stack, daemon=True).start()
+
+    def on_open_web_clicked(self, widget):
+        webbrowser.open("http://localhost:5173")
+
+    def on_deploy_k8s_clicked(self, widget):
+        if self.is_busy:
+            return
+        threading.Thread(target=self._worker_deploy_k8s, daemon=True).start()
+
+    def on_teardown_k8s_clicked(self, widget):
+        if self.is_busy:
+            return
+        threading.Thread(target=self._worker_teardown_k8s, daemon=True).start()
+
+    def on_open_ingress_clicked(self, widget):
+        threading.Thread(target=self._worker_open_ingress, daemon=True).start()
+
+    # --- MINIKUBE WORKER THREADS ---
+    def _worker_deploy_k8s(self):
+        self.is_busy = True
+        self.append_log("\n[MINIKUBE] Deploying isolated multi-tab Todo App to Minikube...")
+        self.set_status("Checking Minikube & Kubernetes CLI tools...", 0.1)
+
+        for tool in ["minikube", "kubectl", "docker"]:
+            if not shutil.which(tool):
+                self.append_log(f"[ERROR] '{tool}' CLI tool not found in PATH! Please install {tool}.")
+                self.set_status(f"Deploy Failed: Missing {tool}", 0.0)
+                self.is_busy = False
+                return
+
+        # 1. Verify Minikube Status
+        self.set_status("Checking Minikube cluster status...", 0.2)
+        res = subprocess.run("minikube status", shell=True, capture_output=True, text=True)
+        if res.returncode != 0:
+            self.append_log("[MINIKUBE] Minikube is not running. Starting Minikube cluster...")
+            code = self._exec_cmd("minikube start --force")
+            if code != 0:
+                self.append_log("[WARNING] Standard start failed. Cleaning dangling docker system cache and retrying...")
+                subprocess.run("docker system prune -f", shell=True)
+                code = self._exec_cmd("minikube delete && minikube start --force")
+                if code != 0:
+                    self.append_log("[ERROR] Failed to start Minikube cluster even with --force.")
+                    self.set_status("Deploy Failed: Minikube start failed", 0.0)
+                    self.is_busy = False
+                    return
+
+        # 2. Enable Ingress Addon & Wait for Controller Readiness
+        self.set_status("Enabling Minikube NGINX Ingress controller addon...", 0.35)
+        self.append_log("[MINIKUBE] Running 'minikube addons enable ingress'...")
+        self._exec_cmd("minikube addons enable ingress")
+
+        self.set_status("Waiting for Ingress Controller admission webhook to be ready...", 0.45)
+        self.append_log("[MINIKUBE] Waiting for ingress-nginx controller rollout...")
+        self._exec_cmd("kubectl rollout status deployment/ingress-nginx-controller -n ingress-nginx --timeout=90s")
+
+        # 3. Build Images inside Minikube Docker environment
+        self.set_status("Building container images inside Minikube...", 0.6)
+        self.append_log("[MINIKUBE] Building todo-backend:latest...")
+        self._exec_cmd("minikube image build -t todo-backend:latest ./testing/app/backend", cwd=PROJECT_ROOT)
+
+        self.append_log("[MINIKUBE] Building todo-frontend:latest...")
+        self._exec_cmd("minikube image build -t todo-frontend:latest ./testing/app/frontend", cwd=PROJECT_ROOT)
+
+        # 4. Apply K8s Manifests (with webhook readiness fallback & auto-fix)
+        self.set_status("Applying Kubernetes manifests to 'testing-todo' namespace...", 0.8)
+        self.append_log("[K8S] Running 'kubectl apply -f testing/k8s/'...")
+        code = self._exec_cmd("kubectl apply -f testing/k8s/", cwd=PROJECT_ROOT)
+        if code != 0:
+            self.append_log("[WARNING] Manifest apply failed. Cleaning up non-responsive admission webhook and retrying...")
+            self._exec_cmd("kubectl delete validatingwebhookconfiguration ingress-nginx-admission --ignore-not-found=true")
+            time.sleep(2)
+            self.append_log("[K8S] Retrying 'kubectl apply -f testing/k8s/'...")
+            code = self._exec_cmd("kubectl apply -f testing/k8s/", cwd=PROJECT_ROOT)
+
+        if code != 0:
+            self.append_log("[ERROR] Failed to apply Kubernetes manifests!")
+            self.set_status("Deploy Failed: Manifest apply error", 0.8)
+            self.is_busy = False
+            return
+
+        # 5. Export Flattened Kubeconfig
+        self.append_log("[K8S] Generating flattened portable Kubeconfig for EnvScale integration...")
+        flat_path = "/tmp/minikube-flat.yaml"
+        subprocess.run(f"kubectl config view --flatten > {flat_path}", shell=True)
+
+        # Get Minikube IP
+        ip_res = subprocess.run("minikube ip", shell=True, capture_output=True, text=True)
+        mk_ip = ip_res.stdout.strip() or "127.0.0.1"
+
+        self.set_status("Minikube Todo Application deployed successfully!", 1.0)
+        self.append_log("\n[SUCCESS] MINIKUBE TODO TEST APP IS DEPLOYED! ☸️🎉")
+        self.append_log(f"   - Minikube IP:        {mk_ip}")
+        self.append_log(f"   - Todo Ingress URL:   http://{mk_ip}/")
+        self.append_log(f"   - Backend API URL:    http://{mk_ip}/api/todos")
+        self.append_log(f"   - Exported Kubeconfig: {flat_path}")
+        self.append_log("   👉 Upload '/tmp/minikube-flat.yaml' in EnvScale UI to visualize live Pods, Nodes & Ingress!\n")
+        self.is_busy = False
+
+    def _worker_teardown_k8s(self):
+        self.is_busy = True
+        self.append_log("\n[MINIKUBE] Tearing down isolated Todo application...")
+        self.set_status("Deleting Kubernetes namespace and resources...", 0.5)
+        self._exec_cmd("kubectl delete -f testing/k8s/", cwd=PROJECT_ROOT)
+        self.set_status("Minikube Todo app torn down.", 1.0)
+        self.append_log("[SUCCESS] Minikube test resources removed cleanly.\n")
+        self.is_busy = False
+
+    def _worker_open_ingress(self):
+        ip_res = subprocess.run("minikube ip", shell=True, capture_output=True, text=True)
+        mk_ip = ip_res.stdout.strip()
+        if mk_ip:
+            url = f"http://{mk_ip}/"
+            self.append_log(f"[OPEN] Opening Todo Ingress: {url}")
+            webbrowser.open(url)
+        else:
+            self.append_log("[ERROR] Minikube is not running or IP unavailable.")
+
+    # --- WORKER THREADS ---
+    def _worker_run_tests(self):
+        self.is_busy = True
+        self.append_log("\n[TESTS] Starting sequential application health & build tests...")
+        self.set_status("Checking environment prerequisites...", 0.1)
+
+        # Check Node, Go, Docker
+        reqs = ["node", "npx", "go", "docker"]
+        for r in reqs:
+            if not shutil.which(r):
+                self.append_log(f"[ERROR] Required tool '{r}' is missing!")
+                self.set_status("Test Failed: Missing prerequisites", 0.0)
+                self.is_busy = False
+                return
+
+        # 1. Test Frontend
+        self.set_status("Step 1/3: Testing Web UI (TypeScript & ESLint)...", 0.3)
+        self.append_log("[TEST] Typechecking & linting apps/web...")
+        code = self._exec_cmd("npx tsc -b && npx eslint .", cwd=os.path.join(PROJECT_ROOT, "apps/web"))
+        if code != 0:
+            self.append_log("[ERROR] apps/web build or lint failed!")
+            self.set_status("Test Failed: apps/web errors", 0.3)
+            self.is_busy = False
+            return
+        self.append_log("[SUCCESS] apps/web passed all checks!")
+
+        # 2. Test API Server
+        self.set_status("Step 2/3: Testing REST API Server (TypeScript)...", 0.6)
+        self.append_log("[TEST] Typechecking apps/api-server...")
+        code = self._exec_cmd("npx tsc --noEmit", cwd=os.path.join(PROJECT_ROOT, "apps/api-server"))
+        if code != 0:
+            self.append_log("[ERROR] apps/api-server typecheck failed!")
+            self.set_status("Test Failed: apps/api-server errors", 0.6)
+            self.is_busy = False
+            return
+        self.append_log("[SUCCESS] apps/api-server passed all checks!")
+
+        # 3. Test K8s Streamer
+        self.set_status("Step 3/3: Testing Streaming Gateway (Go Compilation)...", 0.9)
+        self.append_log("[TEST] Compiling apps/k8s-streamer Go gateway...")
+        code = self._exec_cmd("go build -o /tmp/k8s-streamer-test ./cmd/server/main.go", cwd=os.path.join(PROJECT_ROOT, "apps/k8s-streamer"))
+        if code == 0 and os.path.exists("/tmp/k8s-streamer-test"):
+            os.remove("/tmp/k8s-streamer-test")
+        if code != 0:
+            self.append_log("[ERROR] apps/k8s-streamer Go build failed!")
+            self.set_status("Test Failed: apps/k8s-streamer errors", 0.9)
+            self.is_busy = False
+            return
+        self.append_log("[SUCCESS] apps/k8s-streamer Go build succeeded!")
+
+        self.set_status("All tests completed successfully! Ready to launch.", 1.0)
+        self.append_log("\n[SUCCESS] ALL SEQUENTIAL TESTS PASSED PERFECTLY! 🚀\n")
+        self.is_busy = False
+
+    def _worker_start_stack(self):
+        self.is_busy = True
+        self.append_log("\n[STACK] Launching full local application environment...")
+
+        # Ensure ports are clean before starting
+        subprocess.run("fuser -k -9 3000/tcp 8080/tcp 5173/tcp", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+
+        # Step 1: Ensure .env exists for api-server
+        self.set_status("Provisioning environment secrets...", 0.2)
+        env_path = os.path.join(PROJECT_ROOT, "apps/api-server/.env")
+        if not os.path.exists(env_path):
+            example_path = os.path.join(PROJECT_ROOT, "apps/api-server/.env.example")
+            if os.path.exists(example_path):
+                shutil.copyfile(example_path, env_path)
+                self.append_log("[ENV] Created apps/api-server/.env from .env.example")
+            else:
+                with open(env_path, "w") as f:
+                    f.write("DATABASE_URL=postgresql://envscale:envscale_password@localhost:5432/envscale\n")
+                    f.write("JWT_ACCESS_SECRET=dev-access-secret-key-envscale-2026\n")
+                    f.write("JWT_REFRESH_SECRET=dev-refresh-secret-key-envscale-2026\n")
+                    f.write("PORT=3000\nNODE_ENV=development\n")
+                self.append_log("[ENV] Generated default apps/api-server/.env")
+
+        # Step 2: Spin up Docker (Postgres + Redis)
+        self.set_status("Starting PostgreSQL & Redis containers...", 0.4)
+        self.append_log("[DOCKER] Running 'docker compose -f docker-compose.dev.yml up -d'...")
+        self._exec_cmd("docker compose -f docker-compose.dev.yml up -d", cwd=PROJECT_ROOT)
+
+        # Wait for Postgres health
+        self.append_log("[DB] Waiting for PostgreSQL database readiness...")
+        attempts = 0
+        while attempts < 15:
+            if self._check_port(5432) and self._check_port(6379):
+                break
+            time.sleep(1)
+            attempts += 1
+
+        # Step 3: Drizzle DB Migration
+        self.set_status("Syncing Drizzle database schema...", 0.6)
+        self.append_log("[DB] Applying Drizzle schema migrations...")
+        self._exec_cmd("npx drizzle-kit push", cwd=os.path.join(PROJECT_ROOT, "apps/api-server"))
+
+        # Step 4: Spawn Services (API Server, K8s Streamer, Web Frontend)
+        self.set_status("Spawning application microservices...", 0.8)
+        self._spawn_service("API Server", ["npx", "tsx", "watch", "src/index.ts"], os.path.join(PROJECT_ROOT, "apps/api-server"))
+        self._spawn_service("K8s Streamer", ["go", "run", "./cmd/server/main.go"], os.path.join(PROJECT_ROOT, "apps/k8s-streamer"))
+        self._spawn_service("Web Frontend", ["npx", "vite"], os.path.join(PROJECT_ROOT, "apps/web"))
+
+        # Step 5: Auto-Register Local Cluster
+        threading.Thread(target=self._auto_register_cluster, daemon=True).start()
+
+        self.set_status("Application Stack is RUNNING online!", 1.0)
+        self.append_log("\n[SUCCESS] LOCAL APPLICATION STACK IS FULLY RUNNING! 🎉")
+        self.append_log("   - Web Frontend UI:  http://localhost:5173")
+        self.append_log("   - REST API Engine:  http://localhost:3000")
+        self.append_log("   - Streaming Gateway: http://localhost:8080\n")
+        self.is_busy = False
+
+    def _auto_register_cluster(self):
+        # Wait for k8s-streamer to be up
+        time.sleep(3)
+        self.append_log("[AUTO-REGISTER] Attempting to auto-register minikube cluster to streaming gateway...")
+        flat_path = "/tmp/minikube-flat.yaml"
+        if not os.path.exists(flat_path):
+            subprocess.run(f"kubectl config view --flatten > {flat_path}", shell=True)
+            
+        if os.path.exists(flat_path):
+            import json
+            import urllib.request
+            import base64
+            try:
+                with open(flat_path, "r") as f:
+                    kubeconfig = f.read()
+                b64_kubeconfig = base64.b64encode(kubeconfig.encode()).decode()
+                req = urllib.request.Request("http://localhost:8080/api/v1/clusters/register", method="POST")
+                req.add_header("Content-Type", "application/json")
+                data = json.dumps({"clusterId": "mini-todo", "kubeconfig": b64_kubeconfig}).encode()
+                urllib.request.urlopen(req, data=data, timeout=10)
+                self.append_log("[AUTO-REGISTER] ✅ Automatically registered 'mini-todo' cluster with streaming gateway!")
+            except Exception as e:
+                self.append_log(f"[AUTO-REGISTER] ❌ Failed to auto-register cluster: {e}")
+
+    def _worker_stop_stack(self):
+        self.append_log("\n[STOP] Stopping all microservices and spinning down containers...")
+        self.set_status("Stopping running services...", 0.5)
+
+        # 1. Terminate process groups of spawned processes
+        for name, proc in list(self.running_processes):
+            try:
+                pgid = os.getpgid(proc.pid)
+                os.killpg(pgid, signal.SIGTERM)
+                proc.wait(timeout=2)
+                self.append_log(f"[STOP] Terminated process group for {name}")
+            except Exception:
+                try:
+                    pgid = os.getpgid(proc.pid)
+                    os.killpg(pgid, signal.SIGKILL)
+                except Exception:
+                    pass
+        self.running_processes.clear()
+
+        # 2. Port fallback cleanup (kills any lingering child processes on service ports)
+        self.append_log("[STOP] Force clearing service ports (3000, 8080, 5173)...")
+        subprocess.run("fuser -k -9 3000/tcp 8080/tcp 5173/tcp", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+
+        # 3. Spin down Docker containers
+        self._exec_cmd("docker compose -f docker-compose.dev.yml down", cwd=PROJECT_ROOT)
+        self.append_log("[DOCKER] Containers spun down cleanly.")
+        self.set_status("All services stopped.", 0.0)
+        self.update_health_badges()
+        self.append_log("[SUCCESS] APPLICATION STACK SPUN DOWN.\n")
+
+    def _spawn_service(self, name, cmd_args, cwd):
+        self.append_log(f"[SPAWN] Starting {name}...")
+        proc = subprocess.Popen(
+            cmd_args,
+            cwd=cwd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            preexec_fn=os.setsid
+        )
+        self.running_processes.append((name, proc))
+
+        # Reader thread for process logs
+        def _read():
+            try:
+                for line in proc.stdout:
+                    line_str = line.strip()
+                    if line_str:
+                        self.append_log(f"[{name}] {line_str}")
+            except Exception:
+                pass
+        threading.Thread(target=_read, daemon=True).start()
+
+    def _exec_cmd(self, command_str, cwd=None):
+        proc = subprocess.Popen(
+            command_str,
+            shell=True,
+            cwd=cwd or PROJECT_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            preexec_fn=os.setsid
+        )
+        for line in proc.stdout:
+            l = line.strip()
+            if l:
+                self.append_log(l)
+        proc.wait()
+        return proc.returncode
+
+    def on_window_destroy(self, widget):
+        # Stop background services on window close
+        for name, proc in list(self.running_processes):
+            try:
+                pgid = os.getpgid(proc.pid)
+                os.killpg(pgid, signal.SIGKILL)
+            except Exception:
+                pass
+        subprocess.run("fuser -k -9 3000/tcp 8080/tcp 5173/tcp", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+        Gtk.main_quit()
+
+def main():
+    # Handle CTRL+C cleanly
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    app = LocalRunApp()
+    app.show_all()
+    Gtk.main()
+
+if __name__ == "__main__":
+    main()

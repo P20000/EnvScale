@@ -6,698 +6,227 @@
 
 @layer base {
   :root {
-    --background: 222 47% 7%;
-    --foreground: 210 40% 96%;
+    --canvas-bg: #09090b;
+    --grid-dot: #27272a;
+    --surface-capsule: rgba(23, 23, 23, 0.85);
+    --surface-card: #141417;
+    --border-subtle: #27272a;
+    --status-running: #10b981;
+    --status-warning: #f59e0b;
+    --status-error: #ef4444;
+    --status-inactive: #6b7280;
+    --accent-primary: #3b82f6;
 
-    --card: 222 47% 10%;
-    --card-foreground: 210 40% 96%;
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
 
-    --popover: 222 47% 10%;
-    --popover-foreground: 210 40% 96%;
+    --card: 240 6% 8%;
+    --card-foreground: 0 0% 98%;
 
-    --primary: 187 100% 50%;
-    --primary-foreground: 222 47% 7%;
+    --popover: 240 6% 8%;
+    --popover-foreground: 0 0% 98%;
 
-    --secondary: 217 33% 17%;
-    --secondary-foreground: 210 40% 96%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
 
-    --muted: 217 33% 15%;
-    --muted-foreground: 215 20% 65%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
 
-    --accent: 217 33% 20%;
-    --accent-foreground: 210 40% 96%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
 
-    --destructive: 0 84% 60%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
 
-    --border: 217 33% 22%;
-    --input: 217 33% 20%;
-    --ring: 187 100% 50%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 217 91% 60%;
 
     --radius: 0.75rem;
   }
 
   * {
-    @apply border-border;
+    @apply border-neutral-800;
   }
 
-  html {
-    font-family: "Geist Variable", sans-serif;
-    background: #080f1f;
-  }
-
-  body {
+  html, body {
     margin: 0;
+    padding: 0;
     min-width: 320px;
     min-height: 100vh;
-    background:
-      radial-gradient(
-        circle at 50% -20%,
-        rgba(0, 180, 255, 0.08),
-        transparent 45%
-      ),
-      #080f1f;
-    color: #e2e8f0;
+    background-color: #09090b;
+    color: #f4f4f5;
+    font-family: "Geist Variable", system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    overflow-x: hidden;
   }
 
   #root {
     min-height: 100vh;
+    background-color: #09090b;
   }
 }
 
 /* =========================================
-   React Flow
+   React Flow Enterprise Styling
    ========================================= */
 
 .react-flow {
-  background: #080f1f;
+  background-color: #09090b !important;
 }
 
-/* React Flow dotted background */
 .react-flow__background {
-  background-color: #080f1f;
+  background-color: #09090b !important;
 }
 
 .react-flow__background pattern circle {
-  fill: #334155;
+  fill: #27272a !important;
 }
 
-/* React Flow controls */
+/* Controls */
 .react-flow__controls {
-  box-shadow:
-    0 8px 25px rgba(0, 0, 0, 0.45),
-    0 0 15px rgba(0, 180, 255, 0.08);
+  background: rgba(23, 23, 23, 0.85) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid #27272a !important;
+  border-radius: 0.75rem !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5) !important;
+  overflow: hidden;
+  margin-bottom: 24px !important;
+  margin-left: 24px !important;
 }
 
 .react-flow__controls-button {
-  width: 32px;
-  height: 32px;
+  width: 32px !important;
+  height: 32px !important;
+  background: transparent !important;
+  border-bottom: 1px solid #27272a !important;
+  border-right: none !important;
+  color: #a1a1aa !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: all 0.15s ease !important;
+}
 
-  background: #16243a !important;
-  border-bottom: 1px solid #263852 !important;
-
-  color: #07111f !important;
+.react-flow__controls-button:last-child {
+  border-bottom: none !important;
 }
 
 .react-flow__controls-button:hover {
-  background: #203552 !important;
+  background: rgba(39, 39, 42, 0.7) !important;
+  color: #f4f4f5 !important;
 }
 
 .react-flow__controls-button svg {
-  fill: #07111f !important;
-  stroke: #07111f !important;
-  color: #07111f !important;
+  fill: currentColor !important;
+  stroke: currentColor !important;
+  width: 14px !important;
+  height: 14px !important;
 }
 
-.react-flow__controls-button:hover svg {
-  fill: #000000 !important;
-  stroke: #000000 !important;
-}
-
-/* React Flow minimap */
+/* React Flow MiniMap */
 .react-flow__minimap {
-  background: #101c30 !important;
-  border: 1px solid #203552;
+  background: rgba(20, 20, 23, 0.9) !important;
+  backdrop-filter: blur(12px) !important;
+  border: 1px solid #27272a !important;
+  border-radius: 0.75rem !important;
+  overflow: hidden;
+  margin-bottom: 24px !important;
+  margin-right: 24px !important;
 }
 
-/* React Flow attribution */
+/* React Flow Attribution */
 .react-flow__attribution {
-  background: rgba(8, 15, 31, 0.8) !important;
+  display: none !important;
 }
 
-.react-flow__attribution a {
-  color: #64748b !important;
-}
 
-/* =========================================
-   Glass Card
-   ========================================= */
-
-.glass-card {
-  background: rgba(15, 27, 48, 0.72);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-
-  border: 1px solid rgba(56, 189, 248, 0.18);
-
-  border-radius: 12px;
-
-  box-shadow:
-    0 10px 30px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.03);
-}
-
-/* =========================================
-   Neon accents
-   ========================================= */
-
-.neon-cyan {
-  color: #00e5ff;
-  text-shadow: 0 0 12px rgba(0, 229, 255, 0.45);
-}
-
-.neon-border {
-  border-color: rgba(0, 229, 255, 0.4);
-  box-shadow:
-    0 0 12px rgba(0, 229, 255, 0.18),
-    inset 0 0 12px rgba(0, 229, 255, 0.03);
-}
-/* =========================================
-   EnvScale Workflow Editor
-   ========================================= */
-
-.app-shell {
-  min-height: 100vh;
-  background: #080f1f;
-  color: #e2e8f0;
-}
-
-.app-header {
-  height: 76px;
-  padding: 0 32px;
-
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-
-  background: #0b1426;
-
-  border-bottom: 1px solid #203552;
-}
-
-.app-header h1 {
-  margin: 0;
-
-  font-size: 28px;
-  font-weight: 700;
-
-  color: #00e5ff;
-
-  text-shadow:
-    0 0 12px rgba(0, 229, 255, 0.45);
-}
-
-.app-header span {
-  color: #64748b;
-  font-size: 13px;
-}
-
-/* Add Shape button */
-
-.add-shape-button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-
-  padding: 10px 16px;
-
-  border: 1px solid rgba(0, 229, 255, 0.35);
-  border-radius: 8px;
-
-  background: #101c30;
-  color: #00e5ff;
-
-  font-size: 14px;
-  font-weight: 600;
-
-  cursor: pointer;
-
-  transition:
-    background 0.2s,
-    box-shadow 0.2s,
-    border-color 0.2s;
-}
-
-.add-shape-button:hover {
-  background: #16243a;
-
-  border-color: #00e5ff;
-
-  box-shadow:
-    0 0 15px rgba(0, 229, 255, 0.25);
-}
-
-.add-shape-button span {
-  color: #00e5ff;
-  font-size: 20px;
-}
-
-/* Canvas */
-
-.workflow-area {
-  position: relative;
-
-  height: calc(100vh - 76px);
-
-  background: #080f1f;
-}
-
-/* =========================================
-   Shape Palette
-   ========================================= */
-
-.shape-palette {
-  position: absolute;
-
-  top: 16px;
-  right: 16px;
-
-  width: 290px;
-
-  padding: 18px;
-
-  z-index: 20;
-
-  background: rgba(13, 23, 41, 0.96);
-
-  border: 1px solid rgba(0, 229, 255, 0.25);
-  border-radius: 12px;
-
-  box-shadow:
-    0 20px 50px rgba(0, 0, 0, 0.5),
-    0 0 25px rgba(0, 229, 255, 0.08);
-
-  backdrop-filter: blur(16px);
-}
-
-.shape-palette-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-
-  margin-bottom: 18px;
-}
-
-.shape-palette-header h2 {
-  margin: 0;
-
-  color: #e2e8f0;
-
-  font-size: 17px;
-}
-
-.shape-palette-header p {
-  margin: 4px 0 0;
-
-  color: #64748b;
-
-  font-size: 12px;
-}
-
-.palette-close {
-  width: 28px;
-  height: 28px;
-
-  border: 1px solid #263852;
-  border-radius: 6px;
-
-  background: #101c30;
-  color: #94a3b8;
-
-  cursor: pointer;
-
-  font-size: 20px;
-}
-
-.palette-close:hover {
-  color: #00e5ff;
-  border-color: #00e5ff;
-}
-
-/* Shape buttons */
-
-.shape-grid {
-  display: grid;
-
-  grid-template-columns: repeat(2, 1fr);
-
-  gap: 10px;
-}
-
-.shape-option {
-  min-height: 100px;
-
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-
-  gap: 8px;
-
-  border: 1px solid #203552;
-  border-radius: 8px;
-
-  background: #101c30;
-  color: #cbd5e1;
-
-  cursor: pointer;
-
-  transition:
-    transform 0.15s,
-    border-color 0.15s,
-    background 0.15s;
-}
-
-.shape-option:hover {
-  transform: translateY(-2px);
-
-  background: #16243a;
-
-  border-color: #00e5ff;
-
-  color: #00e5ff;
-}
-
-.shape-option > span:last-child {
-  font-size: 12px;
-}
-
-/* Shape previews */
-
-.shape-preview {
-  width: 38px;
-  height: 38px;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  color: #00e5ff;
-
-  font-size: 30px;
-}
-
-/* Palette shapes */
-
-.shape-preview.rectangle {
-  font-size: 38px;
-}
-
-.shape-preview.circle {
-  font-size: 32px;
-}
-
-.shape-preview.diamond {
-  font-size: 30px;
-}
-
-.shape-preview.cylinder {
-  font-size: 32px;
-}
-
-.shape-preview.hexagon {
-  font-size: 34px;
-}
-
-/* Info box */
-
-.palette-info {
-  margin-top: 16px;
-  padding: 12px;
-
-  border-radius: 8px;
-
-  background: #0a1324;
-
-  border: 1px solid #1c2d46;
-}
-
-.palette-info strong {
-  display: block;
-
-  margin-bottom: 4px;
-
-  color: #00e5ff;
-
-  font-size: 12px;
-}
-
-.palette-info p {
-  margin: 0;
-
-  color: #64748b;
-
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-/* =========================================
-   Workflow Nodes
-   ========================================= */
-
-.workflow-node-wrapper {
-  position: relative;
-  min-width: 150px;
-  min-height: 65px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #0d192d;
-  color: #e2e8f0;
-  border: 2px solid #00e5ff;
-  border-radius: 10px;
-  box-shadow:
-    0 0 15px rgba(0, 229, 255, 0.25),
-    inset 0 0 15px rgba(0, 229, 255, 0.05);
-  font-weight: 600;
-  transition: box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
-}
-
-.workflow-node-wrapper:hover {
-  border-color: #00ffff;
-  box-shadow:
-    0 0 22px rgba(0, 229, 255, 0.5),
-    inset 0 0 20px rgba(0, 229, 255, 0.1);
-}
-
-.react-flow__node.selected .workflow-node-wrapper,
-.react-flow__node.selected .workflow-diamond-inner,
-.react-flow__node.selected .workflow-hexagon-inner {
-  border-color: #ffffff !important;
-  box-shadow: 0 0 25px rgba(0, 229, 255, 0.8), inset 0 0 15px rgba(0, 229, 255, 0.2) !important;
-}
-
-.workflow-node-content {
-  position: relative;
-  z-index: 2;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px 24px;
-}
-
-.workflow-node-label {
-  position: relative;
-  z-index: 2;
-  white-space: nowrap;
-  font-size: 14px;
-  color: #e2e8f0;
-  text-shadow: 0 0 8px rgba(0, 229, 255, 0.3);
-}
-
-/* Rectangle */
-.workflow-rectangle {
-  border-radius: 10px;
-}
-
-/* Circle */
-.workflow-circle {
-  width: 110px;
-  height: 110px;
-  min-width: 110px;
-  min-height: 110px;
-  padding: 0;
-  border-radius: 50%;
-}
-.workflow-circle .workflow-node-content {
-  padding: 12px;
-}
-
-/* Diamond */
-.workflow-diamond {
-  width: 100px;
-  height: 100px;
-  min-width: 100px;
-  min-height: 100px;
-  padding: 0;
-  background: transparent;
-  border: none;
-  box-shadow: none;
-}
-
-.workflow-diamond:hover {
-  border: none;
-  box-shadow: none;
-}
-
-.workflow-diamond .workflow-node-content {
-  padding: 0;
-}
-
-.workflow-diamond-inner {
-  width: 72px;
-  height: 72px;
-  background: #0d192d;
-  border: 2px solid #00e5ff;
-  border-radius: 6px;
-  transform: rotate(45deg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 0 15px rgba(0, 229, 255, 0.25);
-  transition: all 0.2s ease;
-}
-
-.workflow-diamond:hover .workflow-diamond-inner {
-  border-color: #00ffff;
-  box-shadow: 0 0 22px rgba(0, 229, 255, 0.5);
-}
-
-.workflow-diamond-inner .workflow-node-label {
-  transform: rotate(-45deg);
-}
-
-/* Cylinder */
-.workflow-cylinder {
-  border-radius: 50% / 18%;
-  min-width: 150px;
-  border-top-width: 4px;
-  border-bottom-width: 4px;
-}
-
-/* Hexagon */
-.workflow-hexagon {
-  min-width: 160px;
-  min-height: 75px;
-  background: transparent;
-  border: none;
-  box-shadow: none;
-}
-
-.workflow-hexagon:hover {
-  border: none;
-  box-shadow: none;
-}
-
-.workflow-hexagon .workflow-node-content {
-  padding: 0;
-}
-
-.workflow-hexagon-inner {
-  width: 100%;
-  height: 100%;
-  min-height: 75px;
-  background: #00e5ff;
-  clip-path: polygon(
-    12% 0%,
-    88% 0%,
-    100% 50%,
-    88% 100%,
-    12% 100%,
-    0% 50%
-  );
-  padding: 2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  transition: all 0.2s ease;
-}
-
-.workflow-hexagon-inner::before {
-  content: "";
-  position: absolute;
-  inset: 2px;
-  background: #0d192d;
-  clip-path: polygon(
-    12% 0%,
-    88% 0%,
-    100% 50%,
-    88% 100%,
-    12% 100%,
-    0% 50%
-  );
-  z-index: 1;
-}
-
-.workflow-hexagon:hover .workflow-hexagon-inner {
-  background: #00ffff;
-  filter: drop-shadow(0 0 12px rgba(0, 229, 255, 0.6));
-}
-
-/* Delete Button */
-.workflow-node-delete {
-  position: absolute;
-  top: -8px;
-  right: -8px;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: #0b1426;
-  border: 1px solid rgba(0, 229, 255, 0.4);
-  color: #00e5ff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  z-index: 25;
-  transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-}
-
-.workflow-node-delete:hover {
-  background: #ef4444;
-  border-color: #f87171;
-  color: #ffffff;
-  box-shadow: 0 0 12px rgba(239, 68, 68, 0.8);
-  transform: scale(1.15);
-}
-
-/* Handles */
-.workflow-handle {
-  width: 10px !important;
-  height: 10px !important;
+/* Custom Handles */
+.react-flow__handle {
+  width: 8px !important;
+  height: 8px !important;
+  background-color: #27272a !important;
+  border: 2px solid #52525b !important;
   border-radius: 50% !important;
-  background: #081020 !important;
-  border: 2px solid #00e5ff !important;
-  box-shadow: 0 0 6px rgba(0, 229, 255, 0.6) !important;
-  z-index: 10 !important;
-  cursor: crosshair !important;
-  transition: transform 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease !important;
+  transition: transform 0.15s ease, border-color 0.15s ease, background-color 0.15s ease !important;
 }
 
-.workflow-handle:hover {
-  transform: scale(1.4) !important;
-  background: #00e5ff !important;
-  box-shadow: 0 0 12px #00e5ff, 0 0 20px rgba(0, 229, 255, 0.8) !important;
+.react-flow__handle:hover,
+.react-flow__handle-connecting {
+  background-color: #3b82f6 !important;
+  border-color: #60a5fa !important;
+  transform: scale(1.3) !important;
 }
 
-.workflow-handle-source {
-  border-color: #00e5ff !important;
-}
-
-.workflow-handle-target {
-  border-color: #38bdf8 !important;
-}
-
-/* React Flow Edges styling */
+/* Edges Styling */
 .react-flow__edge-path {
-  stroke: #00e5ff !important;
+  stroke: #3f3f46 !important;
   stroke-width: 2px !important;
-  filter: drop-shadow(0 0 6px rgba(0, 229, 255, 0.5));
+  transition: stroke 0.2s ease, stroke-width 0.2s ease;
 }
 
 .react-flow__edge.selected .react-flow__edge-path,
 .react-flow__edge:hover .react-flow__edge-path {
-  stroke: #ffffff !important;
-  stroke-width: 3px !important;
-  filter: drop-shadow(0 0 12px rgba(0, 229, 255, 0.9));
+  stroke: #3b82f6 !important;
+  stroke-width: 2.5px !important;
 }
 
-.react-flow__connection-path {
-  stroke: #00e5ff !important;
-  stroke-width: 2px !important;
-  stroke-dasharray: 5 5;
-  filter: drop-shadow(0 0 6px rgba(0, 229, 255, 0.6));
+.react-flow__edge-path.animated-edge {
+  stroke-dasharray: 5;
+  animation: edgeDash 1.5s linear infinite;
+}
+
+@keyframes edgeDash {
+  from {
+    stroke-dashoffset: 20;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Node Selection Highlight */
+.react-flow__node.selected {
+  outline: none !important;
+}
+
+.react-flow__node.selected > div {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 1px #3b82f6 !important;
+}
+
+/* Glassmorphism Utilities */
+.glass-capsule {
+  background: rgba(23, 23, 23, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(39, 39, 42, 0.8);
+}
+
+.glass-card {
+  background: #141417;
+  border: 1px solid #27272a;
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+}
+
+/* Scrollbar Customization */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #09090b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
 }
