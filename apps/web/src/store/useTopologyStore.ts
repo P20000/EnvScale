@@ -38,6 +38,18 @@ export interface NotificationItem {
   cluster?: string;
 }
 
+export interface K8sIncidentEvent {
+  eventId: string;
+  reason: string;
+  message: string;
+  targetPod: string;
+  namespace?: string;
+  cluster?: string;
+  severityType?: string;
+  timestamp: string;
+  resolvedAt?: string;
+}
+
 export const defaultInitialNodes: Node[] = [];
 export const defaultInitialEdges: Edge[] = [];
 const defaultClusters: string[] = ["mini-todo"];
@@ -60,9 +72,11 @@ export const getPodPrefix = (name: string) => {
   if (name.startsWith("worker-pool")) return "worker-pool";
   if (name.startsWith("todo-backend")) return "todo-backend";
   if (name.startsWith("todo-frontend")) return "todo-frontend";
+  if (name.startsWith("redis")) return "redis-db";
   if (name.includes("-")) {
     prefix = name
       .replace(/-(?:[a-f0-9]{8,10}|\d{8,10})-[a-z0-9]{4,6}$/i, "")
+      .replace(/-\d+$/i, "")
       .replace(/-[a-z0-9]{4,6}$/i, "");
   }
   return prefix;
@@ -238,7 +252,10 @@ export const aggregateNodesWithWorkloads = (
     if (n.type !== "k8sPod") return false;
     if (!showCompletedPods) {
       const podData = n.data as K8sPodData;
-      if (podData?.status === "Succeeded" || podData?.status === "Completed") {
+      if (
+        (podData?.status === "Succeeded" || podData?.status === "Completed") &&
+        (podData?.ownerKind === "Job" || podData?.name?.includes("cronjob"))
+      ) {
         return false;
       }
     }
@@ -338,12 +355,15 @@ export interface DeleteModalState {
 export interface TopologyState {
   clusters: string[];
   activeCluster: string;
+  clusterCpuCores: number;
+  clusterMemoryGB: number;
   rawNodes: Node[];
   nodes: Node[];
   edges: Edge[];
   services: K8sServiceData[];
   pods: K8sPodData[];
   ingresses: K8sIngressData[];
+  incidents: K8sIncidentEvent[];
   selectedNode: SelectedTarget;
   tokens: ApiToken[];
   notifications: NotificationItem[];
@@ -378,6 +398,7 @@ export interface TopologyState {
   // Resource Array Setters
   setServices: (services: K8sServiceData[] | ((prev: K8sServiceData[]) => K8sServiceData[])) => void;
   setPods: (pods: K8sPodData[] | ((prev: K8sPodData[]) => K8sPodData[])) => void;
+  setIncidents: (incidents: K8sIncidentEvent[] | ((prev: K8sIncidentEvent[]) => K8sIncidentEvent[])) => void;
 
   // Actions
   setActiveCluster: (cluster: string) => void;
@@ -420,12 +441,15 @@ export const useTopologyStore = create<TopologyState>()(
     (set, get) => ({
       clusters: ["mini-todo"],
       activeCluster: "mini-todo",
+      clusterCpuCores: 12,
+      clusterMemoryGB: 14.8,
       rawNodes: defaultInitialNodes,
       nodes: defaultInitialNodes,
       edges: defaultInitialEdges,
       services: extractServices(defaultInitialNodes),
       pods: extractPods(defaultInitialNodes),
       ingresses: [],
+      incidents: [],
       selectedNode: null,
       tokens: defaultInitialTokens,
       notifications: defaultInitialNotifications,
@@ -851,24 +875,15 @@ export const useTopologyStore = create<TopologyState>()(
         });
       },
 
-      setPods: (podsInput) => {
-        const currentPods = get().pods;
-        const nextPods = typeof podsInput === "function" ? podsInput(currentPods) : podsInput;
-        const currentNodes = get().nodes;
-        const nonPodNodes = currentNodes.filter((n) => n.type !== "k8sPod");
-        const podNodes: Node[] = nextPods.map((podData, index) => ({
-          id: `pod-${podData.name}`,
-          type: "k8sPod",
-          position: { x: 580, y: 60 + (index % 5) * 110 },
-          data: podData,
-        }));
-        const updatedNodes = [...nonPodNodes, ...podNodes];
-        set({
-          nodes: updatedNodes,
-          services: extractServices(updatedNodes),
-          pods: nextPods,
-        });
-      },
+      setPods: (pods) =>
+        set((state) => ({
+          pods: typeof pods === "function" ? pods(state.pods) : pods,
+        })),
+
+      setIncidents: (incidents) =>
+        set((state) => ({
+          incidents: typeof incidents === "function" ? incidents(state.incidents) : incidents,
+        })),
 
       createNode: (type, customName) => {
         const timestamp = Date.now();
@@ -1085,7 +1100,33 @@ export const useTopologyStore = create<TopologyState>()(
           get().applyDagreLayout("LR");
         } else if (eventType === "EVENT_SNAPSHOT_SYNC" && payloadData) {
           const snapshotPods = Array.isArray(payloadData.pods) ? (payloadData.pods as Record<string, unknown>[]) : [];
+          const snapshotNodes = Array.isArray(payloadData.nodes) ? (payloadData.nodes as Record<string, unknown>[]) : [];
           const activePodNames = new Set(snapshotPods.map((p) => String(p.name || p.id || "")).filter(Boolean));
+
+          let totalCpu = 0;
+          let totalMemKi = 0;
+          for (const n of snapshotNodes) {
+            if (n.cpuCapacity) {
+              const cpuNum = parseFloat(String(n.cpuCapacity));
+              if (!isNaN(cpuNum)) totalCpu += cpuNum;
+            }
+            if (n.memoryCapacity) {
+              const memStr = String(n.memoryCapacity);
+              if (memStr.endsWith("Ki")) {
+                const ki = parseFloat(memStr.replace("Ki", ""));
+                if (!isNaN(ki)) totalMemKi += ki;
+              } else if (memStr.endsWith("Mi")) {
+                const mi = parseFloat(memStr.replace("Mi", ""));
+                if (!isNaN(mi)) totalMemKi += mi * 1024;
+              } else if (memStr.endsWith("Gi")) {
+                const gi = parseFloat(memStr.replace("Gi", ""));
+                if (!isNaN(gi)) totalMemKi += gi * 1024 * 1024;
+              }
+            }
+          }
+
+          const parsedCpu = totalCpu > 0 ? totalCpu : 12;
+          const parsedMem = totalMemKi > 0 ? parseFloat((totalMemKi / (1024 * 1024)).toFixed(1)) : 14.8;
 
           // Purge stale pod nodes that no longer exist in live cluster snapshot
           const syncedRawNodes = currentRaw.filter((n) => {
@@ -1096,13 +1137,40 @@ export const useTopologyStore = create<TopologyState>()(
             return true;
           });
 
+          const snapshotIncidents = Array.isArray(payloadData.incidents)
+            ? (payloadData.incidents as unknown as K8sIncidentEvent[])
+            : get().incidents;
+
           set({
             rawNodes: syncedRawNodes,
             services: extractServices(syncedRawNodes),
             pods: extractPods(syncedRawNodes),
+            clusterCpuCores: parsedCpu,
+            clusterMemoryGB: parsedMem,
+            incidents: snapshotIncidents,
           });
           get().applyDagreLayout("LR");
-        } else if (
+        }
+        
+        if (eventType === "EVENT_K8S_INCIDENT_CREATED" || eventType === "EVENT_INCIDENT_CREATED") {
+          const incObj = (payloadData.incident || payloadData) as unknown as K8sIncidentEvent;
+          if (incObj && incObj.eventId) {
+            set((state) => {
+              const existingIdx = state.incidents.findIndex((i) => i.eventId === incObj.eventId);
+              let nextList: K8sIncidentEvent[];
+              if (existingIdx >= 0) {
+                nextList = [...state.incidents];
+                nextList[existingIdx] = { ...nextList[existingIdx], ...incObj };
+              } else {
+                nextList = [incObj, ...state.incidents];
+              }
+              return { incidents: nextList.slice(0, 100) };
+            });
+          }
+          return;
+        }
+
+        if (
           eventType === "EVENT_POD_STATUS_CHANGED" ||
           eventType === "EVENT_POD_ADDED" ||
           eventType === "EVENT_POD_MODIFIED" ||
@@ -1132,13 +1200,21 @@ export const useTopologyStore = create<TopologyState>()(
           if (existingIdx >= 0) {
             const existingNode = currentRaw[existingIdx];
             const existingData = existingNode.data as K8sPodData;
+            const cpuMcores = podObj.cpuUsageMcores !== undefined ? Number(podObj.cpuUsageMcores) : (podObj.cpuUsagePct !== undefined ? Number(podObj.cpuUsagePct) : (existingData.cpuUsageMcores || 0));
+            const memMiB = podObj.memoryUsageMiB !== undefined ? Number(podObj.memoryUsageMiB) : (podObj.memoryUsageMb !== undefined ? Number(podObj.memoryUsageMb) : (existingData.memoryUsageMiB || 0));
+
             const updatedPodData: K8sPodData = {
               ...existingData,
               status: validStatus,
               restarts: podObj.restartCount !== undefined ? Number(podObj.restartCount) : (podObj.restarts !== undefined ? Number(podObj.restarts) : existingData.restarts),
               nodeName: podObj.nodeName ? String(podObj.nodeName) : existingData.nodeName,
-              cpuUsage: podObj.cpuUsagePct !== undefined ? `${podObj.cpuUsagePct}%` : (podObj.cpuUsage ? String(podObj.cpuUsage) : existingData.cpuUsage),
-              memoryUsage: podObj.memoryUsageMb !== undefined ? `${podObj.memoryUsageMb} MiB` : (podObj.memoryUsage ? String(podObj.memoryUsage) : existingData.memoryUsage),
+              ip: podObj.podIp ? String(podObj.podIp) : (podObj.ip ? String(podObj.ip) : existingData.ip),
+              podIp: podObj.podIp ? String(podObj.podIp) : (podObj.ip ? String(podObj.ip) : existingData.podIp),
+              createdAt: podObj.createdAt ? String(podObj.createdAt) : existingData.createdAt,
+              cpuUsage: `${cpuMcores} mcores`,
+              memoryUsage: `${memMiB.toFixed(1)} MiB`,
+              cpuUsageMcores: cpuMcores,
+              memoryUsageMiB: memMiB,
               ownerName: podObj.ownerName ? String(podObj.ownerName) : existingData.ownerName,
               ownerKind: podObj.ownerKind ? String(podObj.ownerKind) : existingData.ownerKind,
               ownerUid: podObj.ownerUid ? String(podObj.ownerUid) : existingData.ownerUid,
@@ -1157,6 +1233,9 @@ export const useTopologyStore = create<TopologyState>()(
             const timestamp = Date.now();
             const newPodId = podObj.id ? String(podObj.id) : `pod-${podName}-${timestamp}`;
             const podNodeName = podObj.nodeName ? String(podObj.nodeName) : "minikube-worker-1";
+            const cpuMcores = podObj.cpuUsageMcores !== undefined ? Number(podObj.cpuUsageMcores) : (podObj.cpuUsagePct !== undefined ? Number(podObj.cpuUsagePct) : 0);
+            const memMiB = podObj.memoryUsageMiB !== undefined ? Number(podObj.memoryUsageMiB) : (podObj.memoryUsageMb !== undefined ? Number(podObj.memoryUsageMb) : 0);
+
             const newPodNode: Node = {
               id: newPodId,
               type: "k8sPod",
@@ -1167,9 +1246,13 @@ export const useTopologyStore = create<TopologyState>()(
                 nodeName: podNodeName,
                 status: validStatus,
                 restarts: podObj.restartCount ? Number(podObj.restartCount) : 0,
-                ip: podObj.ip ? String(podObj.ip) : "10.244.0.22",
-                cpuUsage: podObj.cpuUsagePct ? `${podObj.cpuUsagePct}%` : "32 mcores",
-                memoryUsage: podObj.memoryUsageMb ? `${podObj.memoryUsageMb} MiB` : "120 MiB",
+                ip: podObj.podIp ? String(podObj.podIp) : (podObj.ip ? String(podObj.ip) : undefined),
+                podIp: podObj.podIp ? String(podObj.podIp) : (podObj.ip ? String(podObj.ip) : undefined),
+                createdAt: podObj.createdAt ? String(podObj.createdAt) : new Date().toISOString(),
+                cpuUsage: `${cpuMcores} mcores`,
+                memoryUsage: `${memMiB.toFixed(1)} MiB`,
+                cpuUsageMcores: cpuMcores,
+                memoryUsageMiB: memMiB,
                 labels: podObj.labels || {},
                 ownerName: podObj.ownerName ? String(podObj.ownerName) : "",
                 ownerKind: podObj.ownerKind ? String(podObj.ownerKind) : "",

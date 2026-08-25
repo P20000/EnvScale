@@ -21,7 +21,21 @@ const (
 	// injected into or cleared from a target workload.
 	EventChaosFaultInjected = "EVENT_CHAOS_FAULT_INJECTED"
 	EventChaosFaultCleared  = "EVENT_CHAOS_FAULT_CLEARED"
+
+	EventK8sIncidentCreated = "EVENT_K8S_INCIDENT_CREATED"
 )
+
+// K8sIncidentEvent encapsulates authentic Kubernetes v1.Event telemetry
+type K8sIncidentEvent struct {
+	EventID      string    `json:"eventId"`
+	Reason       string    `json:"reason"`
+	Message      string    `json:"message"`
+	TargetPod    string    `json:"targetPod"`
+	Namespace    string    `json:"namespace"`
+	Cluster      string    `json:"cluster"`
+	SeverityType string    `json:"severityType"`
+	Timestamp    time.Time `json:"timestamp"`
+}
 
 // WSEventEnvelope represents the standardized WebSocket JSON frame delivered to client subscribers
 type WSEventEnvelope struct {
@@ -36,10 +50,13 @@ type PodStatusDelta struct {
 	Name           string            `json:"name"`
 	Namespace      string            `json:"namespace"`
 	NodeName       string            `json:"nodeName"`
+	PodIP          string            `json:"podIp"`
 	Phase          string            `json:"phase"`
 	RestartCount   int32             `json:"restartCount"`
-	CPUUsagePct    float64           `json:"cpuUsagePct,omitempty"`
-	MemoryUsageMb  float64           `json:"memoryUsageMb,omitempty"`
+	CpuUsageMcores int64             `json:"cpuUsageMcores"`
+	MemoryUsageMiB int64             `json:"memoryUsageMiB"`
+	CPUUsagePct    float64           `json:"cpuUsagePct"`
+	MemoryUsageMb  float64           `json:"memoryUsageMb"`
 	Labels         map[string]string `json:"labels"`
 	OwnerUID       string            `json:"ownerUid,omitempty"`
 	OwnerName      string            `json:"ownerName,omitempty"`

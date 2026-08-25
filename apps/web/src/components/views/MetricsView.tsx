@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Icon } from "../ui/Icon";
 import {
   mdiChartLine,
@@ -102,20 +102,19 @@ function TelemetryAreaChart({
               strokeLinecap="round"
               strokeLinejoin="round"
             />
-
-            {/* Hover Vertex Highlight Circle */}
-            {hoveredPoint && (
-              <circle
-                cx={`${hoveredPoint.x}%`}
-                cy={`${hoveredPoint.y}%`}
-                r="3.5"
-                fill={strokeHex}
-                stroke="#09090b"
-                strokeWidth="1.5"
-                vectorEffect="non-scaling-stroke"
-              />
-            )}
           </svg>
+
+          {/* Hover Vertex Highlight Circle (HTML div to prevent SVG aspect-ratio distortion) */}
+          {hoveredPoint && (
+            <div
+              className="absolute h-2.5 w-2.5 rounded-full -translate-x-1/2 -translate-y-1/2 border border-[#09090b] pointer-events-none z-25 shadow-md"
+              style={{
+                left: `${hoveredPoint.x}%`,
+                top: `${hoveredPoint.y}%`,
+                backgroundColor: strokeHex,
+              }}
+            />
+          )}
 
           {/* Flat Hover-Crosshair Tracking Guide Line */}
           {hoveredPoint && (
@@ -162,52 +161,60 @@ function TelemetryAreaChart({
 export function MetricsView() {
   const pods = useTopologyStore((s) => s.pods);
   const activeCluster = useTopologyStore((s) => s.activeCluster);
+  const clusterCpuCores = useTopologyStore((s) => s.clusterCpuCores) || 12;
+  const clusterMemoryGB = useTopologyStore((s) => s.clusterMemoryGB) || 14.8;
 
   // Dynamic telemetry stream data state
   const [cpuHistory, setCpuHistory] = useState<number[]>([
-    28, 35, 42, 38, 55, 62, 48, 40, 52, 68, 74, 58, 45, 50, 35.5,
+    5, 8, 12, 10, 15, 18, 14, 12, 16, 20, 22, 18, 15, 14, 12.5,
   ]);
   const [memoryHistory, setMemoryHistory] = useState<number[]>([
-    48, 50, 52, 55, 58, 62, 60, 61, 63, 60, 59, 62, 64, 60, 60.0,
+    15, 18, 20, 22, 25, 28, 26, 24, 25, 27, 26, 25, 24, 23, 22.0,
   ]);
 
-  // Live telemetry pulse simulator
+  // Compute live CPU & RAM usage from active pods streamed from metrics-server
+  const totalCpuMcores = useMemo(() => {
+    return pods.reduce((sum, p) => sum + (p.cpuUsageMcores || 0), 0);
+  }, [pods]);
+
+  const totalMemoryMiB = useMemo(() => {
+    return pods.reduce((sum, p) => sum + (p.memoryUsageMiB || 0), 0);
+  }, [pods]);
+
+  const currentCpuCores = (totalCpuMcores / 1000).toFixed(2);
+  const currentMemoryGB = (totalMemoryMiB / 1024).toFixed(1);
+
+  const metricsRef = useRef({ totalCpuMcores: 0, totalMemoryMiB: 0 });
+
+  useEffect(() => {
+    metricsRef.current = { totalCpuMcores, totalMemoryMiB };
+  }, [totalCpuMcores, totalMemoryMiB]);
+
+  // Live telemetry stream updates bound directly to real metrics-server aggregate fields
   useEffect(() => {
     const interval = setInterval(() => {
-      setCpuHistory((prev) => {
-        const nextVal = Math.min(95, Math.max(15, prev[prev.length - 1] + (Math.random() * 12 - 6)));
-        return [...prev.slice(1), nextVal];
-      });
-      setMemoryHistory((prev) => {
-        const nextVal = Math.min(92, Math.max(30, prev[prev.length - 1] + (Math.random() * 6 - 3)));
-        return [...prev.slice(1), nextVal];
-      });
-    }, 3000);
+      const maxMcores = clusterCpuCores * 1000;
+      const maxMemoryMiB = clusterMemoryGB * 1024;
+      const cpuPct = Math.min(100, Math.max(0.5, (metricsRef.current.totalCpuMcores / maxMcores) * 100));
+      const memPct = Math.min(100, Math.max(0.5, (metricsRef.current.totalMemoryMiB / maxMemoryMiB) * 100));
+
+      setCpuHistory((prev) => [...prev.slice(1), cpuPct]);
+      setMemoryHistory((prev) => [...prev.slice(1), memPct]);
+    }, 1000);
+
     return () => clearInterval(interval);
-  }, []);
+  }, [clusterCpuCores, clusterMemoryGB]);
 
-  // Compute live CPU & RAM usage from active pods
   const podResourceMetrics = useMemo(() => {
-    if (pods.length === 0) {
-      // Fallback display list if no pods streamed yet
-      return [
-        { name: "auth-service-5d6c8b-p9x1", namespace: "default", mcores: 420, memoryMiB: 312, status: "Running" },
-        { name: "postgres-db-0", namespace: "default", mcores: 380, memoryMiB: 1024, status: "Running" },
-        { name: "todo-backend-canary-786594868-9z4hx", namespace: "testing-todo", mcores: 260, memoryMiB: 245, status: "Running" },
-        { name: "redis-db-0", namespace: "testing-todo", mcores: 180, memoryMiB: 128, status: "Running" },
-      ];
-    }
-
     return pods
       .map((pod) => {
-        const hash = pod.name.split("").reduce((acc: number, c: string) => acc + c.charCodeAt(0), 0);
-        const mcores = (hash % 350) + 80;
-        const memoryMiB = (hash % 400) + 120;
+        const mcores = pod.cpuUsageMcores || 0;
+        const memoryMiB = pod.memoryUsageMiB || 0;
         return {
           name: pod.name,
           namespace: pod.namespace || "default",
           mcores,
-          memoryMiB,
+          memoryMiB: Math.round(memoryMiB),
           status: pod.status,
         };
       })
@@ -216,16 +223,6 @@ export function MetricsView() {
 
   const currentCpuPct = cpuHistory[cpuHistory.length - 1];
   const currentMemoryPct = memoryHistory[memoryHistory.length - 1];
-
-  const totalMcores = useMemo(() => {
-    const sum = podResourceMetrics.reduce((acc, p) => acc + p.mcores, 0);
-    return (sum / 1000).toFixed(2);
-  }, [podResourceMetrics]);
-
-  const totalRamGB = useMemo(() => {
-    const sumMiB = podResourceMetrics.reduce((acc, p) => acc + p.memoryMiB, 0);
-    return (sumMiB / 1024).toFixed(1);
-  }, [podResourceMetrics]);
 
   return (
     <div className="h-screen w-full max-w-7xl pt-20 pl-20 pr-6 pb-14 mx-auto space-y-6 bg-background overflow-y-auto">
@@ -247,8 +244,10 @@ export function MetricsView() {
           </div>
           <button
             onClick={() => {
-              setCpuHistory((prev) => [...prev.slice(1), Math.random() * 40 + 30]);
-              setMemoryHistory((prev) => [...prev.slice(1), Math.random() * 20 + 50]);
+              const cpuPct = Math.min(100, Math.max(0.5, (totalCpuMcores / 4000) * 100));
+              const memPct = Math.min(100, Math.max(0.5, (totalMemoryMiB / 8192) * 100));
+              setCpuHistory((prev) => [...prev.slice(1), cpuPct]);
+              setMemoryHistory((prev) => [...prev.slice(1), memPct]);
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-surface border border-neutral-800 text-xs font-medium text-neutral-300 hover:text-neutral-100 hover:border-neutral-700 transition-colors"
             title="Refresh Telemetry Stream"
@@ -274,7 +273,7 @@ export function MetricsView() {
             </div>
             <div className="text-right font-mono flex items-center gap-2">
               <div>
-                <div className="text-base text-neutral-100 font-semibold">{totalMcores} / 4.0 Cores</div>
+                <div className="text-base text-neutral-100 font-semibold">{currentCpuCores} / {clusterCpuCores.toFixed(1)} Cores</div>
                 <div className="text-xs text-neutral-500">({currentCpuPct.toFixed(1)}% load)</div>
               </div>
               {currentCpuPct > 85 && (
@@ -305,7 +304,7 @@ export function MetricsView() {
             </div>
             <div className="text-right font-mono flex items-center gap-2">
               <div>
-                <div className="text-base text-neutral-100 font-semibold">{totalRamGB} GB / 8.0 GB</div>
+                <div className="text-base text-neutral-100 font-semibold">{currentMemoryGB} GB / {clusterMemoryGB.toFixed(1)} GB</div>
                 <div className="text-xs text-neutral-500">({currentMemoryPct.toFixed(1)}% pressure)</div>
               </div>
               {currentMemoryPct > 85 && (

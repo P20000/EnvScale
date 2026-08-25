@@ -234,3 +234,19 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #3f3f46;
 }
+
+/* Mandala Background Spin Animation */
+@keyframes mandalaSpin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-mandala-spin {
+  animation: mandalaSpin 8s linear infinite;
+  transform-origin: center center;
+}
+

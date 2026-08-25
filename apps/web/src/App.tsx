@@ -88,7 +88,12 @@ function AppContent() {
       {/* Region 2: Left Floating Sidebar Capsule */}
       <LeftSidebar
         activeTab={activeTab}
-        onTabChange={(tab) => setActiveTab(tab)}
+        onTabChange={(tab) => {
+          setActiveTab(tab);
+          if (tab !== "topology") {
+            clearSelectedNode();
+          }
+        }}
         activeIncidentsCount={activeIncidentsCount}
       />
 
@@ -110,12 +115,14 @@ function AppContent() {
       </main>
 
       {/* Region 4: Contextual Right Slide-out Inspector Drawer */}
-      <InspectorDrawer
-        key={selectedKey}
-        target={selectedNode}
-        onClose={() => clearSelectedNode()}
-        onOpenLogTerminal={handleOpenLogTerminal}
-      />
+      {activeTab === "topology" && (
+        <InspectorDrawer
+          key={selectedKey}
+          target={selectedNode}
+          onClose={() => clearSelectedNode()}
+          onOpenLogTerminal={handleOpenLogTerminal}
+        />
+      )}
 
       {/* Region 5: Pod Log Terminal Drawer */}
       <PodLogDrawer

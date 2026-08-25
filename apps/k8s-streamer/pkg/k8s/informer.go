@@ -1,34 +1,38 @@
 package k8s
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"sync"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
+	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
 
-	appsv1 "k8s.io/api/apps/v1"
-	networkingv1 "k8s.io/api/networking/v1"
 	"github.com/EnvScale/k8s-streamer/pkg/types"
 	"github.com/EnvScale/k8s-streamer/pkg/websocket"
 )
 
 // InformerManager manages client-go SharedInformerFactory for Pods, Nodes, and Services
 type InformerManager struct {
-	clientset kubernetes.Interface
-	factory   informers.SharedInformerFactory
-	hub       *websocket.Hub
-	clusterID string
-	stopCh    chan struct{}
-	running   bool
-	mu        sync.RWMutex
-	dedup     *DedupCache // FNV-hash dedup cache to suppress unchanged delta rebroadcasts
+	clientset     kubernetes.Interface
+	metricsClient metricsv.Interface
+	factory       informers.SharedInformerFactory
+	hub           *websocket.Hub
+	clusterID     string
+	stopCh        chan struct{}
+	running       bool
+	mu            sync.RWMutex
+	dedup         *DedupCache // FNV-hash dedup cache to suppress unchanged delta rebroadcasts
 }
 
 // NewInformerManager creates an InformerManager from raw Kubeconfig bytes
@@ -48,7 +52,12 @@ func NewInformerManager(kubeconfigBytes []byte, hub *websocket.Hub, clusterID st
 		return nil, fmt.Errorf("failed to create kubernetes clientset: %w", err)
 	}
 
-	return NewInformerManagerWithClientset(clientset, hub, clusterID), nil
+	metricsClient, err := metricsv.NewForConfig(restConfig)
+	if err != nil {
+		log.Printf("[K8s Informer] Warning: failed to initialize versioned K8s metrics clientset for %s: %v", clusterID, err)
+	}
+
+	return NewInformerManagerWithClientsets(clientset, metricsClient, hub, clusterID), nil
 }
 
 // NewInformerManagerInCluster creates an InformerManager using in-cluster ServiceAccount config
@@ -63,21 +72,32 @@ func NewInformerManagerInCluster(hub *websocket.Hub, clusterID string) (*Informe
 		return nil, fmt.Errorf("failed to create kubernetes clientset: %w", err)
 	}
 
-	return NewInformerManagerWithClientset(clientset, hub, clusterID), nil
+	metricsClient, err := metricsv.NewForConfig(restConfig)
+	if err != nil {
+		log.Printf("[K8s Informer] Warning: failed to initialize versioned K8s metrics clientset for %s: %v", clusterID, err)
+	}
+
+	return NewInformerManagerWithClientsets(clientset, metricsClient, hub, clusterID), nil
 }
 
 // NewInformerManagerWithClientset creates an InformerManager using an explicit kubernetes.Interface (useful for fake clientset testing)
 func NewInformerManagerWithClientset(clientset kubernetes.Interface, hub *websocket.Hub, clusterID string) *InformerManager {
+	return NewInformerManagerWithClientsets(clientset, nil, hub, clusterID)
+}
+
+// NewInformerManagerWithClientsets creates an InformerManager using explicit kubernetes and metrics clientsets
+func NewInformerManagerWithClientsets(clientset kubernetes.Interface, metricsClient metricsv.Interface, hub *websocket.Hub, clusterID string) *InformerManager {
 	factory := informers.NewSharedInformerFactory(clientset, 30*time.Second)
 
 	return &InformerManager{
-		clientset: clientset,
-		factory:   factory,
-		hub:       hub,
-		clusterID: clusterID,
-		stopCh:    make(chan struct{}),
-		running:   false,
-		dedup:     NewDedupCache(),
+		clientset:     clientset,
+		metricsClient: metricsClient,
+		factory:       factory,
+		hub:           hub,
+		clusterID:     clusterID,
+		stopCh:        make(chan struct{}),
+		running:       false,
+		dedup:         NewDedupCache(),
 	}
 }
 
@@ -214,8 +234,62 @@ func (im *InformerManager) Start(stopCh <-chan struct{}) {
 		},
 	})
 
+	eventInformer := im.factory.Core().V1().Events().Informer()
+	eventInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			if evt, ok := obj.(*corev1.Event); ok {
+				im.emitK8sIncidentEvent(evt)
+			}
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			if evt, ok := newObj.(*corev1.Event); ok {
+				im.emitK8sIncidentEvent(evt)
+			}
+		},
+	})
+
 	im.factory.Start(stopCh)
+	go im.startMetricsPulse(stopCh)
 	log.Printf("[K8s Informer] Informers started for cluster: %s", im.clusterID)
+}
+
+func (im *InformerManager) startMetricsPulse(stopCh <-chan struct{}) {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stopCh:
+			return
+		case <-ticker.C:
+			if !im.IsRunning() {
+				return
+			}
+			metricsMap := im.FetchPodMetricsMap()
+			if len(metricsMap) == 0 {
+				continue
+			}
+
+			podList := im.factory.Core().V1().Pods().Informer().GetStore().List()
+			for _, obj := range podList {
+				if pod, ok := obj.(*corev1.Pod); ok {
+					key := fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)
+					if m, ok := metricsMap[key]; ok {
+						delta := im.extractPodDelta(pod)
+						delta.CpuUsageMcores = int64(m.CPUUsagePct)
+						delta.MemoryUsageMiB = int64(m.MemoryUsageMb)
+						delta.CPUUsagePct = m.CPUUsagePct
+						delta.MemoryUsageMb = m.MemoryUsageMb
+
+						dedupKey := fmt.Sprintf("PodMetric/%s/%s", pod.Namespace, pod.Name)
+						if im.dedup.ShouldEmit(dedupKey, delta) {
+							im.hub.BroadcastEvent(types.EventPodStatusChanged, im.clusterID, delta)
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 // StartAsync starts the informer event loops in a background goroutine using internal stopCh
@@ -281,6 +355,44 @@ func (im *InformerManager) resolveNodeObject(obj interface{}) *corev1.Node {
 	return nil
 }
 
+// PodMetricData encapsulates live CPU and Memory values retrieved from metrics-server
+type PodMetricData struct {
+	CPUUsagePct   float64
+	MemoryUsageMb float64
+}
+
+// FetchPodMetricsMap queries the live K8s Metrics API (metrics-server) for all pods
+func (im *InformerManager) FetchPodMetricsMap() map[string]PodMetricData {
+	metricsMap := make(map[string]PodMetricData)
+	if im.metricsClient == nil {
+		return metricsMap
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	podMetricsList, err := im.metricsClient.MetricsV1beta1().PodMetricses("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return metricsMap
+	}
+
+	for _, pm := range podMetricsList.Items {
+		var totalMcores int64 = 0
+		var totalMemBytes int64 = 0
+		for _, c := range pm.Containers {
+			totalMcores += c.Usage.Cpu().MilliValue()
+			totalMemBytes += c.Usage.Memory().Value()
+		}
+		memMiB := float64(totalMemBytes) / (1024 * 1024)
+		key := fmt.Sprintf("%s/%s", pm.Namespace, pm.Name)
+		metricsMap[key] = PodMetricData{
+			CPUUsagePct:   float64(totalMcores),
+			MemoryUsageMb: memMiB,
+		}
+	}
+	return metricsMap
+}
+
 // GetSnapshot retrieves the current local cache of all nodes, pods, services, and workloads and formats them as delta events.
 func (im *InformerManager) GetSnapshot() (
 	pods []types.PodStatusDelta,
@@ -290,14 +402,25 @@ func (im *InformerManager) GetSnapshot() (
 	replicaSets []types.ReplicaSetStatusDelta,
 	statefulSets []types.StatefulSetStatusDelta,
 	ingresses []types.IngressStatusDelta,
+	incidents []types.K8sIncidentEvent,
 ) {
 	// Block until all informer caches are fully synced to prevent returning empty snapshots right after startup
 	im.factory.WaitForCacheSync(im.stopCh)
 
+	metricsMap := im.FetchPodMetricsMap()
+
 	podList := im.factory.Core().V1().Pods().Informer().GetStore().List()
 	for _, obj := range podList {
 		if pod, ok := obj.(*corev1.Pod); ok {
-			pods = append(pods, im.extractPodDelta(pod))
+			delta := im.extractPodDelta(pod)
+			key := fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)
+			if m, ok := metricsMap[key]; ok {
+				delta.CpuUsageMcores = int64(m.CPUUsagePct)
+				delta.MemoryUsageMiB = int64(m.MemoryUsageMb)
+				delta.CPUUsagePct = m.CPUUsagePct
+				delta.MemoryUsageMb = m.MemoryUsageMb
+			}
+			pods = append(pods, delta)
 		}
 	}
 
@@ -371,7 +494,14 @@ func (im *InformerManager) GetSnapshot() (
 		}
 	}
 
-	return pods, nodes, services, deployments, replicaSets, statefulSets, ingresses
+	evtList := im.factory.Core().V1().Events().Informer().GetStore().List()
+	for _, obj := range evtList {
+		if evt, ok := obj.(*corev1.Event); ok {
+			incidents = append(incidents, im.extractK8sIncidentEvent(evt))
+		}
+	}
+
+	return pods, nodes, services, deployments, replicaSets, statefulSets, ingresses, incidents
 }
 
 func (im *InformerManager) extractPodDelta(pod *corev1.Pod) types.PodStatusDelta {
@@ -385,7 +515,7 @@ func (im *InformerManager) extractPodDelta(pod *corev1.Pod) types.PodStatusDelta
 	for _, cs := range pod.Status.ContainerStatuses {
 		if cs.State.Waiting != nil && cs.State.Waiting.Reason != "" {
 			phase = cs.State.Waiting.Reason
-		} else if cs.LastTerminationState.Terminated != nil && cs.LastTerminationState.Terminated.Reason != "" {
+		} else if cs.State.Running == nil && cs.LastTerminationState.Terminated != nil && cs.LastTerminationState.Terminated.Reason != "" {
 			phase = cs.LastTerminationState.Terminated.Reason
 		}
 	}
@@ -401,21 +531,30 @@ func (im *InformerManager) extractPodDelta(pod *corev1.Pod) types.PodStatusDelta
 		Name:         pod.Name,
 		Namespace:    pod.Namespace,
 		NodeName:     pod.Spec.NodeName,
+		PodIP:        pod.Status.PodIP,
 		Phase:        phase,
 		RestartCount: totalRestarts,
 		Labels:       pod.Labels,
 		OwnerUID:     ownerUID,
 		OwnerName:    ownerName,
 		OwnerKind:    ownerKind,
-		CreatedAt:    pod.CreationTimestamp.Time,
+		CreatedAt:    pod.CreationTimestamp.Time.UTC(),
 	}
 }
 
 func (im *InformerManager) emitPodDelta(pod *corev1.Pod) {
 	delta := im.extractPodDelta(pod)
 
+	metricsMap := im.FetchPodMetricsMap()
+	key := fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)
+	if m, ok := metricsMap[key]; ok {
+		delta.CpuUsageMcores = int64(m.CPUUsagePct)
+		delta.MemoryUsageMiB = int64(m.MemoryUsageMb)
+		delta.CPUUsagePct = m.CPUUsagePct
+		delta.MemoryUsageMb = m.MemoryUsageMb
+	}
+
 	// Dedup: skip broadcasting if the pod delta is identical to the last emitted version
-	key := fmt.Sprintf("Pod/%s/%s", pod.Namespace, pod.Name)
 	if !im.dedup.ShouldEmit(key, delta) {
 		return
 	}
@@ -595,4 +734,40 @@ func (im *InformerManager) emitIngressDelta(ing *networkingv1.Ingress) {
 		return
 	}
 	im.hub.BroadcastEvent(types.EventIngressMutated, im.clusterID, delta)
+}
+
+func (im *InformerManager) emitK8sIncidentEvent(evt *corev1.Event) {
+	incident := im.extractK8sIncidentEvent(evt)
+	key := fmt.Sprintf("Event/%s/%s", evt.Namespace, evt.UID)
+	if !im.dedup.ShouldEmit(key, incident) {
+		return
+	}
+	im.hub.BroadcastEvent(types.EventK8sIncidentCreated, im.clusterID, incident)
+}
+
+func (im *InformerManager) extractK8sIncidentEvent(evt *corev1.Event) types.K8sIncidentEvent {
+	timestamp := evt.FirstTimestamp.Time
+	if timestamp.IsZero() {
+		timestamp = evt.CreationTimestamp.Time
+	}
+	if timestamp.IsZero() {
+		timestamp = time.Now()
+	}
+	timestamp = timestamp.UTC()
+
+	targetPod := evt.InvolvedObject.Name
+	if targetPod == "" {
+		targetPod = evt.Name
+	}
+
+	return types.K8sIncidentEvent{
+		EventID:      string(evt.UID),
+		Reason:       evt.Reason,
+		Message:      evt.Message,
+		TargetPod:    targetPod,
+		Namespace:    evt.Namespace,
+		Cluster:      im.clusterID,
+		SeverityType: evt.Type,
+		Timestamp:    timestamp,
+	}
 }

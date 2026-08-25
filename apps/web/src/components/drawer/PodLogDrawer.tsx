@@ -193,10 +193,11 @@ export function PodLogDrawer({
 
               <button
                 onClick={onClose}
-                className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100 transition-colors"
+                className="flex items-center gap-1.5 rounded-xl bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-neutral-300 hover:bg-neutral-800 hover:text-white transition-all border border-neutral-800 hover:border-neutral-700 shadow-sm active:scale-95 cursor-pointer"
                 title="Close Log Terminal"
               >
-                <X className="h-5 w-5" />
+                <X className="h-4 w-4 text-neutral-400" />
+                <span>Close Terminal</span>
               </button>
             </div>
           </div>
@@ -256,6 +257,15 @@ export function PodLogDrawer({
                 title="Copy Logs to Clipboard"
               >
                 {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+              </button>
+
+              <button
+                onClick={onClose}
+                className="flex items-center gap-1 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 px-2.5 py-1.5 text-xs font-semibold hover:bg-red-500/20 transition-all cursor-pointer shrink-0"
+                title="Close Log Terminal"
+              >
+                <X className="h-4 w-4" />
+                <span>Close</span>
               </button>
 
               <button

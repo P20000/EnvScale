@@ -222,7 +222,7 @@ func main() {
 			return
 		}
 
-		pods, nodes, services, deployments, replicaSets, statefulSets, ingresses, err := clusterManager.GetClusterSnapshot(clusterID)
+		pods, nodes, services, deployments, replicaSets, statefulSets, ingresses, incidents, err := clusterManager.GetClusterSnapshot(clusterID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
@@ -237,6 +237,7 @@ func main() {
 			"replicaSets":  replicaSets,
 			"statefulSets": statefulSets,
 			"ingresses":    ingresses,
+			"incidents":    incidents,
 		})
 	})
 

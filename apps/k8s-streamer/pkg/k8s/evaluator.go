@@ -106,6 +106,7 @@ type SnapshotProvider interface {
 		[]types.ReplicaSetStatusDelta,
 		[]types.StatefulSetStatusDelta,
 		[]types.IngressStatusDelta,
+		[]types.K8sIncidentEvent,
 		error,
 	)
 	ListClusters() map[string]bool
@@ -137,7 +138,7 @@ func NewMetricEvaluator(provider SnapshotProvider, hub *websocket.Hub) *MetricEv
 	return &MetricEvaluator{
 		provider:   provider,
 		hub:        hub,
-		interval:   10 * time.Second,
+		interval:   1 * time.Second,
 		rules:      make([]AlertRule, 0),
 		violations: make(map[violationKey]*violationState),
 		stopCh:     make(chan struct{}),
@@ -285,7 +286,7 @@ func (me *MetricEvaluator) evaluate() {
 			continue
 		}
 
-		pods, nodes, _, _, _, _, _, err := me.provider.GetClusterSnapshot(clusterID)
+		pods, nodes, _, _, _, _, _, _, err := me.provider.GetClusterSnapshot(clusterID)
 		if err != nil {
 			continue
 		}

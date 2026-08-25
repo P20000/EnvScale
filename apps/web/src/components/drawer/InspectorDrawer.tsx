@@ -30,7 +30,17 @@ interface InspectorDrawerProps {
 }
 
 export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: InspectorDrawerProps) {
+  const clusterCpuCores = useTopologyStore((s) => s.clusterCpuCores);
+  const clusterMemoryGB = useTopologyStore((s) => s.clusterMemoryGB);
+
   const [activeTab, setActiveTab] = useState<"overview" | "logs" | "metrics" | "chaos">("overview");
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 10000);
+    return () => clearInterval(t);
+  }, []);
+
   const targetName = target?.data?.name;
 
   const [logs, setLogs] = useState<string[]>(() => {
@@ -46,6 +56,7 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
   const [isTailing, setIsTailing] = useState(true);
   const [copied, setCopied] = useState(false);
   const [chaosActionMsg, setChaosActionMsg] = useState<string | null>(null);
+  const [isEmbeddedLogOpen, setIsEmbeddedLogOpen] = useState(true);
 
   useEffect(() => {
     if (!isTailing || !target) return;
@@ -148,54 +159,63 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
     if (target.type === "node") return target.data.name;
     if (targetRecord.nodeName) return String(targetRecord.nodeName);
     if (targetRecord.node) return String(targetRecord.node);
-    return "Unassigned";
+    return null;
   };
 
-  // Helper to parse CPU usage and percentage dynamically
+  // Helper to parse Pod IP Address dynamically
+  const getPodIp = () => {
+    if (targetRecord.podIp) return String(targetRecord.podIp);
+    if (targetRecord.ip) return String(targetRecord.ip);
+    return null;
+  };
+
+  // Dynamic Localized Uptime Math
+  const getDynamicUptime = () => {
+    const createdRaw = targetRecord.createdAt || (target.data as K8sPodData)?.createdAt;
+    if (!createdRaw) return null;
+    const createdTime = new Date(String(createdRaw)).getTime();
+    if (isNaN(createdTime)) return null;
+    const diffMs = Math.max(0, nowMs - createdTime);
+    const d = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const h = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const m = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    return d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
+
+  // Helper to parse CPU usage and percentage dynamically against live cluster ceilings
   const getCpuTelemetry = () => {
     if (target.type === "node") {
       const nodeData = target.data as K8sNodeData;
-      const pct = nodeData.cpuPct ?? 42;
+      const pct = nodeData.cpuPct ?? 0;
+      const capStr = nodeData.cpuCapacity || (clusterCpuCores ? `${clusterCpuCores} cores` : "Allocating");
       return {
-        label: `${pct}% (${nodeData.cpuCapacity || "4 cores"})`,
+        label: `${pct}% (${capStr})`,
         pct: Math.min(100, Math.max(0, pct)),
       };
     }
     const podData = target.data as K8sPodData;
-    const cpuStr = podData.cpuUsage ? String(podData.cpuUsage) : "";
-    if (cpuStr.includes("%")) {
-      const val = parseFloat(cpuStr) || 15;
-      return { label: cpuStr, pct: Math.min(100, Math.max(0, val)) };
-    } else if (cpuStr.includes("mcores") || cpuStr.includes("m")) {
-      const mcores = parseFloat(cpuStr) || 34;
-      const pct = Math.min(100, Math.round((mcores / 250) * 100));
-      return { label: `${mcores} mcores (${pct}%)`, pct };
-    }
-    return { label: cpuStr || "34 mcores (13.6%)", pct: 13.6 };
+    const mcores = podData.cpuUsageMcores ?? 0;
+    const maxMcores = (clusterCpuCores || 12) * 1000;
+    const pct = Math.min(100, parseFloat(((mcores / maxMcores) * 100).toFixed(1)));
+    return { label: `${mcores} mcores (${pct}%)`, pct };
   };
 
-  // Helper to parse Memory usage and percentage dynamically
+  // Helper to parse Memory usage and percentage dynamically against live cluster ceilings
   const getMemoryTelemetry = () => {
     if (target.type === "node") {
       const nodeData = target.data as K8sNodeData;
-      const pct = nodeData.memoryPct ?? 68;
+      const pct = nodeData.memoryPct ?? 0;
+      const capStr = nodeData.memoryCapacity || (clusterMemoryGB ? `${clusterMemoryGB.toFixed(1)} GiB` : "Allocating");
       return {
-        label: `${pct}% (${nodeData.memoryCapacity || "8 GiB"})`,
+        label: `${pct}% (${capStr})`,
         pct: Math.min(100, Math.max(0, pct)),
       };
     }
     const podData = target.data as K8sPodData;
-    const memStr = podData.memoryUsage ? String(podData.memoryUsage) : "";
-    if (memStr.includes("%")) {
-      const val = parseFloat(memStr) || 25;
-      return { label: memStr, pct: Math.min(100, Math.max(0, val)) };
-    } else if (memStr.includes("MiB") || memStr.includes("MB") || memStr.includes("GiB")) {
-      const mib = parseFloat(memStr) || 128;
-      const totalMib = 512;
-      const pct = Math.min(100, Math.round((mib / totalMib) * 100));
-      return { label: `${mib} MiB / ${totalMib} MiB (${pct}%)`, pct };
-    }
-    return { label: memStr || "128 MiB / 512 MiB (25%)", pct: 25 };
+    const mib = podData.memoryUsageMiB ?? 0;
+    const totalMib = (clusterMemoryGB || 14.8) * 1024;
+    const pct = Math.min(100, parseFloat(((mib / totalMib) * 100).toFixed(1)));
+    return { label: `${mib.toFixed(1)} MiB / ${(totalMib / 1024).toFixed(1)} GiB (${pct}%)`, pct };
   };
 
   const cpuTelemetry = getCpuTelemetry();
@@ -307,36 +327,84 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
                 Placement & IP
               </h4>
               <div className="space-y-1.5 text-xs font-mono">
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center">
                   <span className="text-neutral-400">Node Assignment:</span>
-                  <span className="text-neutral-200">{getNodeAssignment()}</span>
+                  {getNodeAssignment() ? (
+                    <span className="text-neutral-200">{getNodeAssignment()}</span>
+                  ) : (
+                    <span className="font-mono text-xs text-neutral-500 italic">unassigned</span>
+                  )}
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center">
                   <span className="text-neutral-400">Pod IP Address:</span>
-                  <span className="text-neutral-200">
-                    {targetRecord.ip ? String(targetRecord.ip) : "10.244.0.14"}
-                  </span>
+                  {getPodIp() ? (
+                    <span className="text-neutral-200">{getPodIp()}</span>
+                  ) : (
+                    <span className="font-mono text-xs text-neutral-500 italic">unassigned</span>
+                  )}
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center">
                   <span className="text-neutral-400">Uptime:</span>
-                  <span className="text-neutral-200">4d 18h 32m</span>
+                  {getDynamicUptime() ? (
+                    <span className="text-neutral-200">{getDynamicUptime()}</span>
+                  ) : (
+                    <span className="font-mono text-xs text-neutral-500 italic">unassigned</span>
+                  )}
                 </div>
               </div>
             </div>
 
-            {target.type === "pod" && onOpenLogTerminal && (
-              <button
-                onClick={() =>
-                  onOpenLogTerminal(
-                    target.data.name,
-                    targetRecord.namespace ? String(targetRecord.namespace) : "default"
-                  )
-                }
-                className="w-full flex items-center justify-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-2.5 text-xs font-medium text-blue-400 hover:bg-blue-500/20 hover:border-blue-500/50 transition-all active:scale-95 shadow-md"
-              >
-                <Terminal className="h-4 w-4" />
-                <span>Open Full Log Terminal</span>
-              </button>
+            {/* Embedded Live Log Stream in Overview Tab */}
+            {target.type === "pod" && (
+              isEmbeddedLogOpen ? (
+                <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <Terminal className="h-3.5 w-3.5 text-blue-400" />
+                      Live Log Terminal
+                    </h4>
+                    <div className="flex items-center gap-1.5">
+                      {onOpenLogTerminal && (
+                        <button
+                          onClick={() =>
+                            onOpenLogTerminal(
+                              target.data.name,
+                              targetRecord.namespace ? String(targetRecord.namespace) : "default"
+                            )
+                          }
+                          className="rounded bg-blue-500/20 px-2 py-0.5 text-[10px] font-mono text-blue-300 hover:bg-blue-500/30 transition-colors border border-blue-500/30 cursor-pointer"
+                        >
+                          Expand Terminal ↗
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setIsEmbeddedLogOpen(false)}
+                        className="rounded bg-neutral-800 px-2 py-0.5 text-[10px] font-mono text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200 transition-colors border border-neutral-700 cursor-pointer"
+                        title="Close Embedded Terminal"
+                      >
+                        Close ✕
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="h-[180px] w-full rounded-lg bg-neutral-950 p-2.5 font-mono text-[10px] text-neutral-300 border border-neutral-800 overflow-y-auto space-y-1 select-text">
+                    {logs.map((line, idx) => (
+                      <div key={idx} className="leading-relaxed hover:bg-neutral-900/60 rounded px-1">
+                        <span className="text-neutral-500 mr-2">{idx + 1}</span>
+                        <span>{line}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setIsEmbeddedLogOpen(true)}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900/50 px-4 py-2.5 text-xs font-medium text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200 transition-all cursor-pointer"
+                >
+                  <Terminal className="h-4 w-4 text-blue-400" />
+                  <span>Show Embedded Log Terminal</span>
+                </button>
+              )
             )}
           </div>
         )}
@@ -376,6 +444,13 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
                   title="Copy Logs"
                 >
                   {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                </button>
+                <button
+                  onClick={() => setActiveTab("overview")}
+                  className="rounded bg-neutral-800 px-2 py-1 text-[11px] font-mono text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors border border-neutral-700 cursor-pointer"
+                  title="Close Live Logs View"
+                >
+                  Close Logs ✕
                 </button>
               </div>
             </div>
