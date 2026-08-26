@@ -506,23 +506,6 @@ export function KubectlTerminal() {
 
   return (
     <>
-      {/* Bottom-Left Trigger Pill Button */}
-      <div className="fixed bottom-6 left-20 z-40">
-        <button
-          onClick={() => setIsOpen((prev) => !prev)}
-          className={`flex items-center gap-2 rounded-2xl bg-neutral-900/90 backdrop-blur-md border px-3.5 py-2 text-xs font-mono font-semibold shadow-2xl transition-all active:scale-95 ${
-            isOpen
-              ? "border-emerald-500/50 bg-neutral-900 text-emerald-400 shadow-emerald-500/10"
-              : "border-neutral-800 text-neutral-300 hover:border-emerald-500/40 hover:text-emerald-400"
-          }`}
-          title="Toggle Kubectl Terminal Shell"
-        >
-          <TerminalIcon className="h-4 w-4 text-emerald-400 animate-pulse" />
-          <span>kubectl shell</span>
-          <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
-        </button>
-      </div>
-
       {/* Slide-Up Terminal Drawer */}
       {isOpen && (
         <div
