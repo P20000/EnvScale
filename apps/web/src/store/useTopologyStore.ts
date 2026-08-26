@@ -227,10 +227,15 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[]): Edge[
 export const syncSelectedNode = (nodes: Node[], currentSelected: SelectedTarget): SelectedTarget => {
   if (!currentSelected || !currentSelected.data) return null;
   const targetName = currentSelected.data.name;
+  const targetNs = (currentSelected.data as { namespace?: string }).namespace;
   if (!targetName) return currentSelected;
 
   const matched = nodes.find(
-    (n) => n.id === targetName || (n.data as { name?: string })?.name === targetName
+    (n) =>
+      n.id === targetName ||
+      (n.data as { name?: string })?.name === targetName ||
+      ((n.data as { name?: string; namespace?: string })?.name === targetName &&
+        (n.data as { name?: string; namespace?: string })?.namespace === targetNs)
   );
   if (matched && matched.data) {
     if (matched.type === "k8sPod") {
@@ -239,6 +244,8 @@ export const syncSelectedNode = (nodes: Node[], currentSelected: SelectedTarget)
       return { type: "node", data: matched.data as K8sNodeData };
     } else if (matched.type === "k8sService") {
       return { type: "service", data: matched.data as K8sServiceData };
+    } else if (matched.type === "k8sIngress") {
+      return { type: "ingress", data: matched.data as K8sIngressData };
     }
   }
   return currentSelected;

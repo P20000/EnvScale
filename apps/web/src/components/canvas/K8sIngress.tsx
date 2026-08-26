@@ -8,10 +8,20 @@ export interface IngressRuleData {
   servicePort: number;
 }
 
+export interface IngressTLSData {
+  hosts?: string[];
+  secretName?: string;
+}
+
 export interface K8sIngressData extends Record<string, unknown> {
   name: string;
   namespace: string;
+  ingressClassName?: string;
   rules: IngressRuleData[];
+  tls?: IngressTLSData[];
+  loadBalancerIps?: string[];
+  status?: string;
+  labels?: Record<string, string>;
 }
 
 export function K8sIngressNode({ data }: { data: K8sIngressData }) {

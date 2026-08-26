@@ -20,6 +20,7 @@ import { ArgoEdge } from "./ArgoEdge";
 import type { K8sPodData } from "../canvas/K8sPod";
 import type { K8sNodeData } from "../canvas/K8sNode";
 import type { K8sServiceData } from "../canvas/K8sService";
+import type { K8sIngressData } from "../canvas/K8sIngress";
 import { useTopologyStore } from "../../store/useTopologyStore";
 import type { SelectedTarget } from "../drawer/InspectorDrawer";
 import { useK8sStream, type WsTopologyMessage } from "../../hooks/useK8sStream";
@@ -88,6 +89,8 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         target = { type: "node", data: node.data as K8sNodeData };
       } else if (node.type === "k8sService") {
         target = { type: "service", data: node.data as K8sServiceData };
+      } else if (node.type === "k8sIngress") {
+        target = { type: "ingress", data: node.data as K8sIngressData };
       }
       setSelectedNode(target);
       onSelectTarget(target);
