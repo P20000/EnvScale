@@ -13,6 +13,10 @@ import {
 } from "react-icons/md";
 import { usePodLogs } from "../../hooks/usePodLogs";
 import type { LogLevel } from "../../types/logs";
+import { useTopologyStore } from "../../store/useTopologyStore";
+import { LogRow } from "./LogRow";
+import { parseLogPayload } from "../../utils/logParser";
+import { aggregateConsecutiveLogs } from "../../utils/logAggregator";
 
 interface PodLogDrawerProps {
   podName: string | null;
@@ -31,12 +35,16 @@ export function PodLogDrawer({
 }: PodLogDrawerProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLevel, setSelectedLevel] = useState<LogLevel | "ALL">("ALL");
+  const [hideNoise, setHideNoise] = useState(true);
   const [copied, setCopied] = useState(false);
   const [isUserScrolledUp, setIsUserScrolledUp] = useState(false);
   const [unreadLogsCount, setUnreadLogsCount] = useState(0);
 
   const logContainerRef = useRef<HTMLDivElement>(null);
   const prevLogsLengthRef = useRef(0);
+
+  const selectedNs = useTopologyStore((s) => s.selectedNamespaces[0]);
+  const activeNs = namespace && namespace !== "default" ? namespace : selectedNs || "testing-todo";
 
   const {
     logs,
@@ -47,26 +55,32 @@ export function PodLogDrawer({
     copyLogs,
   } = usePodLogs({
     podName: isOpen ? podName : null,
-    namespace,
+    namespace: activeNs,
     enabled: isOpen,
   });
 
-  // Filter logs by search query and level
+  // Filter logs by search query and parsed level
   const filteredLogs = useMemo(() => {
     return logs.filter((log) => {
-      const matchesLevel = selectedLevel === "ALL" || log.level === selectedLevel;
+      const parsed = log.parsed || parseLogPayload(log.message, log.level);
+      const matchesLevel = selectedLevel === "ALL" || parsed.level === selectedLevel;
       if (!matchesLevel) return false;
 
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase();
       return (
-        log.message.toLowerCase().includes(q) ||
-        log.level.toLowerCase().includes(q) ||
+        parsed.message.toLowerCase().includes(q) ||
+        parsed.level.toLowerCase().includes(q) ||
         (log.timestamp && log.timestamp.toLowerCase().includes(q)) ||
-        (log.container && log.container.toLowerCase().includes(q))
+        (log.source && log.source.toLowerCase().includes(q)) ||
+        JSON.stringify(parsed.attributes).toLowerCase().includes(q)
       );
     });
   }, [logs, selectedLevel, searchQuery]);
+
+  const processedLogs = useMemo(() => {
+    return aggregateConsecutiveLogs(filteredLogs, hideNoise);
+  }, [filteredLogs, hideNoise]);
 
   // Handle scroll detection
   const handleScroll = useCallback(() => {
@@ -120,35 +134,6 @@ export function PodLogDrawer({
   }, [copyLogs]);
 
   if (!isOpen || !podName) return null;
-
-  const renderLevelBadge = (level: LogLevel) => {
-    switch (level) {
-      case "TRACE":
-        return "bg-neutral-800/80 text-neutral-400 border-neutral-700/60";
-      case "DEBUG":
-        return "bg-blue-950/80 text-blue-400 border-blue-800/50";
-      case "INFO":
-        return "bg-cyan-950/80 text-cyan-400 border-cyan-800/50";
-      case "WARN":
-        return "bg-amber-950/80 text-amber-300 border-amber-800/50";
-      case "ERROR":
-        return "bg-red-950/80 text-red-400 border-red-800/50 font-bold";
-      case "FATAL":
-        return "bg-fuchsia-950/80 text-fuchsia-300 border-fuchsia-800/50 font-bold animate-pulse";
-      default:
-        return "bg-neutral-800 text-neutral-300 border-neutral-700";
-    }
-  };
-
-  const formatTimestamp = (ts?: string) => {
-    if (!ts) return "";
-    try {
-      const d = new Date(ts);
-      return d.toTimeString().split(" ")[0] + "." + String(d.getMilliseconds()).padStart(3, "0");
-    } catch {
-      return ts;
-    }
-  };
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
@@ -237,10 +222,22 @@ export function PodLogDrawer({
             </div>
 
             {/* Control Actions */}
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setHideNoise((prev) => !prev)}
+                className={`flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-mono border transition-all cursor-pointer ${
+                  hideNoise
+                    ? "bg-purple-500/20 text-purple-300 border-purple-500/40 font-semibold"
+                    : "bg-neutral-900 text-neutral-400 border-neutral-800 hover:bg-neutral-800"
+                }`}
+                title="Suppress repetitive heartbeat logs & health checks"
+              >
+                <span>{hideNoise ? "🔇 Hide Noise: ON" : "🔊 Hide Noise: OFF"}</span>
+              </button>
+
               <button
                 onClick={() => setIsTailing((prev) => !prev)}
-                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-xs font-medium border transition-all ${
+                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 font-mono text-xs font-medium border transition-all ${
                   isTailing
                     ? "bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20"
                     : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20"
@@ -253,16 +250,15 @@ export function PodLogDrawer({
 
               <button
                 onClick={handleCopy}
-                className="flex items-center gap-1 rounded-lg bg-neutral-900 p-1.5 text-xs text-neutral-300 border border-neutral-800 hover:bg-neutral-800 hover:text-neutral-100 transition-colors"
-                title="Copy Logs to Clipboard"
+                className="flex items-center gap-1.5 rounded-lg bg-neutral-900 px-2.5 py-1 font-mono text-xs text-neutral-300 border border-neutral-800 hover:bg-neutral-800 transition-colors cursor-pointer"
               >
                 {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                <span>{copied ? "Copied" : "Copy"}</span>
               </button>
 
               <button
                 onClick={onClose}
-                className="flex items-center gap-1 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 px-2.5 py-1.5 text-xs font-semibold hover:bg-red-500/20 transition-all cursor-pointer shrink-0"
-                title="Close Log Terminal"
+                className="flex items-center gap-1.5 rounded-lg bg-red-500/10 px-2.5 py-1 font-mono text-xs text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-colors cursor-pointer ml-1"
               >
                 <X className="h-4 w-4" />
                 <span>Close</span>
@@ -270,7 +266,7 @@ export function PodLogDrawer({
 
               <button
                 onClick={clearLogs}
-                className="flex items-center gap-1 rounded-lg bg-neutral-900 p-1.5 text-xs text-neutral-300 border border-neutral-800 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 transition-colors"
+                className="flex items-center gap-1 rounded-lg bg-neutral-900 p-1.5 text-xs text-neutral-300 border border-neutral-800 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 transition-colors cursor-pointer"
                 title="Clear Output Logs"
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -286,42 +282,19 @@ export function PodLogDrawer({
             onScroll={handleScroll}
             className="h-full w-full overflow-y-auto font-mono text-xs space-y-1 pr-2 select-text"
           >
-            {filteredLogs.length === 0 ? (
+            {processedLogs.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center text-center p-8 text-neutral-500">
                 <Terminal className="h-10 w-10 mb-3 opacity-30" />
                 <p className="font-semibold text-neutral-400">No matching log records found</p>
                 <p className="text-[11px] mt-1 text-neutral-600">
-                  {searchQuery || selectedLevel !== "ALL"
-                    ? "Try adjusting your search filter criteria"
+                  {searchQuery || selectedLevel !== "ALL" || hideNoise
+                    ? "Try adjusting your search or noise filter criteria"
                     : "Waiting for incoming log stream frames..."}
                 </p>
               </div>
             ) : (
-              filteredLogs.map((log, idx) => (
-                <div
-                  key={log.id || idx}
-                  className="group flex items-start gap-3 rounded px-2 py-1 leading-relaxed hover:bg-neutral-900/70 transition-colors"
-                >
-                  <span className="w-8 shrink-0 text-right font-mono text-[10px] text-neutral-600 select-none group-hover:text-neutral-500">
-                    {idx + 1}
-                  </span>
-
-                  <span className="shrink-0 font-mono text-[11px] text-neutral-500 select-none">
-                    [{formatTimestamp(log.timestamp)}]
-                  </span>
-
-                  <span
-                    className={`shrink-0 rounded px-1.5 py-0.2 font-mono text-[10px] uppercase border ${renderLevelBadge(
-                      log.level
-                    )}`}
-                  >
-                    {log.level.padEnd(5)}
-                  </span>
-
-                  <span className="flex-1 font-mono text-neutral-200 break-all whitespace-pre-wrap">
-                    {log.message}
-                  </span>
-                </div>
+              processedLogs.map((log, idx) => (
+                <LogRow key={log.id || idx} log={log} index={idx} showSource={true} />
               ))
             )}
           </div>

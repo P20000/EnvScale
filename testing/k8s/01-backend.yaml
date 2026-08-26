@@ -48,7 +48,7 @@ spec:
           command:
             - sh
             - -c
-            - "while true; do echo '{\"level\":\"info\",\"event\":\"heartbeat\",\"service\":\"todo-backend\",\"timestamp\":\"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'\"}' >> /var/log/app.log; sleep 5; done"
+            - "mkdir -p /var/log && while true; do echo '{\"level\":\"info\",\"event\":\"heartbeat\",\"service\":\"todo-backend\",\"timestamp\":\"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'\"}' | tee -a /var/log/app.log; sleep 5; done"
           resources:
             requests:
               cpu: 10m

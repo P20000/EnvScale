@@ -15,8 +15,7 @@ import {
   mdiCrosshairsGps,
 } from "@mdi/js";
 
-import { K8sPodNode, K8sWorkerNode, K8sServiceNode, K8sWorkloadNode, K8sIngressNode, K8sGroupNode } from "../canvas";
-import { ArgoEdge } from "./ArgoEdge";
+import { K8sPodNode, K8sWorkerNode, K8sServiceNode, K8sWorkloadNode, K8sIngressNode, K8sGroupNode, K8sEdge } from "../canvas";
 import type { K8sPodData } from "../canvas/K8sPod";
 import type { K8sNodeData } from "../canvas/K8sNode";
 import type { K8sServiceData } from "../canvas/K8sService";
@@ -40,7 +39,8 @@ const nodeTypes = {
 };
 
 const edgeTypes = {
-  argo: ArgoEdge,
+  argo: K8sEdge,
+  k8sEdge: K8sEdge,
 };
 
 interface TopologyCanvasProps {

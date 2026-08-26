@@ -12,6 +12,7 @@ import {
 import { useTopologyStore, type NotificationItem } from "../../store/useTopologyStore";
 import { AuthModal } from "./AuthModal";
 import { WorkspaceModal } from "./WorkspaceModal";
+import { NamespaceFilterPill } from "./NamespaceFilterPill";
 import { EnvScaleLogo } from "../ui/EnvScaleLogo";
 
 import type { WsConnectionStatus } from "../../hooks/useK8sStream";
@@ -128,7 +129,8 @@ export function TopNavbar({
         </div>
 
         {/* Center Group: Navigation Pill Controls */}
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-4 bg-[#18181b] border border-zinc-800 h-9 px-3.5 rounded-full z-10" ref={dropdownRef}>
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-3 z-10">
+          <div className="flex items-center gap-4 bg-[#18181b] border border-zinc-800 h-9 px-3.5 rounded-full" ref={dropdownRef}>
 
           {/* Cluster Selector */}
           <button
@@ -204,6 +206,10 @@ export function TopNavbar({
                 : "DISCONNECTED"}
             </span>
           </div>
+          </div>
+
+          {/* Dedicated Namespace Filter Pill Capsule */}
+          <NamespaceFilterPill />
         </div>
 
         {/* Right Group: Action Controls */}

@@ -171,15 +171,12 @@
 
 /* Edges Styling */
 .react-flow__edge-path {
-  stroke: #3f3f46 !important;
-  stroke-width: 2px !important;
+  stroke-width: 2px;
   transition: stroke 0.2s ease, stroke-width 0.2s ease;
 }
 
-.react-flow__edge.selected .react-flow__edge-path,
-.react-flow__edge:hover .react-flow__edge-path {
-  stroke: #3b82f6 !important;
-  stroke-width: 2.5px !important;
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke-width: 2.5px;
 }
 
 .react-flow__edge-path.animated-edge {

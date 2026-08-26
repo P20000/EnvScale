@@ -8,6 +8,7 @@ import {
   mdiRefresh,
 } from "@mdi/js";
 import { useTopologyStore } from "../../store/useTopologyStore";
+import { SYSTEM_NAMESPACES } from "../../store/helpers/topologyHelpers";
 
 export interface TelemetryPoint {
   timestamp: number;
@@ -235,9 +236,24 @@ function TelemetryAreaChart({
 
 export function MetricsView() {
   const pods = useTopologyStore((s) => s.pods);
+  const selectedNamespaces = useTopologyStore((s) => s.selectedNamespaces);
+  const showSystemNamespaces = useTopologyStore((s) => s.showSystemNamespaces);
   const activeCluster = useTopologyStore((s) => s.activeCluster);
   const clusterCpuCores = useTopologyStore((s) => s.clusterCpuCores) || 12;
   const clusterMemoryGB = useTopologyStore((s) => s.clusterMemoryGB) || 14.8;
+
+  // Filter pods by active namespace selection
+  const filteredPods = useMemo(() => {
+    return pods.filter((pod) => {
+      const ns = pod.namespace || "default";
+      if (Array.isArray(selectedNamespaces)) {
+        if (selectedNamespaces.length === 0) return false;
+        return selectedNamespaces.includes(ns);
+      }
+      if (!showSystemNamespaces && SYSTEM_NAMESPACES.has(ns)) return false;
+      return true;
+    });
+  }, [pods, selectedNamespaces, showSystemNamespaces]);
 
   // Dynamic telemetry stream data state (60s rolling window buffer with real timestamps)
   const [cpuHistory, setCpuHistory] = useState<TelemetryPoint[]>(createInitialHistory);
@@ -245,12 +261,12 @@ export function MetricsView() {
 
   // Compute live CPU & RAM usage from active pods streamed from metrics-server
   const totalCpuMcores = useMemo(() => {
-    return pods.reduce((sum, p) => sum + (p.cpuUsageMcores || 0), 0);
-  }, [pods]);
+    return filteredPods.reduce((sum, p) => sum + (p.cpuUsageMcores || 0), 0);
+  }, [filteredPods]);
 
   const totalMemoryMiB = useMemo(() => {
-    return pods.reduce((sum, p) => sum + (p.memoryUsageMiB || 0), 0);
-  }, [pods]);
+    return filteredPods.reduce((sum, p) => sum + (p.memoryUsageMiB || 0), 0);
+  }, [filteredPods]);
 
   const currentCpuCores = (totalCpuMcores / 1000).toFixed(2);
   const currentMemoryGB = (totalMemoryMiB / 1024).toFixed(1);
@@ -278,7 +294,7 @@ export function MetricsView() {
   }, [clusterCpuCores, clusterMemoryGB]);
 
   const podResourceMetrics = useMemo(() => {
-    return pods
+    return filteredPods
       .map((pod) => {
         const mcores = pod.cpuUsageMcores || 0;
         const memoryMiB = pod.memoryUsageMiB || 0;
@@ -291,7 +307,7 @@ export function MetricsView() {
         };
       })
       .sort((a, b) => b.mcores - a.mcores);
-  }, [pods]);
+  }, [filteredPods]);
 
   const currentCpuPct = cpuHistory[cpuHistory.length - 1]?.value || 0;
   const currentMemoryPct = memoryHistory[memoryHistory.length - 1]?.value || 0;

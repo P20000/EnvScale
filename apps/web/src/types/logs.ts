@@ -1,3 +1,5 @@
+import type { ParsedLogPayload } from "../utils/logParser";
+
 export type LogLevel = "TRACE" | "DEBUG" | "INFO" | "WARN" | "ERROR" | "FATAL";
 
 export interface PodLogLine {
@@ -9,6 +11,8 @@ export interface PodLogLine {
   namespace?: string;
   container?: string;
   stream?: "stdout" | "stderr";
+  source?: string;
+  parsed?: ParsedLogPayload;
 }
 
 export type LogStreamStatus = "connecting" | "streaming" | "paused" | "offline" | "error";

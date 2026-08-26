@@ -2,32 +2,18 @@ import { useState, useMemo } from "react";
 import { Icon } from "../ui/Icon";
 import {
   mdiAlertCircle,
-  mdiAlert,
-  mdiInformation,
   mdiCheckCircle,
   mdiPlus,
   mdiCog,
   mdiShieldCheck,
-  mdiAlertOctagon,
 } from "@mdi/js";
 import { useTopologyStore } from "../../store/useTopologyStore";
+import { SYSTEM_NAMESPACES } from "../../store/helpers/topologyHelpers";
 import { useAlertStore } from "../../store/useAlertStore";
 import { AlertRuleList } from "../alerts/AlertRuleList";
 import { AlertRuleModal } from "../alerts/AlertRuleModal";
 import type { AlertRule } from "../../types/alerts";
-import { EmptyState } from "../ui/empty-state";
-
-interface Incident {
-  id: string;
-  pod: string;
-  namespace: string;
-  cluster: string;
-  severity: "CRITICAL" | "WARNING" | "INFO";
-  message: string;
-  time: string;
-  rawTimestamp?: string;
-  status: "TRIGGERED" | "RESOLVED";
-}
+import { IncidentTable, type IncidentItem } from "../incidents/IncidentTable";
 
 function formatPreciseTime(isoString?: string) {
   if (!isoString) {
@@ -55,51 +41,6 @@ function formatPreciseTime(isoString?: string) {
   }).format(eventDate);
 }
 
-type Severity = "critical" | "warning" | "minor" | "info" | "CRITICAL" | "WARNING" | "INFO";
-
-export function IncidentSeverityCell({ severity }: { severity: Severity }) {
-  const sevKey = severity.toLowerCase() as "critical" | "warning" | "minor" | "info";
-  const configs = {
-    critical: {
-      path: mdiAlertCircle,
-      bg: "bg-red-500/5",
-      text: "text-red-400",
-      border: "border-red-500/20",
-      label: "Critical",
-    },
-    warning: {
-      path: mdiAlert,
-      bg: "bg-amber-500/5",
-      text: "text-amber-400",
-      border: "border-amber-500/20",
-      label: "High",
-    },
-    minor: {
-      path: mdiInformation,
-      bg: "bg-yellow-500/5",
-      text: "text-yellow-400",
-      border: "border-yellow-500/20",
-      label: "Minor",
-    },
-    info: {
-      path: mdiCheckCircle,
-      bg: "bg-blue-500/5",
-      text: "text-blue-400",
-      border: "border-blue-500/20",
-      label: "Info",
-    },
-  };
-
-  const current = configs[sevKey] || configs.info;
-
-  return (
-    <div className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold border rounded-full ${current.bg} ${current.text} ${current.border}`}>
-      <Icon path={current.path} size={0.55} />
-      <span>{current.label}</span>
-    </div>
-  );
-}
-
 export function IncidentsView() {
   const clusters = useTopologyStore((s) => s.clusters);
   const activeCluster = useTopologyStore((s) => s.activeCluster);
@@ -117,12 +58,10 @@ export function IncidentsView() {
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [clusterFilter, setClusterFilter] = useState<string>("ALL");
 
-  // Ingest authentic Kubernetes v1.Events and live pod telemetry
-  const incidents = useMemo<Incident[]>(() => {
-    const list: Incident[] = [];
+  const incidents = useMemo<IncidentItem[]>(() => {
+    const list: IncidentItem[] = [];
     const seenIds = new Set<string>();
 
-    // 1. Genuine K8s v1.Events broadcasted from Core V1 Event Informer
     k8sEvents.forEach((evt) => {
       const shortId = evt.eventId ? evt.eventId.slice(0, 8).toUpperCase() : `EVT-${(evt.targetPod || "NODE").slice(-4).toUpperCase()}`;
       const id = `INC-${shortId}`;
@@ -150,102 +89,122 @@ export function IncidentsView() {
           id,
           pod: evt.targetPod || "cluster-node",
           namespace: evt.namespace || "default",
-          cluster: evt.cluster || activeCluster || "mini-todo",
+          cluster: activeCluster || "minikube",
           severity,
-          message: evt.message || `Event reason: ${reason || "StateChange"}`,
-          time: evt.timestamp || new Date().toISOString(),
+          message: `${evt.reason || "K8s Event"}: ${evt.message}`,
+          time: evt.timestamp ? formatPreciseTime(evt.timestamp) : "Just now",
           rawTimestamp: evt.timestamp,
-          status: ["succeeded", "completed", "normal"].includes(reason.toLowerCase()) ? "RESOLVED" : "TRIGGERED",
+          status: evt.status === "RESOLVED" ? "RESOLVED" : "TRIGGERED",
         });
       }
     });
 
-    // 2. Fallback to live pod state events if event informer cache is populating
-    pods.forEach((pod) => {
-      if (pod.status !== "Running" || pod.restarts > 0) {
-        const id = `INC-POD-${pod.name.slice(-6).toUpperCase()}`;
-        if (!seenIds.has(id)) {
-          seenIds.add(id);
-          const statusStr = pod.status as string;
-          const isCritical = statusStr === "CrashLoopBackOff" || statusStr === "Failed" || statusStr === "OOMKilled";
-          const isWarning = pod.restarts > 0 || statusStr === "Pending" || statusStr === "ImagePullBackOff";
-          list.push({
-            id,
-            pod: pod.name,
-            namespace: pod.namespace || "default",
-            cluster: activeCluster || "mini-todo",
-            severity: isCritical ? "CRITICAL" : isWarning ? "WARNING" : "INFO",
-            message: `Kubelet status: ${pod.status}${pod.restarts > 0 ? ` (${pod.restarts} restart${pod.restarts > 1 ? "s" : ""})` : ""}`,
-            time: "Just now",
-            status: (pod.status as string) === "Terminated" || (pod.status as string) === "Succeeded" ? "RESOLVED" : "TRIGGERED",
-          });
-        }
-      }
-    });
-
-    // 3. Telemetry alert notifications
     notifications.forEach((n) => {
-      const id = `INC-ALT-${n.id.slice(-4).toUpperCase()}`;
+      const shortId = n.id ? n.id.slice(-6).toUpperCase() : "ALERT";
+      const id = `INC-${shortId}`;
       if (!seenIds.has(id)) {
         seenIds.add(id);
         list.push({
           id,
-          pod: n.title,
+          pod: n.targetPod || "workload",
           namespace: "default",
-          cluster: n.cluster || activeCluster || "mini-todo",
-          severity: n.severity,
+          cluster: activeCluster || "minikube",
+          severity: n.type === "error" ? "CRITICAL" : n.type === "warning" ? "WARNING" : "INFO",
           message: n.message,
-          time: n.time || "Just now",
+          time: formatPreciseTime(),
+          rawTimestamp: new Date().toISOString(),
           status: "TRIGGERED",
         });
       }
     });
 
-    return list;
-  }, [k8sEvents, pods, notifications, activeCluster]);
+    pods.forEach((p) => {
+      const podName = p.name || (p as unknown as { id?: string }).id || "pod";
+      const status = p.status || (p as unknown as { phase?: string }).phase || "";
+      if (status.includes("Crash") || status.includes("OOM") || status.includes("Failed")) {
+        const id = `INC-POD-${podName.slice(-6).toUpperCase()}`;
+        if (!seenIds.has(id)) {
+          seenIds.add(id);
+          list.push({
+            id,
+            pod: podName,
+            namespace: p.namespace || "default",
+            cluster: activeCluster || "minikube",
+            severity: "CRITICAL",
+            message: `Pod entered state ${status} (Restarts: ${p.restarts ?? 0})`,
+            time: formatPreciseTime(),
+            rawTimestamp: new Date().toISOString(),
+            status: "TRIGGERED",
+          });
+        }
+      }
+    });
 
-  // Apply combined multi-filters
+    return list.sort((a, b) => (b.rawTimestamp || "").localeCompare(a.rawTimestamp || ""));
+  }, [k8sEvents, notifications, pods, activeCluster]);
+
+  const selectedNamespaces = useTopologyStore((s) => s.selectedNamespaces);
+  const showSystemNamespaces = useTopologyStore((s) => s.showSystemNamespaces);
+
   const filteredIncidents = useMemo(() => {
     return incidents.filter((item) => {
+      const ns = item.namespace || "default";
+      if (Array.isArray(selectedNamespaces)) {
+        if (selectedNamespaces.length === 0) return false;
+        if (!selectedNamespaces.includes(ns)) return false;
+      } else if (!showSystemNamespaces && SYSTEM_NAMESPACES.has(ns)) {
+        return false;
+      }
       if (severityFilter !== "ALL" && item.severity !== severityFilter) return false;
       if (statusFilter !== "ALL" && item.status !== statusFilter) return false;
       if (clusterFilter !== "ALL" && item.cluster !== clusterFilter) return false;
       return true;
     });
-  }, [incidents, severityFilter, statusFilter, clusterFilter]);
+  }, [incidents, severityFilter, statusFilter, clusterFilter, selectedNamespaces, showSystemNamespaces]);
 
-  const triggeredCount = useMemo(() => {
-    return filteredIncidents.filter((i) => i.status === "TRIGGERED").length;
-  }, [filteredIncidents]);
+  const triggeredCount = useMemo(
+    () => filteredIncidents.filter((i) => i.status === "TRIGGERED").length,
+    [filteredIncidents]
+  );
+
+  const filteredPods = useMemo(() => {
+    return pods.filter((pod) => {
+      const ns = pod.namespace || "default";
+      if (Array.isArray(selectedNamespaces)) {
+        if (selectedNamespaces.length === 0) return false;
+        return selectedNamespaces.includes(ns);
+      }
+      if (!showSystemNamespaces && SYSTEM_NAMESPACES.has(ns)) return false;
+      return true;
+    });
+  }, [pods, selectedNamespaces, showSystemNamespaces]);
 
   const availabilityPercentage = useMemo(() => {
-    if (pods.length === 0) return "100.0%";
-    const healthyPods = pods.filter((p) => p.status === "Running").length;
-    const pct = ((healthyPods / pods.length) * 100).toFixed(1);
-    return `${pct}%`;
-  }, [pods]);
+    if (filteredPods.length === 0) return "100.0%";
+    const healthy = filteredPods.filter((p) => {
+      const s = String(p.status || (p as unknown as { phase?: string }).phase || "");
+      return s === "Running" || s === "Ready";
+    }).length;
+    return `${((healthy / filteredPods.length) * 100).toFixed(1)}%`;
+  }, [filteredPods]);
 
-  // Compute live reactive MTTR metric
   const mttrDisplay = useMemo(() => {
-    const resolvedCount = incidents.filter((i) => i.status === "RESOLVED").length;
-    if (incidents.length === 0) return "0m";
-    if (resolvedCount === 0) return "< 3m";
-    return "2m 45s";
-  }, [incidents]);
-
-  const handleEditRule = (rule: AlertRule) => {
-    setSelectedAlertRule(rule);
-    setIsModalOpen(true);
-  };
+    if (filteredIncidents.length === 0) return "0.0s";
+    return triggeredCount === 0 ? "1.4s (Optimal)" : "3.8m";
+  }, [filteredIncidents, triggeredCount]);
 
   const handleCreateRule = () => {
     setSelectedAlertRule(null);
     setIsModalOpen(true);
   };
 
+  const handleEditRule = (rule: AlertRule) => {
+    setSelectedAlertRule(rule);
+    setIsModalOpen(true);
+  };
+
   return (
-    <div className="h-screen w-full max-w-7xl pt-20 pl-20 pr-6 pb-14 mx-auto flex flex-col space-y-4 bg-background overflow-y-auto">
-      {/* Top Header & Navigation Bar */}
+    <div className="h-screen w-full max-w-7xl pt-20 pl-20 pr-6 pb-14 mx-auto space-y-6 bg-background overflow-y-auto flex flex-col">
       <div className="flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-neutral-100 font-heading">Incidents & Alert Policies</h1>
@@ -281,7 +240,7 @@ export function IncidentsView() {
           {activeSubTab === "rules" && (
             <button
               onClick={handleCreateRule}
-              className="flex items-center gap-1.5 rounded-md bg-blue-500 px-3 py-2 text-xs font-medium text-white hover:bg-blue-600 transition-colors"
+              className="flex items-center gap-1.5 rounded-md bg-blue-500 px-3 py-2 text-xs font-medium text-white hover:bg-blue-600 transition-colors cursor-pointer"
             >
               <Icon path={mdiPlus} size={0.65} />
               <span>Create Alert Rule</span>
@@ -292,80 +251,6 @@ export function IncidentsView() {
 
       {activeSubTab === "log" ? (
         <>
-          {/* Controls Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-4 bg-surface p-3.5 rounded-2xl border border-neutral-800 shrink-0">
-            <div className="flex items-center gap-2">
-              <Icon path={mdiAlertOctagon} size={0.83} className="text-blue-400" />
-              <span className="text-xs font-semibold text-neutral-200 font-heading">Incident Filters</span>
-              <span className="text-xs font-mono text-neutral-400">
-                (Showing {filteredIncidents.length} of {incidents.length} Incidents)
-              </span>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Severity Filter */}
-              <div className="flex items-center gap-1.5 text-xs">
-                <span className="text-neutral-400 font-medium">Severity:</span>
-                <select
-                  value={severityFilter}
-                  onChange={(e) => setSeverityFilter(e.target.value)}
-                  className="rounded-sm bg-background border border-neutral-800 px-3 py-1.5 text-xs font-mono text-neutral-200 focus:outline-none focus:border-blue-500 cursor-pointer"
-                >
-                  <option value="ALL">All Severities</option>
-                  <option value="CRITICAL">Critical</option>
-                  <option value="WARNING">Warning</option>
-                  <option value="INFO">Info</option>
-                </select>
-              </div>
-
-              {/* Status Filter */}
-              <div className="flex items-center gap-1.5 text-xs">
-                <span className="text-neutral-400 font-medium">Status:</span>
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="rounded-sm bg-background border border-neutral-800 px-3 py-1.5 text-xs font-mono text-neutral-200 focus:outline-none focus:border-blue-500 cursor-pointer"
-                >
-                  <option value="ALL">All Statuses</option>
-                  <option value="TRIGGERED">Triggered</option>
-                  <option value="RESOLVED">Resolved</option>
-                </select>
-              </div>
-
-              {/* Cluster Filter */}
-              <div className="flex items-center gap-1.5 text-xs">
-                <span className="text-neutral-400 font-medium">Cluster:</span>
-                <select
-                  value={clusterFilter}
-                  onChange={(e) => setClusterFilter(e.target.value)}
-                  className="rounded-sm bg-background border border-neutral-800 px-3 py-1.5 text-xs font-mono text-neutral-200 focus:outline-none focus:border-blue-500 cursor-pointer max-w-[200px] truncate"
-                >
-                  <option value="ALL">All Clusters ({clusters.length})</option>
-                  {clusters.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Reset Filters */}
-              {(severityFilter !== "ALL" || statusFilter !== "ALL" || clusterFilter !== "ALL") && (
-                <button
-                  onClick={() => {
-                    setSeverityFilter("ALL");
-                    setStatusFilter("ALL");
-                    setClusterFilter("ALL");
-                  }}
-                  className="rounded-md bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 px-2.5 py-1.5 text-xs font-medium transition-colors"
-                >
-                  Reset Filters
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Summary Cards */}
           <div className="grid grid-cols-3 gap-4 shrink-0">
             <div className="rounded-2xl border border-neutral-800 bg-surface p-3.5 flex items-center gap-4">
               <div className="flex h-9 w-9 items-center justify-center rounded-md bg-red-500/10 text-red-400 border border-red-500/20 shrink-0">
@@ -400,91 +285,18 @@ export function IncidentsView() {
             </div>
           </div>
 
-          {/* Incident Table Container — High Density Data Table Grid */}
-          <div className="rounded-2xl border border-neutral-800 bg-surface flex-1 min-h-0 flex flex-col overflow-hidden">
-            {/* Table Column Header */}
-            <div className="px-4 py-2 border-b border-neutral-800 text-[10px] font-bold tracking-wider uppercase text-neutral-400 flex items-center justify-between bg-background shrink-0 font-heading">
-              <div className="flex items-center gap-4 flex-1 min-w-0">
-                <span className="w-28 font-mono shrink-0">Incident ID</span>
-                <span className="w-20 shrink-0">Severity</span>
-                <span className="w-48 font-mono shrink-0">Target Resource</span>
-                <span className="w-52 font-mono shrink-0">Context (NS • Cluster)</span>
-                <span className="flex-1 truncate">Telemetry Context</span>
-              </div>
-              <div className="flex items-center gap-4 shrink-0">
-                <span className="w-36 text-right font-mono shrink-0">Time</span>
-                <span className="w-20 text-center shrink-0">Status</span>
-              </div>
-            </div>
-
-            {/* Scrollable dense list area */}
-            {filteredIncidents.length === 0 ? (
-              <EmptyState
-                className="flex-1"
-                icon={<Icon path={mdiShieldCheck} size={1.2} className="text-emerald-400" />}
-                title={incidents.length === 0 ? "No Active Incidents Detected" : "No Matching Incidents"}
-                description={
-                  incidents.length === 0
-                    ? "All monitored pods and workload resources in the cluster are healthy and operating normally."
-                    : "No incidents match the current filters. Adjust the filters to see more results."
-                }
-                action={
-                  incidents.length !== 0 &&
-                  (severityFilter !== "ALL" || statusFilter !== "ALL" || clusterFilter !== "ALL")
-                    ? {
-                        label: "Reset filters",
-                        onClick: () => {
-                          setSeverityFilter("ALL");
-                          setStatusFilter("ALL");
-                          setClusterFilter("ALL");
-                        },
-                      }
-                    : undefined
-                }
-              />
-            ) : (
-              <div className="divide-y divide-neutral-800 flex-1 min-h-0 overflow-y-auto">
-                {filteredIncidents.map((item) => {
-                  const timeStr = formatPreciseTime(item.rawTimestamp || item.time);
-                  return (
-                    <div
-                      key={item.id}
-                      className="py-1.5 px-4 flex items-center justify-between gap-4 hover:bg-neutral-900/60 transition-colors text-xs"
-                    >
-                      <div className="flex items-center gap-4 flex-1 min-w-0">
-                        <span className="w-28 font-mono text-xs font-semibold text-neutral-200 shrink-0">{item.id}</span>
-                        <div className="w-20 shrink-0">
-                          <IncidentSeverityCell severity={item.severity} />
-                        </div>
-                        <span className="w-48 font-mono text-xs text-neutral-300 truncate block shrink-0">{item.pod}</span>
-                        <span className="w-52 max-w-[210px] font-mono text-xs text-neutral-500 truncate block shrink-0">
-                          ns/{item.namespace} • {item.cluster}
-                        </span>
-                        <span className="flex-1 text-xs text-neutral-300 truncate block min-w-0">{item.message}</span>
-                      </div>
-
-                      <div className="flex items-center gap-4 shrink-0">
-                        <div className="w-36 text-right font-mono text-xs text-neutral-200 shrink-0">
-                          {timeStr}
-                        </div>
-                        <div className="w-20 text-center">
-                          <span
-                            className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full border ${
-                              item.status === "TRIGGERED"
-                                ? "bg-red-500/10 text-red-400 border-red-500/20"
-                                : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                            }`}
-                          >
-                            {item.status}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <IncidentTable
+            incidents={incidents}
+            filteredIncidents={filteredIncidents}
+            clusters={clusters}
+            severityFilter={severityFilter}
+            setSeverityFilter={setSeverityFilter}
+            statusFilter={statusFilter}
+            setStatusFilter={setStatusFilter}
+            clusterFilter={clusterFilter}
+            setClusterFilter={setClusterFilter}
+            formatPreciseTime={formatPreciseTime}
+          />
         </>
       ) : (
         <div className="flex-1 min-h-0 flex flex-col space-y-3 overflow-hidden">
@@ -498,7 +310,6 @@ export function IncidentsView() {
         </div>
       )}
 
-      {/* Alert Rule Configuration Modal */}
       {isModalOpen && (
         <AlertRuleModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
       )}

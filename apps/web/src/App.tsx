@@ -12,7 +12,6 @@ import { LeaderboardView } from "./components/views/LeaderboardView";
 import { SettingsView } from "./components/views/SettingsView";
 import { useTopologyStore } from "./store/useTopologyStore";
 import ConnectClusterWizard from "./components/onboarding/ConnectClusterWizard";
-import { KubectlTerminal } from "./components/terminal/KubectlTerminal";
 
 import "@xyflow/react/dist/style.css";
 import "./index.css";
@@ -61,10 +60,14 @@ function AppContent() {
     podName: string,
     namespace?: string,
   ) => {
+    const activeNs =
+      namespace && namespace !== "default"
+        ? namespace
+        : useTopologyStore.getState().selectedNamespaces[0] || "testing-todo";
     setLogDrawerState({
       isOpen: true,
       podName,
-      namespace: namespace || "default",
+      namespace: activeNs,
     });
   };
 
@@ -144,9 +147,6 @@ function AppContent() {
           onClusterConnected={handleClusterConnected}
         />
       )}
-
-      {/* Bottom-Left Kubectl Web Terminal Shell */}
-      <KubectlTerminal />
     </div>
   );
 }
