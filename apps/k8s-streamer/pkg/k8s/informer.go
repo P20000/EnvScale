@@ -719,11 +719,36 @@ func (im *InformerManager) extractIngressDelta(ing *networkingv1.Ingress) types.
 		}
 	}
 
+	var ingClass string
+	if ing.Spec.IngressClassName != nil {
+		ingClass = *ing.Spec.IngressClassName
+	}
+
+	tlsList := make([]types.IngressTLSStatus, 0)
+	for _, t := range ing.Spec.TLS {
+		tlsList = append(tlsList, types.IngressTLSStatus{
+			Hosts:      t.Hosts,
+			SecretName: t.SecretName,
+		})
+	}
+
+	lbIPs := make([]string, 0)
+	for _, ingStatus := range ing.Status.LoadBalancer.Ingress {
+		if ingStatus.IP != "" {
+			lbIPs = append(lbIPs, ingStatus.IP)
+		} else if ingStatus.Hostname != "" {
+			lbIPs = append(lbIPs, ingStatus.Hostname)
+		}
+	}
+
 	return types.IngressStatusDelta{
-		Name:      ing.Name,
-		Namespace: ing.Namespace,
-		Rules:     rules,
-		Labels:    ing.Labels,
+		Name:             ing.Name,
+		Namespace:        ing.Namespace,
+		IngressClassName: ingClass,
+		Rules:            rules,
+		TLS:              tlsList,
+		LoadBalancerIPs:  lbIPs,
+		Labels:           ing.Labels,
 	}
 }
 
