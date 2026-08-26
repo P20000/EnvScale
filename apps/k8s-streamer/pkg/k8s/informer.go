@@ -32,7 +32,7 @@ type InformerManager struct {
 	stopCh        chan struct{}
 	running       bool
 	mu            sync.RWMutex
-	dedup         *DedupCache // FNV-hash dedup cache to suppress unchanged delta rebroadcasts
+	dedup         *DedupCache
 }
 
 // NewInformerManager creates an InformerManager from raw Kubeconfig bytes
@@ -80,7 +80,7 @@ func NewInformerManagerInCluster(hub *websocket.Hub, clusterID string) (*Informe
 	return NewInformerManagerWithClientsets(clientset, metricsClient, hub, clusterID), nil
 }
 
-// NewInformerManagerWithClientset creates an InformerManager using an explicit kubernetes.Interface (useful for fake clientset testing)
+// NewInformerManagerWithClientset creates an InformerManager using an explicit kubernetes.Interface
 func NewInformerManagerWithClientset(clientset kubernetes.Interface, hub *websocket.Hub, clusterID string) *InformerManager {
 	return NewInformerManagerWithClientsets(clientset, nil, hub, clusterID)
 }
@@ -111,7 +111,6 @@ func (im *InformerManager) Start(stopCh <-chan struct{}) {
 	nodeInformer := im.factory.Core().V1().Nodes().Informer()
 	serviceInformer := im.factory.Core().V1().Services().Informer()
 
-	// Pod Event Handlers
 	podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			if pod, ok := obj.(*corev1.Pod); ok {
@@ -139,7 +138,6 @@ func (im *InformerManager) Start(stopCh <-chan struct{}) {
 		},
 	})
 
-	// Node Event Handlers
 	nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			if node, ok := obj.(*corev1.Node); ok {
@@ -164,7 +162,6 @@ func (im *InformerManager) Start(stopCh <-chan struct{}) {
 		},
 	})
 
-	// Service Event Handlers
 	serviceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			if svc, ok := obj.(*corev1.Service); ok {
@@ -292,7 +289,6 @@ func (im *InformerManager) startMetricsPulse(stopCh <-chan struct{}) {
 	}
 }
 
-// StartAsync starts the informer event loops in a background goroutine using internal stopCh
 func (im *InformerManager) StartAsync() {
 	im.mu.Lock()
 	im.running = true
@@ -300,7 +296,6 @@ func (im *InformerManager) StartAsync() {
 	go im.Start(im.stopCh)
 }
 
-// Stop closes the internal stopCh channel and halts all informer event loops
 func (im *InformerManager) Stop() {
 	im.mu.Lock()
 	defer im.mu.Unlock()
@@ -313,55 +308,25 @@ func (im *InformerManager) Stop() {
 	log.Printf("[K8s Informer] Informers stopped for cluster: %s", im.clusterID)
 }
 
-// IsRunning returns whether the informer factory is currently active
 func (im *InformerManager) IsRunning() bool {
 	im.mu.RLock()
 	defer im.mu.RUnlock()
 	return im.running
 }
 
-// GetClusterID returns the cluster ID associated with this InformerManager
 func (im *InformerManager) GetClusterID() string {
 	return im.clusterID
 }
 
-// Clientset returns the underlying kubernetes.Interface for this cluster.
-// Used by PodLogStreamer to open log stream requests against the same cluster.
 func (im *InformerManager) Clientset() kubernetes.Interface {
 	return im.clientset
 }
 
-func (im *InformerManager) resolvePodObject(obj interface{}) *corev1.Pod {
-	if pod, ok := obj.(*corev1.Pod); ok {
-		return pod
-	}
-	if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
-		if pod, ok := tombstone.Obj.(*corev1.Pod); ok {
-			return pod
-		}
-	}
-	return nil
-}
-
-func (im *InformerManager) resolveNodeObject(obj interface{}) *corev1.Node {
-	if node, ok := obj.(*corev1.Node); ok {
-		return node
-	}
-	if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
-		if node, ok := tombstone.Obj.(*corev1.Node); ok {
-			return node
-		}
-	}
-	return nil
-}
-
-// PodMetricData encapsulates live CPU and Memory values retrieved from metrics-server
 type PodMetricData struct {
 	CPUUsagePct   float64
 	MemoryUsageMb float64
 }
 
-// FetchPodMetricsMap queries the live K8s Metrics API (metrics-server) for all pods
 func (im *InformerManager) FetchPodMetricsMap() map[string]PodMetricData {
 	metricsMap := make(map[string]PodMetricData)
 	if im.metricsClient == nil {
@@ -393,7 +358,6 @@ func (im *InformerManager) FetchPodMetricsMap() map[string]PodMetricData {
 	return metricsMap
 }
 
-// GetSnapshot retrieves the current local cache of all nodes, pods, services, and workloads and formats them as delta events.
 func (im *InformerManager) GetSnapshot() (
 	pods []types.PodStatusDelta,
 	nodes []types.NodeStatusDelta,
@@ -404,9 +368,7 @@ func (im *InformerManager) GetSnapshot() (
 	ingresses []types.IngressStatusDelta,
 	incidents []types.K8sIncidentEvent,
 ) {
-	// Block until all informer caches are fully synced to prevent returning empty snapshots right after startup
 	im.factory.WaitForCacheSync(im.stopCh)
-
 	metricsMap := im.FetchPodMetricsMap()
 
 	podList := im.factory.Core().V1().Pods().Informer().GetStore().List()
@@ -502,297 +464,4 @@ func (im *InformerManager) GetSnapshot() (
 	}
 
 	return pods, nodes, services, deployments, replicaSets, statefulSets, ingresses, incidents
-}
-
-func (im *InformerManager) extractPodDelta(pod *corev1.Pod) types.PodStatusDelta {
-	var totalRestarts int32 = 0
-	for _, cs := range pod.Status.ContainerStatuses {
-		totalRestarts += cs.RestartCount
-	}
-
-	phase := string(pod.Status.Phase)
-	// Check for specialized failure states like CrashLoopBackOff or OOMKilled
-	for _, cs := range pod.Status.ContainerStatuses {
-		if cs.State.Waiting != nil && cs.State.Waiting.Reason != "" {
-			phase = cs.State.Waiting.Reason
-		} else if cs.State.Running == nil && cs.LastTerminationState.Terminated != nil && cs.LastTerminationState.Terminated.Reason != "" {
-			phase = cs.LastTerminationState.Terminated.Reason
-		}
-	}
-
-	var ownerUID, ownerName, ownerKind string
-	if len(pod.OwnerReferences) > 0 {
-		ownerUID = string(pod.OwnerReferences[0].UID)
-		ownerName = pod.OwnerReferences[0].Name
-		ownerKind = pod.OwnerReferences[0].Kind
-	}
-
-	return types.PodStatusDelta{
-		Name:         pod.Name,
-		Namespace:    pod.Namespace,
-		NodeName:     pod.Spec.NodeName,
-		PodIP:        pod.Status.PodIP,
-		Phase:        phase,
-		RestartCount: totalRestarts,
-		Labels:       pod.Labels,
-		OwnerUID:     ownerUID,
-		OwnerName:    ownerName,
-		OwnerKind:    ownerKind,
-		CreatedAt:    pod.CreationTimestamp.Time.UTC(),
-	}
-}
-
-func (im *InformerManager) emitPodDelta(pod *corev1.Pod) {
-	delta := im.extractPodDelta(pod)
-
-	metricsMap := im.FetchPodMetricsMap()
-	key := fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)
-	if m, ok := metricsMap[key]; ok {
-		delta.CpuUsageMcores = int64(m.CPUUsagePct)
-		delta.MemoryUsageMiB = int64(m.MemoryUsageMb)
-		delta.CPUUsagePct = m.CPUUsagePct
-		delta.MemoryUsageMb = m.MemoryUsageMb
-	}
-
-	// Dedup: skip broadcasting if the pod delta is identical to the last emitted version
-	if !im.dedup.ShouldEmit(key, delta) {
-		return
-	}
-
-	im.hub.BroadcastEvent(types.EventPodStatusChanged, im.clusterID, delta)
-
-	// Anomaly classification: check if the pod's current phase/reason represents
-	// a known failure state (OOMKilled, CrashLoopBackOff, ImagePullBackOff, etc.)
-	// or if the restart count exceeds the stability threshold.
-	if match := ClassifyPodAnomaly(delta.Phase, delta.RestartCount); match != nil {
-		im.hub.BroadcastEvent(types.EventPodAnomalyDetected, im.clusterID, types.PodAnomalyEvent{
-			PodName:     delta.Name,
-			Namespace:   delta.Namespace,
-			AnomalyType: match.AnomalyType,
-			Severity:    match.Severity,
-			Message:     match.Message,
-			Source:      "informer",
-			Timestamp:   time.Now().UTC().Format(time.RFC3339Nano),
-		})
-	}
-}
-
-func (im *InformerManager) emitNodeDelta(node *corev1.Node) {
-	status := "Unknown"
-	for _, cond := range node.Status.Conditions {
-		if cond.Type == corev1.NodeReady {
-			if cond.Status == corev1.ConditionTrue {
-				status = "Ready"
-			} else {
-				status = "NotReady"
-			}
-		}
-	}
-
-	delta := types.NodeStatusDelta{
-		Name:           node.Name,
-		Status:         status,
-		CPUCapacity:    node.Status.Capacity.Cpu().String(),
-		MemoryCapacity: node.Status.Capacity.Memory().String(),
-		PodCapacity:    node.Status.Capacity.Pods().Value(),
-		Labels:         node.Labels,
-	}
-
-	key := fmt.Sprintf("Node/%s", node.Name)
-	if !im.dedup.ShouldEmit(key, delta) {
-		return
-	}
-	im.hub.BroadcastEvent(types.EventNodeMutated, im.clusterID, delta)
-}
-
-func (im *InformerManager) emitServiceDelta(svc *corev1.Service) {
-	ports := make([]int32, len(svc.Spec.Ports))
-	for i, p := range svc.Spec.Ports {
-		ports[i] = p.Port
-	}
-
-	delta := types.ServiceStatusDelta{
-		Name:        svc.Name,
-		Namespace:   svc.Namespace,
-		Type:        string(svc.Spec.Type),
-		ClusterIP:   svc.Spec.ClusterIP,
-		Selector:    svc.Spec.Selector,
-		TargetPorts: ports,
-	}
-
-	key := fmt.Sprintf("Service/%s/%s", svc.Namespace, svc.Name)
-	if !im.dedup.ShouldEmit(key, delta) {
-		return
-	}
-	im.hub.BroadcastEvent(types.EventServiceMutated, im.clusterID, delta)
-}
-
-func (im *InformerManager) extractDeploymentDelta(dep *appsv1.Deployment) types.DeploymentStatusDelta {
-	return types.DeploymentStatusDelta{
-		Name:          dep.Name,
-		Namespace:     dep.Namespace,
-		Replicas:      *dep.Spec.Replicas,
-		ReadyReplicas: dep.Status.ReadyReplicas,
-		Selector:      dep.Spec.Selector.MatchLabels,
-		Labels:        dep.Labels,
-	}
-}
-
-func (im *InformerManager) emitDeploymentDelta(dep *appsv1.Deployment) {
-	delta := im.extractDeploymentDelta(dep)
-	key := fmt.Sprintf("Deployment/%s/%s", dep.Namespace, dep.Name)
-	if !im.dedup.ShouldEmit(key, delta) {
-		return
-	}
-	im.hub.BroadcastEvent(types.EventDeploymentMutated, im.clusterID, delta)
-}
-
-func (im *InformerManager) extractReplicaSetDelta(rs *appsv1.ReplicaSet) types.ReplicaSetStatusDelta {
-	var ownerUID, ownerName, ownerKind string
-	if len(rs.OwnerReferences) > 0 {
-		ownerUID = string(rs.OwnerReferences[0].UID)
-		ownerName = rs.OwnerReferences[0].Name
-		ownerKind = rs.OwnerReferences[0].Kind
-	}
-
-	return types.ReplicaSetStatusDelta{
-		Name:          rs.Name,
-		Namespace:     rs.Namespace,
-		Replicas:      *rs.Spec.Replicas,
-		ReadyReplicas: rs.Status.ReadyReplicas,
-		OwnerUID:      ownerUID,
-		OwnerName:     ownerName,
-		OwnerKind:     ownerKind,
-		Labels:        rs.Labels,
-	}
-}
-
-func (im *InformerManager) emitReplicaSetDelta(rs *appsv1.ReplicaSet) {
-	delta := im.extractReplicaSetDelta(rs)
-	key := fmt.Sprintf("ReplicaSet/%s/%s", rs.Namespace, rs.Name)
-	if !im.dedup.ShouldEmit(key, delta) {
-		return
-	}
-	im.hub.BroadcastEvent(types.EventReplicaSetMutated, im.clusterID, delta)
-}
-
-func (im *InformerManager) extractStatefulSetDelta(sts *appsv1.StatefulSet) types.StatefulSetStatusDelta {
-	return types.StatefulSetStatusDelta{
-		Name:          sts.Name,
-		Namespace:     sts.Namespace,
-		Replicas:      *sts.Spec.Replicas,
-		ReadyReplicas: sts.Status.ReadyReplicas,
-		Selector:      sts.Spec.Selector.MatchLabels,
-		Labels:        sts.Labels,
-	}
-}
-
-func (im *InformerManager) emitStatefulSetDelta(sts *appsv1.StatefulSet) {
-	delta := im.extractStatefulSetDelta(sts)
-	key := fmt.Sprintf("StatefulSet/%s/%s", sts.Namespace, sts.Name)
-	if !im.dedup.ShouldEmit(key, delta) {
-		return
-	}
-	im.hub.BroadcastEvent(types.EventStatefulSetMutated, im.clusterID, delta)
-}
-
-func (im *InformerManager) extractIngressDelta(ing *networkingv1.Ingress) types.IngressStatusDelta {
-	rules := make([]types.IngressRuleStatus, 0)
-	for _, rule := range ing.Spec.Rules {
-		if rule.HTTP != nil {
-			for _, path := range rule.HTTP.Paths {
-				var svcName string
-				var svcPort int32
-				if path.Backend.Service != nil {
-					svcName = path.Backend.Service.Name
-					if path.Backend.Service.Port.Number != 0 {
-						svcPort = path.Backend.Service.Port.Number
-					}
-				}
-				rules = append(rules, types.IngressRuleStatus{
-					Host:        rule.Host,
-					Path:        path.Path,
-					ServiceName: svcName,
-					ServicePort: svcPort,
-				})
-			}
-		}
-	}
-
-	var ingClass string
-	if ing.Spec.IngressClassName != nil {
-		ingClass = *ing.Spec.IngressClassName
-	}
-
-	tlsList := make([]types.IngressTLSStatus, 0)
-	for _, t := range ing.Spec.TLS {
-		tlsList = append(tlsList, types.IngressTLSStatus{
-			Hosts:      t.Hosts,
-			SecretName: t.SecretName,
-		})
-	}
-
-	lbIPs := make([]string, 0)
-	for _, ingStatus := range ing.Status.LoadBalancer.Ingress {
-		if ingStatus.IP != "" {
-			lbIPs = append(lbIPs, ingStatus.IP)
-		} else if ingStatus.Hostname != "" {
-			lbIPs = append(lbIPs, ingStatus.Hostname)
-		}
-	}
-
-	return types.IngressStatusDelta{
-		Name:             ing.Name,
-		Namespace:        ing.Namespace,
-		IngressClassName: ingClass,
-		Rules:            rules,
-		TLS:              tlsList,
-		LoadBalancerIPs:  lbIPs,
-		Labels:           ing.Labels,
-	}
-}
-
-func (im *InformerManager) emitIngressDelta(ing *networkingv1.Ingress) {
-	delta := im.extractIngressDelta(ing)
-	key := fmt.Sprintf("Ingress/%s/%s", ing.Namespace, ing.Name)
-	if !im.dedup.ShouldEmit(key, delta) {
-		return
-	}
-	im.hub.BroadcastEvent(types.EventIngressMutated, im.clusterID, delta)
-}
-
-func (im *InformerManager) emitK8sIncidentEvent(evt *corev1.Event) {
-	incident := im.extractK8sIncidentEvent(evt)
-	key := fmt.Sprintf("Event/%s/%s", evt.Namespace, evt.UID)
-	if !im.dedup.ShouldEmit(key, incident) {
-		return
-	}
-	im.hub.BroadcastEvent(types.EventK8sIncidentCreated, im.clusterID, incident)
-}
-
-func (im *InformerManager) extractK8sIncidentEvent(evt *corev1.Event) types.K8sIncidentEvent {
-	timestamp := evt.FirstTimestamp.Time
-	if timestamp.IsZero() {
-		timestamp = evt.CreationTimestamp.Time
-	}
-	if timestamp.IsZero() {
-		timestamp = time.Now()
-	}
-	timestamp = timestamp.UTC()
-
-	targetPod := evt.InvolvedObject.Name
-	if targetPod == "" {
-		targetPod = evt.Name
-	}
-
-	return types.K8sIncidentEvent{
-		EventID:      string(evt.UID),
-		Reason:       evt.Reason,
-		Message:      evt.Message,
-		TargetPod:    targetPod,
-		Namespace:    evt.Namespace,
-		Cluster:      im.clusterID,
-		SeverityType: evt.Type,
-		Timestamp:    timestamp,
-	}
 }
