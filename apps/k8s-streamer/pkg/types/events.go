@@ -124,12 +124,21 @@ type IngressRuleStatus struct {
 	ServicePort int32  `json:"servicePort"`
 }
 
+// IngressTLSStatus represents TLS secret and host bindings
+type IngressTLSStatus struct {
+	Hosts      []string `json:"hosts"`
+	SecretName string   `json:"secretName"`
+}
+
 // IngressStatusDelta encapsulates K8s Ingress state updates
 type IngressStatusDelta struct {
-	Name      string              `json:"name"`
-	Namespace string              `json:"namespace"`
-	Rules     []IngressRuleStatus `json:"rules"`
-	Labels    map[string]string   `json:"labels"`
+	Name             string              `json:"name"`
+	Namespace        string              `json:"namespace"`
+	IngressClassName string              `json:"ingressClassName,omitempty"`
+	Rules            []IngressRuleStatus `json:"rules"`
+	TLS              []IngressTLSStatus  `json:"tls,omitempty"`
+	LoadBalancerIPs  []string            `json:"loadBalancerIps,omitempty"`
+	Labels           map[string]string   `json:"labels"`
 }
 
 // LogStreamEvent encapsulates live stdout/stderr log lines
