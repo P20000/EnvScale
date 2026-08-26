@@ -9,13 +9,30 @@ import {
 } from "@mdi/js";
 import { useTopologyStore } from "../../store/useTopologyStore";
 
+export interface TelemetryPoint {
+  timestamp: number;
+  value: number;
+}
+
+const createInitialHistory = (): TelemetryPoint[] => {
+  const now = Date.now();
+  const points: TelemetryPoint[] = [];
+  for (let i = 59; i >= 0; i--) {
+    points.push({
+      timestamp: now - i * 1000,
+      value: 0,
+    });
+  }
+  return points;
+};
+
 function TelemetryAreaChart({
   data,
   color,
   unit,
   title,
 }: {
-  data: number[];
+  data: TelemetryPoint[];
   color: "blue" | "emerald";
   unit: string;
   title: string;
@@ -24,17 +41,18 @@ function TelemetryAreaChart({
 
   // 1. Dynamic Y-Axis Domain Calculation with 20% headroom and 1% minimum floor
   const yUpper = useMemo(() => {
-    const maxVal = Math.max(...data, 0);
+    const maxVal = Math.max(...data.map((d) => d.value), 0);
     return Math.max(Number((maxVal * 1.2).toFixed(2)), 1);
   }, [data]);
 
   // 2. Dynamic Point Coordinates mapped within domain [0, yUpper]
   const pointCoords = useMemo(() => {
-    return data.map((val, idx) => {
-      const x = (idx / (data.length - 1)) * 100;
-      const clampedVal = Math.min(yUpper, Math.max(0, val));
+    const len = data.length;
+    return data.map((pt, idx) => {
+      const x = (idx / (len - 1)) * 100;
+      const clampedVal = Math.min(yUpper, Math.max(0, pt.value));
       const y = 100 - (clampedVal / yUpper) * 100;
-      return { x, y, rawVal: val, idx };
+      return { x, y, rawVal: pt.value, timestamp: pt.timestamp, idx };
     });
   }, [data, yUpper]);
 
@@ -58,6 +76,27 @@ function TelemetryAreaChart({
   const midTick = formatTick(yUpper / 2);
   const bottomTick = formatTick(0);
 
+  // Dynamic X-axis timeline tick formatting from real rolling timestamps
+  const timeTicks = useMemo(() => {
+    if (data.length < 2) return ["--:--", "--:--", "--:--", "--:--", "Live Now"];
+    const minTs = data[0].timestamp;
+    const maxTs = data[data.length - 1].timestamp;
+    const quarter = (maxTs - minTs) / 4;
+
+    const formatTime = (ts: number) => {
+      const d = new Date(ts);
+      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+    };
+
+    return [
+      formatTime(minTs),
+      formatTime(minTs + quarter),
+      formatTime(minTs + quarter * 2),
+      formatTime(minTs + quarter * 3),
+      "Live Now",
+    ];
+  }, [data]);
+
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
@@ -71,6 +110,19 @@ function TelemetryAreaChart({
   };
 
   const hoveredPoint = hoverIndex !== null ? pointCoords[hoverIndex] : null;
+
+  const hoveredTimeStr = hoveredPoint
+    ? new Date(hoveredPoint.timestamp).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      })
+    : "";
+
+  const deltaSec = hoveredPoint
+    ? Math.round((hoveredPoint.timestamp - data[data.length - 1].timestamp) / 1000)
+    : 0;
 
   return (
     <div className="relative w-full rounded-xl bg-background p-4 border border-neutral-800 space-y-2 select-none">
@@ -160,20 +212,22 @@ function TelemetryAreaChart({
                 <span className={`h-2 w-2 rounded-full ${color === "blue" ? "bg-blue-400" : "bg-emerald-400"}`} />
                 <span className="text-neutral-100 font-bold">{hoveredPoint.rawVal >= 10 ? hoveredPoint.rawVal.toFixed(1) : hoveredPoint.rawVal.toFixed(2)}{unit}</span>
               </div>
-              <div className="text-[9px] text-neutral-500">
-                {15 - Math.round((hoveredPoint.idx / (data.length - 1)) * 15)}m ago
+              <div className="text-[9px] text-neutral-500 flex items-center gap-1.5">
+                <span>{hoveredTimeStr}</span>
+                <span>({deltaSec === 0 ? "Now" : `${deltaSec}s`})</span>
               </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* X-axis Timeline Labels */}
+      {/* Dynamic X-axis Timeline Labels */}
       <div className="flex items-center justify-between text-[10px] font-mono text-neutral-500 pt-1.5 pl-10 border-t border-neutral-800/80">
-        <span>15m ago</span>
-        <span>10m ago</span>
-        <span>5m ago</span>
-        <span className="text-neutral-300 font-semibold">Live Now</span>
+        <span>{timeTicks[0]}</span>
+        <span>{timeTicks[1]}</span>
+        <span>{timeTicks[2]}</span>
+        <span>{timeTicks[3]}</span>
+        <span className="text-neutral-300 font-semibold">{timeTicks[4]}</span>
       </div>
     </div>
   );
@@ -185,9 +239,9 @@ export function MetricsView() {
   const clusterCpuCores = useTopologyStore((s) => s.clusterCpuCores) || 12;
   const clusterMemoryGB = useTopologyStore((s) => s.clusterMemoryGB) || 14.8;
 
-  // Dynamic telemetry stream data state (defaults to 0 baseline until live metrics stream)
-  const [cpuHistory, setCpuHistory] = useState<number[]>(Array(15).fill(0));
-  const [memoryHistory, setMemoryHistory] = useState<number[]>(Array(15).fill(0));
+  // Dynamic telemetry stream data state (60s rolling window buffer with real timestamps)
+  const [cpuHistory, setCpuHistory] = useState<TelemetryPoint[]>(createInitialHistory);
+  const [memoryHistory, setMemoryHistory] = useState<TelemetryPoint[]>(createInitialHistory);
 
   // Compute live CPU & RAM usage from active pods streamed from metrics-server
   const totalCpuMcores = useMemo(() => {
@@ -210,13 +264,14 @@ export function MetricsView() {
   // Live telemetry stream updates bound directly to real metrics-server aggregate fields
   useEffect(() => {
     const interval = setInterval(() => {
+      const now = Date.now();
       const maxMcores = clusterCpuCores * 1000;
       const maxMemoryMiB = clusterMemoryGB * 1024;
       const cpuPct = Math.min(100, Math.max(0, (metricsRef.current.totalCpuMcores / maxMcores) * 100));
       const memPct = Math.min(100, Math.max(0, (metricsRef.current.totalMemoryMiB / maxMemoryMiB) * 100));
 
-      setCpuHistory((prev) => [...prev.slice(1), cpuPct]);
-      setMemoryHistory((prev) => [...prev.slice(1), memPct]);
+      setCpuHistory((prev) => [...prev.slice(1), { timestamp: now, value: cpuPct }]);
+      setMemoryHistory((prev) => [...prev.slice(1), { timestamp: now, value: memPct }]);
     }, 1000);
 
     return () => clearInterval(interval);
@@ -238,8 +293,8 @@ export function MetricsView() {
       .sort((a, b) => b.mcores - a.mcores);
   }, [pods]);
 
-  const currentCpuPct = cpuHistory[cpuHistory.length - 1];
-  const currentMemoryPct = memoryHistory[memoryHistory.length - 1];
+  const currentCpuPct = cpuHistory[cpuHistory.length - 1]?.value || 0;
+  const currentMemoryPct = memoryHistory[memoryHistory.length - 1]?.value || 0;
 
   return (
     <div className="h-screen w-full max-w-7xl pt-20 pl-20 pr-6 pb-14 mx-auto space-y-6 bg-background overflow-y-auto">
@@ -261,12 +316,13 @@ export function MetricsView() {
           </div>
           <button
             onClick={() => {
+              const now = Date.now();
               const maxMcores = clusterCpuCores * 1000;
               const maxMemoryMiB = clusterMemoryGB * 1024;
               const cpuPct = Math.min(100, Math.max(0, (totalCpuMcores / maxMcores) * 100));
               const memPct = Math.min(100, Math.max(0, (totalMemoryMiB / maxMemoryMiB) * 100));
-              setCpuHistory((prev) => [...prev.slice(1), cpuPct]);
-              setMemoryHistory((prev) => [...prev.slice(1), memPct]);
+              setCpuHistory((prev) => [...prev.slice(1), { timestamp: now, value: cpuPct }]);
+              setMemoryHistory((prev) => [...prev.slice(1), { timestamp: now, value: memPct }]);
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-surface border border-neutral-800 text-xs font-medium text-neutral-300 hover:text-neutral-100 hover:border-neutral-700 transition-colors"
             title="Refresh Telemetry Stream"
