@@ -164,13 +164,9 @@ export function MetricsView() {
   const clusterCpuCores = useTopologyStore((s) => s.clusterCpuCores) || 12;
   const clusterMemoryGB = useTopologyStore((s) => s.clusterMemoryGB) || 14.8;
 
-  // Dynamic telemetry stream data state
-  const [cpuHistory, setCpuHistory] = useState<number[]>([
-    5, 8, 12, 10, 15, 18, 14, 12, 16, 20, 22, 18, 15, 14, 12.5,
-  ]);
-  const [memoryHistory, setMemoryHistory] = useState<number[]>([
-    15, 18, 20, 22, 25, 28, 26, 24, 25, 27, 26, 25, 24, 23, 22.0,
-  ]);
+  // Dynamic telemetry stream data state (defaults to 0 baseline until live metrics stream)
+  const [cpuHistory, setCpuHistory] = useState<number[]>(Array(15).fill(0));
+  const [memoryHistory, setMemoryHistory] = useState<number[]>(Array(15).fill(0));
 
   // Compute live CPU & RAM usage from active pods streamed from metrics-server
   const totalCpuMcores = useMemo(() => {
@@ -195,8 +191,8 @@ export function MetricsView() {
     const interval = setInterval(() => {
       const maxMcores = clusterCpuCores * 1000;
       const maxMemoryMiB = clusterMemoryGB * 1024;
-      const cpuPct = Math.min(100, Math.max(0.5, (metricsRef.current.totalCpuMcores / maxMcores) * 100));
-      const memPct = Math.min(100, Math.max(0.5, (metricsRef.current.totalMemoryMiB / maxMemoryMiB) * 100));
+      const cpuPct = Math.min(100, Math.max(0, (metricsRef.current.totalCpuMcores / maxMcores) * 100));
+      const memPct = Math.min(100, Math.max(0, (metricsRef.current.totalMemoryMiB / maxMemoryMiB) * 100));
 
       setCpuHistory((prev) => [...prev.slice(1), cpuPct]);
       setMemoryHistory((prev) => [...prev.slice(1), memPct]);
@@ -244,8 +240,10 @@ export function MetricsView() {
           </div>
           <button
             onClick={() => {
-              const cpuPct = Math.min(100, Math.max(0.5, (totalCpuMcores / 4000) * 100));
-              const memPct = Math.min(100, Math.max(0.5, (totalMemoryMiB / 8192) * 100));
+              const maxMcores = clusterCpuCores * 1000;
+              const maxMemoryMiB = clusterMemoryGB * 1024;
+              const cpuPct = Math.min(100, Math.max(0, (totalCpuMcores / maxMcores) * 100));
+              const memPct = Math.min(100, Math.max(0, (totalMemoryMiB / maxMemoryMiB) * 100));
               setCpuHistory((prev) => [...prev.slice(1), cpuPct]);
               setMemoryHistory((prev) => [...prev.slice(1), memPct]);
             }}
