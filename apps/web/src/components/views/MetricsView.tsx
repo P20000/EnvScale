@@ -22,15 +22,21 @@ function TelemetryAreaChart({
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
+  // 1. Dynamic Y-Axis Domain Calculation with 20% headroom and 1% minimum floor
+  const yUpper = useMemo(() => {
+    const maxVal = Math.max(...data, 0);
+    return Math.max(Number((maxVal * 1.2).toFixed(2)), 1);
+  }, [data]);
+
+  // 2. Dynamic Point Coordinates mapped within domain [0, yUpper]
   const pointCoords = useMemo(() => {
     return data.map((val, idx) => {
       const x = (idx / (data.length - 1)) * 100;
-      // Clamp Y coordinate strictly within 0% (y = 100) to 100% (y = 0)
-      const clampedVal = Math.min(100, Math.max(0, val));
-      const y = 100 - clampedVal;
+      const clampedVal = Math.min(yUpper, Math.max(0, val));
+      const y = 100 - (clampedVal / yUpper) * 100;
       return { x, y, rawVal: val, idx };
     });
-  }, [data]);
+  }, [data, yUpper]);
 
   const linePathString = useMemo(() => {
     return pointCoords.reduce((acc, p, idx) => {
@@ -42,6 +48,15 @@ function TelemetryAreaChart({
 
   const strokeHex = color === "blue" ? "#3b82f6" : "#10b981";
   const areaFillHex = color === "blue" ? "rgba(59, 130, 246, 0.08)" : "rgba(16, 185, 129, 0.08)";
+
+  // Format dynamic Y-axis tick values
+  const formatTick = (val: number) => {
+    return `${val >= 10 ? val.toFixed(0) : val.toFixed(1)}${unit}`;
+  };
+
+  const topTick = formatTick(yUpper);
+  const midTick = formatTick(yUpper / 2);
+  const bottomTick = formatTick(0);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -61,11 +76,11 @@ function TelemetryAreaChart({
     <div className="relative w-full rounded-xl bg-background p-4 border border-neutral-800 space-y-2 select-none">
       {/* Upper Chart Container with Y-Axis and Plot Box */}
       <div className="flex h-44 w-full relative">
-        {/* Y-Axis Labels (Left) */}
-        <div className="w-8 h-full flex flex-col justify-between py-0 text-[9px] font-mono text-neutral-500 pr-2 select-none">
-          <span>100%</span>
-          <span>50%</span>
-          <span>0%</span>
+        {/* Dynamic Y-Axis Labels (Left) */}
+        <div className="w-10 h-full flex flex-col justify-between py-0 text-[9px] font-mono text-neutral-400 pr-2 select-none text-right">
+          <span>{topTick}</span>
+          <span>{midTick}</span>
+          <span>{bottomTick}</span>
         </div>
 
         {/* Plot Box Area (Bounded Grid + SVG Line) */}
@@ -90,7 +105,12 @@ function TelemetryAreaChart({
           {/* SVG Continuous Line Canvas */}
           <svg className="w-full h-full overflow-visible z-10 relative" viewBox="0 0 100 100" preserveAspectRatio="none">
             {/* 1. Muted Micro-Opacity Area Fill */}
-            <path d={areaPathString} fill={areaFillHex} stroke="none" />
+            <path
+              d={areaPathString}
+              fill={areaFillHex}
+              stroke="none"
+              className="transition-all duration-300 ease-out"
+            />
 
             {/* 2. Sharp 1.5px Continuous Line Chart */}
             <path
@@ -101,13 +121,14 @@ function TelemetryAreaChart({
               vectorEffect="non-scaling-stroke"
               strokeLinecap="round"
               strokeLinejoin="round"
+              className="transition-all duration-300 ease-out"
             />
           </svg>
 
-          {/* Hover Vertex Highlight Circle (HTML div to prevent SVG aspect-ratio distortion) */}
+          {/* Hover Vertex Highlight Circle */}
           {hoveredPoint && (
             <div
-              className="absolute h-2.5 w-2.5 rounded-full -translate-x-1/2 -translate-y-1/2 border border-[#09090b] pointer-events-none z-25 shadow-md"
+              className="absolute h-2.5 w-2.5 rounded-full -translate-x-1/2 -translate-y-1/2 border border-[#09090b] pointer-events-none z-25 shadow-md transition-all duration-150"
               style={{
                 left: `${hoveredPoint.x}%`,
                 top: `${hoveredPoint.y}%`,
@@ -137,7 +158,7 @@ function TelemetryAreaChart({
               <div className="text-[10px] text-neutral-400 font-heading uppercase">{title}</div>
               <div className="flex items-center gap-2">
                 <span className={`h-2 w-2 rounded-full ${color === "blue" ? "bg-blue-400" : "bg-emerald-400"}`} />
-                <span className="text-neutral-100 font-bold">{hoveredPoint.rawVal.toFixed(1)}{unit}</span>
+                <span className="text-neutral-100 font-bold">{hoveredPoint.rawVal >= 10 ? hoveredPoint.rawVal.toFixed(1) : hoveredPoint.rawVal.toFixed(2)}{unit}</span>
               </div>
               <div className="text-[9px] text-neutral-500">
                 {15 - Math.round((hoveredPoint.idx / (data.length - 1)) * 15)}m ago
@@ -148,7 +169,7 @@ function TelemetryAreaChart({
       </div>
 
       {/* X-axis Timeline Labels */}
-      <div className="flex items-center justify-between text-[10px] font-mono text-neutral-500 pt-1.5 pl-8 border-t border-neutral-800/80">
+      <div className="flex items-center justify-between text-[10px] font-mono text-neutral-500 pt-1.5 pl-10 border-t border-neutral-800/80">
         <span>15m ago</span>
         <span>10m ago</span>
         <span>5m ago</span>
