@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"sync"
@@ -13,6 +14,14 @@ import (
 type roomedMessage struct {
 	clusterID string
 	payload   []byte
+}
+
+// EventPublisher is an optional hook called after every successful BroadcastEvent
+// to fan-out the event to peer streamer instances (e.g. via Redis Pub/Sub).
+// It receives the clusterID and the already-serialized WSEventEnvelope so it can
+// publish to Redis without re-marshalling.
+type EventPublisher interface {
+	Publish(ctx context.Context, clusterID string, envelope types.WSEventEnvelope)
 }
 
 // Hub maintains the set of active WebSocket client connections and routes
@@ -33,6 +42,10 @@ type Hub struct {
 
 	// Unregister requests from clients
 	Unregister chan *Client
+
+	// publisher is an optional fan-out hook (e.g. Redis adapter). Protected by publisherMu.
+	publisher   EventPublisher
+	publisherMu sync.RWMutex
 }
 
 // NewHub initializes and returns a new Hub instance with room-based routing
@@ -43,6 +56,15 @@ func NewHub() *Hub {
 		Register:   make(chan *Client),
 		Unregister: make(chan *Client),
 	}
+}
+
+// SetPublisher attaches an EventPublisher (e.g. Redis adapter) to the Hub.
+// After every BroadcastEvent call, the publisher hook is invoked so the event
+// is also fanned out to other streamer instances. Safe to call after NewHub().
+func (h *Hub) SetPublisher(p EventPublisher) {
+	h.publisherMu.Lock()
+	defer h.publisherMu.Unlock()
+	h.publisher = p
 }
 
 // Run executes the hub event loop listening for register, unregister, and broadcast events
@@ -136,6 +158,8 @@ func (h *Hub) routeToRoom(clusterID string, payload []byte) {
 
 // BroadcastEvent serializes a structured event envelope and routes it to all clients
 // subscribed to the given clusterID room. Target delivery latency: < 200ms.
+// If a Redis EventPublisher is attached via SetPublisher, the envelope is also
+// forwarded to peer streamer instances after local delivery.
 func (h *Hub) BroadcastEvent(event string, clusterID string, data interface{}) {
 	envelope := types.WSEventEnvelope{
 		Event:     event,
@@ -150,13 +174,31 @@ func (h *Hub) BroadcastEvent(event string, clusterID string, data interface{}) {
 		return
 	}
 
-	// Non-blocking send: if the broadcast channel is saturated, log and drop
+	// Non-blocking local delivery — if the broadcast channel is saturated, log and drop
 	// rather than blocking the Kubernetes Informer goroutine
 	select {
 	case h.broadcast <- roomedMessage{clusterID: clusterID, payload: payload}:
 	default:
 		log.Printf("[WebSocket Hub] Broadcast channel full — dropping event '%s' for cluster '%s'", event, clusterID)
 	}
+
+	// Fan-out to peer streamer instances via the attached publisher (e.g. Redis).
+	// Done after the local channel send so we never block the Informer goroutine
+	// waiting on a Redis round-trip.
+	h.publisherMu.RLock()
+	pub := h.publisher
+	h.publisherMu.RUnlock()
+	if pub != nil {
+		pub.Publish(context.Background(), clusterID, envelope)
+	}
+}
+
+// RouteRaw delivers a pre-serialized JSON payload directly to all clients in the
+// given clusterID room. Used by the Redis adapter to inject events received from
+// peer streamer instances without re-publishing back to Redis (which would create
+// an infinite fan-out loop).
+func (h *Hub) RouteRaw(clusterID string, payload []byte) {
+	h.routeToRoom(clusterID, payload)
 }
 
 // ClientCount returns the total number of connected WebSocket clients across all rooms

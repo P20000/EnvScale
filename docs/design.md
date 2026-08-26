@@ -18,6 +18,7 @@ EnvScale is an enterprise-grade Kubernetes Observability and Gamified Governance
 - **Clean Floating Capsules**: Header Navbar and Navigation Sidebar float seamlessly as rounded capsule elements over a dark grid canvas.
 - **High-Contrast Dark Canvas**: Deep matte canvas backdrop (`#09090b`) with a subtle, non-intrusive 20px engineering grid.
 - **Frosted Glassmorphism**: Glass surfaces use clean backdrop blur (`backdrop-blur-md`) with ultra-thin neutral borders (`border-neutral-800/80`).
+- **Material Design Iconography System**: All UI navigation controls, node badges, drawers, terminals, and modals strictly consume standardized **Google Material Design Icons** (`react-icons/md`).
 - **Precision Typography**: Clean, legible typography using **Inter** / **Outfit** with strict hierarchy and uppercase status badges.
 
 ---
@@ -45,8 +46,10 @@ The main application screen follows a 3-region floating layout:
 ```
 
 ### Region 1: Top Floating Navbar Capsule
-- **Container**: `fixed top-4 left-1/2 -translate-x-1/2 z-50 rounded-full bg-neutral-900/80 backdrop-blur-md border border-neutral-800 px-6 py-2 shadow-2xl`
+- **Container**: `fixed top-0 left-0 w-full z-[60] bg-[#141417] border-b border-zinc-800 px-4 h-14`
+- **Background Layer**: Contains an isolated, absolute clipping container (`overflow-hidden inset-0`) wrapping an enlarged, spinning intricate SVG mandala. The SVG is meticulously centered onto the EnvScale logo, preventing visual bleed into the main canvas while allowing menus to overflow freely.
 - **Left Group**:
+  - **Project Branding**: `EnvScaleLogo` and typographic `ENVSCALE` title.
   - **Workspace & Cluster Selector Dropdown**: Pill dropdown displaying active cluster name (e.g. `cluster_1 ▾` or `minikube-prod`). Includes a `+ Connect New Cluster` action item at the bottom of the list.
 - **Right Group**:
   - **Live WebSocket Status Indicator**: Pulsing emerald dot (`🟢 Connected (12ms)`).
@@ -100,16 +103,21 @@ All styles are configured via CSS variables and Tailwind CSS tokens in `apps/web
 
 Custom nodes in `apps/web/src/components/canvas/` must follow professional graphic card guidelines:
 
-### A. `K8sNode` (Kubernetes Worker Node)
+### A. `K8sGroup` (Nested Hybrid Topology Parent Container)
+- Replaces standard independent nodes with a structured, parent container representing Kubernetes groupings (e.g., Namespaces, Workload Deployments).
+- **Aesthetic**: Solid structural surface (`bg-[#18181b] border-2 border-zinc-800/80`) with sharp, visible heading contrast (`text-zinc-100 font-mono tracking-widest`).
+- **Handles**: Enforces absolute strict handle routing—only explicitly defined target (left) and source (right) anchors are allowed. No arbitrary edge routing.
+
+### B. `K8sNode` (Kubernetes Worker Node)
 - Large container node representing a physical/virtual K8s node (e.g. `minikube-worker-1`).
 - Displays node IP, OS image, total CPU/Memory capacity gauges, and contains/connects child Pods.
 - Border turns subtle amber/red if node CPU/Memory capacity exceeds 85%.
 
-### B. `K8sPod` (Kubernetes Pod Workload)
-- Compact rectangular card (`220px x 80px`) with rounded corners (`rounded-xl`).
+### C. `K8sPod` (Kubernetes Pod Workload)
+- Compact rectangular card (`220px x 80px`) physically nesting *inside* its parent `K8sGroup`.
 - **Header**: Pod name (truncated with ellipsis), namespace badge (e.g., `default`, `kube-system`).
 - **Body**: Status indicator dot, status text (`Running`, `CrashLoopBackOff`), restart count badge (`Restarts: 3`).
-- **Handles**: Left handle for target service connection, right handle for outbound dependencies.
+- **Handles**: Inherits connections from its parent group; strictly internal visual representation inside the topology.
 
 ### C. `K8sService` (Kubernetes Service / Ingress)
 - Pill-shaped node (`rounded-full`) representing Ingress / ClusterIP / LoadBalancer endpoints.
@@ -122,8 +130,10 @@ Custom nodes in `apps/web/src/components/canvas/` must follow professional graph
 
 ---
 
-## 5. Typography & Micro-Interactions
+## 5. Typography, Modals, & Micro-Interactions
 
+- **Material Design 3 (M3) Nested Proportions**: Enforce strict harmonic border radiuses across all dialogs and modals. Inner element radii must equal Outer radius minus padding (e.g., Outer Dialog: `rounded-3xl`, Inner Tab/Content: `rounded-xl`, Input Field: `rounded-md`).
+- **Surface Reality**: Eliminate translucent/glassmorphism marketing templates in favor of flat, high-contrast, structurally precise structural layers.
 - **Font Family**: Inter, system-ui, sans-serif.
 - **Button Hover States**: `hover:bg-neutral-800 transition-all duration-200 ease-out active:scale-95`.
 - **Node Selection Highlight**: Selected node receives a crisp 2px primary border (`border-blue-500`) without glow effects.

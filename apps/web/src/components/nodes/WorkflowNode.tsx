@@ -5,7 +5,7 @@ import {
   useReactFlow,
   type NodeProps,
 } from "@xyflow/react";
-import { Trash2 } from "lucide-react";
+import { MdDelete as Trash2 } from "react-icons/md";
 
 export type WorkflowNodeData = {
   label: string;

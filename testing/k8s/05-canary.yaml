@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: todo-backend-canary
+  namespace: testing-todo
+  labels:
+    app: todo-backend
+    tier: api
+    version: canary
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: todo-backend
+      version: canary
+  template:
+    metadata:
+      labels:
+        app: todo-backend
+        tier: api
+        version: canary
+    spec:
+      containers:
+        - name: backend
+          image: todo-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3001
+              name: http
+            - containerPort: 9090
+              name: metrics
+          env:
+            - name: REDIS_HOST
+              value: redis-headless-service
+            - name: REDIS_PORT
+              value: "6379"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+        - name: log-sidecar
+          image: busybox:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - "mkdir -p /var/log && while true; do echo '{\"level\":\"info\",\"event\":\"heartbeat\",\"service\":\"todo-backend-canary\",\"timestamp\":\"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'\"}' | tee -a /var/log/app.log; sleep 5; done"
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi

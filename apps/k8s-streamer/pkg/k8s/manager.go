@@ -7,6 +7,7 @@ import (
 
 	"k8s.io/client-go/kubernetes"
 
+	"github.com/EnvScale/k8s-streamer/pkg/types"
 	"github.com/EnvScale/k8s-streamer/pkg/websocket"
 )
 
@@ -107,6 +108,29 @@ func (cm *ClusterManager) UnregisterCluster(clusterID string) error {
 	return nil
 }
 
+// GetClusterSnapshot retrieves the current cached state of pods, nodes, services, and workloads for a given cluster.
+func (cm *ClusterManager) GetClusterSnapshot(clusterID string) (
+	[]types.PodStatusDelta,
+	[]types.NodeStatusDelta,
+	[]types.ServiceStatusDelta,
+	[]types.DeploymentStatusDelta,
+	[]types.ReplicaSetStatusDelta,
+	[]types.StatefulSetStatusDelta,
+	[]types.IngressStatusDelta,
+	[]types.K8sIncidentEvent,
+	error,
+) {
+	cm.mu.RLock()
+	im, ok := cm.clusters[clusterID]
+	cm.mu.RUnlock()
+
+	if !ok {
+		return nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("cluster %s not found", clusterID)
+	}
+	pods, nodes, services, deployments, replicaSets, statefulSets, ingresses, incidents := im.GetSnapshot()
+	return pods, nodes, services, deployments, replicaSets, statefulSets, ingresses, incidents, nil
+}
+
 // GetCluster returns the InformerManager associated with the given clusterID.
 func (cm *ClusterManager) GetCluster(clusterID string) (*InformerManager, bool) {
 	cm.mu.RLock()
@@ -146,4 +170,19 @@ func (cm *ClusterManager) ShutdownAll() {
 		delete(cm.clusters, id)
 	}
 	log.Println("[ClusterManager] All cluster informers successfully shut down.")
+}
+
+// GetClientset returns the kubernetes.Interface for the registered cluster with the
+// given clusterID. This implements the chaos.ClientsetProvider interface, allowing the
+// chaos Injector to borrow an authenticated clientset for fault API calls without
+// needing to re-parse or store a second copy of the Kubeconfig.
+func (cm *ClusterManager) GetClientset(clusterID string) (kubernetes.Interface, error) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	im, ok := cm.clusters[clusterID]
+	if !ok {
+		return nil, fmt.Errorf("cluster %q is not registered", clusterID)
+	}
+	return im.Clientset(), nil
 }

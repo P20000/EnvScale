@@ -164,8 +164,8 @@
 ## 3. Neha — Frontend UI & Visualization Engine (`apps/web`)
 
 - **[NEH-01]** React + Vite + Tailwind CSS + shadcn/ui Application Shell & Token System.
-- **[NEH-02]** Custom React Flow Node Components (`K8sNode`, `K8sPod`, `K8sService`).
-- **[NEH-03]** Dagre Auto-Layout Canvas Graph Engine.
+- **[NEH-02]** Custom React Flow Node Components (`K8sGroup`, `K8sNode`, `K8sPod`, `K8sService`).
+- **[NEH-03]** Dagre Auto-Layout Canvas Graph Engine with Nested Hybrid Topology (ArgoCD-style).
 - **[NEH-04]** Real-Time Streaming Zustand Store (`useTopologyStore`).
 - **[NEH-05]** `useK8sStream` Real-Time WebSocket Hook.
 - **[NEH-06]** Pod Log Terminal Inspector Drawer Component.
@@ -178,7 +178,7 @@
 
 ## 4. Ishika — UI Polish, Static Pages & QA (`apps/web` & `docs/`)
 
-- **[ISH-01]** Step-by-Step "Connect Cluster" Onboarding Wizard UI with Dropzone.
+- **[ISH-01]** Step-by-Step "Connect Cluster" Onboarding Wizard UI with Material Design 3 flat, structured proportions and Dropzone.
 - **[ISH-02]** Reusable UI Primitive Library (`Button`, `Modal`, `Badge`, `Card`, `Toast`).
 - **[ISH-03]** Incident History Log View with Status Filters & Severity Badges.
 - **[ISH-04]** Empty-State UI Components & Global Error Boundaries.

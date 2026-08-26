@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: testing-todo
+  labels:
+    env: testing
+    app.kubernetes.io/managed-by: envscale

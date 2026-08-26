@@ -20,14 +20,15 @@ coverage/
 *.kubeconfig
 *.log
 
-# Project Management CLI Tool (Local Only - Never committed to repo)
-scripts/
-.task-manager/
-pm
-ghissue
+# Temp / Cache
+__pycache__/
+*.pyc
 
 # IDE & OS
 .DS_Store
 .vscode
 .idea
 
+# Compiled binaries
+apps/k8s-streamer/main
+apps/k8s-streamer/server

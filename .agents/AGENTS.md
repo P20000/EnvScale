@@ -80,6 +80,7 @@ When generating code or proposing implementations, AI assistants MUST strictly a
 - **Input Validation:** Use Zod schemas for validating all API request payloads.
 
 ### Code Quality & Engineering Integrity
+- **Strict Anti-Monolith Policy (500 Line Limit):** NEVER write or commit source code files (`.ts`, `.tsx`, `.go`, `.py`, `.sql`) exceeding 500 lines of code. Large components, stores, handlers, and schemas MUST be split into modular, single-responsibility sub-components, slices, helpers, or domain-specific files.
 - **No Inferred Schemas:** Never guess Drizzle database table definitions or API contracts. Always inspect `apps/api-server/src/db/schema.ts` and shared type definitions first.
 - **No Silent Error Swallowing:** Do NOT wrap code in silent `try/catch` blocks that return empty fallback arrays or fake data. Log real errors and surface actionable feedback via standard API responses or toast notifications.
 - **Sub-Second Streaming:** Ensure WebSocket state deltas (`EVENT_POD_STATUS_CHANGED`, `EVENT_NODE_MUTATED`) deliver payload updates to the React Flow Zustand store within < 200ms.
@@ -87,9 +88,10 @@ When generating code or proposing implementations, AI assistants MUST strictly a
 
 ---
 
-## 5. Verification & Testing Requirements
+## 5. Verification, Task Audit & Testing Requirements
 
-Before declaring any task or feature complete, the AI assistant MUST verify:
+Before declaring any task complete, assessing task completion status, or checking assigned work, ALL AI Assistants MUST perform standard monorepo verification:
+
 1. **Monorepo Build:** Run `pnpm build` to confirm zero TypeScript compilation errors.
 2. **Lint Cleanliness:** Run `pnpm lint` to ensure zero ESLint violations.
 3. **Database Consistency:** Run `drizzle-kit check` or migration scripts to verify schema sync.
@@ -99,18 +101,52 @@ Before declaring any task or feature complete, the AI assistant MUST verify:
 
 ## 6. Git Branching Strategy & Pull Request Governance
 
-To ensure code quality and prevent unauthorized changes in `main` or `develop`:
+To ensure architectural integrity, clean commit history, and prevent broken code from polluting production:
+
+### 2-Tier Branch Architecture
+
+```text
+Feature Branches (feature/*)
+       │
+       ▼  (PRs for individual developer tasks)
+  [ develop ]  ← Active Integration & Sandbox Branch
+       │          - Accepts all developer feature PRs
+       │          - End-to-end integration testing & debugging occurs here
+       │          - Absorbs iterative commits, refactors, & fixes
+       │
+       │  (Single PR only when FULL Milestone is 100% complete & verified)
+       ▼  (e.g., "Release Milestone 2: Streaming Gateway & Core REST APIs")
+    [ main ]   ← Protected Production Release Branch
+                  - ZERO direct pushes or individual feature PRs permitted
+                  - Clean, pristine commit history containing only tagged Milestone releases
+                  - Always 100% stable, fully integrated, and demo-ready
+```
 
 ### Branch Breakdown
-- `main`: Protected production release branch. **NO DIRECT PUSHES PERMITTED**.
-- `develop`: Integration testing branch. All feature PRs merge here first.
+- `main`: Protected production release branch. **NO DIRECT PUSHES OR INDIVIDUAL FEATURE PRs PERMITTED**. Only merged from `develop` upon Milestone completion.
+- `develop`: Integration testing branch. All `feature/*` PRs merge here first.
 - `feature/pranav-k8s-streamer`: Owned by **Pranav** for `apps/k8s-streamer` core engine development.
 - `feature/vinit-api-server`: Owned by **Vinit** for `apps/api-server`, Drizzle ORM, and database schemas.
 - `feature/neha-web-ui`: Owned by **Neha** for `apps/web` React Flow canvas and visualization UI.
 - `feature/ishika-docs-qa`: Owned by **Ishika** for onboarding UI, reusable component library, docs, and QA.
 
-### Enforced Pull Request Guardrails
-1. **Never Push Directly to `main` or `develop`:** All work must originate from dedicated `feature/*` branches and be submitted via a Pull Request (PR).
-2. **Required CI Checks:** Every PR targeting `main` or `develop` MUST pass automated GitHub Actions CI (`pnpm build` and `pnpm lint`).
-3. **Module Ownership Review (`CODEOWNERS`):** PRs modifying specific paths require review and approval from the designated module owner before merging.
+### Enforced Pull Request & Release Rules
+
+1. **Feature PRs Target `develop` ONLY:** All developer feature work MUST target `develop`. **NEVER open a PR from `feature/*` directly to `main`**.
+2. **Required CI Checks:** Every PR targeting `develop` or `main` MUST pass automated GitHub Actions CI (`pnpm build` and `pnpm lint`).
+3. **Milestone Release Gate (`develop` → `main`):** `develop` is merged into `main` ONLY when:
+   - All tasks assigned to the milestone in `docs/milestones.md` are 100% complete across all 4 team modules.
+   - End-to-end integration test passes (Frontend + API Server + Streaming Gateway + Postgres/Redis).
+   - QA verification and black-box test execution matrix sign-off is completed by Ishika.
+   - The merge commit to `main` is tagged with a semantic milestone tag (e.g. `v0.1.0-milestone1`, `v0.2.0-milestone2`).
+4. **Module Ownership Review (`CODEOWNERS`):** PRs modifying specific paths require review and approval from the designated module owner before merging.
+
+### Safe & Simplified Local Committing Guardrails
+1. **No Destructive Git Commands or Stash Dropping:** AI Assistants MUST NEVER execute `git stash drop`, `git reset --hard`, or cross-branch file checkouts (`git checkout <branch> -- <path>`) that risk discarding uncommitted local changes.
+2. **Straightforward Commit & Push Workflow:** Committing local work MUST always be a simple, non-destructive sequence:
+   - Stage modified files on the current working branch: `git add <files>`
+   - Commit with a clear message: `git commit -m "..."`
+   - Push to the origin branch: `git push origin <branch>`
+3. **Zero Data Loss Guarantee:** AI Assistants must prioritize local code preservation above all else, ensuring user work is committed safely without intermediate stashing tricks or risky branch switching.
+
 
