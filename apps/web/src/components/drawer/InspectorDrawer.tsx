@@ -15,12 +15,15 @@ import {
 import type { K8sPodData } from "../canvas/K8sPod";
 import type { K8sNodeData } from "../canvas/K8sNode";
 import type { K8sServiceData } from "../canvas/K8sService";
+import type { K8sIngressData } from "../canvas/K8sIngress";
+import { MdPublic as IngressIcon } from "react-icons/md";
 import { useTopologyStore } from "../../store/useTopologyStore";
 
 export type SelectedTarget =
   | { type: "pod"; data: K8sPodData }
   | { type: "node"; data: K8sNodeData }
   | { type: "service"; data: K8sServiceData }
+  | { type: "ingress"; data: K8sIngressData }
   | null;
 
 interface InspectorDrawerProps {
@@ -46,6 +49,19 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
   const [logs, setLogs] = useState<string[]>(() => {
     if (!targetName) return [];
     const timestamp = new Date().toISOString();
+    if (target?.type === "ingress") {
+      const ingData = target.data as K8sIngressData;
+      const rules = ingData.rules || [];
+      const host = rules[0]?.host || `${targetName}.local`;
+      const path = rules[0]?.path || "/";
+      const svc = rules[0]?.serviceName || "backend-service";
+      return [
+        `[INGRESS CONTROLLER] ${timestamp} Syncing ingress rules for ${targetName}`,
+        `[TRAFFIC STREAM] ${timestamp} GET http://${host}${path} 200 OK -> upstream ${svc}:8080 (11ms)`,
+        `[TRAFFIC STREAM] ${timestamp} POST http://${host}${path} 201 Created -> upstream ${svc}:8080 (16ms)`,
+        `[TLS HANDSHAKE] ${timestamp} TLS SNI host handshake verified (${ingData.tls?.[0]?.secretName || "ingress-tls-cert"})`,
+      ];
+    }
     return [
       `[INFO] ${timestamp} Starting container process for ${targetName}...`,
       `[INFO] ${timestamp} Listening on port 8080 (0.0.0.0)`,
@@ -63,7 +79,12 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
 
     const interval = setInterval(() => {
       const timestamp = new Date().toISOString();
-      const sampleLogs = [
+      const sampleLogs = target.type === "ingress" ? [
+        `[TRAFFIC STREAM] ${timestamp} GET /api/v1/health 200 OK 7ms -> routed via ingress rule`,
+        `[TRAFFIC STREAM] ${timestamp} POST /api/v1/data 200 OK 14ms -> target upstream ${target.data.name}`,
+        `[INGRESS ROUTE] ${timestamp} Evaluated routing table for ${target.data.name}`,
+        `[TRAFFIC STREAM] ${timestamp} GET /metrics 200 OK 4ms`,
+      ] : [
         `[INFO] ${timestamp} GET /api/v1/metrics 200 OK 14ms`,
         `[INFO] ${timestamp} Processed WebSocket message payload (delta status updated)`,
         `[DEBUG] ${timestamp} DB Connection pool alive (active: 4, idle: 16)`,
@@ -226,10 +247,17 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-neutral-800 bg-neutral-900/50">
         <div className="flex items-center gap-2.5 min-w-0">
-          <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-500 shrink-0" />
+          <span className={`flex h-2.5 w-2.5 rounded-full shrink-0 ${target.type === "ingress" ? "bg-violet-400 animate-pulse" : "bg-emerald-500"}`} />
           <div className="min-w-0">
             <h3 className="text-sm font-bold text-neutral-100 truncate">{target.data.name}</h3>
-            <p className="text-[11px] font-mono text-neutral-400 capitalize">Type: {target.type}</p>
+            <p className="text-[11px] font-mono text-neutral-400 capitalize flex items-center gap-1.5">
+              Type: {target.type}
+              {target.type === "ingress" && (
+                <span className="rounded border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.2 text-[10px] font-mono text-violet-300">
+                  INGRESS ROUTER
+                </span>
+              )}
+            </p>
           </div>
         </div>
         <button
@@ -289,70 +317,162 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
         {/* Overview Tab */}
         {activeTab === "overview" && (
           <div className="space-y-4">
-            <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3.5 space-y-2.5">
-              <h4 className="text-xs font-semibold text-neutral-300 uppercase tracking-wider">
-                Workload Details
-              </h4>
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div>
-                  <span className="block text-neutral-400 text-[10px]">Resource Name</span>
-                  <span className="font-mono text-neutral-200 font-medium truncate block">
-                    {target.data.name}
-                  </span>
+            {target.type === "ingress" ? (
+              <>
+                <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3.5 space-y-2.5">
+                  <h4 className="text-xs font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <IngressIcon className="h-4 w-4 text-violet-400" />
+                    Ingress Spec & Controller
+                  </h4>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <span className="block text-neutral-400 text-[10px]">Resource Name</span>
+                      <span className="font-mono text-neutral-200 font-medium truncate block">
+                        {target.data.name}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="block text-neutral-400 text-[10px]">Namespace</span>
+                      <span className="font-mono text-neutral-200 font-medium">
+                        {target.data.namespace || "default"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="block text-neutral-400 text-[10px]">Ingress Class</span>
+                      <span className="font-mono text-violet-300 font-medium">
+                        {target.data.ingressClassName || "nginx"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="block text-neutral-400 text-[10px]">TLS Termination</span>
+                      <span className="font-mono text-emerald-400 font-medium">
+                        {target.data.tls && target.data.tls.length > 0
+                          ? `${target.data.tls.length} Binding(s)`
+                          : "Disabled (HTTP)"}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <span className="block text-neutral-400 text-[10px]">Namespace</span>
-                  <span className="font-mono text-neutral-200 font-medium">
-                    {targetRecord.namespace ? String(targetRecord.namespace) : "kube-system"}
-                  </span>
-                </div>
-                <div>
-                  <span className="block text-neutral-400 text-[10px]">Status</span>
-                  <span className="inline-flex items-center gap-1 font-semibold text-emerald-400">
-                    <CheckCircle2 className="h-3 w-3" />
-                    {targetRecord.status ? String(targetRecord.status) : "Ready"}
-                  </span>
-                </div>
-                <div>
-                  <span className="block text-neutral-400 text-[10px]">Restarts</span>
-                  <span className="font-mono text-neutral-200">
-                    {targetRecord.restarts !== undefined ? String(targetRecord.restarts) : "0"}
-                  </span>
-                </div>
-              </div>
-            </div>
 
-            <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3.5 space-y-2">
-              <h4 className="text-xs font-semibold text-neutral-300 uppercase tracking-wider">
-                Placement & IP
-              </h4>
-              <div className="space-y-1.5 text-xs font-mono">
-                <div className="flex justify-between items-center">
-                  <span className="text-neutral-400">Node Assignment:</span>
-                  {getNodeAssignment() ? (
-                    <span className="text-neutral-200">{getNodeAssignment()}</span>
+                <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3.5 space-y-2.5">
+                  <h4 className="text-xs font-semibold text-neutral-300 uppercase tracking-wider">
+                    HTTP Routing Rules ({target.data.rules?.length || 0})
+                  </h4>
+                  {(!target.data.rules || target.data.rules.length === 0) ? (
+                    <p className="text-xs text-neutral-500 italic">No routing rules configured.</p>
                   ) : (
-                    <span className="font-mono text-xs text-neutral-500 italic">unassigned</span>
+                    <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                      {target.data.rules.map((rule, idx) => (
+                        <div
+                          key={idx}
+                          className="rounded-lg border border-neutral-800 bg-neutral-950 p-2.5 text-xs font-mono space-y-1"
+                        >
+                          <div className="flex justify-between items-center text-neutral-300">
+                            <span className="text-neutral-500 text-[10px]">Host:</span>
+                            <span className="text-violet-300 font-semibold">{rule.host || "* (Default Host)"}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-neutral-400">
+                            <span className="text-neutral-500 text-[10px]">Path:</span>
+                            <span className="text-neutral-200 bg-neutral-900 px-1.5 py-0.5 rounded border border-neutral-800">
+                              {rule.path || "/"}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center text-neutral-400 pt-0.5">
+                            <span className="text-neutral-500 text-[10px]">Target Service:</span>
+                            <span className="text-emerald-400">
+                              {rule.serviceName}:{rule.servicePort}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-neutral-400">Pod IP Address:</span>
-                  {getPodIp() ? (
-                    <span className="text-neutral-200">{getPodIp()}</span>
-                  ) : (
-                    <span className="font-mono text-xs text-neutral-500 italic">unassigned</span>
-                  )}
+
+                <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3.5 space-y-2">
+                  <h4 className="text-xs font-semibold text-neutral-300 uppercase tracking-wider">
+                    Load Balancer Status
+                  </h4>
+                  <div className="space-y-1 text-xs font-mono">
+                    <div className="flex justify-between items-center">
+                      <span className="text-neutral-400">External Endpoint:</span>
+                      <span className="text-neutral-200">
+                        {target.data.loadBalancerIps && target.data.loadBalancerIps.length > 0
+                          ? target.data.loadBalancerIps.join(", ")
+                          : "127.0.0.1 (Ingress Controller IP)"}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-neutral-400">Uptime:</span>
-                  {getDynamicUptime() ? (
-                    <span className="text-neutral-200">{getDynamicUptime()}</span>
-                  ) : (
-                    <span className="font-mono text-xs text-neutral-500 italic">unassigned</span>
-                  )}
+              </>
+            ) : (
+              <>
+                <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3.5 space-y-2.5">
+                  <h4 className="text-xs font-semibold text-neutral-300 uppercase tracking-wider">
+                    Workload Details
+                  </h4>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <span className="block text-neutral-400 text-[10px]">Resource Name</span>
+                      <span className="font-mono text-neutral-200 font-medium truncate block">
+                        {target.data.name}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="block text-neutral-400 text-[10px]">Namespace</span>
+                      <span className="font-mono text-neutral-200 font-medium">
+                        {targetRecord.namespace ? String(targetRecord.namespace) : "kube-system"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="block text-neutral-400 text-[10px]">Status</span>
+                      <span className="inline-flex items-center gap-1 font-semibold text-emerald-400">
+                        <CheckCircle2 className="h-3 w-3" />
+                        {targetRecord.status ? String(targetRecord.status) : "Ready"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="block text-neutral-400 text-[10px]">Restarts</span>
+                      <span className="font-mono text-neutral-200">
+                        {targetRecord.restarts !== undefined ? String(targetRecord.restarts) : "0"}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
+
+                <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3.5 space-y-2">
+                  <h4 className="text-xs font-semibold text-neutral-300 uppercase tracking-wider">
+                    Placement & IP
+                  </h4>
+                  <div className="space-y-1.5 text-xs font-mono">
+                    <div className="flex justify-between items-center">
+                      <span className="text-neutral-400">Node Assignment:</span>
+                      {getNodeAssignment() ? (
+                        <span className="text-neutral-200">{getNodeAssignment()}</span>
+                      ) : (
+                        <span className="font-mono text-xs text-neutral-500 italic">unassigned</span>
+                      )}
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-neutral-400">Pod IP Address:</span>
+                      {getPodIp() ? (
+                        <span className="text-neutral-200">{getPodIp()}</span>
+                      ) : (
+                        <span className="font-mono text-xs text-neutral-500 italic">unassigned</span>
+                      )}
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-neutral-400">Uptime:</span>
+                      {getDynamicUptime() ? (
+                        <span className="text-neutral-200">{getDynamicUptime()}</span>
+                      ) : (
+                        <span className="font-mono text-xs text-neutral-500 italic">unassigned</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
 
             {/* Embedded Live Log Stream in Overview Tab */}
             {target.type === "pod" && (
@@ -511,10 +631,11 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
             <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3.5">
               <div className="flex items-center gap-2 text-xs font-semibold text-neutral-200 mb-1">
                 <Zap className="h-4 w-4 text-amber-400" />
-                Chaos Testing Fault Injector
+                {target.type === "ingress" ? "Ingress Route Fault Injector" : "Chaos Testing Fault Injector"}
               </div>
               <p className="text-[11px] text-neutral-400">
-                Simulate production failures on <span className="font-mono text-neutral-200">{target.data.name}</span> to verify system resilience.
+                Simulate production {target.type === "ingress" ? "routing latency and HTTP gateway faults" : "workload failures"} on{" "}
+                <span className="font-mono text-neutral-200">{target.data.name}</span> to verify system resilience.
               </p>
             </div>
 
@@ -525,31 +646,59 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
               </div>
             )}
 
-            <div className="space-y-2 pt-1">
-              <button
-                onClick={() => triggerChaos("crash", "Pod SIGKILL Crash")}
-                className="w-full flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-xs font-medium text-neutral-200 hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-400 transition-all active:scale-95"
-              >
-                <span>Simulate Crash (SIGKILL)</span>
-                <RotateCcw className="h-4 w-4" />
-              </button>
+            {target.type === "ingress" ? (
+              <div className="space-y-2 pt-1">
+                <button
+                  onClick={() => triggerChaos("oom-pressure", "Inject Ingress Route Latency (+250ms)")}
+                  className="w-full flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-xs font-medium text-neutral-200 hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-400 transition-all active:scale-95 cursor-pointer"
+                >
+                  <span>Inject Ingress Route Latency (+250ms)</span>
+                  <Activity className="h-4 w-4 text-amber-400" />
+                </button>
 
-              <button
-                onClick={() => triggerChaos("oom-pressure", "OOM Memory Pressure")}
-                className="w-full flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-xs font-medium text-neutral-200 hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-400 transition-all active:scale-95"
-              >
-                <span>Inject Network / Memory Pressure</span>
-                <Activity className="h-4 w-4" />
-              </button>
+                <button
+                  onClick={() => triggerChaos("crash", "Simulate Upstream HTTP 503 Fault")}
+                  className="w-full flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-xs font-medium text-neutral-200 hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-400 transition-all active:scale-95 cursor-pointer"
+                >
+                  <span>Simulate Upstream HTTP 503 Fault</span>
+                  <AlertTriangle className="h-4 w-4 text-red-400" />
+                </button>
 
-              <button
-                onClick={() => triggerChaos("scale-down", "Replica Scale Down")}
-                className="w-full flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-xs font-medium text-neutral-200 hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-400 transition-all active:scale-95"
-              >
-                <span>Trigger Workload Scale-Down</span>
-                <Zap className="h-4 w-4" />
-              </button>
-            </div>
+                <button
+                  onClick={() => triggerChaos("scale-down", "Simulate TLS Certificate Handshake Failure")}
+                  className="w-full flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-xs font-medium text-neutral-200 hover:border-violet-500/50 hover:bg-violet-500/10 hover:text-violet-400 transition-all active:scale-95 cursor-pointer"
+                >
+                  <span>Simulate TLS Handshake Timeout</span>
+                  <Zap className="h-4 w-4 text-violet-400" />
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2 pt-1">
+                <button
+                  onClick={() => triggerChaos("crash", "Pod SIGKILL Crash")}
+                  className="w-full flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-xs font-medium text-neutral-200 hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-400 transition-all active:scale-95 cursor-pointer"
+                >
+                  <span>Simulate Crash (SIGKILL)</span>
+                  <RotateCcw className="h-4 w-4" />
+                </button>
+
+                <button
+                  onClick={() => triggerChaos("oom-pressure", "OOM Memory Pressure")}
+                  className="w-full flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-xs font-medium text-neutral-200 hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-400 transition-all active:scale-95 cursor-pointer"
+                >
+                  <span>Inject Network / Memory Pressure</span>
+                  <Activity className="h-4 w-4" />
+                </button>
+
+                <button
+                  onClick={() => triggerChaos("scale-down", "Replica Scale Down")}
+                  className="w-full flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-xs font-medium text-neutral-200 hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-400 transition-all active:scale-95 cursor-pointer"
+                >
+                  <span>Trigger Workload Scale-Down</span>
+                  <Zap className="h-4 w-4" />
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
