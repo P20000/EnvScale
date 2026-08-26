@@ -80,6 +80,7 @@ When generating code or proposing implementations, AI assistants MUST strictly a
 - **Input Validation:** Use Zod schemas for validating all API request payloads.
 
 ### Code Quality & Engineering Integrity
+- **Strict Anti-Monolith Policy (500 Line Limit):** NEVER write or commit source code files (`.ts`, `.tsx`, `.go`, `.py`, `.sql`) exceeding 500 lines of code. Large components, stores, handlers, and schemas MUST be split into modular, single-responsibility sub-components, slices, helpers, or domain-specific files.
 - **No Inferred Schemas:** Never guess Drizzle database table definitions or API contracts. Always inspect `apps/api-server/src/db/schema.ts` and shared type definitions first.
 - **No Silent Error Swallowing:** Do NOT wrap code in silent `try/catch` blocks that return empty fallback arrays or fake data. Log real errors and surface actionable feedback via standard API responses or toast notifications.
 - **Sub-Second Streaming:** Ensure WebSocket state deltas (`EVENT_POD_STATUS_CHANGED`, `EVENT_NODE_MUTATED`) deliver payload updates to the React Flow Zustand store within < 200ms.

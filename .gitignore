@@ -28,3 +28,7 @@ __pycache__/
 .DS_Store
 .vscode
 .idea
+
+# Compiled binaries
+apps/k8s-streamer/main
+apps/k8s-streamer/server
