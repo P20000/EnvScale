@@ -61,6 +61,9 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
   const deleteModal = useTopologyStore((s) => s.deleteModal);
   const closeDeleteModal = useTopologyStore((s) => s.closeDeleteModal);
 
+  const layoutDirection = useTopologyStore((s) => s.layoutDirection);
+  const setLayoutDirection = useTopologyStore((s) => s.setLayoutDirection);
+
   const { fitView } = useReactFlow();
 
   const handleWsMessage = useCallback(
@@ -77,7 +80,7 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
   }, [status, latencyMs, setWsStatus]);
 
   useEffect(() => {
-    applyDagreLayout("LR");
+    applyDagreLayout();
   }, [applyDagreLayout]);
 
   const handleNodeClick = useCallback(
@@ -104,7 +107,15 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
   }, [setSelectedNode, onSelectTarget]);
 
   const handleAutoLayout = () => {
-    applyDagreLayout("LR");
+    applyDagreLayout();
+    setTimeout(() => {
+      fitView({ duration: 400, padding: 0.11, maxZoom: 0.92 });
+    }, 50);
+  };
+
+  const handleToggleDirection = () => {
+    const nextDir = layoutDirection === "TB" ? "LR" : "TB";
+    setLayoutDirection(nextDir);
     setTimeout(() => {
       fitView({ duration: 400, padding: 0.11, maxZoom: 0.92 });
     }, 50);
@@ -172,11 +183,20 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         </div>
       )}
 
-      {/* Top Right Canvas Actions Capsule (Auto Layout + Recenter View) */}
+      {/* Top Right Canvas Actions Capsule (Layout Direction Toggle + Auto Layout + Recenter View) */}
       <div className="absolute top-20 right-6 z-40 flex flex-col gap-1.5 rounded-2xl bg-surface border border-neutral-800 p-2">
         <button
+          onClick={handleToggleDirection}
+          className="flex items-center gap-2 rounded-md bg-background border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:border-blue-500/50 hover:bg-neutral-800 hover:text-blue-400 transition-colors font-heading cursor-pointer"
+          title={`Switch layout to ${layoutDirection === "TB" ? "Horizontal (LR)" : "Vertical (TB)"}`}
+        >
+          <span className="text-blue-400 font-bold">{layoutDirection === "TB" ? "↕" : "↔"}</span>
+          <span>{layoutDirection === "TB" ? "Vertical" : "Horizontal"}</span>
+        </button>
+
+        <button
           onClick={handleAutoLayout}
-          className="flex items-center gap-2 rounded-md bg-background border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:border-blue-500/50 hover:bg-neutral-800 hover:text-blue-400 transition-colors font-heading"
+          className="flex items-center gap-2 rounded-md bg-background border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:border-blue-500/50 hover:bg-neutral-800 hover:text-blue-400 transition-colors font-heading cursor-pointer"
           title="Auto Layout Topology Graph (Dagre Engine)"
         >
           <Icon path={mdiViewGrid} size={0.65} className="text-blue-400" />
@@ -185,7 +205,7 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
 
         <button
           onClick={handleRecenterView}
-          className="flex items-center gap-2 rounded-md bg-background border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:border-blue-500/50 hover:bg-neutral-800 hover:text-blue-400 transition-colors font-heading"
+          className="flex items-center gap-2 rounded-md bg-background border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:border-blue-500/50 hover:bg-neutral-800 hover:text-blue-400 transition-colors font-heading cursor-pointer"
           title="Fit / Center Graph View"
         >
           <Icon path={mdiCrosshairsGps} size={0.65} className="text-blue-400" />

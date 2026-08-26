@@ -140,4 +140,12 @@ Feature Branches (feature/*)
    - The merge commit to `main` is tagged with a semantic milestone tag (e.g. `v0.1.0-milestone1`, `v0.2.0-milestone2`).
 4. **Module Ownership Review (`CODEOWNERS`):** PRs modifying specific paths require review and approval from the designated module owner before merging.
 
+### Safe & Simplified Local Committing Guardrails
+1. **No Destructive Git Commands or Stash Dropping:** AI Assistants MUST NEVER execute `git stash drop`, `git reset --hard`, or cross-branch file checkouts (`git checkout <branch> -- <path>`) that risk discarding uncommitted local changes.
+2. **Straightforward Commit & Push Workflow:** Committing local work MUST always be a simple, non-destructive sequence:
+   - Stage modified files on the current working branch: `git add <files>`
+   - Commit with a clear message: `git commit -m "..."`
+   - Push to the origin branch: `git push origin <branch>`
+3. **Zero Data Loss Guarantee:** AI Assistants must prioritize local code preservation above all else, ensuring user work is committed safely without intermediate stashing tricks or risky branch switching.
+
 

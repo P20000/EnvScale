@@ -1,4 +1,6 @@
+import { Handle, Position } from '@xyflow/react';
 import { MdViewInAr as Icon } from 'react-icons/md';
+import { useTopologyStore } from '../../store/useTopologyStore';
 
 export interface K8sPodData extends Record<string, unknown> {
   name: string;
@@ -16,10 +18,14 @@ export interface K8sPodData extends Record<string, unknown> {
   ownerName?: string;
   ownerKind?: string;
   ownerUid?: string;
+  labels?: Record<string, string>;
+  containers?: unknown[];
 }
 
 export function K8sPodNode({ data }: { data: K8sPodData }) {
   const podStatus = data.status?.trim() || 'Unknown';
+  const layoutDirection = useTopologyStore((s) => s.layoutDirection);
+  const isTB = layoutDirection === "TB";
 
   const statusConfig = {
     Running: {
@@ -27,7 +33,7 @@ export function K8sPodNode({ data }: { data: K8sPodData }) {
       textClass: "text-zinc-200"
     },
     Succeeded: {
-      dotClass: "bg-zinc-500", // Distinguish completed tasks cleanly from running live traffic
+      dotClass: "bg-zinc-500",
       textClass: "text-zinc-400"
     },
     Completed: {
@@ -64,11 +70,25 @@ export function K8sPodNode({ data }: { data: K8sPodData }) {
     }
   };
 
-  // Fallback lookup rule for safety
   const currentConfig = statusConfig[podStatus as keyof typeof statusConfig] || statusConfig.Unknown;
 
   return (
-    <div className="h-8 w-[208px] bg-[#09090b] border border-zinc-800/80 rounded-md px-2.5 flex items-center justify-between transition-colors hover:border-zinc-600 select-none group">
+    <div className="h-8 w-[208px] bg-[#09090b] border border-zinc-800/80 rounded-md px-2.5 flex items-center justify-between transition-colors hover:border-zinc-600 select-none group relative">
+      <Handle
+        type="target"
+        position={isTB ? Position.Top : Position.Left}
+        id="left-target"
+        isConnectable={false}
+        className="!opacity-0 !w-0 !h-0 !min-w-0 !min-h-0 !border-0 !bg-transparent pointer-events-none"
+      />
+      <Handle
+        type="source"
+        position={isTB ? Position.Bottom : Position.Right}
+        id="right-source"
+        isConnectable={false}
+        className="!opacity-0 !w-0 !h-0 !min-w-0 !min-h-0 !border-0 !bg-transparent pointer-events-none"
+      />
+
       <div className="flex items-center gap-2 min-w-0">
         <Icon className="text-zinc-400 text-sm shrink-0" />
         <span className={`text-xs font-mono font-semibold truncate max-w-[120px] ${currentConfig.textClass}`}>
@@ -76,7 +96,6 @@ export function K8sPodNode({ data }: { data: K8sPodData }) {
         </span>
       </div>
 
-      {/* Standalone Semantic Status Dot Indicator */}
       <div className={`h-2 w-2 rounded-full shrink-0 ${currentConfig.dotClass}`} />
     </div>
   );

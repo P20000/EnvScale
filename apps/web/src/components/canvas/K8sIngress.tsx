@@ -1,5 +1,6 @@
 import { Handle, Position } from '@xyflow/react';
 import { MdPublic as Icon } from 'react-icons/md';
+import { useTopologyStore } from '../../store/useTopologyStore';
 
 export interface IngressRuleData {
   host: string;
@@ -26,11 +27,25 @@ export interface K8sIngressData extends Record<string, unknown> {
 
 export function K8sIngressNode({ data }: { data: K8sIngressData }) {
   const rulesCount = data.rules?.length || 0;
+  const layoutDirection = useTopologyStore((s) => s.layoutDirection);
+  const isTB = layoutDirection === "TB";
 
   return (
-    <div className="h-11 w-[240px] border border-zinc-800 bg-[#141417] flex items-center justify-between px-3 rounded-md select-none group hover:border-zinc-700 transition-colors">
-      <Handle type="target" position={Position.Left} id="left-target" isConnectable={false} className="!w-1.5 !h-1.5 !bg-zinc-700 !border-zinc-900 rounded-full" />
-      <Handle type="source" position={Position.Right} id="right-source" isConnectable={false} className="!w-1.5 !h-1.5 !bg-zinc-700 !border-zinc-900 rounded-full" />
+    <div className="h-11 w-[240px] border border-zinc-800 bg-[#141417] flex items-center justify-between px-3 rounded-md select-none group hover:border-zinc-700 transition-colors relative">
+      <Handle
+        type="target"
+        position={isTB ? Position.Top : Position.Left}
+        id="left-target"
+        isConnectable={false}
+        className="!opacity-0 !w-0 !h-0 !min-w-0 !min-h-0 !border-0 !bg-transparent pointer-events-none"
+      />
+      <Handle
+        type="source"
+        position={isTB ? Position.Bottom : Position.Right}
+        id="right-source"
+        isConnectable={false}
+        className="!opacity-0 !w-0 !h-0 !min-w-0 !min-h-0 !border-0 !bg-transparent pointer-events-none"
+      />
 
       <div className="flex items-center gap-2 min-w-0">
         <Icon size={16} className="text-zinc-400 shrink-0" />

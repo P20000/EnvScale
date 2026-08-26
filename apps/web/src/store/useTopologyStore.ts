@@ -380,6 +380,9 @@ export interface TopologyState {
   showCompletedPods: boolean;
   setShowCompletedPods: (show: boolean) => void;
 
+  layoutDirection: "TB" | "LR";
+  setLayoutDirection: (dir: "TB" | "LR") => void;
+
   undoStack: HistoryAction[];
   redoStack: HistoryAction[];
   undoAction: () => Promise<void>;
@@ -460,6 +463,7 @@ export const useTopologyStore = create<TopologyState>()(
       selectedNode: null,
       tokens: defaultInitialTokens,
       notifications: defaultInitialNotifications,
+      layoutDirection: "TB",
       deleteModal: {
         isOpen: false,
         targetId: "",
@@ -476,7 +480,7 @@ export const useTopologyStore = create<TopologyState>()(
 
       setShowCompletedPods: (show) => {
         set({ showCompletedPods: show });
-        get().applyDagreLayout("LR");
+        get().applyDagreLayout();
       },
 
       openDeleteModal: (targetId, targetName, targetKind, namespace = "testing-todo") => {
@@ -571,7 +575,7 @@ export const useTopologyStore = create<TopologyState>()(
             notifications: [newAlert, ...get().notifications],
           });
 
-          get().applyDagreLayout("LR");
+          get().applyDagreLayout();
         }
       },
 
@@ -626,7 +630,7 @@ export const useTopologyStore = create<TopologyState>()(
           [workloadName]: !current,
         };
         set({ expandedWorkloads: updated });
-        get().applyDagreLayout("LR");
+        get().applyDagreLayout();
       },
 
       setSelectedNode: (target) => {
@@ -767,7 +771,7 @@ export const useTopologyStore = create<TopologyState>()(
           selectedNode: isSelected ? null : syncSelectedNode(remainingRaw, selected),
         });
 
-        get().applyDagreLayout("LR");
+        get().applyDagreLayout();
       },
 
       removeNode: (nodeId) => {
@@ -809,7 +813,7 @@ export const useTopologyStore = create<TopologyState>()(
           pods: extractPods(updated),
           selectedNode: syncSelectedNode(updated, get().selectedNode),
         });
-        get().applyDagreLayout("LR");
+        get().applyDagreLayout();
       },
 
       removeService: (serviceId) => {
@@ -856,7 +860,7 @@ export const useTopologyStore = create<TopologyState>()(
           pods: extractPods(updated),
           selectedNode: syncSelectedNode(updated, get().selectedNode),
         });
-        get().applyDagreLayout("LR");
+        get().applyDagreLayout();
       },
 
       removePod: (podId) => {
@@ -1051,7 +1055,8 @@ export const useTopologyStore = create<TopologyState>()(
         });
       },
 
-      applyDagreLayout: (direction = "TB") => {
+      applyDagreLayout: (direction) => {
+        const targetDir = direction || get().layoutDirection || "TB";
         const { rawNodes, nodes, edges, showCompletedPods } = get();
         const baseNodes = rawNodes && rawNodes.length > 0 ? rawNodes : nodes;
         if (baseNodes.length === 0) return;
@@ -1066,9 +1071,14 @@ export const useTopologyStore = create<TopologyState>()(
         const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
           aggregatedNodes,
           dynamicEdges,
-          direction
+          targetDir
         );
         set({ nodes: layoutedNodes, edges: layoutedEdges });
+      },
+
+      setLayoutDirection: (dir: "TB" | "LR") => {
+        set({ layoutDirection: dir });
+        get().applyDagreLayout(dir);
       },
 
       setWsStatus: (status, latencyMs) => {
@@ -1089,7 +1099,7 @@ export const useTopologyStore = create<TopologyState>()(
         if (!eventType) return;
         
         if (eventType === "EVENT_BATCH_COMPLETE") {
-          get().applyDagreLayout("LR");
+          get().applyDagreLayout();
           return;
         }
 
@@ -1104,7 +1114,7 @@ export const useTopologyStore = create<TopologyState>()(
             services: extractServices(snapshotNodes),
             pods: extractPods(snapshotNodes),
           });
-          get().applyDagreLayout("LR");
+          get().applyDagreLayout();
         } else if (eventType === "EVENT_SNAPSHOT_SYNC" && payloadData) {
           const snapshotPods = Array.isArray(payloadData.pods) ? (payloadData.pods as Record<string, unknown>[]) : [];
           const snapshotNodes = Array.isArray(payloadData.nodes) ? (payloadData.nodes as Record<string, unknown>[]) : [];
@@ -1156,7 +1166,7 @@ export const useTopologyStore = create<TopologyState>()(
             clusterMemoryGB: parsedMem,
             incidents: snapshotIncidents,
           });
-          get().applyDagreLayout("LR");
+          get().applyDagreLayout();
         }
         
         if (eventType === "EVENT_K8S_INCIDENT_CREATED" || eventType === "EVENT_INCIDENT_CREATED") {
@@ -1274,7 +1284,7 @@ export const useTopologyStore = create<TopologyState>()(
             pods: extractPods(updatedRawNodes),
             selectedNode: syncSelectedNode(updatedRawNodes, get().selectedNode),
           });
-          get().applyDagreLayout("LR");
+          get().applyDagreLayout();
         } else if (
           eventType === "EVENT_NODE_MUTATED" ||
           eventType === "EVENT_NODE_ADDED" ||
@@ -1340,7 +1350,7 @@ export const useTopologyStore = create<TopologyState>()(
             pods: extractPods(updatedRawNodes),
             selectedNode: syncSelectedNode(updatedRawNodes, get().selectedNode),
           });
-          get().applyDagreLayout("LR");
+          get().applyDagreLayout();
         } else if (
           eventType === "EVENT_DEPLOYMENT_MUTATED" ||
           eventType === "EVENT_DEPLOYMENT_ADDED" ||
@@ -1395,7 +1405,7 @@ export const useTopologyStore = create<TopologyState>()(
             pods: extractPods(updatedRawNodes),
             selectedNode: syncSelectedNode(updatedRawNodes, get().selectedNode),
           });
-          get().applyDagreLayout("LR");
+          get().applyDagreLayout();
         } else if (
           eventType === "EVENT_POD_DELETED" ||
           eventType === "DELETE_POD"
@@ -1478,7 +1488,7 @@ export const useTopologyStore = create<TopologyState>()(
               rawNodes: updatedRaw,
               notifications: [alertNotif, ...get().notifications],
             });
-            get().applyDagreLayout("LR");
+            get().applyDagreLayout();
           }
         }
       },
