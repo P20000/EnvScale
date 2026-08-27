@@ -1,16 +1,15 @@
 package k8s
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"sync"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -269,6 +268,25 @@ func (im *InformerManager) Start(stopCh <-chan struct{}) {
 		},
 	})
 
+	cronJobInformer := im.factory.Batch().V1().CronJobs().Informer()
+	cronJobInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			if cj, ok := obj.(*batchv1.CronJob); ok {
+				im.emitCronJobDelta(cj)
+			}
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			if cj, ok := newObj.(*batchv1.CronJob); ok {
+				im.emitCronJobDelta(cj)
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			if cj, ok := obj.(*batchv1.CronJob); ok {
+				im.emitCronJobDeleted(cj)
+			}
+		},
+	})
+
 	im.factory.Start(stopCh)
 	go im.startMetricsPulse(stopCh)
 	log.Printf("[K8s Informer] Informers started for cluster: %s", im.clusterID)
@@ -346,42 +364,6 @@ func (im *InformerManager) Clientset() kubernetes.Interface {
 	return im.clientset
 }
 
-type PodMetricData struct {
-	CPUUsagePct   float64
-	MemoryUsageMb float64
-}
-
-func (im *InformerManager) FetchPodMetricsMap() map[string]PodMetricData {
-	metricsMap := make(map[string]PodMetricData)
-	if im.metricsClient == nil {
-		return metricsMap
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	podMetricsList, err := im.metricsClient.MetricsV1beta1().PodMetricses("").List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return metricsMap
-	}
-
-	for _, pm := range podMetricsList.Items {
-		var totalMcores int64 = 0
-		var totalMemBytes int64 = 0
-		for _, c := range pm.Containers {
-			totalMcores += c.Usage.Cpu().MilliValue()
-			totalMemBytes += c.Usage.Memory().Value()
-		}
-		memMiB := float64(totalMemBytes) / (1024 * 1024)
-		key := fmt.Sprintf("%s/%s", pm.Namespace, pm.Name)
-		metricsMap[key] = PodMetricData{
-			CPUUsagePct:   float64(totalMcores),
-			MemoryUsageMb: memMiB,
-		}
-	}
-	return metricsMap
-}
-
 func (im *InformerManager) GetSnapshot() (
 	pods []types.PodStatusDelta,
 	nodes []types.NodeStatusDelta,
@@ -392,6 +374,7 @@ func (im *InformerManager) GetSnapshot() (
 	daemonSets []types.DaemonSetStatusDelta,
 	ingresses []types.IngressStatusDelta,
 	incidents []types.K8sIncidentEvent,
+	cronJobs []types.CronJobStatusDelta,
 ) {
 	im.factory.WaitForCacheSync(im.stopCh)
 	metricsMap := im.FetchPodMetricsMap()
@@ -495,5 +478,12 @@ func (im *InformerManager) GetSnapshot() (
 		}
 	}
 
-	return pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents
+	cjList := im.factory.Batch().V1().CronJobs().Informer().GetStore().List()
+	for _, obj := range cjList {
+		if cj, ok := obj.(*batchv1.CronJob); ok {
+			cronJobs = append(cronJobs, im.extractCronJobDelta(cj))
+		}
+	}
+
+	return pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, cronJobs
 }

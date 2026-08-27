@@ -20,6 +20,10 @@ const (
 	EventDaemonSetMutated   = "EVENT_DAEMONSET_MUTATED"
 	EventDaemonSetDeleted   = "EVENT_DAEMONSET_DELETED"
 	EventIngressMutated     = "EVENT_INGRESS_MUTATED"
+	EventCronJobMutated     = "EVENT_CRONJOB_MUTATED"
+	EventCronJobDeleted     = "EVENT_CRONJOB_DELETED"
+	EventJobMutated         = "EVENT_JOB_MUTATED"
+	EventJobDeleted         = "EVENT_JOB_DELETED"
 
 	// Chaos fault injection events — emitted by the chaos engine when a fault is
 	// injected into or cleared from a target workload.
@@ -114,6 +118,19 @@ type DaemonSetStatusDelta struct {
 	Images                 []string          `json:"images,omitempty"`
 	Labels                 map[string]string `json:"labels,omitempty"`
 	CreatedAt              time.Time         `json:"createdAt,omitempty"`
+}
+
+// CronJobStatusDelta encapsulates CronJob state updates
+type CronJobStatusDelta struct {
+	Name               string     `json:"name"`
+	Namespace          string     `json:"namespace"`
+	Schedule           string     `json:"schedule"`
+	Suspend            bool       `json:"suspend"`
+	ActiveJobsCount    int        `json:"activeJobsCount"`
+	LastScheduleTime   *time.Time `json:"lastScheduleTime,omitempty"`
+	LastSuccessfulTime *time.Time `json:"lastSuccessfulTime,omitempty"`
+	Images             []string   `json:"images,omitempty"`
+	CreatedAt          time.Time  `json:"createdAt"`
 }
 
 // NodeStatusDelta encapsulates node health state updates
