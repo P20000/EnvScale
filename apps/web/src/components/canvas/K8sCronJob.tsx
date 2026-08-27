@@ -26,7 +26,7 @@ export function K8sCronJobNode({ data }: { data: K8sCronJobData }) {
 
   return (
     <div
-      className={`w-[260px] h-[58px] p-2.5 bg-zinc-900/90 border rounded-lg shadow-sm flex flex-col justify-between select-none transition-all relative overflow-hidden ${
+      className={`w-[260px] h-[58px] p-2.5 bg-zinc-900/90 border rounded-lg shadow-sm flex flex-col justify-between cursor-pointer transition-colors select-none relative overflow-hidden ${
         isSuspended
           ? "border-zinc-800/80 opacity-75"
           : isActive

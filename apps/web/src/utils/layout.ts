@@ -28,6 +28,9 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
       const height = Math.max(80, 40 + rows * 32 + (rows - 1) * 10 + 16);
       return { width, height };
     }
+    if (node.type === "k8sDaemonSet" || node.type === "k8sCronJob") {
+      return { width: 260, height: 58 };
+    }
     return { width: 240, height: 44 };
   };
 
@@ -113,8 +116,33 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
   const targetPos = isTB ? Position.Top : Position.Left;
   const sourcePos = isTB ? Position.Bottom : Position.Right;
 
-  // Track orphan vertical stack accumulation
+  const isOrphanNode = (node: Node): boolean => {
+    if (node.parentId) return false;
+    if (node.type === "k8sDaemonSet" || node.type === "k8sCronJob") return true;
+    return isTB && !connectedIds.has(node.id);
+  };
+
+  const getOrphanTier = (node: Node): number => {
+    if (node.type === "k8sDaemonSet") return 2;
+    if (node.type === "k8sCronJob") return 3;
+    return 1; // unrouted worker pool k8sGroup
+  };
+
+  const orphanNodes = topLevelNodes.filter(isOrphanNode).sort((a, b) => {
+    const tierA = getOrphanTier(a);
+    const tierB = getOrphanTier(b);
+    if (tierA !== tierB) return tierA - tierB;
+    return a.id.localeCompare(b.id);
+  });
+
+  const orphanPosMap = new Map<string, { x: number; y: number }>();
   let currentOrphanY = dockStartY;
+
+  orphanNodes.forEach((node) => {
+    const dims = getNodeDimensions(node);
+    orphanPosMap.set(node.id, { x: dockStartX, y: currentOrphanY });
+    currentOrphanY += dims.height + 24;
+  });
 
   const layoutedNodes = nodes.map((node) => {
     if (node.parentId) {
@@ -126,20 +154,12 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
       };
     }
 
-    const isOrphan = (isTB && !connectedIds.has(node.id)) || node.type === "k8sDaemonSet";
-    if (isOrphan) {
-      const dims = getNodeDimensions(node);
-      const pos = {
-        x: dockStartX,
-        y: currentOrphanY,
-      };
-      currentOrphanY += dims.height + 24;
-
+    if (orphanPosMap.has(node.id)) {
       return {
         ...node,
         targetPosition: targetPos,
         sourcePosition: sourcePos,
-        position: pos,
+        position: orphanPosMap.get(node.id)!,
       };
     }
 

@@ -7,7 +7,7 @@ export function K8sDaemonSetNode({ data }: { data: K8sDaemonSetData }) {
   const isHealthy = ready === desired && desired > 0;
 
   return (
-    <div className="w-[260px] h-[58px] p-2.5 bg-zinc-900/90 border border-zinc-800 hover:border-zinc-700 rounded-lg shadow-sm flex flex-col justify-between select-none transition-all relative overflow-hidden">
+    <div className="w-[260px] h-[58px] p-2.5 rounded-lg bg-zinc-900/90 border border-zinc-800 hover:border-zinc-700 shadow-sm flex flex-col justify-between cursor-pointer transition-colors select-none relative overflow-hidden">
       {/* Row 1: Primary Header (Icon + Name | Coverage Badge) */}
       <div className="flex items-center justify-between min-w-0">
         <div className="flex items-center gap-1.5 min-w-0">
