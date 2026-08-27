@@ -50,9 +50,9 @@ export function K8sWorkerNode({ data }: { data: K8sNodeData }) {
         <div 
           className={`h-2 w-2 rounded-full ${
             isHealthy 
-              ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.2)]' 
+              ? 'bg-emerald-500' 
               : isError 
-              ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.3)]'
+              ? 'bg-rose-500'
               : 'bg-amber-500'
           }`} 
         />
