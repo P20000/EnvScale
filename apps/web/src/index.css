@@ -232,18 +232,42 @@
   background: #3f3f46;
 }
 
-/* Mandala Background Spin Animation */
-@keyframes mandalaSpin {
-  0% {
-    transform: rotate(0deg);
-  }
-  100% {
-    transform: rotate(360deg);
-  }
+/* Material Design 3 Indeterminate Linear Progress Indicator */
+.m3-progress-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background-color: rgba(245, 158, 11, 0.15);
+  overflow: hidden;
+  border-top-left-radius: 0.5rem;
+  border-top-right-radius: 0.5rem;
+  z-index: 10;
 }
 
-.animate-mandala-spin {
-  animation: mandalaSpin 8s linear infinite;
-  transform-origin: center center;
+.m3-progress-line-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  background-color: #f59e0b;
+  border-radius: 2px;
+  animation: m3LinearProgress 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes m3LinearProgress {
+  0% {
+    left: -50%;
+    width: 30%;
+  }
+  50% {
+    left: 30%;
+    width: 60%;
+  }
+  100% {
+    left: 100%;
+    width: 30%;
+  }
 }
 
