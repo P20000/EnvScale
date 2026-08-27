@@ -8,6 +8,8 @@ import type { K8sPodData } from "../../canvas/K8sPod";
 
 import { useResourceLogs } from "../../../hooks/useResourceLogs";
 import { LogRow } from "../LogRow";
+import { ReplicasRevisionsSection } from "./ReplicasRevisionsSection";
+import { getPodPrefix } from "../../../store/helpers/topologyHelpers";
 
 interface OverviewTabProps {
   target: NonNullable<SelectedTarget>;
@@ -230,6 +232,18 @@ export function OverviewTab({
               </div>
             </div>
           </div>
+
+          {target.type !== "node" && (
+            <ReplicasRevisionsSection
+              workloadName={
+                targetRecord.ownerName
+                  ? String(targetRecord.ownerName)
+                  : getPodPrefix(target.data.name)
+              }
+              namespace={String(targetRecord.namespace || "testing-todo")}
+              nowMs={nowMs}
+            />
+          )}
         </>
       )}
 

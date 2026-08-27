@@ -13,7 +13,9 @@ const (
 	EventHeartbeat          = "EVENT_HEARTBEAT"
 	EventPodAnomalyDetected = "EVENT_POD_ANOMALY_DETECTED"
 	EventDeploymentMutated  = "EVENT_DEPLOYMENT_MUTATED"
+	EventDeploymentDeleted  = "EVENT_DEPLOYMENT_DELETED"
 	EventReplicaSetMutated  = "EVENT_REPLICA_SET_MUTATED"
+	EventReplicaSetDeleted  = "EVENT_REPLICA_SET_DELETED"
 	EventStatefulSetMutated = "EVENT_STATEFUL_SET_MUTATED"
 	EventIngressMutated     = "EVENT_INGRESS_MUTATED"
 
@@ -84,6 +86,9 @@ type ReplicaSetStatusDelta struct {
 	OwnerName     string            `json:"ownerName,omitempty"`
 	OwnerKind     string            `json:"ownerKind,omitempty"`
 	Labels        map[string]string `json:"labels"`
+	Revision      string            `json:"revision,omitempty"`
+	Images        []string          `json:"images,omitempty"`
+	CreatedAt     time.Time         `json:"createdAt,omitempty"`
 }
 
 // StatefulSetStatusDelta encapsulates StatefulSet state updates

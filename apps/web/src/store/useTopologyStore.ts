@@ -15,6 +15,7 @@ import {
 import type { K8sPodData } from "../components/canvas/K8sPod";
 import type { K8sServiceData } from "../components/canvas/K8sService";
 import type { K8sIngressData } from "../components/canvas/K8sIngress";
+import type { K8sReplicaSetData, K8sDeploymentData } from "./helpers/rolloutHelpers";
 import type { WsConnectionStatus, WsTopologyMessage } from "../hooks/useK8sStream";
 import type { SelectedTarget } from "../components/drawer/InspectorDrawer";
 import { getLayoutedElements } from "../utils/layout";
@@ -76,6 +77,8 @@ export interface TopologyState {
   services: K8sServiceData[];
   pods: K8sPodData[];
   ingresses: K8sIngressData[];
+  replicaSets: K8sReplicaSetData[];
+  deployments: K8sDeploymentData[];
   incidents: K8sIncidentEvent[];
   selectedNode: SelectedTarget;
   tokens: ApiToken[];
@@ -167,6 +170,8 @@ export const useTopologyStore = create<TopologyState>()(
       services: [],
       pods: [],
       ingresses: [],
+      replicaSets: [],
+      deployments: [],
       incidents: [],
       selectedNode: null,
       tokens: defaultInitialTokens,
@@ -405,7 +410,7 @@ export const useTopologyStore = create<TopologyState>()(
 
       applyDagreLayout: (direction) => {
         const targetDir = direction || get().layoutDirection || "TB";
-        const { rawNodes, nodes, edges, showCompletedPods, showSystemNamespaces, selectedNamespaces } = get();
+        const { rawNodes, nodes, edges, showCompletedPods, showSystemNamespaces, selectedNamespaces, deployments, replicaSets } = get();
         const baseNodes = rawNodes && rawNodes.length > 0 ? rawNodes : nodes;
         if (baseNodes.length === 0) return;
 
@@ -413,7 +418,9 @@ export const useTopologyStore = create<TopologyState>()(
           baseNodes,
           showCompletedPods,
           showSystemNamespaces,
-          selectedNamespaces
+          selectedNamespaces,
+          deployments,
+          replicaSets
         );
 
         const dynamicEdges = generateDynamicEdges(aggregatedNodes, edges);
@@ -442,41 +449,23 @@ export const useTopologyStore = create<TopologyState>()(
       addNotification: (title, message, severity = "INFO") =>
         handleAddNotification(get, set, title, message, severity),
 
-      markNotificationRead: (id) => {
-        set((state) => ({
-          notifications: state.notifications.map((n) => (n.id === id ? { ...n, read: true } : n)),
-        }));
-      },
-
-      markAllNotificationsRead: () => {
-        set((state) => ({
-          notifications: state.notifications.map((n) => ({ ...n, read: true })),
-        }));
-      },
-
+      markNotificationRead: (id) => set((state) => ({
+        notifications: state.notifications.map((n) => (n.id === id ? { ...n, read: true } : n)),
+      })),
+      markAllNotificationsRead: () => set((state) => ({
+        notifications: state.notifications.map((n) => ({ ...n, read: true })),
+      })),
       generateToken: (name, tokenStr) => get().addToken(name, tokenStr),
-
       clearNotifications: () => set({ notifications: [] }),
-
       setWsStatus: (status, latencyMs) => {
         const currentMs = get().wsLatencyMs;
         const validMs = latencyMs && latencyMs > 0 && latencyMs < 200
           ? latencyMs
           : (currentMs > 0 && currentMs < 200 ? currentMs : 8);
-
-        set({
-          wsStatus: status,
-          wsLatencyMs: status === "CONNECTED" ? validMs : 0,
-        });
+        set({ wsStatus: status, wsLatencyMs: status === "CONNECTED" ? validMs : 0 });
       },
-
-      processWsMessage: (msg) => {
-        handleWsMessage(get(), set, msg);
-      },
-
-      applyDelta: (msg) => {
-        handleWsMessage(get(), set, msg);
-      },
+      processWsMessage: (msg) => handleWsMessage(get(), set, msg),
+      applyDelta: (msg) => handleWsMessage(get(), set, msg),
     }),
     {
       name: "envscale-topology-storage",

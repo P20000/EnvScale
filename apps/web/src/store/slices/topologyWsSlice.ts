@@ -4,6 +4,7 @@ import type { K8sPodData } from "../../components/canvas/K8sPod";
 import type { K8sNodeData } from "../../components/canvas/K8sNode";
 import type { K8sServiceData } from "../../components/canvas/K8sService";
 import type { K8sIngressData } from "../../components/canvas/K8sIngress";
+import type { K8sReplicaSetData, K8sDeploymentData } from "../helpers/rolloutHelpers";
 import type { TopologyState } from "../useTopologyStore";
 import {
   extractServices,
@@ -146,6 +147,9 @@ export function handleWsMessage(
       });
     });
 
+    const snapshotRS = Array.isArray(payloadData.replicaSets) ? (payloadData.replicaSets as K8sReplicaSetData[]) : [];
+    const snapshotDeployments = Array.isArray(payloadData.deployments) ? (payloadData.deployments as K8sDeploymentData[]) : [];
+
     set({
       rawNodes: newRawNodes,
       clusterCpuCores: parsedCpu,
@@ -153,6 +157,8 @@ export function handleWsMessage(
       services: extractServices(newRawNodes),
       pods: extractPods(newRawNodes),
       ingresses: (newRawNodes.filter((n) => n.type === "k8sIngress").map((n) => n.data) as K8sIngressData[]),
+      replicaSets: snapshotRS,
+      deployments: snapshotDeployments,
     });
     state.applyDagreLayout();
   } else if (
@@ -363,6 +369,76 @@ export function handleWsMessage(
       ingresses: (updatedRaw.filter((n) => n.type === "k8sIngress").map((n) => n.data) as K8sIngressData[]),
       selectedNode: syncSelectedNode(updatedRaw, state.selectedNode),
     });
+    state.applyDagreLayout();
+  } else if (
+    eventType === "EVENT_REPLICA_SET_MUTATED" ||
+    eventType === "EVENT_REPLICA_SET_ADDED"
+  ) {
+    const name = String(payloadData.name || payloadData.id || "");
+    if (!name) return;
+    const currentRS = state.replicaSets || [];
+    const idx = currentRS.findIndex((r) => r.name === name);
+    let updatedRS: K8sReplicaSetData[];
+    const newItem: K8sReplicaSetData = {
+      name,
+      namespace: String(payloadData.namespace || "default"),
+      replicas: Number(payloadData.replicas ?? 0),
+      readyReplicas: Number(payloadData.readyReplicas ?? 0),
+      ownerUid: payloadData.ownerUid ? String(payloadData.ownerUid) : undefined,
+      ownerName: payloadData.ownerName ? String(payloadData.ownerName) : undefined,
+      ownerKind: payloadData.ownerKind ? String(payloadData.ownerKind) : undefined,
+      labels: payloadData.labels as Record<string, string>,
+      revision: payloadData.revision ? String(payloadData.revision) : undefined,
+      images: payloadData.images as string[],
+      createdAt: payloadData.createdAt ? String(payloadData.createdAt) : undefined,
+    };
+    if (idx >= 0) {
+      updatedRS = [...currentRS];
+      updatedRS[idx] = { ...updatedRS[idx], ...newItem };
+    } else {
+      updatedRS = [...currentRS, newItem];
+    }
+    set({ replicaSets: updatedRS });
+    state.applyDagreLayout();
+  } else if (eventType === "EVENT_REPLICA_SET_DELETED") {
+    const name = String(payloadData.name || payloadData.id || "");
+    if (!name) return;
+    const currentRS = state.replicaSets || [];
+    const updatedRS = currentRS.filter((r) => r.name !== name);
+    set({ replicaSets: updatedRS });
+    state.applyDagreLayout();
+  } else if (
+    eventType === "EVENT_DEPLOYMENT_MUTATED" ||
+    eventType === "EVENT_DEPLOYMENT_ADDED"
+  ) {
+    const name = String(payloadData.name || payloadData.id || "");
+    if (!name) return;
+    const currentDeps = state.deployments || [];
+    const idx = currentDeps.findIndex((d) => d.name === name);
+    let updatedDeps: K8sDeploymentData[];
+    const newItem: K8sDeploymentData = {
+      name,
+      namespace: String(payloadData.namespace || "default"),
+      replicas: Number(payloadData.replicas ?? 0),
+      readyReplicas: Number(payloadData.readyReplicas ?? 0),
+      selector: payloadData.selector as Record<string, string>,
+      labels: payloadData.labels as Record<string, string>,
+      createdAt: payloadData.createdAt ? String(payloadData.createdAt) : undefined,
+    };
+    if (idx >= 0) {
+      updatedDeps = [...currentDeps];
+      updatedDeps[idx] = { ...updatedDeps[idx], ...newItem };
+    } else {
+      updatedDeps = [...currentDeps, newItem];
+    }
+    set({ deployments: updatedDeps });
+    state.applyDagreLayout();
+  } else if (eventType === "EVENT_DEPLOYMENT_DELETED") {
+    const name = String(payloadData.name || payloadData.id || "");
+    if (!name) return;
+    const currentDeps = state.deployments || [];
+    const updatedDeps = currentDeps.filter((d) => d.name !== name);
+    set({ deployments: updatedDeps });
     state.applyDagreLayout();
   }
 }

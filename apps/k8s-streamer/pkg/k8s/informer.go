@@ -201,6 +201,11 @@ func (im *InformerManager) Start(stopCh <-chan struct{}) {
 				im.emitReplicaSetDelta(rs)
 			}
 		},
+		DeleteFunc: func(obj interface{}) {
+			if rs, ok := obj.(*appsv1.ReplicaSet); ok {
+				im.emitReplicaSetDeleted(rs)
+			}
+		},
 	})
 
 	statefulSetInformer := im.factory.Apps().V1().StatefulSets().Informer()

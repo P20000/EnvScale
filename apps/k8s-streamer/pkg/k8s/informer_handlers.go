@@ -171,15 +171,35 @@ func (im *InformerManager) extractReplicaSetDelta(rs *appsv1.ReplicaSet) types.R
 		ownerKind = rs.OwnerReferences[0].Kind
 	}
 
+	var images []string
+	for _, c := range rs.Spec.Template.Spec.Containers {
+		if c.Image != "" {
+			images = append(images, c.Image)
+		}
+	}
+
+	revision := ""
+	if rs.Annotations != nil {
+		revision = rs.Annotations["deployment.kubernetes.io/revision"]
+	}
+
+	var replicas int32
+	if rs.Spec.Replicas != nil {
+		replicas = *rs.Spec.Replicas
+	}
+
 	return types.ReplicaSetStatusDelta{
 		Name:          rs.Name,
 		Namespace:     rs.Namespace,
-		Replicas:      *rs.Spec.Replicas,
+		Replicas:      replicas,
 		ReadyReplicas: rs.Status.ReadyReplicas,
 		OwnerUID:      ownerUID,
 		OwnerName:     ownerName,
 		OwnerKind:     ownerKind,
 		Labels:        rs.Labels,
+		Revision:      revision,
+		Images:        images,
+		CreatedAt:     rs.CreationTimestamp.Time,
 	}
 }
 
@@ -190,6 +210,11 @@ func (im *InformerManager) emitReplicaSetDelta(rs *appsv1.ReplicaSet) {
 		return
 	}
 	im.hub.BroadcastEvent(types.EventReplicaSetMutated, im.clusterID, delta)
+}
+
+func (im *InformerManager) emitReplicaSetDeleted(rs *appsv1.ReplicaSet) {
+	delta := im.extractReplicaSetDelta(rs)
+	im.hub.BroadcastEvent(types.EventReplicaSetDeleted, im.clusterID, delta)
 }
 
 func (im *InformerManager) extractStatefulSetDelta(sts *appsv1.StatefulSet) types.StatefulSetStatusDelta {

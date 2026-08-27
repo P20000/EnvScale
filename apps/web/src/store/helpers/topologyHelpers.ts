@@ -4,6 +4,7 @@ import type { K8sNodeData } from "../../components/canvas/K8sNode";
 import type { K8sServiceData } from "../../components/canvas/K8sService";
 import type { K8sIngressData, IngressRuleData } from "../../components/canvas/K8sIngress";
 import type { SelectedTarget } from "../../components/drawer/InspectorDrawer";
+import { calculateRolloutInfo, type K8sDeploymentData, type K8sReplicaSetData } from "./rolloutHelpers";
 
 export const SYSTEM_NAMESPACES = new Set(["kube-system", "kube-public", "kube-node-lease", "ingress-nginx"]);
 
@@ -272,7 +273,9 @@ export const aggregateNodesWithWorkloads = (
   nodes: Node[],
   showCompletedPods: boolean = false,
   showSystemNamespaces: boolean = false,
-  selectedNamespaces: string[] = []
+  selectedNamespaces: string[] = [],
+  deployments: K8sDeploymentData[] = [],
+  replicaSets: K8sReplicaSetData[] = []
 ): Node[] => {
   const appNodes = nodes.filter((n) => {
     const d = n.data as Record<string, unknown> | undefined;
@@ -370,11 +373,15 @@ export const aggregateNodesWithWorkloads = (
     const activeCap = Math.max(2, activeRunningPods.length);
     const finalGroupPods = sortedGroupPods.slice(0, activeCap);
 
+    const firstPodData = (groupPods[0]?.data as K8sPodData) || {};
+    const ns = firstPodData.namespace || "testing-todo";
+    const rolloutInfo = calculateRolloutInfo(prefix, ns, deployments, replicaSets);
+
     processedNodes.push({
       id: groupId,
       type: "k8sGroup",
       position: { x: 0, y: 0 },
-      data: { name: prefix },
+      data: { name: prefix, namespace: ns, rolloutInfo },
     });
 
     finalGroupPods.forEach((pod, index) => {
