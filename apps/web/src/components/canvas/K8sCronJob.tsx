@@ -12,14 +12,14 @@ export const K8sCronJobNode: React.FC<NodeProps> = ({ data }) => {
     <div
       className={`w-[260px] h-[58px] p-2.5 rounded-lg bg-zinc-900/90 border shadow-sm flex flex-col justify-between cursor-pointer transition-colors relative overflow-hidden select-none ${
         isActive
-          ? "border-amber-500/60 bg-zinc-900/95"
+          ? "border-amber-500/60 bg-zinc-900/95 cronjob-active-glow"
           : "border-zinc-800 hover:border-zinc-700"
       }`}
     >
-      {/* Material Design 3 Indeterminate Amber Linear Progress Bar when active */}
+      {/* Active Glowing Border Beam Loader */}
       {isActive && (
-        <div className="m3-progress-line">
-          <div className="m3-progress-line-bar" />
+        <div className="cronjob-border-beam-container" role="progressbar" aria-label="CronJob Active Border Beam Loader">
+          <div className="cronjob-border-beam-spin" />
         </div>
       )}
 

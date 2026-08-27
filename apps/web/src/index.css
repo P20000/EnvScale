@@ -49,7 +49,7 @@
   }
 
   * {
-    @apply border-neutral-800;
+    border-color: #262626;
   }
 
   html, body {
@@ -232,42 +232,129 @@
   background: #3f3f46;
 }
 
-/* Material Design 3 Indeterminate Linear Progress Indicator */
+/* ==========================================================================
+   Material Design 3 (M3) Official Indeterminate Linear Progress Indicator
+   Spec Ref: https://m3.material.io/components/progress-indicators/specs
+   ========================================================================== */
 .m3-progress-line {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 2px;
-  background-color: rgba(245, 158, 11, 0.15);
+  height: 4px; /* Official M3 4dp track height */
+  background-color: rgba(245, 158, 11, 0.2); /* M3 Surface track container */
   overflow: hidden;
   border-top-left-radius: 0.5rem;
   border-top-right-radius: 0.5rem;
   z-index: 10;
 }
 
-.m3-progress-line-bar {
+.m3-progress-bar-primary,
+.m3-progress-bar-secondary {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 50%;
   background-color: #f59e0b;
-  border-radius: 2px;
-  animation: m3LinearProgress 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  border-radius: 9999px; /* M3 Fully Rounded Pill Caps */
+  will-change: left, right;
 }
 
-@keyframes m3LinearProgress {
+/* M3 Stop Indicator (4dp Circle at Track End for Contrast Compliance) */
+.m3-progress-stop-indicator {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 4px;
+  height: 4px;
+  border-radius: 9999px;
+  background-color: #f59e0b;
+  z-index: 11;
+}
+
+/* Primary Indicator: expands fast, then decelerates */
+.m3-progress-bar-primary {
+  animation: m3PrimaryIndeterminate 2s cubic-bezier(0.2, 0, 0, 1) infinite;
+}
+
+/* Secondary Indicator: follows with a staggering phase delay and sweeps across */
+.m3-progress-bar-secondary {
+  animation: m3SecondaryIndeterminate 2s cubic-bezier(0.2, 0, 0, 1) infinite;
+}
+
+@keyframes m3PrimaryIndeterminate {
   0% {
-    left: -50%;
-    width: 30%;
+    left: -35%;
+    right: 100%;
   }
-  50% {
-    left: 30%;
-    width: 60%;
+  60% {
+    left: 100%;
+    right: -90%;
   }
   100% {
     left: 100%;
-    width: 30%;
+    right: -90%;
+  }
+}
+
+@keyframes m3SecondaryIndeterminate {
+  0% {
+    left: -200%;
+    right: 100%;
+  }
+  60% {
+    left: -107%;
+    right: 72%;
+  }
+  100% {
+    left: 107%;
+    right: -8%;
+  }
+}
+
+/* ==========================================================================
+   CronJob Active Glowing Border Beam Loader
+   ========================================================================== */
+.cronjob-active-glow {
+  box-shadow: 0 0 16px -2px rgba(245, 158, 11, 0.25), inset 0 0 10px -4px rgba(245, 158, 11, 0.15);
+}
+
+.cronjob-border-beam-container {
+  position: absolute;
+  inset: 0;
+  border-radius: 0.5rem;
+  padding: 1px;
+  pointer-events: none;
+  overflow: hidden;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  z-index: 20;
+}
+
+.cronjob-border-beam-spin {
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 270deg,
+    rgba(245, 158, 11, 0.3) 310deg,
+    #fbbf24 345deg,
+    #f59e0b 360deg
+  );
+  animation: cronjobBeamRotate 2.5s linear infinite;
+}
+
+@keyframes cronjobBeamRotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
   }
 }
 
