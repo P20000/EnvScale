@@ -105,7 +105,8 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
     });
   }
 
-  const dockStartX = dagreMaxX + 80;
+  const MIN_SIDE_RAIL_X = 1100;
+  const dockStartX = Math.max(dagreMaxX + 160, MIN_SIDE_RAIL_X);
   const dockStartY = Math.max(dagreMinY, 40);
 
   const isTB = direction === "TB";
@@ -125,7 +126,7 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
       };
     }
 
-    const isOrphan = isTB && !connectedIds.has(node.id);
+    const isOrphan = (isTB && !connectedIds.has(node.id)) || node.type === "k8sDaemonSet";
     if (isOrphan) {
       const dims = getNodeDimensions(node);
       const pos = {
