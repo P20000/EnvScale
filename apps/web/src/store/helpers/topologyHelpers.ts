@@ -18,14 +18,11 @@ export const extractPods = (nodes: Node[]): K8sPodData[] =>
     .filter((n) => n.type === "k8sPod" && Boolean(n.data))
     .map((n) => n.data as K8sPodData);
 
-export const getPodPrefix = (name: string) => {
+export const getPodPrefix = (name: string, podData?: K8sPodData) => {
+  if (podData?.ownerName) {
+    return podData.ownerName.replace(/-(?:[a-f0-9]{8,10}|\d{8,10})$/i, "");
+  }
   let prefix = name;
-  if (name.startsWith("db-audit-cronjob")) return "db-audit-cronjob";
-  if (name.startsWith("worker-pool")) return "worker-pool";
-  if (name.startsWith("todo-backend-canary")) return "todo-backend-canary";
-  if (name.startsWith("todo-backend")) return "todo-backend";
-  if (name.startsWith("todo-frontend")) return "todo-frontend";
-  if (name.startsWith("redis")) return "redis-db";
   if (name.includes("-")) {
     prefix = name
       .replace(/-(?:[a-f0-9]{8,10}|\d{8,10})-[a-z0-9]{4,6}$/i, "")
@@ -339,7 +336,7 @@ export const aggregateNodesWithWorkloads = (
   podNodes.forEach((pod) => {
     const podData = pod.data as K8sPodData;
     const name = podData?.name || pod.id;
-    const prefix = getPodPrefix(name);
+    const prefix = getPodPrefix(name, podData);
 
     const existing = podsByPrefix.get(prefix) || [];
     existing.push(pod);
