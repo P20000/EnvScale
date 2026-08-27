@@ -145,7 +145,7 @@ export const calculateRolloutInfo = (
     return timeB - timeA;
   });
 
-  const activeRSList = sortedRS.filter((rs) => (rs.replicas ?? 0) > 0 || (rs.readyReplicas ?? 0) > 0);
+  const activeRSList = matchedRS.filter((rs) => (rs.replicas ?? 0) > 0);
   const isRollingUpdate = activeRSList.length > 1;
 
   const targetNewRS = sortedRS[0]; // Newest revision

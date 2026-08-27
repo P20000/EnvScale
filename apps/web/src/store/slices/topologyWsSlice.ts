@@ -378,23 +378,24 @@ export function handleWsMessage(
     if (!name) return;
     const currentRS = state.replicaSets || [];
     const idx = currentRS.findIndex((r) => r.name === name);
+    const existing = idx >= 0 ? currentRS[idx] : undefined;
     let updatedRS: K8sReplicaSetData[];
     const newItem: K8sReplicaSetData = {
       name,
-      namespace: String(payloadData.namespace || "default"),
-      replicas: Number(payloadData.replicas ?? 0),
-      readyReplicas: Number(payloadData.readyReplicas ?? 0),
-      ownerUid: payloadData.ownerUid ? String(payloadData.ownerUid) : undefined,
-      ownerName: payloadData.ownerName ? String(payloadData.ownerName) : undefined,
-      ownerKind: payloadData.ownerKind ? String(payloadData.ownerKind) : undefined,
-      labels: payloadData.labels as Record<string, string>,
-      revision: payloadData.revision ? String(payloadData.revision) : undefined,
-      images: payloadData.images as string[],
-      createdAt: payloadData.createdAt ? String(payloadData.createdAt) : undefined,
+      namespace: String(payloadData.namespace || existing?.namespace || "default"),
+      replicas: Number(payloadData.replicas ?? existing?.replicas ?? 0),
+      readyReplicas: Number(payloadData.readyReplicas ?? existing?.readyReplicas ?? 0),
+      ownerUid: payloadData.ownerUid ? String(payloadData.ownerUid) : existing?.ownerUid,
+      ownerName: payloadData.ownerName ? String(payloadData.ownerName) : existing?.ownerName,
+      ownerKind: payloadData.ownerKind ? String(payloadData.ownerKind) : existing?.ownerKind,
+      labels: (payloadData.labels as Record<string, string>) || existing?.labels,
+      revision: payloadData.revision ? String(payloadData.revision) : existing?.revision,
+      images: (payloadData.images as string[]) || existing?.images,
+      createdAt: payloadData.createdAt ? String(payloadData.createdAt) : existing?.createdAt,
     };
     if (idx >= 0) {
       updatedRS = [...currentRS];
-      updatedRS[idx] = { ...updatedRS[idx], ...newItem };
+      updatedRS[idx] = newItem;
     } else {
       updatedRS = [...currentRS, newItem];
     }
