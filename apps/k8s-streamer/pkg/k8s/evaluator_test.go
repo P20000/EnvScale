@@ -22,11 +22,12 @@ func (m *mockSnapshotProvider) GetClusterSnapshot(clusterID string) (
 	[]types.DeploymentStatusDelta,
 	[]types.ReplicaSetStatusDelta,
 	[]types.StatefulSetStatusDelta,
+	[]types.DaemonSetStatusDelta,
 	[]types.IngressStatusDelta,
 	[]types.K8sIncidentEvent,
 	error,
 ) {
-	return m.pods[clusterID], m.nodes[clusterID], nil, nil, nil, nil, nil, nil, nil
+	return m.pods[clusterID], m.nodes[clusterID], nil, nil, nil, nil, nil, nil, nil, nil
 }
 
 func (m *mockSnapshotProvider) ListClusters() map[string]bool {

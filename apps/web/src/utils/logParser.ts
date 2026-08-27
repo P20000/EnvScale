@@ -10,6 +10,7 @@ export interface ParsedLogPayload {
   rawText: string;
 }
 
+// eslint-disable-next-line no-control-regex
 const ANSI_REGEX = /\x1b\[[0-9;]*[a-zA-Z]|\u001b\[[0-9;]*[a-zA-Z]/g;
 
 export function stripAnsi(text: string): string {

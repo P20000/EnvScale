@@ -105,6 +105,7 @@ type SnapshotProvider interface {
 		[]types.DeploymentStatusDelta,
 		[]types.ReplicaSetStatusDelta,
 		[]types.StatefulSetStatusDelta,
+		[]types.DaemonSetStatusDelta,
 		[]types.IngressStatusDelta,
 		[]types.K8sIncidentEvent,
 		error,
@@ -286,7 +287,7 @@ func (me *MetricEvaluator) evaluate() {
 			continue
 		}
 
-		pods, nodes, _, _, _, _, _, _, err := me.provider.GetClusterSnapshot(clusterID)
+		pods, nodes, _, _, _, _, _, _, _, err := me.provider.GetClusterSnapshot(clusterID)
 		if err != nil {
 			continue
 		}

@@ -13,6 +13,8 @@ import { SettingsView } from "./components/views/SettingsView";
 import { useTopologyStore } from "./store/useTopologyStore";
 import ConnectClusterWizard from "./components/onboarding/ConnectClusterWizard";
 
+import { SYSTEM_NAMESPACES } from "./store/helpers/topologyHelpers";
+
 import "@xyflow/react/dist/style.css";
 import "./index.css";
 
@@ -28,18 +30,29 @@ function AppContent() {
   const clearSelectedNode = useTopologyStore((s) => s.clearSelectedNode);
   const pods = useTopologyStore((s) => s.pods);
   const notifications = useTopologyStore((s) => s.notifications);
+  const selectedNamespaces = useTopologyStore((s) => s.selectedNamespaces);
+  const showSystemNamespaces = useTopologyStore((s) => s.showSystemNamespaces);
 
   const activeIncidentsCount = useMemo(() => {
+    const isNsAllowed = (ns?: string) => {
+      const namespace = ns || "default";
+      if (Array.isArray(selectedNamespaces)) {
+        if (selectedNamespaces.length === 0) return false;
+        return selectedNamespaces.includes(namespace);
+      }
+      return showSystemNamespaces || !SYSTEM_NAMESPACES.has(namespace);
+    };
+
     const unhealthyPodsCount = pods.filter(
-      (p) => p.status === "Failed" || (p.restarts && p.restarts > 0)
+      (p) => isNsAllowed(p.namespace) && (p.status === "Failed" || (p.restarts && p.restarts > 0))
     ).length;
 
     const unreadAlertsCount = notifications.filter(
-      (n) => !n.read && (n.severity === "CRITICAL" || n.severity === "WARNING")
+      (n) => isNsAllowed(n.namespace) && !n.read && (n.severity === "CRITICAL" || n.severity === "WARNING")
     ).length;
 
     return unhealthyPodsCount + unreadAlertsCount;
-  }, [pods, notifications]);
+  }, [pods, notifications, selectedNamespaces, showSystemNamespaces]);
 
   const [activeTab, setActiveTab] = useState<NavTab>("topology");
   const [showConnectWizard, setShowConnectWizard] = useState(false);

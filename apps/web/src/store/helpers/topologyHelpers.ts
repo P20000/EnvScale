@@ -4,6 +4,8 @@ import type { K8sNodeData } from "../../components/canvas/K8sNode";
 import type { K8sServiceData } from "../../components/canvas/K8sService";
 import type { K8sIngressData, IngressRuleData } from "../../components/canvas/K8sIngress";
 import type { SelectedTarget } from "../../components/drawer/InspectorDrawer";
+import type { K8sDaemonSetData } from "../types/topologyTypes";
+import { calculateRolloutInfo, type K8sDeploymentData, type K8sReplicaSetData } from "./rolloutHelpers";
 
 export const SYSTEM_NAMESPACES = new Set(["kube-system", "kube-public", "kube-node-lease", "ingress-nginx"]);
 
@@ -17,13 +19,11 @@ export const extractPods = (nodes: Node[]): K8sPodData[] =>
     .filter((n) => n.type === "k8sPod" && Boolean(n.data))
     .map((n) => n.data as K8sPodData);
 
-export const getPodPrefix = (name: string) => {
+export const getPodPrefix = (name: string, podData?: K8sPodData) => {
+  if (podData?.ownerName) {
+    return podData.ownerName.replace(/-(?:[a-f0-9]{8,10}|\d{8,10})$/i, "");
+  }
   let prefix = name;
-  if (name.startsWith("db-audit-cronjob")) return "db-audit-cronjob";
-  if (name.startsWith("worker-pool")) return "worker-pool";
-  if (name.startsWith("todo-backend")) return "todo-backend";
-  if (name.startsWith("todo-frontend")) return "todo-frontend";
-  if (name.startsWith("redis")) return "redis-db";
   if (name.includes("-")) {
     prefix = name
       .replace(/-(?:[a-f0-9]{8,10}|\d{8,10})-[a-z0-9]{4,6}$/i, "")
@@ -272,7 +272,10 @@ export const aggregateNodesWithWorkloads = (
   nodes: Node[],
   showCompletedPods: boolean = false,
   showSystemNamespaces: boolean = false,
-  selectedNamespaces: string[] = []
+  selectedNamespaces: string[] = [],
+  deployments: K8sDeploymentData[] = [],
+  replicaSets: K8sReplicaSetData[] = [],
+  daemonSets: K8sDaemonSetData[] = []
 ): Node[] => {
   const appNodes = nodes.filter((n) => {
     const d = n.data as Record<string, unknown> | undefined;
@@ -303,9 +306,25 @@ export const aggregateNodesWithWorkloads = (
     return true;
   });
 
+  const daemonSetNames = new Set((daemonSets || []).map((ds) => ds.name));
+
   const podNodes = appNodes.filter((n) => {
     if (n.type !== "k8sPod") return false;
     const podData = n.data as K8sPodData;
+
+    if (
+      podData?.ownerKind === "DaemonSet" ||
+      (podData?.ownerName && daemonSetNames.has(podData.ownerName))
+    ) {
+      return false;
+    }
+
+    const podName = podData?.name || n.id;
+    const prefix = getPodPrefix(podName, podData);
+    if (daemonSetNames.has(prefix)) {
+      return false;
+    }
+
     const rawRes = (podData?.rawResource as Record<string, unknown>) || {};
     const meta = (rawRes.metadata as Record<string, unknown>) || {};
     const podPhase = String(podData?.phase || podData?.status || "").toLowerCase();
@@ -335,7 +354,7 @@ export const aggregateNodesWithWorkloads = (
   podNodes.forEach((pod) => {
     const podData = pod.data as K8sPodData;
     const name = podData?.name || pod.id;
-    const prefix = getPodPrefix(name);
+    const prefix = getPodPrefix(name, podData);
 
     const existing = podsByPrefix.get(prefix) || [];
     existing.push(pod);
@@ -370,11 +389,15 @@ export const aggregateNodesWithWorkloads = (
     const activeCap = Math.max(2, activeRunningPods.length);
     const finalGroupPods = sortedGroupPods.slice(0, activeCap);
 
+    const firstPodData = groupPods[0]?.data as K8sPodData | undefined;
+    const ns = firstPodData?.namespace || "testing-todo";
+    const rolloutInfo = calculateRolloutInfo(prefix, ns, deployments, replicaSets);
+
     processedNodes.push({
       id: groupId,
       type: "k8sGroup",
       position: { x: 0, y: 0 },
-      data: { name: prefix },
+      data: { name: prefix, namespace: ns, rolloutInfo },
     });
 
     finalGroupPods.forEach((pod, index) => {
@@ -392,7 +415,23 @@ export const aggregateNodesWithWorkloads = (
     });
   });
 
-  return [...nonPodNodes, ...processedNodes];
+  const dsNodes: Node[] = (daemonSets || [])
+    .filter((ds) => {
+      const ns = ds.namespace || "default";
+      if (Array.isArray(selectedNamespaces)) {
+        if (selectedNamespaces.length === 0) return false;
+        return selectedNamespaces.includes(ns);
+      }
+      return showSystemNamespaces || !SYSTEM_NAMESPACES.has(ns);
+    })
+    .map((ds) => ({
+      id: `daemonset-${ds.name}`,
+      type: "k8sDaemonSet",
+      position: { x: 0, y: 0 },
+      data: ds,
+    }));
+
+  return [...nonPodNodes, ...dsNodes, ...processedNodes];
 };
 
 export const sanitizeManifestSnapshot = (node: Node): Record<string, unknown> => {

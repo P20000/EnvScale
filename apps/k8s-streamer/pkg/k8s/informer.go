@@ -201,6 +201,11 @@ func (im *InformerManager) Start(stopCh <-chan struct{}) {
 				im.emitReplicaSetDelta(rs)
 			}
 		},
+		DeleteFunc: func(obj interface{}) {
+			if rs, ok := obj.(*appsv1.ReplicaSet); ok {
+				im.emitReplicaSetDeleted(rs)
+			}
+		},
 	})
 
 	statefulSetInformer := im.factory.Apps().V1().StatefulSets().Informer()
@@ -241,6 +246,25 @@ func (im *InformerManager) Start(stopCh <-chan struct{}) {
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			if evt, ok := newObj.(*corev1.Event); ok {
 				im.emitK8sIncidentEvent(evt)
+			}
+		},
+	})
+
+	daemonSetInformer := im.factory.Apps().V1().DaemonSets().Informer()
+	daemonSetInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			if ds, ok := obj.(*appsv1.DaemonSet); ok {
+				im.emitDaemonSetDelta(ds)
+			}
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			if ds, ok := newObj.(*appsv1.DaemonSet); ok {
+				im.emitDaemonSetDelta(ds)
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			if ds, ok := obj.(*appsv1.DaemonSet); ok {
+				im.emitDaemonSetDeleted(ds)
 			}
 		},
 	})
@@ -365,6 +389,7 @@ func (im *InformerManager) GetSnapshot() (
 	deployments []types.DeploymentStatusDelta,
 	replicaSets []types.ReplicaSetStatusDelta,
 	statefulSets []types.StatefulSetStatusDelta,
+	daemonSets []types.DaemonSetStatusDelta,
 	ingresses []types.IngressStatusDelta,
 	incidents []types.K8sIncidentEvent,
 ) {
@@ -449,6 +474,13 @@ func (im *InformerManager) GetSnapshot() (
 		}
 	}
 
+	dsList := im.factory.Apps().V1().DaemonSets().Informer().GetStore().List()
+	for _, obj := range dsList {
+		if ds, ok := obj.(*appsv1.DaemonSet); ok {
+			daemonSets = append(daemonSets, im.extractDaemonSetDelta(ds))
+		}
+	}
+
 	ingressList := im.factory.Networking().V1().Ingresses().Informer().GetStore().List()
 	for _, obj := range ingressList {
 		if ing, ok := obj.(*networkingv1.Ingress); ok {
@@ -463,5 +495,5 @@ func (im *InformerManager) GetSnapshot() (
 		}
 	}
 
-	return pods, nodes, services, deployments, replicaSets, statefulSets, ingresses, incidents
+	return pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents
 }

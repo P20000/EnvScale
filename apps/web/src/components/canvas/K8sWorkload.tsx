@@ -1,7 +1,8 @@
 import { Handle, Position } from '@xyflow/react';
-import { MdLayers as Icon } from 'react-icons/md';
+import { MdLayers as Icon, MdSync as SyncIcon } from 'react-icons/md';
 import type { K8sPodData } from "./K8sPod";
 import { useTopologyStore } from '../../store/useTopologyStore';
+import type { RolloutInfo } from '../../store/helpers/rolloutHelpers';
 
 export interface K8sWorkloadData extends Record<string, unknown> {
   name: string;
@@ -12,6 +13,7 @@ export interface K8sWorkloadData extends Record<string, unknown> {
   isAggregated?: boolean;
   isExpanded?: boolean;
   pods?: K8sPodData[];
+  rolloutInfo?: RolloutInfo | null;
   onToggleExpand?: (workloadName: string) => void;
 }
 
@@ -21,9 +23,18 @@ export function K8sWorkloadNode({ data }: { data: K8sWorkloadData }) {
   const isHealthy = ready === total && total > 0;
   const layoutDirection = useTopologyStore((s) => s.layoutDirection);
   const isTB = layoutDirection === "TB";
+  const rollout = data.rolloutInfo;
+  const isRolling = rollout?.isRollingUpdate;
+  const isStandalone = rollout?.isStandaloneReplicaSet;
 
   return (
-    <div className="h-11 w-[240px] border border-zinc-800 bg-[#141417] flex items-center justify-between px-3 rounded-md select-none group hover:border-zinc-700 transition-colors relative">
+    <div className={`h-11 w-[260px] border bg-[#141417] flex items-center justify-between px-3 rounded-md select-none group hover:border-zinc-700 transition-colors relative ${
+      isRolling
+        ? 'border-amber-500/60 bg-amber-950/20 animate-pulse'
+        : isStandalone
+        ? 'border-purple-500/50'
+        : 'border-zinc-800'
+    }`}>
       <Handle
         type="target"
         position={isTB ? Position.Top : Position.Left}
@@ -40,19 +51,30 @@ export function K8sWorkloadNode({ data }: { data: K8sWorkloadData }) {
       />
 
       <div className="flex items-center gap-2 min-w-0">
-        <Icon size={16} className="text-zinc-400 shrink-0" />
-        <span className="text-xs font-mono font-medium truncate text-zinc-300 max-w-[140px]">
+        <Icon size={16} className={isRolling ? "text-amber-400" : "text-zinc-400"} />
+        <span className="text-xs font-mono font-medium truncate text-zinc-300 max-w-[110px]">
           {data.name}
         </span>
       </div>
 
-      <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
-        isHealthy 
-          ? 'text-emerald-400 border-emerald-500/10 bg-emerald-500/5' 
-          : 'text-amber-400 border-amber-500/10 bg-amber-500/5'
-      }`}>
-        {ready}/{total}
-      </span>
+      {isRolling ? (
+        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 flex items-center gap-1">
+          <SyncIcon size={12} className="animate-spin" />
+          RS-{rollout.oldRevision?.hash || "old"}➔{rollout.newRevision?.hash || "new"}
+        </span>
+      ) : isStandalone ? (
+        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded border border-purple-500/30 bg-purple-500/10 text-purple-300">
+          Standalone RS
+        </span>
+      ) : (
+        <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+          isHealthy 
+            ? 'text-emerald-400 border-emerald-500/10 bg-emerald-500/5' 
+            : 'text-amber-400 border-amber-500/10 bg-amber-500/5'
+        }`}>
+          {ready}/{total}
+        </span>
+      )}
     </div>
   );
 }

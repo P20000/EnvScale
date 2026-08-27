@@ -142,11 +142,21 @@ Feature Branches (feature/*)
 4. **Module Ownership Review (`CODEOWNERS`):** PRs modifying specific paths require review and approval from the designated module owner before merging.
 
 ### Safe & Simplified Local Committing Guardrails
+
+> [!CAUTION]
+> **ABSOLUTE PROHIBITION ON DIRECT PUSHES TO `main` AND `develop`**
+> 1. **NO DIRECT PUSHES TO `main` OR `develop` BY AI ASSISTANTS:**
+>    AI Assistants MUST NEVER execute `git push origin develop` or `git push origin main` under any circumstances.
+> 2. **FEATURE BRANCH PUSHES ONLY (`feature/*`):**
+>    AI Assistants MUST ALWAYS commit and push changes exclusively to the active developer's assigned feature branch (e.g., `feature/pranav-k8s-streamer`, `feature/neha-web-ui`, `feature/vinit-api-server`, `feature/ishika-docs-qa`).
+> 3. **PULL REQUEST MERGING ONLY:**
+>    Integrating `feature/*` branches into `develop` or releasing `develop` into `main` MUST ONLY occur via GitHub Pull Requests (PRs).
+
 1. **No Destructive Git Commands or Stash Dropping:** AI Assistants MUST NEVER execute `git stash drop`, `git reset --hard`, or cross-branch file checkouts (`git checkout <branch> -- <path>`) that risk discarding uncommitted local changes.
 2. **Straightforward Commit & Push Workflow:** Committing local work MUST always be a simple, non-destructive sequence:
-   - Stage modified files on the current working branch: `git add <files>`
+   - Stage modified files on the assigned `feature/*` branch: `git add <files>`
    - Commit with a clear message: `git commit -m "..."`
-   - Push to the origin branch: `git push origin <branch>`
+   - Push ONLY to origin feature branch: `git push origin feature/<owner>-<module>`
 3. **Zero Data Loss Guarantee:** AI Assistants must prioritize local code preservation above all else, ensuring user work is committed safely without intermediate stashing tricks or risky branch switching.
 
 
