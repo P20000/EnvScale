@@ -5,7 +5,7 @@ import type { K8sNodeData } from "../../components/canvas/K8sNode";
 import type { K8sServiceData } from "../../components/canvas/K8sService";
 import type { K8sIngressData } from "../../components/canvas/K8sIngress";
 import type { K8sReplicaSetData, K8sDeploymentData } from "../helpers/rolloutHelpers";
-import type { K8sDaemonSetData } from "../types/topologyTypes";
+import type { K8sDaemonSetData, K8sCronJobData } from "../types/topologyTypes";
 import type { TopologyState } from "../useTopologyStore";
 import {
   extractServices,
@@ -151,6 +151,7 @@ export function handleWsMessage(
     const snapshotRS = Array.isArray(payloadData.replicaSets) ? (payloadData.replicaSets as K8sReplicaSetData[]) : [];
     const snapshotDeployments = Array.isArray(payloadData.deployments) ? (payloadData.deployments as K8sDeploymentData[]) : [];
     const snapshotDS = Array.isArray(payloadData.daemonSets) ? (payloadData.daemonSets as K8sDaemonSetData[]) : [];
+    const snapshotCronJobs = Array.isArray(payloadData.cronJobs) ? (payloadData.cronJobs as K8sCronJobData[]) : [];
 
     set({
       rawNodes: newRawNodes,
@@ -162,6 +163,7 @@ export function handleWsMessage(
       replicaSets: snapshotRS,
       deployments: snapshotDeployments,
       daemonSets: snapshotDS,
+      cronJobs: snapshotCronJobs,
     });
     state.applyDagreLayout();
   } else if (
@@ -478,6 +480,42 @@ export function handleWsMessage(
     const currentDS = state.daemonSets || [];
     const updatedDS = currentDS.filter((d) => d.name !== name);
     set({ daemonSets: updatedDS });
+    state.applyDagreLayout();
+  } else if (
+    eventType === "EVENT_CRONJOB_MUTATED" ||
+    eventType === "EVENT_CRONJOB_ADDED"
+  ) {
+    const name = String(payloadData.name || payloadData.id || "");
+    if (!name) return;
+    const currentCJ = state.cronJobs || [];
+    const idx = currentCJ.findIndex((c) => c.name === name);
+    let updatedCJ: K8sCronJobData[];
+    const newItem: K8sCronJobData = {
+      name,
+      namespace: String(payloadData.namespace || "default"),
+      schedule: String(payloadData.schedule || "0 * * * *"),
+      suspend: Boolean(payloadData.suspend),
+      activeJobsCount: Number(payloadData.activeJobsCount ?? 0),
+      lastScheduleTime: payloadData.lastScheduleTime ? String(payloadData.lastScheduleTime) : undefined,
+      lastSuccessfulTime: payloadData.lastSuccessfulTime ? String(payloadData.lastSuccessfulTime) : undefined,
+      images: (payloadData.images as string[]) || [],
+      labels: (payloadData.labels as Record<string, string>) || {},
+      createdAt: payloadData.createdAt ? String(payloadData.createdAt) : undefined,
+    };
+    if (idx >= 0) {
+      updatedCJ = [...currentCJ];
+      updatedCJ[idx] = { ...updatedCJ[idx], ...newItem };
+    } else {
+      updatedCJ = [...currentCJ, newItem];
+    }
+    set({ cronJobs: updatedCJ });
+    state.applyDagreLayout();
+  } else if (eventType === "EVENT_CRONJOB_DELETED") {
+    const name = String(payloadData.name || payloadData.id || "");
+    if (!name) return;
+    const currentCJ = state.cronJobs || [];
+    const updatedCJ = currentCJ.filter((c) => c.name !== name);
+    set({ cronJobs: updatedCJ });
     state.applyDagreLayout();
   }
 }
