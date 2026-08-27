@@ -190,10 +190,10 @@ export function TopNavbar({
             <span
               className={`h-1.5 w-1.5 rounded-full shrink-0 ${
                 isConnected
-                  ? "bg-emerald-400 shadow-[0_0_8px_#10b981]"
+                  ? "bg-emerald-500"
                   : isConnecting
-                  ? "bg-amber-400 shadow-[0_0_8px_#f59e0b] animate-pulse"
-                  : "bg-red-500"
+                  ? "bg-amber-400 animate-pulse"
+                  : "bg-rose-500"
               }`}
             />
             <span>

@@ -28,7 +28,9 @@ export function K8sEdge({
   const [isHovered, setIsHovered] = useState(false);
 
   const edgeData = (data as K8sEdgeData) || {};
-  const strokeColor = edgeData.strokeColor || (style.stroke as string) || "#10b981";
+  const strokeColor = isHovered
+    ? "#a1a1aa"
+    : edgeData.strokeColor || (style.stroke as string) || "#52525b";
   const labelText = (label as string) || edgeData.label || "";
 
   const [edgePath, labelX, labelY] = getSmoothStepPath({
@@ -53,9 +55,8 @@ export function K8sEdge({
         style={{
           ...style,
           stroke: strokeColor,
-          strokeWidth: isHovered ? 3.5 : 2,
-          filter: isHovered ? `drop-shadow(0 0 6px ${strokeColor})` : "none",
-          transition: "stroke-width 0.15s ease, filter 0.15s ease",
+          strokeWidth: isHovered ? 2.5 : 1.5,
+          transition: "stroke 0.15s ease, stroke-width 0.15s ease",
           strokeDasharray: "none",
         }}
       />
@@ -68,7 +69,7 @@ export function K8sEdge({
               transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
               pointerEvents: "all",
             }}
-            className="nodrag nopan text-[9.5px] font-mono font-semibold px-2 py-0.5 rounded-md bg-[#141417] border border-purple-500/50 text-purple-300 shadow-md select-none"
+            className="nodrag nopan text-[11px] font-mono px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-700 text-zinc-300 shadow-sm select-none"
           >
             {labelText}
           </div>
