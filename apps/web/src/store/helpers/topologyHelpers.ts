@@ -272,7 +272,7 @@ export const aggregateNodesWithWorkloads = (
   nodes: Node[],
   showCompletedPods: boolean = false,
   showSystemNamespaces: boolean = false,
-  selectedNamespaces: string[] = [],
+  selectedNamespaces: string[] | string = [],
   deployments: K8sDeploymentData[] = [],
   replicaSets: K8sReplicaSetData[] = [],
   daemonSets: K8sDaemonSetData[] = [],
@@ -282,7 +282,11 @@ export const aggregateNodesWithWorkloads = (
     const d = n.data as Record<string, unknown> | undefined;
     const ns = String(d?.namespace || "default");
 
-    if (Array.isArray(selectedNamespaces)) {
+    if (typeof selectedNamespaces === "string") {
+      if (selectedNamespaces !== "all" && ns !== selectedNamespaces) {
+        return false;
+      }
+    } else if (Array.isArray(selectedNamespaces)) {
       if (selectedNamespaces.length === 0) {
         return false;
       }
@@ -429,6 +433,9 @@ export const aggregateNodesWithWorkloads = (
   const dsNodes: Node[] = (daemonSets || [])
     .filter((ds) => {
       const ns = ds.namespace || "default";
+      if (typeof selectedNamespaces === "string") {
+        return selectedNamespaces === "all" || ns === selectedNamespaces;
+      }
       if (Array.isArray(selectedNamespaces)) {
         if (selectedNamespaces.length === 0) return false;
         return selectedNamespaces.includes(ns);
@@ -445,6 +452,9 @@ export const aggregateNodesWithWorkloads = (
   const cjNodes: Node[] = (cronJobs || [])
     .filter((cj) => {
       const ns = cj.namespace || "default";
+      if (typeof selectedNamespaces === "string") {
+        return selectedNamespaces === "all" || ns === selectedNamespaces;
+      }
       if (Array.isArray(selectedNamespaces)) {
         if (selectedNamespaces.length === 0) return false;
         return selectedNamespaces.includes(ns);

@@ -5,4 +5,5 @@ export { K8sWorkloadNode, type K8sWorkloadData } from "./K8sWorkload";
 export { K8sIngressNode, type K8sIngressData, type IngressRuleData } from "./K8sIngress";
 export { K8sGroupNode, type K8sGroupData } from "./K8sGroup";
 export { K8sDaemonSetNode } from "./K8sDaemonSet";
+export { K8sCronJobNode } from "./K8sCronJob";
 export { K8sEdge, type K8sEdgeData } from "./K8sEdge";
