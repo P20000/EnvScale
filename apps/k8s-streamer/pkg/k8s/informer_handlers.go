@@ -337,3 +337,36 @@ func (im *InformerManager) extractK8sIncidentEvent(evt *corev1.Event) types.K8sI
 		Timestamp:    timestamp,
 	}
 }
+
+func (im *InformerManager) extractDaemonSetDelta(ds *appsv1.DaemonSet) types.DaemonSetStatusDelta {
+	images := make([]string, 0)
+	for _, c := range ds.Spec.Template.Spec.Containers {
+		images = append(images, c.Image)
+	}
+
+	return types.DaemonSetStatusDelta{
+		Name:                   ds.Name,
+		Namespace:              ds.Namespace,
+		DesiredNumberScheduled: ds.Status.DesiredNumberScheduled,
+		CurrentNumberScheduled: ds.Status.CurrentNumberScheduled,
+		NumberReady:            ds.Status.NumberReady,
+		NumberUnavailable:      ds.Status.NumberUnavailable,
+		Images:                 images,
+		Labels:                 ds.Labels,
+		CreatedAt:              ds.CreationTimestamp.Time.UTC(),
+	}
+}
+
+func (im *InformerManager) emitDaemonSetDelta(ds *appsv1.DaemonSet) {
+	delta := im.extractDaemonSetDelta(ds)
+	key := fmt.Sprintf("DaemonSet/%s/%s", ds.Namespace, ds.Name)
+	if !im.dedup.ShouldEmit(key, delta) {
+		return
+	}
+	im.hub.BroadcastEvent(types.EventDaemonSetMutated, im.clusterID, delta)
+}
+
+func (im *InformerManager) emitDaemonSetDeleted(ds *appsv1.DaemonSet) {
+	delta := im.extractDaemonSetDelta(ds)
+	im.hub.BroadcastEvent(types.EventDaemonSetDeleted, im.clusterID, delta)
+}

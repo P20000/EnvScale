@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Icon } from "../ui/Icon";
 import {
   mdiAlertCircle,
@@ -58,6 +58,12 @@ export function IncidentsView() {
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [clusterFilter, setClusterFilter] = useState<string>("ALL");
 
+  const markAllNotificationsRead = useTopologyStore((s) => s.markAllNotificationsRead);
+
+  useEffect(() => {
+    markAllNotificationsRead();
+  }, [markAllNotificationsRead]);
+
   const incidents = useMemo<IncidentItem[]>(() => {
     const list: IncidentItem[] = [];
     const seenIds = new Set<string>();
@@ -107,7 +113,7 @@ export function IncidentsView() {
         list.push({
           id,
           pod: n.targetPod || "workload",
-          namespace: "default",
+          namespace: n.namespace || "default",
           cluster: activeCluster || "minikube",
           severity: n.type === "error" ? "CRITICAL" : n.type === "warning" ? "WARNING" : "INFO",
           message: n.message,
@@ -121,7 +127,7 @@ export function IncidentsView() {
     pods.forEach((p) => {
       const podName = p.name || (p as unknown as { id?: string }).id || "pod";
       const status = p.status || (p as unknown as { phase?: string }).phase || "";
-      if (status.includes("Crash") || status.includes("OOM") || status.includes("Failed")) {
+      if (status.includes("Crash") || status.includes("OOM") || status.includes("Failed") || (p.restarts && p.restarts > 0)) {
         const id = `INC-POD-${podName.slice(-6).toUpperCase()}`;
         if (!seenIds.has(id)) {
           seenIds.add(id);

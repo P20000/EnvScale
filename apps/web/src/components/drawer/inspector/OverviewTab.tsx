@@ -5,6 +5,7 @@ import {
 } from "react-icons/md";
 import type { SelectedTarget } from "../InspectorDrawer";
 import type { K8sPodData } from "../../canvas/K8sPod";
+import type { K8sIngressData, IngressRuleData } from "../../canvas/K8sIngress";
 
 import { useResourceLogs } from "../../../hooks/useResourceLogs";
 import { LogRow } from "../LogRow";
@@ -30,7 +31,7 @@ export function OverviewTab({
 
   const { logs } = useResourceLogs({
     name: target.data?.name || null,
-    kind: target.type === "pod" ? "Pod" : target.type === "service" ? "Service" : target.type === "ingress" ? "Ingress" : "Workload",
+    kind: target.type === "pod" ? "Pod" : target.type === "service" ? "Service" : target.type === "ingress" ? "Ingress" : target.type === "daemonset" ? "DaemonSet" : "Workload",
     namespace: String(targetRecord.namespace || "testing-todo"),
     enabled: isEmbeddedLogOpen,
   });
@@ -101,13 +102,13 @@ export function OverviewTab({
 
           <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3.5 space-y-2.5">
             <h4 className="text-xs font-semibold text-neutral-300 uppercase tracking-wider">
-              HTTP Routing Rules ({target.data.rules?.length || 0})
+              HTTP Routing Rules ({(target.data as K8sIngressData).rules?.length || 0})
             </h4>
-            {!target.data.rules || target.data.rules.length === 0 ? (
+            {!(target.data as K8sIngressData).rules || (target.data as K8sIngressData).rules.length === 0 ? (
               <p className="text-xs text-neutral-500 italic">No routing rules configured.</p>
             ) : (
               <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
-                {target.data.rules.map((rule, idx) => (
+                {((target.data as K8sIngressData).rules || []).map((rule: IngressRuleData, idx: number) => (
                   <div
                     key={idx}
                     className="rounded-lg border border-neutral-800 bg-neutral-950 p-2.5 text-xs font-mono space-y-1"

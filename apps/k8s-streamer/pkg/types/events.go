@@ -17,6 +17,8 @@ const (
 	EventReplicaSetMutated  = "EVENT_REPLICA_SET_MUTATED"
 	EventReplicaSetDeleted  = "EVENT_REPLICA_SET_DELETED"
 	EventStatefulSetMutated = "EVENT_STATEFUL_SET_MUTATED"
+	EventDaemonSetMutated   = "EVENT_DAEMONSET_MUTATED"
+	EventDaemonSetDeleted   = "EVENT_DAEMONSET_DELETED"
 	EventIngressMutated     = "EVENT_INGRESS_MUTATED"
 
 	// Chaos fault injection events — emitted by the chaos engine when a fault is
@@ -99,6 +101,19 @@ type StatefulSetStatusDelta struct {
 	ReadyReplicas int32             `json:"readyReplicas"`
 	Selector      map[string]string `json:"selector"`
 	Labels        map[string]string `json:"labels"`
+}
+
+// DaemonSetStatusDelta encapsulates DaemonSet state updates
+type DaemonSetStatusDelta struct {
+	Name                   string            `json:"name"`
+	Namespace              string            `json:"namespace"`
+	DesiredNumberScheduled int32             `json:"desiredNumberScheduled"`
+	CurrentNumberScheduled int32             `json:"currentNumberScheduled"`
+	NumberReady            int32             `json:"numberReady"`
+	NumberUnavailable      int32             `json:"numberUnavailable"`
+	Images                 []string          `json:"images,omitempty"`
+	Labels                 map[string]string `json:"labels,omitempty"`
+	CreatedAt              time.Time         `json:"createdAt,omitempty"`
 }
 
 // NodeStatusDelta encapsulates node health state updates

@@ -5,6 +5,7 @@ import type { K8sNodeData } from "../../components/canvas/K8sNode";
 import type { K8sServiceData } from "../../components/canvas/K8sService";
 import type { K8sIngressData } from "../../components/canvas/K8sIngress";
 import type { K8sReplicaSetData, K8sDeploymentData } from "../helpers/rolloutHelpers";
+import type { K8sDaemonSetData } from "../types/topologyTypes";
 import type { TopologyState } from "../useTopologyStore";
 import {
   extractServices,
@@ -149,6 +150,7 @@ export function handleWsMessage(
 
     const snapshotRS = Array.isArray(payloadData.replicaSets) ? (payloadData.replicaSets as K8sReplicaSetData[]) : [];
     const snapshotDeployments = Array.isArray(payloadData.deployments) ? (payloadData.deployments as K8sDeploymentData[]) : [];
+    const snapshotDS = Array.isArray(payloadData.daemonSets) ? (payloadData.daemonSets as K8sDaemonSetData[]) : [];
 
     set({
       rawNodes: newRawNodes,
@@ -159,6 +161,7 @@ export function handleWsMessage(
       ingresses: (newRawNodes.filter((n) => n.type === "k8sIngress").map((n) => n.data) as K8sIngressData[]),
       replicaSets: snapshotRS,
       deployments: snapshotDeployments,
+      daemonSets: snapshotDS,
     });
     state.applyDagreLayout();
   } else if (
@@ -440,6 +443,41 @@ export function handleWsMessage(
     const currentDeps = state.deployments || [];
     const updatedDeps = currentDeps.filter((d) => d.name !== name);
     set({ deployments: updatedDeps });
+    state.applyDagreLayout();
+  } else if (
+    eventType === "EVENT_DAEMONSET_MUTATED" ||
+    eventType === "EVENT_DAEMONSET_ADDED"
+  ) {
+    const name = String(payloadData.name || payloadData.id || "");
+    if (!name) return;
+    const currentDS = state.daemonSets || [];
+    const idx = currentDS.findIndex((d) => d.name === name);
+    let updatedDS: K8sDaemonSetData[];
+    const newItem: K8sDaemonSetData = {
+      name,
+      namespace: String(payloadData.namespace || "default"),
+      desiredNumberScheduled: Number(payloadData.desiredNumberScheduled ?? 0),
+      currentNumberScheduled: Number(payloadData.currentNumberScheduled ?? 0),
+      numberReady: Number(payloadData.numberReady ?? 0),
+      numberUnavailable: Number(payloadData.numberUnavailable ?? 0),
+      images: (payloadData.images as string[]) || [],
+      labels: (payloadData.labels as Record<string, string>) || {},
+      createdAt: payloadData.createdAt ? String(payloadData.createdAt) : undefined,
+    };
+    if (idx >= 0) {
+      updatedDS = [...currentDS];
+      updatedDS[idx] = { ...updatedDS[idx], ...newItem };
+    } else {
+      updatedDS = [...currentDS, newItem];
+    }
+    set({ daemonSets: updatedDS });
+    state.applyDagreLayout();
+  } else if (eventType === "EVENT_DAEMONSET_DELETED") {
+    const name = String(payloadData.name || payloadData.id || "");
+    if (!name) return;
+    const currentDS = state.daemonSets || [];
+    const updatedDS = currentDS.filter((d) => d.name !== name);
+    set({ daemonSets: updatedDS });
     state.applyDagreLayout();
   }
 }

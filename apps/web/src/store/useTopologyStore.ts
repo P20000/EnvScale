@@ -16,6 +16,7 @@ import type { K8sPodData } from "../components/canvas/K8sPod";
 import type { K8sServiceData } from "../components/canvas/K8sService";
 import type { K8sIngressData } from "../components/canvas/K8sIngress";
 import type { K8sReplicaSetData, K8sDeploymentData } from "./helpers/rolloutHelpers";
+import type { K8sDaemonSetData } from "./types/topologyTypes";
 import type { WsConnectionStatus, WsTopologyMessage } from "../hooks/useK8sStream";
 import type { SelectedTarget } from "../components/drawer/InspectorDrawer";
 import { getLayoutedElements } from "../utils/layout";
@@ -79,6 +80,7 @@ export interface TopologyState {
   ingresses: K8sIngressData[];
   replicaSets: K8sReplicaSetData[];
   deployments: K8sDeploymentData[];
+  daemonSets: K8sDaemonSetData[];
   incidents: K8sIncidentEvent[];
   selectedNode: SelectedTarget;
   tokens: ApiToken[];
@@ -172,6 +174,7 @@ export const useTopologyStore = create<TopologyState>()(
       ingresses: [],
       replicaSets: [],
       deployments: [],
+      daemonSets: [],
       incidents: [],
       selectedNode: null,
       tokens: defaultInitialTokens,
@@ -410,9 +413,9 @@ export const useTopologyStore = create<TopologyState>()(
 
       applyDagreLayout: (direction) => {
         const targetDir = direction || get().layoutDirection || "TB";
-        const { rawNodes, nodes, edges, showCompletedPods, showSystemNamespaces, selectedNamespaces, deployments, replicaSets } = get();
+        const { rawNodes, nodes, edges, showCompletedPods, showSystemNamespaces, selectedNamespaces, deployments, replicaSets, daemonSets } = get();
         const baseNodes = rawNodes && rawNodes.length > 0 ? rawNodes : nodes;
-        if (baseNodes.length === 0) return;
+        if (baseNodes.length === 0 && (!daemonSets || daemonSets.length === 0)) return;
 
         const aggregatedNodes = aggregateNodesWithWorkloads(
           baseNodes,
@@ -420,7 +423,8 @@ export const useTopologyStore = create<TopologyState>()(
           showSystemNamespaces,
           selectedNamespaces,
           deployments,
-          replicaSets
+          replicaSets,
+          daemonSets
         );
 
         const dynamicEdges = generateDynamicEdges(aggregatedNodes, edges);

@@ -116,6 +116,7 @@ func (cm *ClusterManager) GetClusterSnapshot(clusterID string) (
 	[]types.DeploymentStatusDelta,
 	[]types.ReplicaSetStatusDelta,
 	[]types.StatefulSetStatusDelta,
+	[]types.DaemonSetStatusDelta,
 	[]types.IngressStatusDelta,
 	[]types.K8sIncidentEvent,
 	error,
@@ -125,10 +126,10 @@ func (cm *ClusterManager) GetClusterSnapshot(clusterID string) (
 	cm.mu.RUnlock()
 
 	if !ok {
-		return nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("cluster %s not found", clusterID)
+		return nil, nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("cluster %s not found", clusterID)
 	}
-	pods, nodes, services, deployments, replicaSets, statefulSets, ingresses, incidents := im.GetSnapshot()
-	return pods, nodes, services, deployments, replicaSets, statefulSets, ingresses, incidents, nil
+	pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents := im.GetSnapshot()
+	return pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, nil
 }
 
 // GetCluster returns the InformerManager associated with the given clusterID.

@@ -4,6 +4,7 @@ import type { K8sNodeData } from "../../components/canvas/K8sNode";
 import type { K8sServiceData } from "../../components/canvas/K8sService";
 import type { K8sIngressData, IngressRuleData } from "../../components/canvas/K8sIngress";
 import type { SelectedTarget } from "../../components/drawer/InspectorDrawer";
+import type { K8sDaemonSetData } from "../types/topologyTypes";
 import { calculateRolloutInfo, type K8sDeploymentData, type K8sReplicaSetData } from "./rolloutHelpers";
 
 export const SYSTEM_NAMESPACES = new Set(["kube-system", "kube-public", "kube-node-lease", "ingress-nginx"]);
@@ -273,7 +274,8 @@ export const aggregateNodesWithWorkloads = (
   showSystemNamespaces: boolean = false,
   selectedNamespaces: string[] = [],
   deployments: K8sDeploymentData[] = [],
-  replicaSets: K8sReplicaSetData[] = []
+  replicaSets: K8sReplicaSetData[] = [],
+  daemonSets: K8sDaemonSetData[] = []
 ): Node[] => {
   const appNodes = nodes.filter((n) => {
     const d = n.data as Record<string, unknown> | undefined;
@@ -304,9 +306,25 @@ export const aggregateNodesWithWorkloads = (
     return true;
   });
 
+  const daemonSetNames = new Set((daemonSets || []).map((ds) => ds.name));
+
   const podNodes = appNodes.filter((n) => {
     if (n.type !== "k8sPod") return false;
     const podData = n.data as K8sPodData;
+
+    if (
+      podData?.ownerKind === "DaemonSet" ||
+      (podData?.ownerName && daemonSetNames.has(podData.ownerName))
+    ) {
+      return false;
+    }
+
+    const podName = podData?.name || n.id;
+    const prefix = getPodPrefix(podName, podData);
+    if (daemonSetNames.has(prefix)) {
+      return false;
+    }
+
     const rawRes = (podData?.rawResource as Record<string, unknown>) || {};
     const meta = (rawRes.metadata as Record<string, unknown>) || {};
     const podPhase = String(podData?.phase || podData?.status || "").toLowerCase();
@@ -371,8 +389,8 @@ export const aggregateNodesWithWorkloads = (
     const activeCap = Math.max(2, activeRunningPods.length);
     const finalGroupPods = sortedGroupPods.slice(0, activeCap);
 
-    const firstPodData = (groupPods[0]?.data as K8sPodData) || {};
-    const ns = firstPodData.namespace || "testing-todo";
+    const firstPodData = groupPods[0]?.data as K8sPodData | undefined;
+    const ns = firstPodData?.namespace || "testing-todo";
     const rolloutInfo = calculateRolloutInfo(prefix, ns, deployments, replicaSets);
 
     processedNodes.push({
@@ -397,7 +415,23 @@ export const aggregateNodesWithWorkloads = (
     });
   });
 
-  return [...nonPodNodes, ...processedNodes];
+  const dsNodes: Node[] = (daemonSets || [])
+    .filter((ds) => {
+      const ns = ds.namespace || "default";
+      if (Array.isArray(selectedNamespaces)) {
+        if (selectedNamespaces.length === 0) return false;
+        return selectedNamespaces.includes(ns);
+      }
+      return showSystemNamespaces || !SYSTEM_NAMESPACES.has(ns);
+    })
+    .map((ds) => ({
+      id: `daemonset-${ds.name}`,
+      type: "k8sDaemonSet",
+      position: { x: 0, y: 0 },
+      data: ds,
+    }));
+
+  return [...nonPodNodes, ...dsNodes, ...processedNodes];
 };
 
 export const sanitizeManifestSnapshot = (node: Node): Record<string, unknown> => {
