@@ -13,9 +13,17 @@ const (
 	EventHeartbeat          = "EVENT_HEARTBEAT"
 	EventPodAnomalyDetected = "EVENT_POD_ANOMALY_DETECTED"
 	EventDeploymentMutated  = "EVENT_DEPLOYMENT_MUTATED"
+	EventDeploymentDeleted  = "EVENT_DEPLOYMENT_DELETED"
 	EventReplicaSetMutated  = "EVENT_REPLICA_SET_MUTATED"
+	EventReplicaSetDeleted  = "EVENT_REPLICA_SET_DELETED"
 	EventStatefulSetMutated = "EVENT_STATEFUL_SET_MUTATED"
+	EventDaemonSetMutated   = "EVENT_DAEMONSET_MUTATED"
+	EventDaemonSetDeleted   = "EVENT_DAEMONSET_DELETED"
 	EventIngressMutated     = "EVENT_INGRESS_MUTATED"
+	EventCronJobMutated     = "EVENT_CRONJOB_MUTATED"
+	EventCronJobDeleted     = "EVENT_CRONJOB_DELETED"
+	EventJobMutated         = "EVENT_JOB_MUTATED"
+	EventJobDeleted         = "EVENT_JOB_DELETED"
 
 	// Chaos fault injection events — emitted by the chaos engine when a fault is
 	// injected into or cleared from a target workload.
@@ -84,6 +92,9 @@ type ReplicaSetStatusDelta struct {
 	OwnerName     string            `json:"ownerName,omitempty"`
 	OwnerKind     string            `json:"ownerKind,omitempty"`
 	Labels        map[string]string `json:"labels"`
+	Revision      string            `json:"revision,omitempty"`
+	Images        []string          `json:"images,omitempty"`
+	CreatedAt     time.Time         `json:"createdAt,omitempty"`
 }
 
 // StatefulSetStatusDelta encapsulates StatefulSet state updates
@@ -94,6 +105,32 @@ type StatefulSetStatusDelta struct {
 	ReadyReplicas int32             `json:"readyReplicas"`
 	Selector      map[string]string `json:"selector"`
 	Labels        map[string]string `json:"labels"`
+}
+
+// DaemonSetStatusDelta encapsulates DaemonSet state updates
+type DaemonSetStatusDelta struct {
+	Name                   string            `json:"name"`
+	Namespace              string            `json:"namespace"`
+	DesiredNumberScheduled int32             `json:"desiredNumberScheduled"`
+	CurrentNumberScheduled int32             `json:"currentNumberScheduled"`
+	NumberReady            int32             `json:"numberReady"`
+	NumberUnavailable      int32             `json:"numberUnavailable"`
+	Images                 []string          `json:"images,omitempty"`
+	Labels                 map[string]string `json:"labels,omitempty"`
+	CreatedAt              time.Time         `json:"createdAt,omitempty"`
+}
+
+// CronJobStatusDelta encapsulates CronJob state updates
+type CronJobStatusDelta struct {
+	Name               string     `json:"name"`
+	Namespace          string     `json:"namespace"`
+	Schedule           string     `json:"schedule"`
+	Suspend            bool       `json:"suspend"`
+	ActiveJobsCount    int        `json:"activeJobsCount"`
+	LastScheduleTime   *time.Time `json:"lastScheduleTime,omitempty"`
+	LastSuccessfulTime *time.Time `json:"lastSuccessfulTime,omitempty"`
+	Images             []string   `json:"images,omitempty"`
+	CreatedAt          time.Time  `json:"createdAt"`
 }
 
 // NodeStatusDelta encapsulates node health state updates

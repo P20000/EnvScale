@@ -1,16 +1,15 @@
 package k8s
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"sync"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -201,6 +200,11 @@ func (im *InformerManager) Start(stopCh <-chan struct{}) {
 				im.emitReplicaSetDelta(rs)
 			}
 		},
+		DeleteFunc: func(obj interface{}) {
+			if rs, ok := obj.(*appsv1.ReplicaSet); ok {
+				im.emitReplicaSetDeleted(rs)
+			}
+		},
 	})
 
 	statefulSetInformer := im.factory.Apps().V1().StatefulSets().Informer()
@@ -241,6 +245,44 @@ func (im *InformerManager) Start(stopCh <-chan struct{}) {
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			if evt, ok := newObj.(*corev1.Event); ok {
 				im.emitK8sIncidentEvent(evt)
+			}
+		},
+	})
+
+	daemonSetInformer := im.factory.Apps().V1().DaemonSets().Informer()
+	daemonSetInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			if ds, ok := obj.(*appsv1.DaemonSet); ok {
+				im.emitDaemonSetDelta(ds)
+			}
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			if ds, ok := newObj.(*appsv1.DaemonSet); ok {
+				im.emitDaemonSetDelta(ds)
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			if ds, ok := obj.(*appsv1.DaemonSet); ok {
+				im.emitDaemonSetDeleted(ds)
+			}
+		},
+	})
+
+	cronJobInformer := im.factory.Batch().V1().CronJobs().Informer()
+	cronJobInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			if cj, ok := obj.(*batchv1.CronJob); ok {
+				im.emitCronJobDelta(cj)
+			}
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			if cj, ok := newObj.(*batchv1.CronJob); ok {
+				im.emitCronJobDelta(cj)
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			if cj, ok := obj.(*batchv1.CronJob); ok {
+				im.emitCronJobDeleted(cj)
 			}
 		},
 	})
@@ -322,42 +364,6 @@ func (im *InformerManager) Clientset() kubernetes.Interface {
 	return im.clientset
 }
 
-type PodMetricData struct {
-	CPUUsagePct   float64
-	MemoryUsageMb float64
-}
-
-func (im *InformerManager) FetchPodMetricsMap() map[string]PodMetricData {
-	metricsMap := make(map[string]PodMetricData)
-	if im.metricsClient == nil {
-		return metricsMap
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	podMetricsList, err := im.metricsClient.MetricsV1beta1().PodMetricses("").List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return metricsMap
-	}
-
-	for _, pm := range podMetricsList.Items {
-		var totalMcores int64 = 0
-		var totalMemBytes int64 = 0
-		for _, c := range pm.Containers {
-			totalMcores += c.Usage.Cpu().MilliValue()
-			totalMemBytes += c.Usage.Memory().Value()
-		}
-		memMiB := float64(totalMemBytes) / (1024 * 1024)
-		key := fmt.Sprintf("%s/%s", pm.Namespace, pm.Name)
-		metricsMap[key] = PodMetricData{
-			CPUUsagePct:   float64(totalMcores),
-			MemoryUsageMb: memMiB,
-		}
-	}
-	return metricsMap
-}
-
 func (im *InformerManager) GetSnapshot() (
 	pods []types.PodStatusDelta,
 	nodes []types.NodeStatusDelta,
@@ -365,8 +371,10 @@ func (im *InformerManager) GetSnapshot() (
 	deployments []types.DeploymentStatusDelta,
 	replicaSets []types.ReplicaSetStatusDelta,
 	statefulSets []types.StatefulSetStatusDelta,
+	daemonSets []types.DaemonSetStatusDelta,
 	ingresses []types.IngressStatusDelta,
 	incidents []types.K8sIncidentEvent,
+	cronJobs []types.CronJobStatusDelta,
 ) {
 	im.factory.WaitForCacheSync(im.stopCh)
 	metricsMap := im.FetchPodMetricsMap()
@@ -449,6 +457,13 @@ func (im *InformerManager) GetSnapshot() (
 		}
 	}
 
+	dsList := im.factory.Apps().V1().DaemonSets().Informer().GetStore().List()
+	for _, obj := range dsList {
+		if ds, ok := obj.(*appsv1.DaemonSet); ok {
+			daemonSets = append(daemonSets, im.extractDaemonSetDelta(ds))
+		}
+	}
+
 	ingressList := im.factory.Networking().V1().Ingresses().Informer().GetStore().List()
 	for _, obj := range ingressList {
 		if ing, ok := obj.(*networkingv1.Ingress); ok {
@@ -463,5 +478,12 @@ func (im *InformerManager) GetSnapshot() (
 		}
 	}
 
-	return pods, nodes, services, deployments, replicaSets, statefulSets, ingresses, incidents
+	cjList := im.factory.Batch().V1().CronJobs().Informer().GetStore().List()
+	for _, obj := range cjList {
+		if cj, ok := obj.(*batchv1.CronJob); ok {
+			cronJobs = append(cronJobs, im.extractCronJobDelta(cj))
+		}
+	}
+
+	return pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, cronJobs
 }

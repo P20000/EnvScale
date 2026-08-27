@@ -5,6 +5,7 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 
@@ -171,15 +172,35 @@ func (im *InformerManager) extractReplicaSetDelta(rs *appsv1.ReplicaSet) types.R
 		ownerKind = rs.OwnerReferences[0].Kind
 	}
 
+	var images []string
+	for _, c := range rs.Spec.Template.Spec.Containers {
+		if c.Image != "" {
+			images = append(images, c.Image)
+		}
+	}
+
+	revision := ""
+	if rs.Annotations != nil {
+		revision = rs.Annotations["deployment.kubernetes.io/revision"]
+	}
+
+	var replicas int32
+	if rs.Spec.Replicas != nil {
+		replicas = *rs.Spec.Replicas
+	}
+
 	return types.ReplicaSetStatusDelta{
 		Name:          rs.Name,
 		Namespace:     rs.Namespace,
-		Replicas:      *rs.Spec.Replicas,
+		Replicas:      replicas,
 		ReadyReplicas: rs.Status.ReadyReplicas,
 		OwnerUID:      ownerUID,
 		OwnerName:     ownerName,
 		OwnerKind:     ownerKind,
 		Labels:        rs.Labels,
+		Revision:      revision,
+		Images:        images,
+		CreatedAt:     rs.CreationTimestamp.Time,
 	}
 }
 
@@ -190,6 +211,11 @@ func (im *InformerManager) emitReplicaSetDelta(rs *appsv1.ReplicaSet) {
 		return
 	}
 	im.hub.BroadcastEvent(types.EventReplicaSetMutated, im.clusterID, delta)
+}
+
+func (im *InformerManager) emitReplicaSetDeleted(rs *appsv1.ReplicaSet) {
+	delta := im.extractReplicaSetDelta(rs)
+	im.hub.BroadcastEvent(types.EventReplicaSetDeleted, im.clusterID, delta)
 }
 
 func (im *InformerManager) extractStatefulSetDelta(sts *appsv1.StatefulSet) types.StatefulSetStatusDelta {
@@ -312,3 +338,89 @@ func (im *InformerManager) extractK8sIncidentEvent(evt *corev1.Event) types.K8sI
 		Timestamp:    timestamp,
 	}
 }
+
+func (im *InformerManager) extractDaemonSetDelta(ds *appsv1.DaemonSet) types.DaemonSetStatusDelta {
+	images := make([]string, 0)
+	for _, c := range ds.Spec.Template.Spec.Containers {
+		images = append(images, c.Image)
+	}
+
+	return types.DaemonSetStatusDelta{
+		Name:                   ds.Name,
+		Namespace:              ds.Namespace,
+		DesiredNumberScheduled: ds.Status.DesiredNumberScheduled,
+		CurrentNumberScheduled: ds.Status.CurrentNumberScheduled,
+		NumberReady:            ds.Status.NumberReady,
+		NumberUnavailable:      ds.Status.NumberUnavailable,
+		Images:                 images,
+		Labels:                 ds.Labels,
+		CreatedAt:              ds.CreationTimestamp.Time.UTC(),
+	}
+}
+
+func (im *InformerManager) emitDaemonSetDelta(ds *appsv1.DaemonSet) {
+	delta := im.extractDaemonSetDelta(ds)
+	key := fmt.Sprintf("DaemonSet/%s/%s", ds.Namespace, ds.Name)
+	if !im.dedup.ShouldEmit(key, delta) {
+		return
+	}
+	im.hub.BroadcastEvent(types.EventDaemonSetMutated, im.clusterID, delta)
+}
+
+func (im *InformerManager) emitDaemonSetDeleted(ds *appsv1.DaemonSet) {
+	delta := im.extractDaemonSetDelta(ds)
+	im.hub.BroadcastEvent(types.EventDaemonSetDeleted, im.clusterID, delta)
+}
+
+func (im *InformerManager) extractCronJobDelta(cj *batchv1.CronJob) types.CronJobStatusDelta {
+	images := make([]string, 0)
+	for _, c := range cj.Spec.JobTemplate.Spec.Template.Spec.Containers {
+		if c.Image != "" {
+			images = append(images, c.Image)
+		}
+	}
+
+	var lastSchedTime *time.Time
+	if cj.Status.LastScheduleTime != nil {
+		t := cj.Status.LastScheduleTime.Time.UTC()
+		lastSchedTime = &t
+	}
+
+	var lastSuccTime *time.Time
+	if cj.Status.LastSuccessfulTime != nil {
+		t := cj.Status.LastSuccessfulTime.Time.UTC()
+		lastSuccTime = &t
+	}
+
+	suspend := false
+	if cj.Spec.Suspend != nil {
+		suspend = *cj.Spec.Suspend
+	}
+
+	return types.CronJobStatusDelta{
+		Name:               cj.Name,
+		Namespace:          cj.Namespace,
+		Schedule:           cj.Spec.Schedule,
+		Suspend:            suspend,
+		ActiveJobsCount:    len(cj.Status.Active),
+		LastScheduleTime:   lastSchedTime,
+		LastSuccessfulTime: lastSuccTime,
+		Images:             images,
+		CreatedAt:          cj.CreationTimestamp.Time.UTC(),
+	}
+}
+
+func (im *InformerManager) emitCronJobDelta(cj *batchv1.CronJob) {
+	delta := im.extractCronJobDelta(cj)
+	key := fmt.Sprintf("CronJob/%s/%s", cj.Namespace, cj.Name)
+	if !im.dedup.ShouldEmit(key, delta) {
+		return
+	}
+	im.hub.BroadcastEvent(types.EventCronJobMutated, im.clusterID, delta)
+}
+
+func (im *InformerManager) emitCronJobDeleted(cj *batchv1.CronJob) {
+	delta := im.extractCronJobDelta(cj)
+	im.hub.BroadcastEvent(types.EventCronJobDeleted, im.clusterID, delta)
+}
+
