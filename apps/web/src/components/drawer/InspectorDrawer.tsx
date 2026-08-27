@@ -4,6 +4,7 @@ import type { K8sPodData } from "../canvas/K8sPod";
 import type { K8sNodeData } from "../canvas/K8sNode";
 import type { K8sServiceData } from "../canvas/K8sService";
 import type { K8sIngressData } from "../canvas/K8sIngress";
+import type { K8sDaemonSetData } from "../../store/types/topologyTypes";
 import { useTopologyStore } from "../../store/useTopologyStore";
 import { OverviewTab } from "./inspector/OverviewTab";
 import { LogsTab } from "./inspector/LogsTab";
@@ -15,6 +16,7 @@ export type SelectedTarget =
   | { type: "node"; data: K8sNodeData }
   | { type: "service"; data: K8sServiceData }
   | { type: "ingress"; data: K8sIngressData }
+  | { type: "daemonset"; data: K8sDaemonSetData }
   | null;
 
 interface InspectorDrawerProps {

@@ -14,6 +14,7 @@ export interface NotificationItem {
   time: string;
   severity: "CRITICAL" | "WARNING" | "INFO";
   read: boolean;
+  namespace?: string;
   cluster?: string;
   targetPod?: string;
   type?: string;
@@ -48,4 +49,16 @@ export interface DeleteModalState {
   targetName: string;
   targetKind: string;
   namespace?: string;
+}
+
+export interface K8sDaemonSetData extends Record<string, unknown> {
+  name: string;
+  namespace: string;
+  desiredNumberScheduled: number;
+  currentNumberScheduled: number;
+  numberReady: number;
+  numberUnavailable?: number;
+  images?: string[];
+  labels?: Record<string, string>;
+  createdAt?: string;
 }
