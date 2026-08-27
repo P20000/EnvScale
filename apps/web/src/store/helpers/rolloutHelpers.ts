@@ -116,12 +116,18 @@ export const calculateRolloutInfo = (
   // Find all ReplicaSets belonging to this Deployment/Workload
   const matchedRS = replicaSets.filter((rs) => {
     if ((rs.namespace || "default") !== (namespace || "default")) return false;
-    if (rs.ownerName === workloadName && (rs.ownerKind === "Deployment" || !rs.ownerKind)) {
+
+    // Strict ownerName check if ownerName is present
+    if (rs.ownerName) {
+      return rs.ownerName === workloadName && (rs.ownerKind === "Deployment" || !rs.ownerKind);
+    }
+
+    // Exact prefix check if ownerName is missing (e.g. todo-backend-64cb5bb774 -> todo-backend)
+    const rsPrefix = rs.name.replace(/-(?:[a-f0-9]{8,10}|\d{8,10})$/i, "");
+    if (rsPrefix === workloadName) {
       return true;
     }
-    if (rs.name.startsWith(`${workloadName}-`)) {
-      return true;
-    }
+
     if (parentDep?.selector && rs.labels) {
       const isMatch = Object.keys(parentDep.selector).every(
         (k) => rs.labels?.[k] === parentDep.selector?.[k]

@@ -22,6 +22,7 @@ export const getPodPrefix = (name: string) => {
   let prefix = name;
   if (name.startsWith("db-audit-cronjob")) return "db-audit-cronjob";
   if (name.startsWith("worker-pool")) return "worker-pool";
+  if (name.startsWith("todo-backend-canary")) return "todo-backend-canary";
   if (name.startsWith("todo-backend")) return "todo-backend";
   if (name.startsWith("todo-frontend")) return "todo-frontend";
   if (name.startsWith("redis")) return "redis-db";
