@@ -265,7 +265,7 @@ export const extractAvailableNamespaces = (nodes: Node[]): string[] => {
     }
   });
   const list = Array.from(nsSet);
-  return list.length > 0 ? list.sort() : ["testing-todo", "default"];
+  return list.length > 0 ? list.sort() : [];
 };
 
 export const aggregateNodesWithWorkloads = (
@@ -390,7 +390,7 @@ export const aggregateNodesWithWorkloads = (
     const finalGroupPods = sortedGroupPods.slice(0, activeCap);
 
     const firstPodData = groupPods[0]?.data as K8sPodData | undefined;
-    const ns = firstPodData?.namespace || "testing-todo";
+    const ns = firstPodData?.namespace || "default";
     const rolloutInfo = calculateRolloutInfo(prefix, ns, deployments, replicaSets);
 
     processedNodes.push({
@@ -443,7 +443,7 @@ export const sanitizeManifestSnapshot = (node: Node): Record<string, unknown> =>
     kind: rawRes.kind || (node.type === "k8sService" ? "Service" : node.type === "k8sPod" ? "Pod" : "Deployment"),
     metadata: {
       name: d.name || node.id,
-      namespace: d.namespace || "testing-todo",
+      namespace: d.namespace || "default",
       labels: (rawRes.metadata as Record<string, unknown>)?.labels || {},
     },
     spec: rawRes.spec || d,

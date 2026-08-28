@@ -76,7 +76,7 @@ function AppContent() {
     const activeNs =
       namespace && namespace !== "default"
         ? namespace
-        : useTopologyStore.getState().selectedNamespaces[0] || "testing-todo";
+        : useTopologyStore.getState().selectedNamespaces[0] || "default";
     setLogDrawerState({
       isOpen: true,
       podName,

@@ -176,7 +176,7 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
       {/* Empty State Overlay when no active cluster nodes are present */}
       {nodes.length === 0 && (
         <div className="absolute inset-0 z-30 flex flex-col items-center justify-center p-6 text-center pointer-events-none">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 mb-4 animate-pulse">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 mb-4">
             <Icon path={mdiServer} size={1.8} />
           </div>
           <h3 className="text-lg font-semibold text-neutral-200 mb-1 font-heading">

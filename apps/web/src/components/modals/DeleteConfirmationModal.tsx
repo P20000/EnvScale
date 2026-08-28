@@ -23,7 +23,7 @@ export const DeleteConfirmationModal = memo(
     targetId,
     targetName,
     targetKind,
-    namespace = "testing-todo",
+    namespace = "default",
   }: DeleteConfirmationModalProps) => {
     const removeTarget = useTopologyStore((s) => s.removeTarget);
 

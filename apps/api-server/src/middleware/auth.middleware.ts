@@ -17,7 +17,25 @@ declare global {
   }
 }
 
+import { auth } from "../lib/auth.js";
+
 export const requireAuth = async (request: Request, response: Response, next: NextFunction) => {
+  try {
+    // 1. Check Better Auth session from request headers / cookies
+    const session = await auth.api.getSession({ headers: request.headers });
+    if (session?.user) {
+      const dbUser = await getUserById(session.user.id);
+      if (dbUser && dbUser.isActive !== false) {
+        request.user = dbUser;
+        next();
+        return;
+      }
+    }
+  } catch {
+    // Session check fallback to Bearer JWT token verification
+  }
+
+  // 2. Check Bearer JWT token fallback
   const header = request.header("authorization");
   const token = header?.startsWith("Bearer ") ? header.slice(7) : undefined;
   const secret = process.env.JWT_ACCESS_SECRET;

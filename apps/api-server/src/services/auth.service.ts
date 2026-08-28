@@ -21,7 +21,7 @@ export const verifyPassword = (password: string, passwordHash: string) =>
 const hashRefreshToken = (token: string) =>
   createHash("sha256").update(token).digest("hex");
 
-const createAccessToken = (user: AuthUser) =>
+export const createAccessToken = (user: AuthUser) =>
   jwt.sign({ sub: user.id, email: user.email, role: user.role }, getAccessTokenSecret(), {
     expiresIn: "15m",
   });

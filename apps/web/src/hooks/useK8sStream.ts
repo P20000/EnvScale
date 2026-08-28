@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import type { Node, Edge } from "@xyflow/react";
 import { useTopologyStore } from "../store/useTopologyStore";
+import { getStreamerToken } from "../config/api";
 
 export type WsConnectionStatus = "CONNECTING" | "CONNECTED" | "DISCONNECTED" | "RECONNECTING" | "ERROR";
 
@@ -68,7 +69,7 @@ export function useK8sStream(
   const onMessageReceivedRef = useRef(onMessageReceived);
 
   const activeCluster = useTopologyStore((state) => state.activeCluster);
-  const targetClusterId = clusterId || activeCluster || "mini-todo";
+  const targetClusterId = clusterId || activeCluster;
 
   const wsUrl = useMemo(() => {
     const rawUrl = urlOverride || import.meta.env.VITE_WS_URL || DEFAULT_WS_URL;
@@ -118,8 +119,11 @@ export function useK8sStream(
     }, delay);
   }, []);
 
-  const connect = useCallback(() => {
-    if (!shouldReconnectRef.current) return;
+  const connect = useCallback(async () => {
+    if (!shouldReconnectRef.current || !targetClusterId) {
+      if (!targetClusterId) setStatus("DISCONNECTED");
+      return;
+    }
 
     if (
       wsRef.current &&
@@ -137,7 +141,20 @@ export function useK8sStream(
     setStatus(reconnectAttemptRef.current > 0 ? "RECONNECTING" : "CONNECTING");
 
     try {
-      const socket = new WebSocket(wsUrl);
+      let authenticatedWsUrl = wsUrl;
+      const token = await getStreamerToken();
+      if (token) {
+        try {
+          const urlObj = new URL(wsUrl);
+          urlObj.searchParams.set("token", token);
+          authenticatedWsUrl = urlObj.toString();
+        } catch {
+          const hasQuery = wsUrl.includes("?");
+          authenticatedWsUrl = `${wsUrl}${hasQuery ? "&" : "?"}token=${encodeURIComponent(token)}`;
+        }
+      }
+
+      const socket = new WebSocket(authenticatedWsUrl);
       wsRef.current = socket;
 
       socket.onopen = async () => {
@@ -356,6 +373,22 @@ export function useK8sStream(
       }
     };
   }, [connect]);
+
+  // --- Post-login immediate reconnect ---
+  // When the user signs in, TopNavbar calls triggerWsReconnect() which increments
+  // wsReconnectTick in the Zustand store. This effect catches that increment and
+  // immediately tears down the current unauthenticated socket and opens a new one
+  // with the token that was just written to localStorage by AuthModal.
+  const wsReconnectTick = useTopologyStore((s) => s.wsReconnectTick);
+  const manualReconnectRef = useRef(manualReconnect);
+  useEffect(() => {
+    manualReconnectRef.current = manualReconnect;
+  }, [manualReconnect]);
+  useEffect(() => {
+    if (wsReconnectTick > 0) {
+      manualReconnectRef.current();
+    }
+  }, [wsReconnectTick]);
 
   return {
     status,

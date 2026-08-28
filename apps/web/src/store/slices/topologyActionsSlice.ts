@@ -154,7 +154,7 @@ export function handleRemoveTarget(
     const resData = (targetNode.data as Record<string, unknown>) || {};
     const resName = String(resData.name || targetNode.id);
     const resKind = targetNode.type?.replace("k8s", "") || "Resource";
-    const ns = String(resData.namespace || "testing-todo");
+    const ns = String(resData.namespace || "default");
 
     if (!options?.skipApi) {
       const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";

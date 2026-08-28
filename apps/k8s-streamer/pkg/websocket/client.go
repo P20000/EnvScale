@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -153,6 +154,12 @@ func (c *Client) WritePump() {
 //   - clientId  (optional) — unique client identifier; auto-generated if absent
 //   - clusterId (required) — Kubernetes cluster room to subscribe to
 func ServeWs(hub *Hub, id string, w http.ResponseWriter, r *http.Request) {
+	if err := AuthenticateHandshake(r); err != nil {
+		log.Printf("[WebSocket Auth] Rejected unauthenticated connection from %s: %v", r.RemoteAddr, err)
+		http.Error(w, fmt.Sprintf("Unauthorized: %v", err), http.StatusUnauthorized)
+		return
+	}
+
 	clusterID := r.URL.Query().Get("clusterId")
 	if clusterID == "" {
 		http.Error(w, "clusterId query parameter is required", http.StatusBadRequest)

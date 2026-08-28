@@ -46,7 +46,7 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
     try {
       const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
       const clusterId = useTopologyStore.getState().activeCluster || "mini-todo";
-      const namespace = (target.data as K8sPodData).namespace || "testing-todo";
+      const namespace = (target.data as K8sPodData).namespace || "default";
 
       const res = await fetch(`${API_BASE_URL}/api/v1/chaos/inject`, {
         method: "POST",
@@ -105,7 +105,7 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
     <aside className="fixed right-0 top-0 bottom-0 z-50 w-[420px] bg-[#141417] border-l border-neutral-800 shadow-2xl flex flex-col animate-in slide-in-from-right duration-250">
       <div className="flex items-center justify-between p-4 border-b border-neutral-800 bg-neutral-900/50">
         <div className="flex items-center gap-2.5 min-w-0">
-          <span className={`flex h-2.5 w-2.5 rounded-full shrink-0 ${target.type === "ingress" ? "bg-violet-400 animate-pulse" : "bg-emerald-500"}`} />
+          <span className={`flex h-2.5 w-2.5 rounded-full shrink-0 ${target.type === "ingress" ? "bg-violet-400" : "bg-emerald-500"}`} />
           <div className="min-w-0">
             <h3 className="text-sm font-bold text-neutral-100 truncate">{target.data.name}</h3>
             <p className="text-[11px] font-mono text-neutral-400 capitalize flex items-center gap-1.5">

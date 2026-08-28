@@ -19,7 +19,7 @@ os.chdir(PROJECT_ROOT)
 
 sys.path.insert(0, SCRIPT_DIR)
 from lib.gui_styles import CSS_STYLES
-from lib.service_manager import check_port
+from lib.service_manager import check_port, check_redis
 from lib.workers import (
     worker_deploy_k8s,
     worker_teardown_k8s,
@@ -199,10 +199,13 @@ class LocalRunApp(Gtk.Window):
         GLib.idle_add(_update)
 
     def update_health_badges(self):
-        for s in self.services.values():
+        for name, s in self.services.items():
             port = s["port"]
             badge = s["badge"]
-            is_up = check_port(port)
+            if name == "redis":
+                is_up = check_redis(port)
+            else:
+                is_up = check_port(port)
             if is_up:
                 badge.set_text(f"ONLINE (:{port})")
                 badge.get_style_context().remove_class("badge-offline")
@@ -256,7 +259,9 @@ class LocalRunApp(Gtk.Window):
         self.is_busy = True
         self.append_log("\n[STACK] Launching full local application environment...")
 
-        subprocess.run("fuser -k -9 3000/tcp 8080/tcp 5173/tcp", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+        subprocess.run("docker compose -f docker-compose.dev.yml down --remove-orphans", shell=True, cwd=PROJECT_ROOT, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+        subprocess.run("docker rm -f envscale-redis envscale-postgres 2>/dev/null", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+        subprocess.run("fuser -k -9 3000/tcp 8080/tcp 5173/tcp 6379/tcp 5432/tcp 2>/dev/null", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
         self.set_status("Provisioning environment secrets...", 0.2)
         env_path = os.path.join(PROJECT_ROOT, "apps/api-server/.env")
@@ -268,19 +273,39 @@ class LocalRunApp(Gtk.Window):
             else:
                 with open(env_path, "w") as f:
                     f.write("DATABASE_URL=postgresql://envscale:envscale_password@localhost:5432/envscale\n")
-                    f.write("JWT_ACCESS_SECRET=dev-access-secret-key-envscale-2026\n")
-                    f.write("JWT_REFRESH_SECRET=dev-refresh-secret-key-envscale-2026\n")
+                    f.write("JWT_ACCESS_SECRET=replace-with-a-long-random-access-secret\n")
+                    f.write("JWT_REFRESH_SECRET=replace-with-a-different-long-random-refresh-secret\n")
+                    f.write("KUBECONFIG_ENCRYPTION_KEY=dGhpcy1pcy1hLTMyLWJ5dGUtYmFzZTY0LWtleS0xMjM=\n")
+                    f.write("CORS_ORIGIN=http://localhost:5173\n")
                     f.write("PORT=3000\nNODE_ENV=development\n")
                 self.append_log("[ENV] Generated default apps/api-server/.env")
 
-        self.set_status("Starting PostgreSQL & Redis containers...", 0.4)
-        self.append_log("[DOCKER] Running 'docker compose -f docker-compose.dev.yml up -d'...")
-        self._exec_cmd("docker compose -f docker-compose.dev.yml up -d", cwd=PROJECT_ROOT)
+        streamer_env_path = os.path.join(PROJECT_ROOT, "apps/k8s-streamer/.env")
+        if not os.path.exists(streamer_env_path):
+            streamer_example_path = os.path.join(PROJECT_ROOT, "apps/k8s-streamer/.env.example")
+            if os.path.exists(streamer_example_path):
+                shutil.copyfile(streamer_example_path, streamer_env_path)
+                self.append_log("[ENV] Created apps/k8s-streamer/.env from .env.example")
+            else:
+                with open(streamer_env_path, "w") as f:
+                    f.write("PORT=8080\nNODE_ENV=development\n")
+                    f.write("JWT_ACCESS_SECRET=342d2b89c945a82109fe28d7cfe42e9b53ff70d0ceff44316afe2250604d5a92\n")
+                    f.write("ALLOW_ANONYMOUS_WS=true\n")
+                    f.write("REDIS_URL=redis://localhost:6379\n")
+                self.append_log("[ENV] Generated default apps/k8s-streamer/.env")
 
-        self.append_log("[DB] Waiting for PostgreSQL database readiness...")
+        self.set_status("Starting PostgreSQL & Redis containers...", 0.4)
+        self.append_log("[DOCKER] Running 'docker compose -f docker-compose.dev.yml up -d --remove-orphans'...")
+        exit_code = self._exec_cmd("docker compose -f docker-compose.dev.yml up -d --remove-orphans", cwd=PROJECT_ROOT)
+        if exit_code != 0:
+            self.append_log("⚠️ [DOCKER] Container launch reported an error code. Verifying service port availability...")
+            if check_port(6379) and not check_redis(6379):
+                self.append_log("❌ [PORT CLASH] Port 6379 is bound by a non-Redis process or host systemd service (e.g., 'sudo systemctl stop redis-server').")
+
+        self.append_log("[DB] Waiting for PostgreSQL & Redis database readiness...")
         attempts = 0
         while attempts < 15:
-            if check_port(5432) and check_port(6379):
+            if check_port(5432) and check_redis(6379):
                 break
             time.sleep(1)
             attempts += 1
@@ -294,7 +319,8 @@ class LocalRunApp(Gtk.Window):
         self._spawn_service("K8s Streamer", ["go", "run", "./cmd/server/main.go"], os.path.join(PROJECT_ROOT, "apps/k8s-streamer"))
         self._spawn_service("Web Frontend", ["npx", "vite"], os.path.join(PROJECT_ROOT, "apps/web"))
 
-        threading.Thread(target=self._auto_register_cluster, daemon=True).start()
+        # Auto-registration disabled: User should manually register clusters via the UI.
+        # threading.Thread(target=self._auto_register_cluster, daemon=True).start()
 
         self.set_status("Application Stack is RUNNING online!", 1.0)
         self.append_log("\n[SUCCESS] LOCAL APPLICATION STACK IS FULLY RUNNING! 🎉")
@@ -344,20 +370,39 @@ class LocalRunApp(Gtk.Window):
                     pass
         self.running_processes.clear()
 
-        self.append_log("[STOP] Force clearing service ports (3000, 8080, 5173)...")
-        subprocess.run("fuser -k -9 3000/tcp 8080/tcp 5173/tcp", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+        self.append_log("[STOP] Force clearing service ports (3000, 8080, 5173, 6379, 5432)...")
+        subprocess.run("fuser -k -9 3000/tcp 8080/tcp 5173/tcp 6379/tcp 5432/tcp 2>/dev/null", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
-        self._exec_cmd("docker compose -f docker-compose.dev.yml down", cwd=PROJECT_ROOT)
+        self._exec_cmd("docker compose -f docker-compose.dev.yml down --remove-orphans", cwd=PROJECT_ROOT)
         self.append_log("[DOCKER] Containers spun down cleanly.")
         self.set_status("All services stopped.", 0.0)
         self.update_health_badges()
         self.append_log("[SUCCESS] APPLICATION STACK SPUN DOWN.\n")
 
+    def _parse_dotenv(self, filepath):
+        env_dict = {}
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            env_dict[k.strip()] = v.strip().strip("'\"")
+            except Exception:
+                pass
+        return env_dict
+
     def _spawn_service(self, name, cmd_args, cwd):
         self.append_log(f"[SPAWN] Starting {name}...")
+        proc_env = os.environ.copy()
+        dotenv_path = os.path.join(cwd, ".env")
+        proc_env.update(self._parse_dotenv(dotenv_path))
+
         proc = subprocess.Popen(
             cmd_args,
             cwd=cwd,
+            env=proc_env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,

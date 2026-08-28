@@ -46,7 +46,7 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
         </div>
 
         {isRolling && (
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-300 text-[10px] font-mono animate-pulse">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-300 text-[10px] font-mono">
             <SyncIcon className="h-3 w-3 animate-spin shrink-0" />
             <span>
               RS-{rollout.oldRevision?.hash || "old"} ({rollout.oldRevision?.readyReplicas ?? 0}/{rollout.oldRevision?.replicas ?? 0}) ➔ RS-{rollout.newRevision?.hash || "new"} ({rollout.newRevision?.readyReplicas ?? 0}/{rollout.newRevision?.replicas ?? 0})

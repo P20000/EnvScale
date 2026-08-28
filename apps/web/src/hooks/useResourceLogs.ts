@@ -15,7 +15,7 @@ interface UseResourceLogsOptions {
 export function useResourceLogs({
   name,
   kind = "Pod",
-  namespace = "testing-todo",
+  namespace = "default",
   clusterId,
   enabled = true,
   maxLogs = 500,
@@ -49,7 +49,7 @@ export function useResourceLogs({
     const targetNs =
       namespace && namespace !== "default"
         ? namespace
-        : useTopologyStore.getState().selectedNamespaces[0] || "testing-todo";
+        : useTopologyStore.getState().selectedNamespaces[0] || "default";
 
     const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || "ws://localhost:8080";
     const url = `${WS_BASE_URL}/api/v1/stream/logs?clusterId=${encodeURIComponent(

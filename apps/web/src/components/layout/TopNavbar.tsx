@@ -12,6 +12,7 @@ import {
 import { useTopologyStore, type NotificationItem } from "../../store/useTopologyStore";
 import { AuthModal } from "./AuthModal";
 import { WorkspaceModal } from "./WorkspaceModal";
+import { authClient } from "../../lib/auth-client";
 import { NamespaceFilterPill } from "./NamespaceFilterPill";
 import { EnvScaleLogo } from "../ui/EnvScaleLogo";
 
@@ -40,11 +41,13 @@ export function TopNavbar({
   const markAllNotificationsRead = useTopologyStore((s) => s.markAllNotificationsRead);
   const storeWsStatus = useTopologyStore((s) => s.wsStatus);
   const addCluster = useTopologyStore((s) => s.addCluster);
+  const triggerWsReconnect = useTopologyStore((s) => s.triggerWsReconnect);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notifMenuOpen, setNotifMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
+  const [loggedInEmail, setLoggedInEmail] = useState<string | null>(null);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const notifMenuRef = useRef<HTMLDivElement>(null);
@@ -66,6 +69,34 @@ export function TopNavbar({
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Restore session on mount (for OAuth redirects and page reloads)
+  useEffect(() => {
+    // 1. Check local JWT from custom email/password login
+    const token = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+    if (token) {
+      try {
+        const parts = token.split(".");
+        if (parts.length === 3) {
+          const payload = JSON.parse(atob(parts[1]));
+          if (payload.email) {
+            // Use setTimeout to avoid synchronous setState inside useEffect (ESLint warning)
+            setTimeout(() => setLoggedInEmail(payload.email), 0);
+            return;
+          }
+        }
+      } catch {
+        // ignore malformed token
+      }
+    }
+
+    // 2. Check Better-Auth session (from Google/GitHub OAuth cookie)
+    authClient.getSession().then((res) => {
+      if (res?.data?.user?.email) {
+        setLoggedInEmail(res.data.user.email);
+      }
+    }).catch(() => {});
   }, []);
 
   const currentWsStatus = propsWsStatus ?? storeWsStatus;
@@ -190,10 +221,10 @@ export function TopNavbar({
             <span
               className={`h-1.5 w-1.5 rounded-full shrink-0 ${
                 isConnected
-                  ? "bg-emerald-400 shadow-[0_0_8px_#10b981]"
+                  ? "bg-emerald-500"
                   : isConnecting
-                  ? "bg-amber-400 shadow-[0_0_8px_#f59e0b] animate-pulse"
-                  : "bg-red-500"
+                  ? "bg-amber-400"
+                  : "bg-rose-500"
               }`}
             />
             <span>
@@ -299,7 +330,11 @@ export function TopNavbar({
           <div className="relative" ref={userMenuRef}>
             <button
               onClick={toggleUser}
-              className="h-8 w-8 rounded-full border border-zinc-800 bg-[#18181b] flex items-center justify-center text-zinc-400 hover:text-zinc-200 hover:border-zinc-700 transition-colors"
+              className={`h-8 w-8 rounded-full border flex items-center justify-center transition-colors ${
+                loggedInEmail
+                  ? "border-blue-500/50 bg-blue-500/10 text-blue-400 hover:border-blue-400"
+                  : "border-zinc-800 bg-[#18181b] text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
+              }`}
             >
               <Icon path={mdiAccount} size={0.7} />
             </button>
@@ -307,22 +342,47 @@ export function TopNavbar({
             {userMenuOpen && (
               <div className="absolute top-full right-0 mt-3 w-52 rounded-xl border border-zinc-700 bg-[#18181c] p-2 z-[70] shadow-2xl space-y-1">
                 <div className="px-2 py-1.5">
-                  <div className="text-xs font-medium text-zinc-100">Dev Team Lead</div>
-                  <div className="text-[10px] text-zinc-400 font-mono">admin@envscale.internal</div>
+                  {loggedInEmail ? (
+                    <>
+                      <div className="text-xs font-medium text-zinc-100">Authenticated</div>
+                      <div className="text-[10px] text-zinc-400 font-mono truncate">{loggedInEmail}</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-xs font-medium text-zinc-100">Not signed in</div>
+                      <div className="text-[10px] text-zinc-500">Sign in to authenticate the stream</div>
+                    </>
+                  )}
                 </div>
 
                 <div className="my-1 h-px bg-zinc-800" />
 
-                <button
-                  onClick={() => {
-                    setUserMenuOpen(false);
-                    setAuthModalOpen(true);
-                  }}
-                  className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors"
-                >
-                  <Icon path={mdiLock} size={0.65} className="text-blue-400" />
-                  <span>Sign In (Auth API)</span>
-                </button>
+                {loggedInEmail ? (
+                  <button
+                    onClick={async () => {
+                      setUserMenuOpen(false);
+                      localStorage.removeItem("envscale_auth_token");
+                      localStorage.removeItem("envscale_access_token");
+                      setLoggedInEmail(null);
+                      await authClient.signOut().catch(() => {});
+                    }}
+                    className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-red-400 hover:bg-zinc-800 hover:text-red-300 transition-colors"
+                  >
+                    <Icon path={mdiLock} size={0.65} className="text-red-400" />
+                    <span>Sign Out</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setUserMenuOpen(false);
+                      setAuthModalOpen(true);
+                    }}
+                    className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors"
+                  >
+                    <Icon path={mdiLock} size={0.65} className="text-blue-400" />
+                    <span>Sign In</span>
+                  </button>
+                )}
 
                 <button
                   onClick={() => {
@@ -344,12 +404,18 @@ export function TopNavbar({
       <AuthModal
         isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
+        onLoginSuccess={(email) => {
+          setLoggedInEmail(email);
+          setAuthModalOpen(false);
+          // Immediately reconnect WebSocket with the JWT now in localStorage
+          triggerWsReconnect();
+        }}
       />
 
       <WorkspaceModal
         isOpen={workspaceModalOpen}
         onClose={() => setWorkspaceModalOpen(false)}
-        onWorkspaceCreated={(name) => {
+        onWorkspaceCreated={(name: string) => {
           addCluster(`${name.toLowerCase().replace(/[^a-z0-9]/g, "-")}-cluster`);
         }}
       />

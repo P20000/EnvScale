@@ -30,7 +30,7 @@ export function K8sWorkloadNode({ data }: { data: K8sWorkloadData }) {
   return (
     <div className={`h-11 w-[260px] border bg-[#141417] flex items-center justify-between px-3 rounded-md select-none group hover:border-zinc-700 transition-colors relative ${
       isRolling
-        ? 'border-amber-500/60 bg-amber-950/20 animate-pulse'
+        ? 'border-amber-500/60 bg-amber-950/20'
         : isStandalone
         ? 'border-purple-500/50'
         : 'border-zinc-800'

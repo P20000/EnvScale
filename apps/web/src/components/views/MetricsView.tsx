@@ -368,7 +368,7 @@ export function MetricsView() {
                 <div className="text-xs text-neutral-500">({currentCpuPct.toFixed(1)}% load)</div>
               </div>
               {currentCpuPct > 85 && (
-                <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse shrink-0" title="High CPU Load > 85%" />
+                <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" title="High CPU Load > 85%" />
               )}
             </div>
           </div>
@@ -399,7 +399,7 @@ export function MetricsView() {
                 <div className="text-xs text-neutral-500">({currentMemoryPct.toFixed(1)}% pressure)</div>
               </div>
               {currentMemoryPct > 85 && (
-                <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse shrink-0" title="High RAM Pressure > 85%" />
+                <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" title="High RAM Pressure > 85%" />
               )}
             </div>
           </div>

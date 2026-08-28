@@ -49,20 +49,20 @@ export function K8sPodNode({ data }: { data: K8sPodData }) {
     rawPhase === "OOMKilled" ||
     rawPhase === "CrashLoopBackOff"
   ) {
-    dotClass = "bg-rose-500 shadow-[0_0_10px_#f43f5e] animate-pulse";
+    dotClass = "bg-rose-500";
     textClass = "text-rose-300 font-bold";
     badgeLabel = terminatedReason === "OOMKilled" || waitingReason === "OOMKilled" ? "OOM" : "CRASH";
   } else if (rawPhase === "Running" || rawPhase === "Ready") {
-    dotClass = "bg-emerald-400 shadow-[0_0_12px_#10b981]";
+    dotClass = "bg-emerald-500";
     textClass = "text-zinc-200";
   } else if (rawPhase === "Succeeded" || rawPhase === "Completed") {
     dotClass = "bg-zinc-500";
     textClass = "text-zinc-400";
   } else if (rawPhase === "Pending" || rawPhase === "ContainerCreating") {
-    dotClass = "bg-amber-400 animate-pulse";
+    dotClass = "bg-amber-400";
     textClass = "text-amber-200/90";
   } else if (rawPhase === "Failed" || rawPhase === "Error") {
-    dotClass = "bg-rose-500 shadow-[0_0_10px_#f43f5e]";
+    dotClass = "bg-rose-500";
     textClass = "text-rose-300";
   }
 

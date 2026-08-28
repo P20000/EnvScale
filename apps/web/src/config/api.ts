@@ -11,7 +11,8 @@ export const STREAMER_BASE_URL =
   import.meta.env.VITE_STREAMER_BASE_URL || "http://localhost:8080";
 
 export interface LoginResponse {
-  token?: string;
+  token?: string;       // kept for compatibility
+  accessToken?: string; // actual key returned by api-server /api/v1/auth/login
   user?: {
     id: string;
     email: string;
@@ -171,3 +172,29 @@ export async function apiConnectCluster(clusterData: {
   }
 }
 
+export const getStreamerToken = async (): Promise<string | null> => {
+  try {
+    const localToken =
+      localStorage.getItem("envscale_auth_token") ||
+      localStorage.getItem("envscale_access_token");
+
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (localToken) {
+      headers["Authorization"] = `Bearer ${localToken}`;
+    }
+
+    const res = await fetch(`${API_BASE_URL}/api/v1/auth/streamer-token`, {
+      method: "GET",
+      headers,
+      credentials: "include",
+    });
+    
+    if (res.ok) {
+      const data = await res.json();
+      return data.token || null;
+    }
+  } catch (error) {
+    console.error("Failed to fetch streamer token", error);
+  }
+  return null;
+};
