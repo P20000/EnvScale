@@ -148,7 +148,7 @@ Feature Branches (feature/*)
 > 1. **NO DIRECT PUSHES TO `main` BY AI ASSISTANTS:**
 >    AI Assistants MUST NEVER execute `git push origin main` under any circumstances.
 > 2. **DEVELOP BRANCH MERGING ALLOWED:**
->    AI Assistants may merge feature branches into `develop` and push to `origin develop` if explicitly requested by the user.
+>    AI Assistants may merge feature branches into `develop` locally if explicitly requested by the user, but MUST NEVER push to `origin develop`.
 > 3. **PULL REQUEST REQUIRED FOR MAIN:**
 >    Releasing `develop` into `main` MUST ONLY occur via GitHub Pull Requests (PRs).
 
