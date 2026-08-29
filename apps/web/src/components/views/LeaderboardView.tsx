@@ -24,7 +24,8 @@ export function LeaderboardView() {
   ];
 
   // Dynamic Clusters Leaderboard derived from store clusters
-  const clusterMetrics = clusters.map((clusterName, index) => {
+  const clusterMetrics = clusters.map((cluster, index) => {
+    const clusterName = cluster.name;
     let healthScore = 95 - (index % 5) * 6;
     let cpuPct = 38 + (index % 4) * 12;
     let memPct = 45 + (index % 5) * 10;

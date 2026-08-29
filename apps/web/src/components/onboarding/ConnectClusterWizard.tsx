@@ -5,9 +5,11 @@ import { Button } from "../ui/button";
 import { apiConnectCluster, apiMe, apiDevQuickLogin } from "../../config/api";
 import { useTopologyStore } from "../../store/useTopologyStore";
 
+import type { Cluster } from "../../store/types/topologyTypes";
+
 type ConnectClusterWizardProps = {
   onClose: () => void;
-  onClusterConnected?: (clusterName: string) => void;
+  onClusterConnected?: (cluster: Cluster) => void;
 };
 
 /**
@@ -115,7 +117,7 @@ export default function ConnectClusterWizard({
       return;
     }
 
-    if (step === 1 && clusters.includes(clusterName.trim())) {
+    if (step === 1 && clusters.some(c => c.name === clusterName.trim())) {
       setClusterError("A cluster with this name already exists.");
       return;
     }
@@ -139,6 +141,9 @@ export default function ConnectClusterWizard({
   const previousStep = () => {
     setStep((currentStep) => currentStep - 1);
   };
+
+  // Bug 3 fix: We need a place to hold the successfully connected cluster details
+  const [connectedCluster, setConnectedCluster] = useState<{ id: string; name: string } | null>(null);
 
   const handleConnect = async () => {
     if (!kubeconfigFile || !clusterName.trim()) {
@@ -180,6 +185,12 @@ export default function ConnectClusterWizard({
         setConnectionError(res.error);
       } else {
         // Only set isConnected on actual success
+        if (res.cluster?.id) {
+           setConnectedCluster({ id: res.cluster.id, name: res.cluster.name });
+        } else {
+           // Fallback in case of API mismatch
+           setConnectedCluster({ id: `temp-${Date.now()}`, name: clusterName.trim() });
+        }
         setIsConnected(true);
       }
     } catch (err) {
@@ -190,7 +201,7 @@ export default function ConnectClusterWizard({
   };
 
   // ── Success Screen ──────────────────────────────────────────────────
-  if (isConnected) {
+  if (isConnected && connectedCluster) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
         <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-zinc-800 bg-[#141417] shadow-none p-4 text-white sm:p-6">
@@ -203,13 +214,13 @@ export default function ConnectClusterWizard({
           </h2>
 
           <p className="mt-2 text-sm text-neutral-400 text-center">
-            {clusterName} has been connected successfully.
+            {connectedCluster.name} has been connected successfully.
           </p>
 
           <Button
             className="mt-6 w-full"
             onClick={() => {
-              onClusterConnected?.(clusterName);
+              onClusterConnected?.(connectedCluster);
               onClose();
             }}
           >
@@ -219,6 +230,7 @@ export default function ConnectClusterWizard({
       </div>
     );
   }
+
 
   // ── Wizard Steps (1–3) ──────────────────────────────────────────────
   const formattedError = connectionError

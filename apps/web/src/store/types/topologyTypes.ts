@@ -7,6 +7,11 @@ export interface ApiToken {
   createdAt: string;
 }
 
+export interface Cluster {
+  id: string;
+  name: string;
+}
+
 export interface NotificationItem {
   id: string;
   title: string;

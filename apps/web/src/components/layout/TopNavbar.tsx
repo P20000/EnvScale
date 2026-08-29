@@ -9,6 +9,7 @@ import {
   mdiTrashCanOutline,
 } from "@mdi/js";
 import { useTopologyStore, type NotificationItem } from "../../store/useTopologyStore";
+import type { Cluster } from "../../store/types/topologyTypes";
 import { apiDisconnectCluster } from "../../config/api";
 import { AuthModal } from "./AuthModal";
 import { WorkspaceModal } from "./WorkspaceModal";
@@ -19,7 +20,7 @@ import type { WsConnectionStatus } from "../../hooks/useK8sStream";
 
 interface TopNavbarProps {
   activeCluster: string;
-  clusters: string[];
+  clusters: Cluster[];
   onSelectCluster: (cluster: string) => void;
   onOpenConnectModal: () => void;
   activeIncidentsCount?: number;
@@ -43,13 +44,13 @@ export function TopNavbar({
   const deleteCluster = useTopologyStore((s) => s.deleteCluster);
   const triggerWsReconnect = useTopologyStore((s) => s.triggerWsReconnect);
 
-  const handleDeleteCluster = async (e: React.MouseEvent, clusterName: string) => {
+  const handleDeleteCluster = async (e: React.MouseEvent, cluster: Cluster) => {
     e.stopPropagation();
-    const success = await apiDisconnectCluster(clusterName);
-    if (success) {
-      deleteCluster(clusterName);
-    } else {
-      console.error(`Failed to delete cluster ${clusterName} from backend.`);
+    // Optimistically remove from frontend to prevent ghost clusters
+    deleteCluster(cluster.id);
+    const success = await apiDisconnectCluster(cluster.id);
+    if (!success) {
+      console.error(`Failed to delete cluster ${cluster.name || cluster.id} from backend, but it was removed locally.`);
     }
   };
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -148,27 +149,27 @@ export function TopNavbar({
               <div className="space-y-1">
                 {clusters.map((cluster) => (
                   <div
-                    key={cluster}
+                    key={cluster.id}
                     onClick={() => {
-                      onSelectCluster(cluster);
+                      onSelectCluster(cluster.name);
                       setDropdownOpen(false);
                     }}
                     className={`group w-full flex items-center justify-between rounded-md px-2.5 py-1.5 text-xs font-mono cursor-pointer transition-colors ${
-                      activeCluster === cluster
+                      activeCluster === cluster.name
                         ? "bg-blue-500/10 text-blue-400 font-semibold"
                         : "text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
                     }`}
                   >
                     <span className="flex items-center gap-2 truncate">
-                      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${activeCluster === cluster ? "bg-emerald-500" : "bg-zinc-600"}`} />
-                      <span className="truncate">{cluster}</span>
+                      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${activeCluster === cluster.name ? "bg-emerald-500" : "bg-zinc-600"}`} />
+                      <span className="truncate">{cluster.name}</span>
                     </span>
                     <div className="flex items-center gap-1 shrink-0">
-                      {activeCluster === cluster && <Icon path={mdiCheck} size={0.65} className="text-blue-400" />}
+                      {activeCluster === cluster.name && <Icon path={mdiCheck} size={0.65} className="text-blue-400" />}
                       <button
                         type="button"
                         onClick={(e) => handleDeleteCluster(e, cluster)}
-                        title={`Delete cluster ${cluster}`}
+                        title={`Delete cluster ${cluster.name}`}
                         className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-red-400 p-1 rounded transition-all"
                       >
                         <Icon path={mdiTrashCanOutline} size={0.6} />
@@ -321,7 +322,8 @@ export function TopNavbar({
         isOpen={workspaceModalOpen}
         onClose={() => setWorkspaceModalOpen(false)}
         onWorkspaceCreated={(name: string) => {
-          addCluster(`${name.toLowerCase().replace(/[^a-z0-9]/g, "-")}-cluster`);
+          const mockName = `${name.toLowerCase().replace(/[^a-z0-9]/g, "-")}-cluster`;
+          addCluster({ id: `mock-${Date.now()}`, name: mockName });
         }}
       />
     </>

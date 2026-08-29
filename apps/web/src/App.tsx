@@ -42,8 +42,8 @@ function AppContent() {
         const dbClusters = await apiGetWorkspaceClusters(meData.workspace.id);
         if (Array.isArray(dbClusters) && dbClusters.length > 0) {
           const store = useTopologyStore.getState();
-          dbClusters.forEach((c: { name: string }) => {
-            if (c.name) store.addCluster(c.name);
+          dbClusters.forEach((c: { id: string; name: string }) => {
+            if (c.id && c.name) store.addCluster({ id: c.id, name: c.name });
           });
           if (!store.activeCluster && dbClusters[0]?.name) {
             store.setActiveCluster(dbClusters[0].name);
@@ -85,8 +85,8 @@ function AppContent() {
     isOpen: false,
     podName: null,
   });
-  const handleClusterConnected = (newClusterName: string) => {
-    addCluster(newClusterName);
+  const handleClusterConnected = (newCluster: { id: string, name: string }) => {
+    addCluster(newCluster);
   };
 
   const handleOpenLogTerminal = (

@@ -128,12 +128,5 @@ export const listClusters = async (workspaceId: string) => {
   }));
 };
 
-export const deleteCluster = (workspaceId: string, clusterIdentifier: string) => {
-  const isUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(clusterIdentifier);
-  return db.delete(clusters).where(
-    and(
-      eq(clusters.workspaceId, workspaceId),
-      isUUID ? eq(clusters.id, clusterIdentifier) : eq(clusters.name, clusterIdentifier)
-    )
-  );
-};
+export const deleteCluster = (workspaceId: string, clusterId: string) =>
+  db.delete(clusters).where(and(eq(clusters.workspaceId, workspaceId), eq(clusters.id, clusterId)));

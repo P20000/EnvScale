@@ -15,10 +15,12 @@ export interface IncidentItem {
   status: "TRIGGERED" | "RESOLVED";
 }
 
+import type { Cluster } from "../../store/types/topologyTypes";
+
 interface IncidentTableProps {
   incidents: IncidentItem[];
   filteredIncidents: IncidentItem[];
-  clusters: string[];
+  clusters: Cluster[];
   severityFilter: string;
   setSeverityFilter: (val: string) => void;
   statusFilter: string;
@@ -92,8 +94,8 @@ export function IncidentTable({
             >
               <option value="ALL">All Clusters ({clusters.length})</option>
               {clusters.map((c) => (
-                <option key={c} value={c}>
-                  {c}
+                <option key={c.id} value={c.name}>
+                  {c.name}
                 </option>
               ))}
             </select>

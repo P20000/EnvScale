@@ -39,6 +39,7 @@ import {
   type K8sIncidentEvent,
   type HistoryAction,
   type DeleteModalState,
+  type Cluster,
 } from "./types/topologyTypes";
 import {
   extractServices,
@@ -63,12 +64,12 @@ export {
 
 export const defaultInitialNodes: Node[] = [];
 export const defaultInitialEdges: Edge[] = [];
-const defaultClusters: string[] = [];
+const defaultClusters: Cluster[] = [];
 const defaultInitialTokens: ApiToken[] = [];
 const defaultInitialNotifications: NotificationItem[] = [];
 
 export interface TopologyState {
-  clusters: string[];
+  clusters: Cluster[];
   activeCluster: string;
   clusterCpuCores: number;
   clusterMemoryGB: number;
@@ -125,8 +126,8 @@ export interface TopologyState {
   setIncidents: (incidents: K8sIncidentEvent[] | ((prev: K8sIncidentEvent[]) => K8sIncidentEvent[])) => void;
 
   setActiveCluster: (cluster: string) => void;
-  addCluster: (clusterName: string) => void;
-  deleteCluster: (clusterName: string) => void;
+  addCluster: (cluster: Cluster) => void;
+  deleteCluster: (clusterId: string) => void;
   deleteNode: (nodeId: string) => void;
 
   removeTarget: (targetId: string, options?: { skipHistory?: boolean; skipApi?: boolean }) => void;
@@ -266,25 +267,24 @@ export const useTopologyStore = create<TopologyState>()(
 
       setActiveCluster: (cluster) => set({ activeCluster: cluster }),
 
-      addCluster: (clusterName) => {
-        const trimmed = clusterName.trim();
-        if (!trimmed) return;
+      addCluster: (cluster) => {
+        if (!cluster || !cluster.id || !cluster.name) return;
         const currentClusters = get().clusters;
-        const updatedClusters = currentClusters.includes(trimmed)
+        const updatedClusters = currentClusters.some((c) => c.id === cluster.id)
           ? currentClusters
-          : [...currentClusters, trimmed];
+          : [...currentClusters, cluster];
         const newNotif: NotificationItem = {
           id: `notif-${Date.now()}`,
           title: "New Cluster Connected",
-          message: `Cluster ${trimmed} successfully registered to workspace`,
+          message: `Cluster ${cluster.name} successfully registered to workspace`,
           time: "Just now",
           severity: "INFO",
           read: false,
-          cluster: trimmed,
+          cluster: cluster.name,
         };
         set({
           clusters: updatedClusters,
-          activeCluster: trimmed,
+          activeCluster: cluster.name,
           notifications: [newNotif, ...get().notifications],
         });
       },
@@ -325,11 +325,15 @@ export const useTopologyStore = create<TopologyState>()(
 
       createNode: (type, customName) => handleCreateNode(get, set, type, customName),
 
-      deleteCluster: (clusterName) => {
-        const updatedClusters = get().clusters.filter((c) => c !== clusterName);
+      deleteCluster: (clusterId) => {
+        const clusterToDelete = get().clusters.find((c) => c.id === clusterId);
+        if (!clusterToDelete) return;
+        const clusterName = clusterToDelete.name;
+
+        const updatedClusters = get().clusters.filter((c) => c.id !== clusterId);
         const nextActive =
           get().activeCluster === clusterName
-            ? updatedClusters[0] || ""
+            ? updatedClusters[0]?.name || ""
             : get().activeCluster;
 
         const remainingNodes = get().nodes.filter((node) => {
@@ -525,11 +529,25 @@ export const useTopologyStore = create<TopologyState>()(
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {
-          const cleanedClusters = (state.clusters || []).filter((c) => c !== "mini-todo");
-          const cleanedActive = state.activeCluster === "mini-todo" ? cleanedClusters[0] || "" : state.activeCluster;
-          if (state.clusters.includes("mini-todo") || state.activeCluster === "mini-todo") {
+          let needsUpdate = false;
+          const parsedClusters: Cluster[] = [];
+          for (const c of (state.clusters || [])) {
+            if (typeof c === "string") {
+              if (c && c !== "mini-todo") parsedClusters.push({ id: `migrated-${Date.now()}`, name: c });
+              needsUpdate = true;
+            } else if (c && c.name && c.name !== "mini-todo") {
+              parsedClusters.push(c);
+            } else {
+              needsUpdate = true;
+            }
+          }
+          
+          const cleanedActive = state.activeCluster === "mini-todo" ? parsedClusters[0]?.name || "" : state.activeCluster;
+          if (state.activeCluster === "mini-todo") needsUpdate = true;
+
+          if (needsUpdate) {
             useTopologyStore.setState({
-              clusters: cleanedClusters,
+              clusters: parsedClusters,
               activeCluster: cleanedActive,
             });
           }
