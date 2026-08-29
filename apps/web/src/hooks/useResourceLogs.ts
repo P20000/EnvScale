@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import type { PodLogLine, LogLevel, LogStreamStatus } from "../types/logs";
 import { parseLogPayload } from "../utils/logParser";
 import { useTopologyStore } from "../store/useTopologyStore";
+import { useUIStore } from "../store/useUIStore";
 
 interface UseResourceLogsOptions {
   name: string | null;
@@ -49,7 +50,7 @@ export function useResourceLogs({
     const targetNs =
       namespace && namespace !== "default"
         ? namespace
-        : useTopologyStore.getState().selectedNamespaces[0] || "default";
+        : useUIStore.getState().selectedNamespaces[0] || "default";
 
     const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || "ws://localhost:8080";
     const url = `${WS_BASE_URL}/api/v1/stream/logs?clusterId=${encodeURIComponent(

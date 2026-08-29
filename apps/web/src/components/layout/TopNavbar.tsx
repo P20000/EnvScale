@@ -39,6 +39,7 @@ export function TopNavbar({
   const notifications = useTopologyStore((s) => s.notifications);
   const markNotificationRead = useTopologyStore((s) => s.markNotificationRead);
   const markAllNotificationsRead = useTopologyStore((s) => s.markAllNotificationsRead);
+  const clearNotifications = useTopologyStore((s) => s.clearNotifications);
   const storeWsStatus = useTopologyStore((s) => s.wsStatus);
   const addCluster = useTopologyStore((s) => s.addCluster);
   const deleteCluster = useTopologyStore((s) => s.deleteCluster);
@@ -240,28 +241,40 @@ export function TopNavbar({
 
             {/* Notification Panel */}
             {notifMenuOpen && (
-              <div className="absolute top-full right-0 mt-3 w-80 rounded-xl border border-zinc-700 bg-[#18181c] p-3 z-[70] shadow-2xl space-y-2">
+              <div className="absolute top-full right-0 mt-3 w-96 rounded-xl border border-zinc-700 bg-[#18181c] p-3 z-[70] shadow-2xl space-y-2">
                 <div className="flex items-center justify-between px-1 pb-2 border-b border-zinc-800">
                   <div className="flex items-center gap-2">
-                    <Icon path={mdiBell} size={0.7} className="text-blue-400" />
-                    <span className="text-xs font-semibold text-zinc-100 font-heading">Notifications</span>
+                    <Icon path={mdiBell} size={0.7} className="text-blue-400 shrink-0" />
+                    <span className="text-xs font-semibold text-zinc-100 font-heading whitespace-nowrap">Notifications</span>
                     {unreadCount > 0 && (
-                      <span className="rounded-full bg-blue-500/10 px-1.5 py-0.2 text-[10px] font-semibold text-blue-400 border border-blue-500/20">
+                      <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-400 border border-blue-500/20 whitespace-nowrap">
                         {unreadCount} unread
                       </span>
                     )}
                   </div>
 
-                  {unreadCount > 0 && (
-                    <button
-                      onClick={markAllNotificationsRead}
-                      className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-blue-400 transition-colors"
-                      title="Mark all as read"
-                    >
-                      <Icon path={mdiCheckAll} size={0.65} />
-                      <span>Mark all read</span>
-                    </button>
-                  )}
+                  <div className="flex items-center gap-3 shrink-0">
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={markAllNotificationsRead}
+                        className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-blue-400 transition-colors whitespace-nowrap"
+                        title="Mark all as read"
+                      >
+                        <Icon path={mdiCheckAll} size={0.65} />
+                        <span>Mark all read</span>
+                      </button>
+                    )}
+                    {notifications.length > 0 && (
+                      <button
+                        onClick={clearNotifications}
+                        className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-red-400 transition-colors whitespace-nowrap"
+                        title="Clear all notifications"
+                      >
+                        <Icon path={mdiTrashCanOutline} size={0.6} />
+                        <span>Clear all</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="max-h-64 overflow-y-auto space-y-1.5 pr-0.5">

@@ -1,6 +1,6 @@
 import { Handle, Position } from '@xyflow/react';
 import { MdPublic as Icon } from 'react-icons/md';
-import { useTopologyStore } from '../../store/useTopologyStore';
+import { useUIStore } from '../../store/useUIStore';
 
 export interface IngressRuleData {
   host: string;
@@ -27,7 +27,7 @@ export interface K8sIngressData extends Record<string, unknown> {
 
 export function K8sIngressNode({ data }: { data: K8sIngressData }) {
   const rulesCount = data.rules?.length || 0;
-  const layoutDirection = useTopologyStore((s) => s.layoutDirection);
+  const layoutDirection = useUIStore((s) => s.layoutDirection);
   const isTB = layoutDirection === "TB";
 
   return (

@@ -34,5 +34,5 @@ export function handleAddNotification(
     read: false,
     cluster: get().activeCluster,
   };
-  set((state) => ({ notifications: [newNotif, ...state.notifications] }));
+  set((state) => ({ notifications: [newNotif, ...state.notifications].slice(0, 50) }));
 }

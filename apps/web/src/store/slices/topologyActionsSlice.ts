@@ -77,7 +77,7 @@ export function handleUndoAction(
       services: extractServices(updatedRaw),
       pods: extractPods(updatedRaw),
       edges: restoredEdges,
-      notifications: [newAlert, ...get().notifications],
+      notifications: [newAlert, ...get().notifications].slice(0, 50),
     });
 
     get().applyDagreLayout();
@@ -124,7 +124,7 @@ export function handleRedoAction(
     set({
       redoStack: remainingRedo,
       undoStack: [action, ...get().undoStack].slice(0, 20),
-      notifications: [newAlert, ...get().notifications],
+      notifications: [newAlert, ...get().notifications].slice(0, 50),
     });
   }
 }

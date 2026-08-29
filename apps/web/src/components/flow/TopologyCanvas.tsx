@@ -21,6 +21,7 @@ import type { K8sNodeData } from "../canvas/K8sNode";
 import type { K8sServiceData } from "../canvas/K8sService";
 import type { K8sIngressData } from "../canvas/K8sIngress";
 import { useTopologyStore } from "../../store/useTopologyStore";
+import { useUIStore } from "../../store/useUIStore";
 import type { SelectedTarget } from "../drawer/InspectorDrawer";
 import { useK8sStream, type WsTopologyMessage } from "../../hooks/useK8sStream";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
@@ -62,11 +63,11 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
   const applyDelta = useTopologyStore((s) => s.applyDelta);
   const setSelectedNode = useTopologyStore((s) => s.setSelectedNode);
   const setWsStatus = useTopologyStore((s) => s.setWsStatus);
-  const deleteModal = useTopologyStore((s) => s.deleteModal);
-  const closeDeleteModal = useTopologyStore((s) => s.closeDeleteModal);
+  const deleteModal = useUIStore((s) => s.deleteModal);
+  const closeDeleteModal = useUIStore((s) => s.closeDeleteModal);
 
-  const layoutDirection = useTopologyStore((s) => s.layoutDirection);
-  const setLayoutDirection = useTopologyStore((s) => s.setLayoutDirection);
+  const layoutDirection = useUIStore((s) => s.layoutDirection);
+  const setLayoutDirection = useUIStore((s) => s.setLayoutDirection);
 
   const { fitView } = useReactFlow();
 

@@ -12,6 +12,7 @@ import {
   extractPods,
   syncSelectedNode,
 } from "../helpers/topologyHelpers";
+import { useUIStore } from "../useUIStore";
 
 export function handleWsMessage(
   state: TopologyState,
@@ -153,7 +154,7 @@ export function handleWsMessage(
     const snapshotDS = Array.isArray(payloadData.daemonSets) ? (payloadData.daemonSets as K8sDaemonSetData[]) : [];
     const snapshotCronJobs = Array.isArray(payloadData.cronJobs) ? (payloadData.cronJobs as K8sCronJobData[]) : [];
 
-    let updatedNamespaces = state.selectedNamespaces;
+    let updatedNamespaces = useUIStore.getState().selectedNamespaces;
     if (updatedNamespaces.length === 0) {
       const nsSet = new Set<string>();
       newRawNodes.forEach((n) => {
@@ -165,6 +166,7 @@ export function handleWsMessage(
       const sysNs = new Set(["kube-system", "ingress-nginx", "local-path-storage", "kube-public", "kube-node-lease"]);
       const nonSys = Array.from(nsSet).filter((ns) => !sysNs.has(ns));
       updatedNamespaces = nonSys.length > 0 ? nonSys : Array.from(nsSet);
+      useUIStore.getState().setSelectedNamespaces(updatedNamespaces);
     }
 
     set({
@@ -177,7 +179,6 @@ export function handleWsMessage(
       replicaSets: snapshotRS,
       deployments: snapshotDeployments,
       daemonSets: snapshotDS,
-      selectedNamespaces: updatedNamespaces,
       cronJobs: snapshotCronJobs,
     });
     state.applyDagreLayout();

@@ -8,6 +8,7 @@ import {
   mdiRefresh,
 } from "@mdi/js";
 import { useTopologyStore } from "../../store/useTopologyStore";
+import { useUIStore } from "../../store/useUIStore";
 import { SYSTEM_NAMESPACES } from "../../store/helpers/topologyHelpers";
 
 export interface TelemetryPoint {
@@ -236,8 +237,8 @@ function TelemetryAreaChart({
 
 export function MetricsView() {
   const pods = useTopologyStore((s) => s.pods);
-  const selectedNamespaces = useTopologyStore((s) => s.selectedNamespaces);
-  const showSystemNamespaces = useTopologyStore((s) => s.showSystemNamespaces);
+  const selectedNamespaces = useUIStore((s) => s.selectedNamespaces);
+  const showSystemNamespaces = useUIStore((s) => s.showSystemNamespaces);
   const activeCluster = useTopologyStore((s) => s.activeCluster);
   const clusterCpuCores = useTopologyStore((s) => s.clusterCpuCores) || 12;
   const clusterMemoryGB = useTopologyStore((s) => s.clusterMemoryGB) || 14.8;

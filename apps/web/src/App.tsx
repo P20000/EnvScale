@@ -11,6 +11,7 @@ import { MetricsView } from "./components/views/MetricsView";
 import { LeaderboardView } from "./components/views/LeaderboardView";
 import { SettingsView } from "./components/views/SettingsView";
 import { useTopologyStore } from "./store/useTopologyStore";
+import { useUIStore } from "./store/useUIStore";
 import ConnectClusterWizard from "./components/onboarding/ConnectClusterWizard";
 import { apiMe, apiGetWorkspaceClusters } from "./config/api";
 
@@ -31,8 +32,8 @@ function AppContent() {
   const clearSelectedNode = useTopologyStore((s) => s.clearSelectedNode);
   const pods = useTopologyStore((s) => s.pods);
   const notifications = useTopologyStore((s) => s.notifications);
-  const selectedNamespaces = useTopologyStore((s) => s.selectedNamespaces);
-  const showSystemNamespaces = useTopologyStore((s) => s.showSystemNamespaces);
+  const selectedNamespaces = useUIStore((s) => s.selectedNamespaces);
+  const showSystemNamespaces = useUIStore((s) => s.showSystemNamespaces);
   const wsReconnectTick = useTopologyStore((s) => s.wsReconnectTick);
 
   useEffect(() => {
@@ -96,7 +97,7 @@ function AppContent() {
     const activeNs =
       namespace && namespace !== "default"
         ? namespace
-        : useTopologyStore.getState().selectedNamespaces[0] || "default";
+        : useUIStore.getState().selectedNamespaces[0] || "default";
     setLogDrawerState({
       isOpen: true,
       podName,

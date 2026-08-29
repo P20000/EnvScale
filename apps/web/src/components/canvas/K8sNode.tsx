@@ -1,6 +1,6 @@
 import { Handle, Position } from '@xyflow/react';
 import { MdDns as Icon } from 'react-icons/md';
-import { useTopologyStore } from '../../store/useTopologyStore';
+import { useUIStore } from '../../store/useUIStore';
 
 export interface K8sNodeData extends Record<string, unknown> {
   name: string;
@@ -16,7 +16,7 @@ export interface K8sNodeData extends Record<string, unknown> {
 export function K8sWorkerNode({ data }: { data: K8sNodeData }) {
   const isHealthy = data.status === "Ready" || data.status === "Running";
   const isError = data.status === "NotReady" || data.status === "Error";
-  const layoutDirection = useTopologyStore((s) => s.layoutDirection);
+  const layoutDirection = useUIStore((s) => s.layoutDirection);
   const isTB = layoutDirection === "TB";
 
   return (

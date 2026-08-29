@@ -13,7 +13,7 @@ import {
 } from "react-icons/md";
 import { usePodLogs } from "../../hooks/usePodLogs";
 import type { LogLevel } from "../../types/logs";
-import { useTopologyStore } from "../../store/useTopologyStore";
+import { useUIStore } from "../../store/useUIStore";
 import { LogRow } from "./LogRow";
 import { parseLogPayload } from "../../utils/logParser";
 import { aggregateConsecutiveLogs } from "../../utils/logAggregator";
@@ -43,7 +43,7 @@ export function PodLogDrawer({
   const logContainerRef = useRef<HTMLDivElement>(null);
   const prevLogsLengthRef = useRef(0);
 
-  const selectedNs = useTopologyStore((s) => s.selectedNamespaces[0]);
+  const selectedNs = useUIStore((s) => s.selectedNamespaces[0]);
   const activeNs = namespace && namespace !== "default" ? namespace : selectedNs || "default";
 
   const {

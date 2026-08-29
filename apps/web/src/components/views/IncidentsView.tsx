@@ -8,6 +8,7 @@ import {
   mdiShieldCheck,
 } from "@mdi/js";
 import { useTopologyStore } from "../../store/useTopologyStore";
+import { useUIStore } from "../../store/useUIStore";
 import { SYSTEM_NAMESPACES } from "../../store/helpers/topologyHelpers";
 import { useAlertStore } from "../../store/useAlertStore";
 import { AlertRuleList } from "../alerts/AlertRuleList";
@@ -149,8 +150,8 @@ export function IncidentsView() {
     return list.sort((a, b) => (b.rawTimestamp || "").localeCompare(a.rawTimestamp || ""));
   }, [k8sEvents, notifications, pods, activeCluster]);
 
-  const selectedNamespaces = useTopologyStore((s) => s.selectedNamespaces);
-  const showSystemNamespaces = useTopologyStore((s) => s.showSystemNamespaces);
+  const selectedNamespaces = useUIStore((s) => s.selectedNamespaces);
+  const showSystemNamespaces = useUIStore((s) => s.showSystemNamespaces);
 
   const filteredIncidents = useMemo(() => {
     return incidents.filter((item) => {

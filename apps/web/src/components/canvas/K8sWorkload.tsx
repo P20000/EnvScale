@@ -1,7 +1,7 @@
 import { Handle, Position } from '@xyflow/react';
 import { MdLayers as Icon, MdSync as SyncIcon } from 'react-icons/md';
 import type { K8sPodData } from "./K8sPod";
-import { useTopologyStore } from '../../store/useTopologyStore';
+import { useUIStore } from '../../store/useUIStore';
 import type { RolloutInfo } from '../../store/helpers/rolloutHelpers';
 
 export interface K8sWorkloadData extends Record<string, unknown> {
@@ -21,7 +21,7 @@ export function K8sWorkloadNode({ data }: { data: K8sWorkloadData }) {
   const ready = data.readyReplicas || 0;
   const total = data.replicas || 0;
   const isHealthy = ready === total && total > 0;
-  const layoutDirection = useTopologyStore((s) => s.layoutDirection);
+  const layoutDirection = useUIStore((s) => s.layoutDirection);
   const isTB = layoutDirection === "TB";
   const rollout = data.rolloutInfo;
   const isRolling = rollout?.isRollingUpdate;

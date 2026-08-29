@@ -2,14 +2,15 @@ import { useState, useRef, useEffect } from "react";
 import { Icon } from "../ui/Icon";
 import { mdiChevronDown, mdiFilterVariant, mdiCheck } from "@mdi/js";
 import { useTopologyStore } from "../../store/useTopologyStore";
+import { useUIStore } from "../../store/useUIStore";
 import { extractAvailableNamespaces, SYSTEM_NAMESPACES } from "../../store/helpers/topologyHelpers";
 
 export function NamespaceFilterPill() {
   const rawNodes = useTopologyStore((s) => s.rawNodes);
   const nodes = useTopologyStore((s) => s.nodes);
-  const selectedNamespaces = useTopologyStore((s) => s.selectedNamespaces);
-  const setSelectedNamespaces = useTopologyStore((s) => s.setSelectedNamespaces);
-  const showSystemNamespaces = useTopologyStore((s) => s.showSystemNamespaces);
+  const selectedNamespaces = useUIStore((s) => s.selectedNamespaces);
+  const setSelectedNamespaces = useUIStore((s) => s.setSelectedNamespaces);
+  const showSystemNamespaces = useUIStore((s) => s.showSystemNamespaces);
 
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
