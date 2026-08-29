@@ -196,7 +196,7 @@ export function TopNavbar({
                 isConnected
                   ? "bg-emerald-500"
                   : isConnecting
-                  ? "bg-amber-400"
+                  ? "bg-amber-400 animate-pulse"
                   : "bg-rose-500"
               }`}
             />

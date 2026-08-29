@@ -4,7 +4,7 @@ import type { K8sNodeData } from "../../components/canvas/K8sNode";
 import type { K8sServiceData } from "../../components/canvas/K8sService";
 import type { K8sIngressData, IngressRuleData } from "../../components/canvas/K8sIngress";
 import type { SelectedTarget } from "../../components/drawer/InspectorDrawer";
-import type { K8sDaemonSetData } from "../types/topologyTypes";
+import type { K8sDaemonSetData, K8sCronJobData } from "../types/topologyTypes";
 import { calculateRolloutInfo, type K8sDeploymentData, type K8sReplicaSetData } from "./rolloutHelpers";
 
 export const SYSTEM_NAMESPACES = new Set(["kube-system", "kube-public", "kube-node-lease", "ingress-nginx"]);
@@ -272,16 +272,24 @@ export const aggregateNodesWithWorkloads = (
   nodes: Node[],
   showCompletedPods: boolean = false,
   showSystemNamespaces: boolean = false,
-  selectedNamespaces: string[] = [],
+  selectedNamespaces: string[] | string = [],
   deployments: K8sDeploymentData[] = [],
   replicaSets: K8sReplicaSetData[] = [],
-  daemonSets: K8sDaemonSetData[] = []
+  daemonSets: K8sDaemonSetData[] = [],
+  cronJobs: K8sCronJobData[] = []
 ): Node[] => {
   const appNodes = nodes.filter((n) => {
     const d = n.data as Record<string, unknown> | undefined;
     const ns = String(d?.namespace || "default");
 
-    if (Array.isArray(selectedNamespaces) && selectedNamespaces.length > 0) {
+    if (typeof selectedNamespaces === "string") {
+      if (selectedNamespaces !== "all" && ns !== selectedNamespaces) {
+        return false;
+      }
+    } else if (Array.isArray(selectedNamespaces)) {
+      if (selectedNamespaces.length === 0) {
+        return false;
+      }
       if (!selectedNamespaces.includes(ns)) {
         return false;
       }
@@ -304,6 +312,7 @@ export const aggregateNodesWithWorkloads = (
   });
 
   const daemonSetNames = new Set((daemonSets || []).map((ds) => ds.name));
+  const cronJobNames = new Set((cronJobs || []).map((cj) => cj.name));
 
   const podNodes = appNodes.filter((n) => {
     if (n.type !== "k8sPod") return false;
@@ -312,6 +321,15 @@ export const aggregateNodesWithWorkloads = (
     if (
       podData?.ownerKind === "DaemonSet" ||
       (podData?.ownerName && daemonSetNames.has(podData.ownerName))
+    ) {
+      return false;
+    }
+
+    if (
+      podData?.ownerKind === "Job" ||
+      podData?.ownerKind === "CronJob" ||
+      podData?.labels?.["job-name"] ||
+      (podData?.ownerName && cronJobNames.has(podData.ownerName))
     ) {
       return false;
     }
@@ -415,7 +433,11 @@ export const aggregateNodesWithWorkloads = (
   const dsNodes: Node[] = (daemonSets || [])
     .filter((ds) => {
       const ns = ds.namespace || "default";
-      if (Array.isArray(selectedNamespaces) && selectedNamespaces.length > 0) {
+      if (typeof selectedNamespaces === "string") {
+        return selectedNamespaces === "all" || ns === selectedNamespaces;
+      }
+      if (Array.isArray(selectedNamespaces)) {
+        if (selectedNamespaces.length === 0) return false;
         return selectedNamespaces.includes(ns);
       }
       return showSystemNamespaces || !SYSTEM_NAMESPACES.has(ns);
@@ -427,7 +449,26 @@ export const aggregateNodesWithWorkloads = (
       data: ds,
     }));
 
-  return [...nonPodNodes, ...dsNodes, ...processedNodes];
+  const cjNodes: Node[] = (cronJobs || [])
+    .filter((cj) => {
+      const ns = cj.namespace || "default";
+      if (typeof selectedNamespaces === "string") {
+        return selectedNamespaces === "all" || ns === selectedNamespaces;
+      }
+      if (Array.isArray(selectedNamespaces)) {
+        if (selectedNamespaces.length === 0) return false;
+        return selectedNamespaces.includes(ns);
+      }
+      return showSystemNamespaces || !SYSTEM_NAMESPACES.has(ns);
+    })
+    .map((cj) => ({
+      id: `cronjob-${cj.name}`,
+      type: "k8sCronJob",
+      position: { x: 0, y: 0 },
+      data: cj,
+    }));
+
+  return [...nonPodNodes, ...dsNodes, ...cjNodes, ...processedNodes];
 };
 
 export const sanitizeManifestSnapshot = (node: Node): Record<string, unknown> => {

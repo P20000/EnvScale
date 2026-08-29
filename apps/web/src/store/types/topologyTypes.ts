@@ -62,3 +62,16 @@ export interface K8sDaemonSetData extends Record<string, unknown> {
   labels?: Record<string, string>;
   createdAt?: string;
 }
+
+export interface K8sCronJobData extends Record<string, unknown> {
+  name: string;
+  namespace: string;
+  schedule?: string;
+  suspend?: boolean;
+  activeJobsCount?: number;
+  lastScheduleTime?: string;
+  lastSuccessfulTime?: string;
+  images?: string[];
+  labels?: Record<string, string>;
+  createdAt?: string;
+}

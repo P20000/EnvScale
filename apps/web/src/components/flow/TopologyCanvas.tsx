@@ -15,7 +15,7 @@ import {
   mdiCrosshairsGps,
 } from "@mdi/js";
 
-import { K8sPodNode, K8sWorkerNode, K8sServiceNode, K8sWorkloadNode, K8sIngressNode, K8sGroupNode, K8sDaemonSetNode, K8sEdge } from "../canvas";
+import { K8sPodNode, K8sWorkerNode, K8sServiceNode, K8sWorkloadNode, K8sIngressNode, K8sGroupNode, K8sDaemonSetNode, K8sCronJobNode, K8sEdge } from "../canvas";
 import type { K8sPodData } from "../canvas/K8sPod";
 import type { K8sNodeData } from "../canvas/K8sNode";
 import type { K8sServiceData } from "../canvas/K8sService";
@@ -26,7 +26,7 @@ import { useK8sStream, type WsTopologyMessage } from "../../hooks/useK8sStream";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
 import { DeleteConfirmationModal } from "../modals/DeleteConfirmationModal";
 
-import type { K8sDaemonSetData } from "../../store/types/topologyTypes";
+import type { K8sDaemonSetData, K8sCronJobData } from "../../store/types/topologyTypes";
 
 const nodeTypes = {
   k8sPod: K8sPodNode,
@@ -36,6 +36,7 @@ const nodeTypes = {
   k8sReplicaSet: K8sWorkloadNode,
   k8sStatefulSet: K8sWorkloadNode,
   k8sDaemonSet: K8sDaemonSetNode,
+  k8sCronJob: K8sCronJobNode,
   k8sWorkload: K8sWorkloadNode,
   k8sIngress: K8sIngressNode,
   k8sGroup: K8sGroupNode,
@@ -99,6 +100,8 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         target = { type: "ingress", data: node.data as K8sIngressData };
       } else if (node.type === "k8sDaemonSet") {
         target = { type: "daemonset", data: node.data as K8sDaemonSetData };
+      } else if (node.type === "k8sCronJob") {
+        target = { type: "cronjob", data: node.data as K8sCronJobData };
       }
       setSelectedNode(target);
       onSelectTarget(target);

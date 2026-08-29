@@ -1,0 +1,325 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: external-public-ingress
+  namespace: testing-todo
+spec:
+  rules:
+  - host: api.todo.local
+    http:
+      paths:
+      - path: /auth
+        pathType: Prefix
+        backend:
+          service:
+            name: auth-svc
+            port:
+              number: 8080
+      - path: /billing
+        pathType: Prefix
+        backend:
+          service:
+            name: billing-svc
+            port:
+              number: 8080
+      - path: /notifications
+        pathType: Prefix
+        backend:
+          service:
+            name: notify-svc
+            port:
+              number: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: internal-admin-ingress
+  namespace: testing-todo
+spec:
+  rules:
+  - host: admin.todo.local
+    http:
+      paths:
+      - path: /analytics
+        pathType: Prefix
+        backend:
+          service:
+            name: analytics-svc
+            port:
+              number: 8080
+      - path: /search
+        pathType: Prefix
+        backend:
+          service:
+            name: search-svc
+            port:
+              number: 8080
+      - path: /users
+        pathType: Prefix
+        backend:
+          service:
+            name: users-svc
+            port:
+              number: 8080
+      - path: /orders
+        pathType: Prefix
+        backend:
+          service:
+            name: orders-svc
+            port:
+              number: 8080
+      - path: /inventory
+        pathType: Prefix
+        backend:
+          service:
+            name: inventory-svc
+            port:
+              number: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-svc
+  namespace: testing-todo
+spec:
+  selector:
+    app: auth-app
+  ports:
+  - port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-app
+  namespace: testing-todo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: auth-app
+  template:
+    metadata:
+      labels:
+        app: auth-app
+    spec:
+      containers:
+      - name: app
+        image: nginx:alpine
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-svc
+  namespace: testing-todo
+spec:
+  selector:
+    app: billing-app
+  ports:
+  - port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-app
+  namespace: testing-todo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: billing-app
+  template:
+    metadata:
+      labels:
+        app: billing-app
+    spec:
+      containers:
+      - name: app
+        image: nginx:alpine
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notify-svc
+  namespace: testing-todo
+spec:
+  selector:
+    app: notify-app
+  ports:
+  - port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notify-app
+  namespace: testing-todo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: notify-app
+  template:
+    metadata:
+      labels:
+        app: notify-app
+    spec:
+      containers:
+      - name: app
+        image: nginx:alpine
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: analytics-svc
+  namespace: testing-todo
+spec:
+  selector:
+    app: analytics-app
+  ports:
+  - port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics-app
+  namespace: testing-todo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: analytics-app
+  template:
+    metadata:
+      labels:
+        app: analytics-app
+    spec:
+      containers:
+      - name: app
+        image: nginx:alpine
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: search-svc
+  namespace: testing-todo
+spec:
+  selector:
+    app: search-app
+  ports:
+  - port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: search-app
+  namespace: testing-todo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: search-app
+  template:
+    metadata:
+      labels:
+        app: search-app
+    spec:
+      containers:
+      - name: app
+        image: nginx:alpine
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: users-svc
+  namespace: testing-todo
+spec:
+  selector:
+    app: users-app
+  ports:
+  - port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: users-app
+  namespace: testing-todo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: users-app
+  template:
+    metadata:
+      labels:
+        app: users-app
+    spec:
+      containers:
+      - name: app
+        image: nginx:alpine
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-svc
+  namespace: testing-todo
+spec:
+  selector:
+    app: orders-app
+  ports:
+  - port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-app
+  namespace: testing-todo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: orders-app
+  template:
+    metadata:
+      labels:
+        app: orders-app
+    spec:
+      containers:
+      - name: app
+        image: nginx:alpine
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-svc
+  namespace: testing-todo
+spec:
+  selector:
+    app: inventory-app
+  ports:
+  - port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory-app
+  namespace: testing-todo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: inventory-app
+  template:
+    metadata:
+      labels:
+        app: inventory-app
+    spec:
+      containers:
+      - name: app
+        image: nginx:alpine

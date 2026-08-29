@@ -7,7 +7,7 @@ metadata:
     app: db-audit
     tier: batch
 spec:
-  schedule: "*/2 * * * *"
+  schedule: "*/1 * * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
   jobTemplate:
@@ -26,7 +26,7 @@ spec:
               command:
                 - sh
                 - -c
-                - "echo '[CronJob Audit] Database integrity check started...'; sleep 3; echo '[CronJob Audit] Status: OK. Exiting clean.'; exit 0"
+                - "echo '[CronJob Audit] Database integrity check started...'; sleep 10; echo '[CronJob Audit] Status: OK. Exiting clean.'; exit 0"
               resources:
                 requests:
                   cpu: 10m

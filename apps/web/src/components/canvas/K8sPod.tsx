@@ -49,7 +49,7 @@ export function K8sPodNode({ data }: { data: K8sPodData }) {
     rawPhase === "OOMKilled" ||
     rawPhase === "CrashLoopBackOff"
   ) {
-    dotClass = "bg-rose-500";
+    dotClass = "bg-rose-500 animate-pulse";
     textClass = "text-rose-300 font-bold";
     badgeLabel = terminatedReason === "OOMKilled" || waitingReason === "OOMKilled" ? "OOM" : "CRASH";
   } else if (rawPhase === "Running" || rawPhase === "Ready") {

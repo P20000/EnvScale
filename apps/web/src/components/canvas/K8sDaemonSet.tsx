@@ -1,44 +1,35 @@
-import { MdShield as ShieldIcon, MdSettings as GearIcon } from "react-icons/md";
-import type { K8sDaemonSetData } from "../../store/types/topologyTypes";
+import React from 'react';
+import { type NodeProps } from '@xyflow/react';
+import { MdOutlineShield } from 'react-icons/md';
+import type { K8sDaemonSetData } from '../../store/types/topologyTypes';
 
-export function K8sDaemonSetNode({ data }: { data: K8sDaemonSetData }) {
-  const ready = data.numberReady || 0;
-  const desired = data.desiredNumberScheduled || 0;
-  const isHealthy = ready === desired && desired > 0;
+export const K8sDaemonSetNode: React.FC<NodeProps> = ({ data }) => {
+  const ds = data as unknown as K8sDaemonSetData;
+  const ready = ds?.numberReady ?? 0;
+  const desired = ds?.desiredNumberScheduled ?? 0;
 
   return (
-    <div className="h-11 w-[270px] border border-indigo-500/50 bg-[#121220] flex items-center justify-between px-3 rounded-md select-none group hover:border-indigo-400 transition-all shadow-[0_0_12px_rgba(99,102,241,0.15)] relative">
-      {/* 
-        Clean Handle-less Card Design:
-        DaemonSets are unlinked side-rail cluster agents. Handles are intentionally omitted 
-        to prevent accidental edge attachments during user interaction or auto-layout.
-      */}
-      <div className="flex items-center gap-2 min-w-0">
-        <ShieldIcon size={16} className="text-indigo-400 shrink-0" />
-        <div className="flex flex-col min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs font-mono font-bold truncate text-indigo-100 max-w-[110px]">
-              {data.name}
-            </span>
-          </div>
-          <span className="text-[8.5px] font-mono text-indigo-300/90 uppercase tracking-wider -mt-0.5 flex items-center gap-1">
-            <GearIcon size={9} className="text-indigo-400" />
-            DaemonSet • Host Agent
+    <div className="w-[260px] h-[58px] p-2.5 rounded-lg bg-zinc-900/90 border border-zinc-800 hover:border-zinc-700 shadow-sm flex flex-col justify-between cursor-pointer transition-colors select-none">
+      {/* Row 1 */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <MdOutlineShield className="w-3.5 h-3.5 text-zinc-400 shrink-0"/>
+          <span className="text-xs font-semibold text-zinc-100 tracking-tight truncate max-w-[130px]">
+            {ds?.name || 'daemonset'}
           </span>
+        </div>
+        <div className="h-5 px-2 py-0.5 rounded-md inline-flex items-center font-mono text-[10px] font-medium border bg-zinc-800/80 border-zinc-700/50 text-zinc-300 shrink-0">
+          {ready}/{desired} Nodes
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5">
-        <span
-          className={`text-[10px] font-mono px-2 py-0.5 rounded border font-semibold ${
-            isHealthy
-              ? "text-emerald-300 border-emerald-500/30 bg-emerald-500/10"
-              : "text-amber-300 border-amber-500/30 bg-amber-500/10"
-          }`}
-        >
-          {ready}/{desired} Nodes
-        </span>
+      {/* Row 2 */}
+      <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500">
+        <span className="text-zinc-400">DAEMONSET</span>
+        <span>HOST AGENT</span>
       </div>
     </div>
   );
-}
+};
+
+K8sDaemonSetNode.displayName = "K8sDaemonSetNode";
