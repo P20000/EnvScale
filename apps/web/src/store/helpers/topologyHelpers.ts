@@ -282,18 +282,17 @@ export const aggregateNodesWithWorkloads = (
     const d = n.data as Record<string, unknown> | undefined;
     const ns = String(d?.namespace || "default");
 
-    if (typeof selectedNamespaces === "string") {
-      if (selectedNamespaces !== "all" && ns !== selectedNamespaces) {
-        return false;
-      }
-    } else if (Array.isArray(selectedNamespaces)) {
-      if (selectedNamespaces.length === 0) {
-        return false;
-      }
-      if (!selectedNamespaces.includes(ns)) {
-        return false;
-      }
-    } else if (!showSystemNamespaces) {
+    let isExplicitlyRequested = false;
+    if (typeof selectedNamespaces === "string" && selectedNamespaces !== "all") {
+      if (ns !== selectedNamespaces) return false;
+      isExplicitlyRequested = true;
+    } else if (Array.isArray(selectedNamespaces) && selectedNamespaces.length > 0) {
+      if (selectedNamespaces.includes("__NONE__")) return false;
+      if (!selectedNamespaces.includes(ns)) return false;
+      isExplicitlyRequested = true;
+    }
+
+    if (!showSystemNamespaces && !isExplicitlyRequested) {
       if (SYSTEM_NAMESPACES.has(ns)) {
         return false;
       }
@@ -433,14 +432,17 @@ export const aggregateNodesWithWorkloads = (
   const dsNodes: Node[] = (daemonSets || [])
     .filter((ds) => {
       const ns = ds.namespace || "default";
-      if (typeof selectedNamespaces === "string") {
-        return selectedNamespaces === "all" || ns === selectedNamespaces;
+      let isExplicitlyRequested = false;
+      if (typeof selectedNamespaces === "string" && selectedNamespaces !== "all") {
+        if (ns !== selectedNamespaces) return false;
+        isExplicitlyRequested = true;
+      } else if (Array.isArray(selectedNamespaces) && selectedNamespaces.length > 0) {
+        if (selectedNamespaces.includes("__NONE__")) return false;
+        if (!selectedNamespaces.includes(ns)) return false;
+        isExplicitlyRequested = true;
       }
-      if (Array.isArray(selectedNamespaces)) {
-        if (selectedNamespaces.length === 0) return false;
-        return selectedNamespaces.includes(ns);
-      }
-      return showSystemNamespaces || !SYSTEM_NAMESPACES.has(ns);
+      if (!showSystemNamespaces && !isExplicitlyRequested && SYSTEM_NAMESPACES.has(ns)) return false;
+      return true;
     })
     .map((ds) => ({
       id: `daemonset-${ds.name}`,
@@ -452,14 +454,17 @@ export const aggregateNodesWithWorkloads = (
   const cjNodes: Node[] = (cronJobs || [])
     .filter((cj) => {
       const ns = cj.namespace || "default";
-      if (typeof selectedNamespaces === "string") {
-        return selectedNamespaces === "all" || ns === selectedNamespaces;
+      let isExplicitlyRequested = false;
+      if (typeof selectedNamespaces === "string" && selectedNamespaces !== "all") {
+        if (ns !== selectedNamespaces) return false;
+        isExplicitlyRequested = true;
+      } else if (Array.isArray(selectedNamespaces) && selectedNamespaces.length > 0) {
+        if (selectedNamespaces.includes("__NONE__")) return false;
+        if (!selectedNamespaces.includes(ns)) return false;
+        isExplicitlyRequested = true;
       }
-      if (Array.isArray(selectedNamespaces)) {
-        if (selectedNamespaces.length === 0) return false;
-        return selectedNamespaces.includes(ns);
-      }
-      return showSystemNamespaces || !SYSTEM_NAMESPACES.has(ns);
+      if (!showSystemNamespaces && !isExplicitlyRequested && SYSTEM_NAMESPACES.has(ns)) return false;
+      return true;
     })
     .map((cj) => ({
       id: `cronjob-${cj.name}`,
