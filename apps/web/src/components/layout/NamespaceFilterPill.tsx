@@ -2,13 +2,14 @@ import { useState, useRef, useEffect } from "react";
 import { Icon } from "../ui/Icon";
 import { mdiChevronDown, mdiFilterVariant, mdiCheck } from "@mdi/js";
 import { useTopologyStore } from "../../store/useTopologyStore";
-import { extractAvailableNamespaces } from "../../store/helpers/topologyHelpers";
+import { extractAvailableNamespaces, SYSTEM_NAMESPACES } from "../../store/helpers/topologyHelpers";
 
 export function NamespaceFilterPill() {
   const rawNodes = useTopologyStore((s) => s.rawNodes);
   const nodes = useTopologyStore((s) => s.nodes);
   const selectedNamespaces = useTopologyStore((s) => s.selectedNamespaces);
   const setSelectedNamespaces = useTopologyStore((s) => s.setSelectedNamespaces);
+  const showSystemNamespaces = useTopologyStore((s) => s.showSystemNamespaces);
 
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -27,22 +28,33 @@ export function NamespaceFilterPill() {
   }, []);
 
   const toggleNamespace = (ns: string) => {
-    const isSelected = selectedNamespaces.includes(ns);
+    let currentSelected = selectedNamespaces;
+    if (currentSelected.length === 0) {
+      // Materialize the implicit state correctly before toggling
+      currentSelected = availableNamespaces.filter((n) => showSystemNamespaces || !SYSTEM_NAMESPACES.has(n));
+    }
+
+    const isSelected = currentSelected.includes(ns);
     let next: string[];
     if (isSelected) {
-      next = selectedNamespaces.filter((item) => item !== ns);
+      next = currentSelected.filter((item) => item !== ns && item !== "__NONE__");
+      if (next.length === 0) {
+        next = ["__NONE__"];
+      }
     } else {
-      next = [...selectedNamespaces, ns];
+      next = [...currentSelected.filter((n) => n !== "__NONE__"), ns];
     }
+    
     setSelectedNamespaces(next);
   };
 
   const handleSelectAll = () => {
+    // Explicitly select all namespaces
     setSelectedNamespaces(availableNamespaces);
   };
 
   const handleClearAll = () => {
-    setSelectedNamespaces([]);
+    setSelectedNamespaces(["__NONE__"]);
   };
 
   const getNamespaceCount = (ns: string) => {
@@ -54,13 +66,19 @@ export function NamespaceFilterPill() {
 
   const labelText =
     selectedNamespaces.length === 0 ||
-    (selectedNamespaces.length === availableNamespaces.length && availableNamespaces.length > 1)
+    (selectedNamespaces.length === availableNamespaces.length && availableNamespaces.length > 1 && !selectedNamespaces.includes("__NONE__"))
       ? "All Namespaces"
+      : selectedNamespaces.includes("__NONE__")
+      ? "No Namespaces"
       : selectedNamespaces.length === 1
       ? selectedNamespaces[0]
       : `${selectedNamespaces.length} Namespaces`;
 
-  const displayCount = selectedNamespaces.length > 0 ? selectedNamespaces.length : availableNamespaces.length;
+  const displayCount = selectedNamespaces.length === 0 
+    ? availableNamespaces.length 
+    : selectedNamespaces.includes("__NONE__") 
+      ? 0 
+      : selectedNamespaces.length;
 
   return (
     <div className="relative" ref={menuRef}>
@@ -108,7 +126,9 @@ export function NamespaceFilterPill() {
 
           <div className="max-h-56 overflow-y-auto space-y-1 pr-1">
             {availableNamespaces.map((ns) => {
-              const isChecked = selectedNamespaces.length === 0 ? true : selectedNamespaces.includes(ns);
+              const isChecked = selectedNamespaces.length === 0 
+                ? (showSystemNamespaces ? true : !SYSTEM_NAMESPACES.has(ns))
+                : selectedNamespaces.includes(ns);
               const count = getNamespaceCount(ns);
               return (
                 <div
