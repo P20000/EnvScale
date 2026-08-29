@@ -26,7 +26,7 @@ export function ChaosTab({ target, chaosActionMsg, triggerChaos }: ChaosTabProps
       </div>
 
       {chaosActionMsg && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs font-mono text-amber-300 animate-pulse flex items-center gap-2">
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs font-mono text-amber-300 flex items-center gap-2">
           <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
           {chaosActionMsg}
         </div>

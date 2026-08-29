@@ -246,8 +246,7 @@ export function MetricsView() {
   const filteredPods = useMemo(() => {
     return pods.filter((pod) => {
       const ns = pod.namespace || "default";
-      if (Array.isArray(selectedNamespaces)) {
-        if (selectedNamespaces.length === 0) return false;
+      if (Array.isArray(selectedNamespaces) && selectedNamespaces.length > 0) {
         return selectedNamespaces.includes(ns);
       }
       if (!showSystemNamespaces && SYSTEM_NAMESPACES.has(ns)) return false;
@@ -368,7 +367,7 @@ export function MetricsView() {
                 <div className="text-xs text-neutral-500">({currentCpuPct.toFixed(1)}% load)</div>
               </div>
               {currentCpuPct > 85 && (
-                <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse shrink-0" title="High CPU Load > 85%" />
+                <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" title="High CPU Load > 85%" />
               )}
             </div>
           </div>
@@ -399,7 +398,7 @@ export function MetricsView() {
                 <div className="text-xs text-neutral-500">({currentMemoryPct.toFixed(1)}% pressure)</div>
               </div>
               {currentMemoryPct > 85 && (
-                <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse shrink-0" title="High RAM Pressure > 85%" />
+                <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" title="High RAM Pressure > 85%" />
               )}
             </div>
           </div>

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 
 import { TopNavbar } from "./components/layout/TopNavbar";
@@ -12,6 +12,7 @@ import { LeaderboardView } from "./components/views/LeaderboardView";
 import { SettingsView } from "./components/views/SettingsView";
 import { useTopologyStore } from "./store/useTopologyStore";
 import ConnectClusterWizard from "./components/onboarding/ConnectClusterWizard";
+import { apiMe, apiGetWorkspaceClusters } from "./config/api";
 
 import { SYSTEM_NAMESPACES } from "./store/helpers/topologyHelpers";
 
@@ -32,12 +33,31 @@ function AppContent() {
   const notifications = useTopologyStore((s) => s.notifications);
   const selectedNamespaces = useTopologyStore((s) => s.selectedNamespaces);
   const showSystemNamespaces = useTopologyStore((s) => s.showSystemNamespaces);
+  const wsReconnectTick = useTopologyStore((s) => s.wsReconnectTick);
+
+  useEffect(() => {
+    async function hydrateUserWorkspace() {
+      const meData = await apiMe();
+      if (meData?.workspace?.id) {
+        const dbClusters = await apiGetWorkspaceClusters(meData.workspace.id);
+        if (Array.isArray(dbClusters) && dbClusters.length > 0) {
+          const store = useTopologyStore.getState();
+          dbClusters.forEach((c: { name: string }) => {
+            if (c.name) store.addCluster(c.name);
+          });
+          if (!store.activeCluster && dbClusters[0]?.name) {
+            store.setActiveCluster(dbClusters[0].name);
+          }
+        }
+      }
+    }
+    hydrateUserWorkspace();
+  }, [wsReconnectTick]);
 
   const activeIncidentsCount = useMemo(() => {
     const isNsAllowed = (ns?: string) => {
       const namespace = ns || "default";
-      if (Array.isArray(selectedNamespaces)) {
-        if (selectedNamespaces.length === 0) return false;
+      if (Array.isArray(selectedNamespaces) && selectedNamespaces.length > 0) {
         return selectedNamespaces.includes(namespace);
       }
       return showSystemNamespaces || !SYSTEM_NAMESPACES.has(namespace);
@@ -76,7 +96,7 @@ function AppContent() {
     const activeNs =
       namespace && namespace !== "default"
         ? namespace
-        : useTopologyStore.getState().selectedNamespaces[0] || "testing-todo";
+        : useTopologyStore.getState().selectedNamespaces[0] || "default";
     setLogDrawerState({
       isOpen: true,
       podName,

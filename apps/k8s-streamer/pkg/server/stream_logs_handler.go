@@ -71,11 +71,12 @@ func HandleUniversalLogStream(
 
 	clusterID := r.URL.Query().Get("clusterId")
 	if clusterID == "" {
-		clusterID = "mini-todo"
+		conn.WriteMessage(websocket.TextMessage, []byte("[ERROR] clusterId query parameter is required\n"))
+		return
 	}
 	namespace := r.URL.Query().Get("namespace")
 	if namespace == "" {
-		namespace = "testing-todo"
+		namespace = "default"
 	}
 	kind := strings.TrimSpace(r.URL.Query().Get("kind"))
 	name := strings.TrimSpace(r.URL.Query().Get("name"))

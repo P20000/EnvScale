@@ -197,6 +197,20 @@ func SetupRoutes(
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	})
 
+	mux.HandleFunc("/api/v1/clusters/unregister-all", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		clusterManager.UnregisterAllClusters()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "all_unregistered",
+		})
+	})
+
 	mux.HandleFunc("/api/v1/logs/stream", func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {

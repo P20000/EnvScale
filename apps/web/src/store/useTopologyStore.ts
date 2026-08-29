@@ -63,7 +63,7 @@ export {
 
 export const defaultInitialNodes: Node[] = [];
 export const defaultInitialEdges: Edge[] = [];
-const defaultClusters: string[] = ["mini-todo"];
+const defaultClusters: string[] = [];
 const defaultInitialTokens: ApiToken[] = [];
 const defaultInitialNotifications: NotificationItem[] = [];
 
@@ -158,15 +158,21 @@ export interface TopologyState {
   setWsStatus: (status: WsConnectionStatus, latencyMs?: number) => void;
   processWsMessage: (msg: WsTopologyMessage) => void;
   applyDelta: (msg: WsTopologyMessage) => void;
+
+  // Login → WS reconnect bridge
+  wsReconnectTick: number;
+  triggerWsReconnect: () => void;
+
+  resetStore: () => void;
 }
 
 export const useTopologyStore = create<TopologyState>()(
   persist(
     (set, get) => ({
       clusters: defaultClusters,
-      activeCluster: "mini-todo",
-      clusterCpuCores: 12,
-      clusterMemoryGB: 14.8,
+      activeCluster: "",
+      clusterCpuCores: 0,
+      clusterMemoryGB: 0,
       rawNodes: defaultInitialNodes,
       nodes: defaultInitialNodes,
       edges: defaultInitialEdges,
@@ -183,9 +189,10 @@ export const useTopologyStore = create<TopologyState>()(
       notifications: defaultInitialNotifications,
       wsStatus: "DISCONNECTED",
       wsLatencyMs: 0,
+      wsReconnectTick: 0,
       showCompletedPods: false,
       showSystemNamespaces: false,
-      selectedNamespaces: ["testing-todo"],
+      selectedNamespaces: [],
       layoutDirection: "TB",
       expandedWorkloads: {},
       undoStack: [],
@@ -195,7 +202,7 @@ export const useTopologyStore = create<TopologyState>()(
         targetId: "",
         targetName: "",
         targetKind: "",
-        namespace: "testing-todo",
+        namespace: "default",
       },
 
       setShowCompletedPods: (show) => {
@@ -221,7 +228,7 @@ export const useTopologyStore = create<TopologyState>()(
             targetId,
             targetName,
             targetKind,
-            namespace: namespace || "testing-todo",
+            namespace: namespace || "default",
           },
         });
       },
@@ -233,7 +240,7 @@ export const useTopologyStore = create<TopologyState>()(
             targetId: "",
             targetName: "",
             targetKind: "",
-            namespace: "testing-todo",
+            namespace: "default",
           },
         });
       },
@@ -322,7 +329,7 @@ export const useTopologyStore = create<TopologyState>()(
         const updatedClusters = get().clusters.filter((c) => c !== clusterName);
         const nextActive =
           get().activeCluster === clusterName
-            ? updatedClusters[0] || "default-cluster"
+            ? updatedClusters[0] || ""
             : get().activeCluster;
 
         const remainingNodes = get().nodes.filter((node) => {
@@ -360,7 +367,7 @@ export const useTopologyStore = create<TopologyState>()(
           const resData = (targetNode.data as Record<string, unknown>) || {};
           const resName = String(resData.name || targetNode.id);
           const resKind = targetNode.type?.replace("k8s", "") || "Resource";
-          const ns = String(resData.namespace || "testing-todo");
+          const ns = String(resData.namespace || "default");
 
           get().openDeleteModal(nodeId, resName, resKind, ns);
         } else {
@@ -473,9 +480,40 @@ export const useTopologyStore = create<TopologyState>()(
       },
       processWsMessage: (msg) => handleWsMessage(get(), set, msg),
       applyDelta: (msg) => handleWsMessage(get(), set, msg),
+      triggerWsReconnect: () => set((state) => ({ wsReconnectTick: state.wsReconnectTick + 1 })),
+      resetStore: () => {
+        try {
+          localStorage.removeItem("envscale-topology-storage-v2");
+        } catch (err) {
+          console.warn("Failed to reset localStorage topology key:", err);
+        }
+        set({
+          clusters: [],
+          activeCluster: "",
+          clusterCpuCores: 0,
+          clusterMemoryGB: 0,
+          rawNodes: [],
+          nodes: [],
+          edges: [],
+          services: [],
+          pods: [],
+          ingresses: [],
+          replicaSets: [],
+          deployments: [],
+          daemonSets: [],
+          incidents: [],
+          selectedNode: null,
+          selectedNamespaces: [],
+          notifications: [],
+          undoStack: [],
+          redoStack: [],
+          wsStatus: "DISCONNECTED",
+          wsLatencyMs: 0,
+        });
+      },
     }),
     {
-      name: "envscale-topology-storage",
+      name: "envscale-topology-storage-v2",
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         clusters: state.clusters,
@@ -485,6 +523,18 @@ export const useTopologyStore = create<TopologyState>()(
         showSystemNamespaces: state.showSystemNamespaces,
         layoutDirection: state.layoutDirection,
       }),
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          const cleanedClusters = (state.clusters || []).filter((c) => c !== "mini-todo");
+          const cleanedActive = state.activeCluster === "mini-todo" ? cleanedClusters[0] || "" : state.activeCluster;
+          if (state.clusters.includes("mini-todo") || state.activeCluster === "mini-todo") {
+            useTopologyStore.setState({
+              clusters: cleanedClusters,
+              activeCluster: cleanedActive,
+            });
+          }
+        }
+      },
     }
   )
 );

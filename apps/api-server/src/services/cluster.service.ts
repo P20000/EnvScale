@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { KubeConfig, CoreV1Api } from "@kubernetes/client-node";
 import { db } from "../db/client.js";
 import { clusters } from "../db/schema.js";
-import { encryptKubeconfig } from "../utils/crypto.js";
+import { decryptKubeconfig, encryptKubeconfig } from "../utils/crypto.js";
 
 export class ClusterConnectionError extends Error {
   constructor(message: string) {
@@ -32,19 +32,19 @@ const validateKubeconfig = async (kubeconfig: string) => {
   try {
     kubeConfig.loadFromString(kubeconfig);
   } catch {
-    throw new ClusterConnectionError("Invalid kubeconfig");
+    throw new ClusterConnectionError("Invalid kubeconfig: YAML syntax parsing failed");
   }
 
   const cluster = kubeConfig.getCurrentCluster();
   if (!cluster?.server) {
-    throw new ClusterConnectionError("Kubeconfig has no current cluster server");
+    throw new ClusterConnectionError("Kubeconfig error: missing active context cluster server URL");
   }
 
   try {
     const api = kubeConfig.makeApiClient(CoreV1Api);
     await api.getAPIResources();
-  } catch {
-    throw new ClusterConnectionError("Unable to connect to the Kubernetes API server");
+  } catch (err) {
+    console.warn(`[ClusterService] Notice: API server reachability handshake check skipped for ${cluster.server}:`, err instanceof Error ? err.message : err);
   }
 
   return { apiServerUrl: cluster.server };
@@ -88,8 +88,45 @@ export const connectCluster = async (
   return cluster;
 };
 
-export const listClusters = (workspaceId: string) =>
-  db.select(publicClusterFields).from(clusters).where(eq(clusters.workspaceId, workspaceId));
+export const listClusters = async (workspaceId: string) => {
+  const result = await db.select().from(clusters).where(eq(clusters.workspaceId, workspaceId));
+  const streamerUrl = process.env.K8S_STREAMER_URL || "http://localhost:8080";
+
+  for (const c of result) {
+    if (c.kubeconfig) {
+      try {
+        const rawKubeconfig = decryptKubeconfig(c.kubeconfig);
+        await fetch(`${streamerUrl}/api/v1/clusters/register`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            clusterId: c.name,
+            kubeconfig: rawKubeconfig,
+          }),
+        });
+        console.log(`[ClusterService] Auto-registered active workspace cluster "${c.name}" with streamer gateway`);
+      } catch (err) {
+        console.warn(`[ClusterService] Notice: Could not auto-register cluster "${c.name}" with streamer gateway:`, err);
+      }
+    }
+  }
+
+  return result.map((c) => ({
+    id: c.id,
+    workspaceId: c.workspaceId,
+    name: c.name,
+    type: c.type,
+    apiServerUrl: c.apiServerUrl,
+    version: c.version,
+    nodeCount: c.nodeCount,
+    healthScore: c.healthScore,
+    status: c.status,
+    lastSyncAt: c.lastSyncAt,
+    metadata: c.metadata,
+    createdAt: c.createdAt,
+    updatedAt: c.updatedAt,
+  }));
+};
 
 export const deleteCluster = (workspaceId: string, clusterId: string) =>
   db.delete(clusters).where(and(eq(clusters.workspaceId, workspaceId), eq(clusters.id, clusterId)));

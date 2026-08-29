@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -28,6 +27,8 @@ func main() {
 		log.Println("[Config] No .env file found; using default environment variables")
 	}
 
+	websocket.ValidateEnvironmentAuthConfig()
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -40,21 +41,7 @@ func main() {
 	clusterManager := k8s.NewClusterManager(hub)
 	log.Println("[ClusterManager] Dynamic multi-tenant cluster registry initialized")
 
-	kubeconfigPath := os.Getenv("KUBECONFIG")
-	if kubeconfigPath == "" {
-		if home, err := os.UserHomeDir(); err == nil {
-			kubeconfigPath = fmt.Sprintf("%s/.kube/config", home)
-		}
-	}
-	if kubeconfigPath != "" {
-		if rawKube, err := os.ReadFile(kubeconfigPath); err == nil && len(rawKube) > 0 {
-			if err := clusterManager.RegisterCluster("mini-todo", rawKube); err == nil {
-				log.Println("[ClusterManager] Auto-registered local Kubernetes cluster 'mini-todo'")
-			} else {
-				log.Printf("[ClusterManager] Warning auto-registering 'mini-todo': %v", err)
-			}
-		}
-	}
+	// Auto-registration logic has been removed to enforce manual cluster registration via the authenticated UI.
 
 	logStreamer := k8s.NewPodLogStreamer(hub)
 	log.Println("[LogStreamer] Pod log streaming engine initialized")

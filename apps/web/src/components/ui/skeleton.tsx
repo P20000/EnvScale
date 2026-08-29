@@ -19,7 +19,7 @@ export function Skeleton({ variant = "rect", className, ...props }: SkeletonProp
       aria-busy="true"
       aria-live="polite"
       className={`
-        animate-pulse 
+        
         motion-reduce:animate-none 
         ${variantStyles[variant]} 
         ${className || ""}

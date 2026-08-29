@@ -22,7 +22,7 @@ export function LogsTab({ target, onOpenLogTerminal }: LogsTabProps) {
 
   const targetRecord = target.data as unknown as Record<string, unknown>;
   const resourceName = target.data?.name || "";
-  const resourceNs = String(targetRecord.namespace || "testing-todo");
+  const resourceNs = String(targetRecord.namespace || "default");
   const resourceKind =
     target.type === "pod"
       ? "Pod"

@@ -10,8 +10,11 @@ export const API_BASE_URL =
 export const STREAMER_BASE_URL =
   import.meta.env.VITE_STREAMER_BASE_URL || "http://localhost:8080";
 
+import { useTopologyStore } from "../store/useTopologyStore";
+
 export interface LoginResponse {
-  token?: string;
+  token?: string;       // kept for compatibility
+  accessToken?: string; // actual key returned by api-server /api/v1/auth/login
   user?: {
     id: string;
     email: string;
@@ -66,6 +69,39 @@ export async function apiLogin(credentials: {
       error: err instanceof Error ? err.message : "Network error: Unable to connect to auth server",
     };
   }
+}
+
+export async function apiRegister(userData: {
+  name: string;
+  email: string;
+  password: string;
+}): Promise<LoginResponse> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(userData),
+    });
+    const data = (await res.json()) as LoginResponse;
+    if (!res.ok) {
+      return { error: data.message || data.error || `Registration failed (${res.status})` };
+    }
+    return data;
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Network error: Unable to connect to auth server" };
+  }
+}
+
+export async function apiDevQuickLogin(): Promise<LoginResponse> {
+  let res = await apiLogin({ email: "dev@envscale.local", password: "Password123!" });
+  if (res.error) {
+    res = await apiRegister({ name: "Local Dev User", email: "dev@envscale.local", password: "Password123!" });
+  }
+  if (res.accessToken) {
+    localStorage.setItem("envscale_auth_token", res.accessToken);
+    useTopologyStore.getState().triggerWsReconnect();
+  }
+  return res;
 }
 
 /**
@@ -124,50 +160,176 @@ export async function apiConnectCluster(clusterData: {
   name: string;
   environment?: string;
   kubeconfig?: string;
+  workspaceId?: string;
 }): Promise<ClusterResponse> {
   try {
     // 1. Direct registration to Go k8s-streamer gateway (http://localhost:8080) for instant streaming
-    try {
-      const streamerRes = await fetch(`${STREAMER_BASE_URL}/api/v1/clusters/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          clusterId: clusterData.name,
-          kubeconfig: clusterData.kubeconfig,
-        }),
-      });
-      if (streamerRes.ok) {
-        console.log(`[EnvScale] Cluster "${clusterData.name}" registered with k8s-streamer gateway`);
-      } else {
-        const errText = await streamerRes.text();
-        console.error(`[EnvScale] Streamer registration failed (${streamerRes.status}):`, errText);
-      }
-    } catch (streamerErr) {
-      console.warn("[EnvScale] Direct registration to k8s-streamer gateway failed:", streamerErr);
-    }
-
-    // 2. Persist cluster registration in REST API server (http://localhost:3000)
-    const res = await fetch(`${API_BASE_URL}/api/v1/clusters`, {
+    const streamerRes = await fetch(`${STREAMER_BASE_URL}/api/v1/clusters/register`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: clusterData.name,
-        environment: clusterData.environment || "development",
-        kubeconfig: clusterData.kubeconfig || "",
+        clusterId: clusterData.name,
+        kubeconfig: clusterData.kubeconfig,
       }),
     });
 
-    if (res.ok) {
-      const data = (await res.json()) as ClusterResponse;
-      return data;
+    if (!streamerRes.ok) {
+      const errText = await streamerRes.text();
+      return { error: errText || `Failed to connect cluster to streamer gateway (${streamerRes.status})` };
     }
 
-    return { cluster: { name: clusterData.name, environment: clusterData.environment } };
-  } catch {
-    // Fallback: If REST server DB is offline in dev mode, return cluster name for local streaming
-    return { cluster: { name: clusterData.name, environment: clusterData.environment } };
+    console.log(`[EnvScale] Cluster "${clusterData.name}" registered with k8s-streamer gateway`);
+
+    // 2. Persist cluster registration in REST API server (http://localhost:3000)
+    try {
+      const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (rawAuth && rawAuth !== "null") {
+        headers["Authorization"] = `Bearer ${rawAuth}`;
+      }
+
+      const wsId = clusterData.workspaceId;
+      const targetUrl = wsId
+        ? `${API_BASE_URL}/api/v1/workspaces/${wsId}/clusters/connect`
+        : `${API_BASE_URL}/api/v1/clusters`;
+
+      const res = await fetch(targetUrl, {
+        method: "POST",
+        headers,
+        credentials: "include",
+        body: JSON.stringify({
+          name: clusterData.name,
+          type: clusterData.environment || "development",
+          kubeconfig: clusterData.kubeconfig || "",
+        }),
+      });
+
+      if (res.ok) {
+        const data = (await res.json()) as ClusterResponse;
+        console.log(`[EnvScale] Cluster "${clusterData.name}" persisted to PostgreSQL DB`);
+        return data;
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        console.warn("[EnvScale] REST server cluster persistence error response:", errJson);
+        return { error: errJson.error || errJson.message || `Failed to save cluster to database (${res.status})` };
+      }
+    } catch (dbErr) {
+      console.warn("[EnvScale] REST server cluster persistence offline/warning:", dbErr);
+      return { error: dbErr instanceof Error ? dbErr.message : "Database connection error" };
+    }
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : "Network error: Unable to register cluster",
+    };
   }
 }
 
+export async function apiGetWorkspaces() {
+  try {
+    const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+    const headers: Record<string, string> = {};
+    if (rawAuth && rawAuth !== "null") headers["Authorization"] = `Bearer ${rawAuth}`;
+    
+    const res = await fetch(`${API_BASE_URL}/api/v1/workspaces`, {
+      headers,
+      credentials: "include",
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn("Failed to fetch user workspaces:", err);
+  }
+  return [];
+}
+
+export async function apiGetWorkspaceClusters(workspaceId: string) {
+  try {
+    const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+    const headers: Record<string, string> = {};
+    if (rawAuth && rawAuth !== "null") headers["Authorization"] = `Bearer ${rawAuth}`;
+
+    const res = await fetch(`${API_BASE_URL}/api/v1/workspaces/${workspaceId}/clusters`, {
+      headers,
+      credentials: "include",
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn(`Failed to fetch clusters for workspace ${workspaceId}:`, err);
+  }
+  return [];
+}
+
+export async function apiMe() {
+  try {
+    const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+    const headers: Record<string, string> = {};
+    if (rawAuth && rawAuth !== "null") headers["Authorization"] = `Bearer ${rawAuth}`;
+
+    const res = await fetch(`${API_BASE_URL}/api/v1/auth/me`, {
+      headers,
+      credentials: "include",
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn("Failed to fetch current user session:", err);
+  }
+  return null;
+}
+
+/**
+ * Disconnect/Unregister K8s Cluster
+ */
+export async function apiDisconnectCluster(clusterId: string): Promise<boolean> {
+  try {
+    await fetch(`${STREAMER_BASE_URL}/api/v1/clusters?clusterId=${encodeURIComponent(clusterId)}`, {
+      method: "DELETE",
+    });
+
+    const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+    const headers: Record<string, string> = {};
+    if (rawAuth && rawAuth !== "null") headers["Authorization"] = `Bearer ${rawAuth}`;
+
+    await fetch(`${API_BASE_URL}/api/v1/clusters/${clusterId}`, {
+      method: "DELETE",
+      headers,
+      credentials: "include",
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const getStreamerToken = async (): Promise<string | null> => {
+  try {
+    const rawAuth = localStorage.getItem("envscale_auth_token");
+    const rawAccess = localStorage.getItem("envscale_access_token");
+    const localToken = (rawAuth && rawAuth !== "null") ? rawAuth : ((rawAccess && rawAccess !== "null") ? rawAccess : null);
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (localToken) {
+      headers["Authorization"] = `Bearer ${localToken}`;
+    }
+
+    const res = await fetch(`${API_BASE_URL}/api/v1/auth/streamer-token`, {
+      method: "GET",
+      headers,
+      credentials: "include",
+    });
+    
+    if (res.ok) {
+      const data = await res.json();
+      return data.token || null;
+    }
+  } catch (error) {
+    console.error("Failed to fetch streamer token", error);
+  }
+  return null;
+};

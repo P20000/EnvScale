@@ -44,7 +44,7 @@ export function PodLogDrawer({
   const prevLogsLengthRef = useRef(0);
 
   const selectedNs = useTopologyStore((s) => s.selectedNamespaces[0]);
-  const activeNs = namespace && namespace !== "default" ? namespace : selectedNs || "testing-todo";
+  const activeNs = namespace && namespace !== "default" ? namespace : selectedNs || "default";
 
   const {
     logs,
@@ -161,7 +161,7 @@ export function PodLogDrawer({
               <div className="flex items-center gap-1.5 rounded-full bg-neutral-900 px-3 py-1 text-xs font-medium border border-neutral-800">
                 <span className="relative flex h-2 w-2">
                   {status === "streaming" && isTailing && (
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                   )}
                   <span
                     className={`relative inline-flex rounded-full h-2 w-2 ${

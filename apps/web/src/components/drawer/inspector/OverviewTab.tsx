@@ -32,7 +32,7 @@ export function OverviewTab({
   const { logs } = useResourceLogs({
     name: target.data?.name || null,
     kind: target.type === "pod" ? "Pod" : target.type === "service" ? "Service" : target.type === "ingress" ? "Ingress" : target.type === "daemonset" ? "DaemonSet" : "Workload",
-    namespace: String(targetRecord.namespace || "testing-todo"),
+    namespace: String(targetRecord.namespace || "default"),
     enabled: isEmbeddedLogOpen,
   });
 
@@ -241,7 +241,7 @@ export function OverviewTab({
                   ? String(targetRecord.ownerName)
                   : getPodPrefix(target.data.name)
               }
-              namespace={String(targetRecord.namespace || "testing-todo")}
+              namespace={String(targetRecord.namespace || "default")}
               nowMs={nowMs}
             />
           )}

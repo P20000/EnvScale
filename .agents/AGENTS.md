@@ -144,13 +144,13 @@ Feature Branches (feature/*)
 ### Safe & Simplified Local Committing Guardrails
 
 > [!CAUTION]
-> **ABSOLUTE PROHIBITION ON DIRECT PUSHES TO `main` AND `develop`**
-> 1. **NO DIRECT PUSHES TO `main` OR `develop` BY AI ASSISTANTS:**
->    AI Assistants MUST NEVER execute `git push origin develop` or `git push origin main` under any circumstances.
-> 2. **FEATURE BRANCH PUSHES ONLY (`feature/*`):**
->    AI Assistants MUST ALWAYS commit and push changes exclusively to the active developer's assigned feature branch (e.g., `feature/pranav-k8s-streamer`, `feature/neha-web-ui`, `feature/vinit-api-server`, `feature/ishika-docs-qa`).
-> 3. **PULL REQUEST MERGING ONLY:**
->    Integrating `feature/*` branches into `develop` or releasing `develop` into `main` MUST ONLY occur via GitHub Pull Requests (PRs).
+> **ABSOLUTE PROHIBITION ON DIRECT PUSHES TO `main`**
+> 1. **NO DIRECT PUSHES TO `main` BY AI ASSISTANTS:**
+>    AI Assistants MUST NEVER execute `git push origin main` under any circumstances.
+> 2. **DEVELOP BRANCH MERGING ALLOWED:**
+>    AI Assistants may merge feature branches into `develop` and push to `origin develop` if explicitly requested by the user.
+> 3. **PULL REQUEST REQUIRED FOR MAIN:**
+>    Releasing `develop` into `main` MUST ONLY occur via GitHub Pull Requests (PRs).
 
 1. **No Destructive Git Commands or Stash Dropping:** AI Assistants MUST NEVER execute `git stash drop`, `git reset --hard`, or cross-branch file checkouts (`git checkout <branch> -- <path>`) that risk discarding uncommitted local changes.
 2. **Straightforward Commit & Push Workflow:** Committing local work MUST always be a simple, non-destructive sequence:

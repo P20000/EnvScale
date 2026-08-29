@@ -53,13 +53,14 @@ export function NamespaceFilterPill() {
   };
 
   const labelText =
-    selectedNamespaces.length === 0
-      ? "No Namespaces"
-      : selectedNamespaces.length === availableNamespaces.length && availableNamespaces.length > 1
+    selectedNamespaces.length === 0 ||
+    (selectedNamespaces.length === availableNamespaces.length && availableNamespaces.length > 1)
       ? "All Namespaces"
       : selectedNamespaces.length === 1
       ? selectedNamespaces[0]
       : `${selectedNamespaces.length} Namespaces`;
+
+  const displayCount = selectedNamespaces.length > 0 ? selectedNamespaces.length : availableNamespaces.length;
 
   return (
     <div className="relative" ref={menuRef}>
@@ -72,11 +73,11 @@ export function NamespaceFilterPill() {
         <Icon path={mdiFilterVariant} size={0.65} className="text-blue-400" />
         <span className="truncate max-w-[120px]">{labelText}</span>
         <span className={`flex h-4 min-w-4 items-center justify-center rounded-full text-[10px] font-bold px-1 border ${
-          selectedNamespaces.length > 0
+          displayCount > 0
             ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
             : "bg-zinc-800 text-zinc-500 border-zinc-700"
         }`}>
-          {selectedNamespaces.length}
+          {displayCount}
         </span>
         <Icon path={mdiChevronDown} size={0.65} className="text-zinc-400" />
       </button>
@@ -107,7 +108,7 @@ export function NamespaceFilterPill() {
 
           <div className="max-h-56 overflow-y-auto space-y-1 pr-1">
             {availableNamespaces.map((ns) => {
-              const isChecked = selectedNamespaces.includes(ns);
+              const isChecked = selectedNamespaces.length === 0 ? true : selectedNamespaces.includes(ns);
               const count = getNamespaceCount(ns);
               return (
                 <div

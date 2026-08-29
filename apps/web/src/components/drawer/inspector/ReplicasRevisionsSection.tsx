@@ -10,7 +10,7 @@ interface ReplicasRevisionsSectionProps {
 
 export function ReplicasRevisionsSection({
   workloadName,
-  namespace = "testing-todo",
+  namespace = "default",
   nowMs,
 }: ReplicasRevisionsSectionProps) {
   const deployments = useTopologyStore((s) => s.deployments);
@@ -42,7 +42,7 @@ export function ReplicasRevisionsSection({
         </h4>
 
         {rolloutInfo.isRollingUpdate && (
-          <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 animate-pulse">
+          <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300">
             <SyncIcon className="h-3 w-3 animate-spin" />
             Rolling Update
           </span>

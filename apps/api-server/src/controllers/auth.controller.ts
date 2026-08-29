@@ -3,10 +3,13 @@ import {
   findUserByEmail,
   getUserById,
   issueTokens,
+  createAccessToken,
   registerUser,
   rotateRefreshToken,
   verifyPassword,
 } from "../services/auth.service.js";
+
+import { ensureDefaultWorkspace } from "../services/workspace.service.js";
 
 const setRefreshCookie = (response: Response, token: string) => {
   response.cookie("refreshToken", token, {
@@ -27,9 +30,14 @@ export const register = async (request: Request, response: Response) => {
 
   try {
     const user = await registerUser(name, email, password);
+    const workspace = await ensureDefaultWorkspace(user.id, user.name);
     const tokens = await issueTokens(user);
     setRefreshCookie(response, tokens.refreshToken);
-    response.status(201).json({ accessToken: tokens.accessToken, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+    response.status(201).json({
+      accessToken: tokens.accessToken,
+      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      workspace,
+    });
   } catch (error) {
     console.error(error);
     response.status(500).json({ error: "Unable to register user" });
@@ -39,14 +47,30 @@ export const register = async (request: Request, response: Response) => {
 export const login = async (request: Request, response: Response) => {
   const { email, password } = request.body as { email: string; password: string };
   const user = await findUserByEmail(email);
-  if (!user || !user.isActive || !(await verifyPassword(password, user.passwordHash))) {
+  
+  if (!user || !user.isActive) {
+    response.status(401).json({ error: "Invalid email or password" });
+    return;
+  }
+  
+  if (!user.passwordHash) {
+    response.status(401).json({ error: "This account uses social login. Please sign in with Google or GitHub." });
+    return;
+  }
+  
+  if (!(await verifyPassword(password, user.passwordHash))) {
     response.status(401).json({ error: "Invalid email or password" });
     return;
   }
 
+  const workspace = await ensureDefaultWorkspace(user.id, user.name);
   const tokens = await issueTokens(user);
   setRefreshCookie(response, tokens.refreshToken);
-  response.json({ accessToken: tokens.accessToken, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+  response.json({
+    accessToken: tokens.accessToken,
+    user: { id: user.id, name: user.name, email: user.email, role: user.role },
+    workspace,
+  });
 };
 
 export const refresh = async (request: Request, response: Response) => {
@@ -71,5 +95,18 @@ export const me = async (request: Request, response: Response) => {
     response.status(401).json({ error: "User unavailable" });
     return;
   }
-  response.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+  const workspace = await ensureDefaultWorkspace(user.id, user.name);
+  response.json({
+    user: { id: user.id, name: user.name, email: user.email, role: user.role },
+    workspace,
+  });
+};
+
+export const getStreamerToken = async (request: Request, response: Response) => {
+  if (!request.user) {
+    response.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const token = createAccessToken(request.user);
+  response.json({ token });
 };

@@ -59,7 +59,7 @@ export function K8sPodNode({ data }: { data: K8sPodData }) {
     dotClass = "bg-zinc-500";
     textClass = "text-zinc-400";
   } else if (rawPhase === "Pending" || rawPhase === "ContainerCreating") {
-    dotClass = "bg-amber-400 animate-pulse";
+    dotClass = "bg-amber-400";
     textClass = "text-amber-200/90";
   } else if (rawPhase === "Failed" || rawPhase === "Error") {
     dotClass = "bg-rose-500";
