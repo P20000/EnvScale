@@ -2,7 +2,7 @@ import { Router } from "express";
 import { connect, list, remove } from "../controllers/cluster.controller.js";
 import { requireAuth, requireWorkspaceRole } from "../middleware/auth.middleware.js";
 import { validate } from "../middleware/validate.js";
-import { clusterConnectSchema, clusterParamsSchema, workspaceParamsSchema } from "../schemas/request.schemas.js";
+import { clusterConnectSchema, clusterParamsSchema, topLevelClusterParamsSchema, workspaceParamsSchema } from "../schemas/request.schemas.js";
 
 export const clusterRouter: Router = Router({ mergeParams: true });
 
@@ -15,4 +15,4 @@ export const topLevelClusterRouter: Router = Router();
 topLevelClusterRouter.use(requireAuth);
 topLevelClusterRouter.post("/", validate("body", clusterConnectSchema, "Invalid cluster data"), connect);
 topLevelClusterRouter.post("/connect", validate("body", clusterConnectSchema, "Invalid cluster data"), connect);
-topLevelClusterRouter.delete("/:clusterId", validate("params", clusterParamsSchema, "Invalid cluster parameters"), remove);
+topLevelClusterRouter.delete("/:clusterId", validate("params", topLevelClusterParamsSchema, "Invalid cluster parameters"), remove);
