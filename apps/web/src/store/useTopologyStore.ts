@@ -161,6 +161,8 @@ export interface TopologyState {
   // Login → WS reconnect bridge
   wsReconnectTick: number;
   triggerWsReconnect: () => void;
+
+  resetStore: () => void;
 }
 
 export const useTopologyStore = create<TopologyState>()(
@@ -325,7 +327,7 @@ export const useTopologyStore = create<TopologyState>()(
         const updatedClusters = get().clusters.filter((c) => c !== clusterName);
         const nextActive =
           get().activeCluster === clusterName
-            ? updatedClusters[0] || "default-cluster"
+            ? updatedClusters[0] || ""
             : get().activeCluster;
 
         const remainingNodes = get().nodes.filter((node) => {
@@ -476,6 +478,36 @@ export const useTopologyStore = create<TopologyState>()(
       processWsMessage: (msg) => handleWsMessage(get(), set, msg),
       applyDelta: (msg) => handleWsMessage(get(), set, msg),
       triggerWsReconnect: () => set((state) => ({ wsReconnectTick: state.wsReconnectTick + 1 })),
+      resetStore: () => {
+        try {
+          localStorage.removeItem("envscale-topology-storage-v2");
+        } catch (err) {
+          console.warn("Failed to reset localStorage topology key:", err);
+        }
+        set({
+          clusters: [],
+          activeCluster: "",
+          clusterCpuCores: 0,
+          clusterMemoryGB: 0,
+          rawNodes: [],
+          nodes: [],
+          edges: [],
+          services: [],
+          pods: [],
+          ingresses: [],
+          replicaSets: [],
+          deployments: [],
+          daemonSets: [],
+          incidents: [],
+          selectedNode: null,
+          selectedNamespaces: [],
+          notifications: [],
+          undoStack: [],
+          redoStack: [],
+          wsStatus: "DISCONNECTED",
+          wsLatencyMs: 0,
+        });
+      },
     }),
     {
       name: "envscale-topology-storage-v2",
@@ -488,6 +520,18 @@ export const useTopologyStore = create<TopologyState>()(
         showSystemNamespaces: state.showSystemNamespaces,
         layoutDirection: state.layoutDirection,
       }),
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          const cleanedClusters = (state.clusters || []).filter((c) => c !== "mini-todo");
+          const cleanedActive = state.activeCluster === "mini-todo" ? cleanedClusters[0] || "" : state.activeCluster;
+          if (state.clusters.includes("mini-todo") || state.activeCluster === "mini-todo") {
+            useTopologyStore.setState({
+              clusters: cleanedClusters,
+              activeCluster: cleanedActive,
+            });
+          }
+        }
+      },
     }
   )
 );

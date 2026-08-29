@@ -155,8 +155,7 @@ export function IncidentsView() {
   const filteredIncidents = useMemo(() => {
     return incidents.filter((item) => {
       const ns = item.namespace || "default";
-      if (Array.isArray(selectedNamespaces)) {
-        if (selectedNamespaces.length === 0) return false;
+      if (Array.isArray(selectedNamespaces) && selectedNamespaces.length > 0) {
         if (!selectedNamespaces.includes(ns)) return false;
       } else if (!showSystemNamespaces && SYSTEM_NAMESPACES.has(ns)) {
         return false;
@@ -176,8 +175,7 @@ export function IncidentsView() {
   const filteredPods = useMemo(() => {
     return pods.filter((pod) => {
       const ns = pod.namespace || "default";
-      if (Array.isArray(selectedNamespaces)) {
-        if (selectedNamespaces.length === 0) return false;
+      if (Array.isArray(selectedNamespaces) && selectedNamespaces.length > 0) {
         return selectedNamespaces.includes(ns);
       }
       if (!showSystemNamespaces && SYSTEM_NAMESPACES.has(ns)) return false;

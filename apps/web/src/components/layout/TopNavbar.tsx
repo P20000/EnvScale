@@ -4,15 +4,14 @@ import {
   mdiChevronDown,
   mdiPlus,
   mdiBell,
-  mdiAccount,
   mdiCheck,
   mdiCheckAll,
-  mdiLock,
+  mdiTrashCanOutline,
 } from "@mdi/js";
 import { useTopologyStore, type NotificationItem } from "../../store/useTopologyStore";
+import { apiDisconnectCluster } from "../../config/api";
 import { AuthModal } from "./AuthModal";
 import { WorkspaceModal } from "./WorkspaceModal";
-import { authClient } from "../../lib/auth-client";
 import { NamespaceFilterPill } from "./NamespaceFilterPill";
 import { EnvScaleLogo } from "../ui/EnvScaleLogo";
 
@@ -41,17 +40,21 @@ export function TopNavbar({
   const markAllNotificationsRead = useTopologyStore((s) => s.markAllNotificationsRead);
   const storeWsStatus = useTopologyStore((s) => s.wsStatus);
   const addCluster = useTopologyStore((s) => s.addCluster);
+  const deleteCluster = useTopologyStore((s) => s.deleteCluster);
   const triggerWsReconnect = useTopologyStore((s) => s.triggerWsReconnect);
+
+  const handleDeleteCluster = (e: React.MouseEvent, clusterName: string) => {
+    e.stopPropagation();
+    apiDisconnectCluster(clusterName);
+    deleteCluster(clusterName);
+  };
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notifMenuOpen, setNotifMenuOpen] = useState(false);
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
-  const [loggedInEmail, setLoggedInEmail] = useState<string | null>(null);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const notifMenuRef = useRef<HTMLDivElement>(null);
-  const userMenuRef = useRef<HTMLDivElement>(null);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -63,40 +66,9 @@ export function TopNavbar({
       if (notifMenuRef.current && !notifMenuRef.current.contains(e.target as Node)) {
         setNotifMenuOpen(false);
       }
-      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
-        setUserMenuOpen(false);
-      }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  // Restore session on mount (for OAuth redirects and page reloads)
-  useEffect(() => {
-    // 1. Check local JWT from custom email/password login
-    const token = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
-    if (token) {
-      try {
-        const parts = token.split(".");
-        if (parts.length === 3) {
-          const payload = JSON.parse(atob(parts[1]));
-          if (payload.email) {
-            // Use setTimeout to avoid synchronous setState inside useEffect (ESLint warning)
-            setTimeout(() => setLoggedInEmail(payload.email), 0);
-            return;
-          }
-        }
-      } catch {
-        // ignore malformed token
-      }
-    }
-
-    // 2. Check Better-Auth session (from Google/GitHub OAuth cookie)
-    authClient.getSession().then((res) => {
-      if (res?.data?.user?.email) {
-        setLoggedInEmail(res.data.user.email);
-      }
-    }).catch(() => {});
   }, []);
 
   const currentWsStatus = propsWsStatus ?? storeWsStatus;
@@ -107,31 +79,22 @@ export function TopNavbar({
   const toggleDropdown = () => {
     setDropdownOpen((prev) => !prev);
     setNotifMenuOpen(false);
-    setUserMenuOpen(false);
   };
 
   const toggleNotif = () => {
     setNotifMenuOpen((prev) => !prev);
     setDropdownOpen(false);
-    setUserMenuOpen(false);
-  };
-
-  const toggleUser = () => {
-    setUserMenuOpen((prev) => !prev);
-    setDropdownOpen(false);
-    setNotifMenuOpen(false);
   };
 
   const closeAllMenus = () => {
     setDropdownOpen(false);
     setNotifMenuOpen(false);
-    setUserMenuOpen(false);
   };
 
   return (
     <>
       {/* Click-outside dimming backdrop overlay for popover menus */}
-      {(dropdownOpen || notifMenuOpen || userMenuOpen) && (
+      {(dropdownOpen || notifMenuOpen) && (
         <div
           className="fixed inset-0 z-40 bg-black/60"
           onClick={closeAllMenus}
@@ -168,7 +131,7 @@ export function TopNavbar({
             onClick={toggleDropdown}
             className="flex items-center gap-2 text-xs font-mono font-bold tracking-wider text-zinc-100 hover:text-white transition-colors"
           >
-            <span>{activeCluster}</span>
+            <span>{activeCluster || "Select Cluster"}</span>
             <Icon path={mdiChevronDown} size={0.65} className="text-zinc-400" />
           </button>
 
@@ -180,13 +143,13 @@ export function TopNavbar({
               </div>
               <div className="space-y-1">
                 {clusters.map((cluster) => (
-                  <button
+                  <div
                     key={cluster}
                     onClick={() => {
                       onSelectCluster(cluster);
                       setDropdownOpen(false);
                     }}
-                    className={`w-full flex items-center justify-between rounded-md px-2.5 py-1.5 text-xs font-mono transition-colors ${
+                    className={`group w-full flex items-center justify-between rounded-md px-2.5 py-1.5 text-xs font-mono cursor-pointer transition-colors ${
                       activeCluster === cluster
                         ? "bg-blue-500/10 text-blue-400 font-semibold"
                         : "text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
@@ -196,8 +159,18 @@ export function TopNavbar({
                       <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${activeCluster === cluster ? "bg-emerald-500" : "bg-zinc-600"}`} />
                       <span className="truncate">{cluster}</span>
                     </span>
-                    {activeCluster === cluster && <Icon path={mdiCheck} size={0.65} className="text-blue-400 shrink-0" />}
-                  </button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {activeCluster === cluster && <Icon path={mdiCheck} size={0.65} className="text-blue-400" />}
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteCluster(e, cluster)}
+                        title={`Delete cluster ${cluster}`}
+                        className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-red-400 p-1 rounded transition-all"
+                      >
+                        <Icon path={mdiTrashCanOutline} size={0.6} />
+                      </button>
+                    </div>
+                  </div>
                 ))}
               </div>
               <div className="my-1 h-px bg-zinc-800" />
@@ -326,77 +299,6 @@ export function TopNavbar({
             )}
           </div>
 
-          {/* User Profile / Auth & Workspace Actions */}
-          <div className="relative" ref={userMenuRef}>
-            <button
-              onClick={toggleUser}
-              className={`h-8 w-8 rounded-full border flex items-center justify-center transition-colors ${
-                loggedInEmail
-                  ? "border-blue-500/50 bg-blue-500/10 text-blue-400 hover:border-blue-400"
-                  : "border-zinc-800 bg-[#18181b] text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
-              }`}
-            >
-              <Icon path={mdiAccount} size={0.7} />
-            </button>
-
-            {userMenuOpen && (
-              <div className="absolute top-full right-0 mt-3 w-52 rounded-xl border border-zinc-700 bg-[#18181c] p-2 z-[70] shadow-2xl space-y-1">
-                <div className="px-2 py-1.5">
-                  {loggedInEmail ? (
-                    <>
-                      <div className="text-xs font-medium text-zinc-100">Authenticated</div>
-                      <div className="text-[10px] text-zinc-400 font-mono truncate">{loggedInEmail}</div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="text-xs font-medium text-zinc-100">Not signed in</div>
-                      <div className="text-[10px] text-zinc-500">Sign in to authenticate the stream</div>
-                    </>
-                  )}
-                </div>
-
-                <div className="my-1 h-px bg-zinc-800" />
-
-                {loggedInEmail ? (
-                  <button
-                    onClick={async () => {
-                      setUserMenuOpen(false);
-                      localStorage.removeItem("envscale_auth_token");
-                      localStorage.removeItem("envscale_access_token");
-                      setLoggedInEmail(null);
-                      await authClient.signOut().catch(() => {});
-                    }}
-                    className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-red-400 hover:bg-zinc-800 hover:text-red-300 transition-colors"
-                  >
-                    <Icon path={mdiLock} size={0.65} className="text-red-400" />
-                    <span>Sign Out</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => {
-                      setUserMenuOpen(false);
-                      setAuthModalOpen(true);
-                    }}
-                    className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors"
-                  >
-                    <Icon path={mdiLock} size={0.65} className="text-blue-400" />
-                    <span>Sign In</span>
-                  </button>
-                )}
-
-                <button
-                  onClick={() => {
-                    setUserMenuOpen(false);
-                    setWorkspaceModalOpen(true);
-                  }}
-                  className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors"
-                >
-                  <EnvScaleLogo className="h-3.5 w-3.5 text-blue-400" />
-                  <span>New Workspace</span>
-                </button>
-              </div>
-            )}
-          </div>
         </div>
       </header>
 
@@ -404,8 +306,7 @@ export function TopNavbar({
       <AuthModal
         isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
-        onLoginSuccess={(email) => {
-          setLoggedInEmail(email);
+        onLoginSuccess={() => {
           setAuthModalOpen(false);
           // Immediately reconnect WebSocket with the JWT now in localStorage
           triggerWsReconnect();

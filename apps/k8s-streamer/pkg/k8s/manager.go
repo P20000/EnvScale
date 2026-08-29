@@ -108,6 +108,18 @@ func (cm *ClusterManager) UnregisterCluster(clusterID string) error {
 	return nil
 }
 
+// UnregisterAllClusters stops all running informers and clears the registry.
+func (cm *ClusterManager) UnregisterAllClusters() {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	for id, im := range cm.clusters {
+		im.Stop()
+		delete(cm.clusters, id)
+		log.Printf("[ClusterManager] Unregistered and stopped informers for cluster: %s", id)
+	}
+}
+
 // GetClusterSnapshot retrieves the current cached state of pods, nodes, services, and workloads for a given cluster.
 func (cm *ClusterManager) GetClusterSnapshot(clusterID string) (
 	[]types.PodStatusDelta,

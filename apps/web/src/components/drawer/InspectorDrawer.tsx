@@ -45,12 +45,17 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
     setChaosActionMsg(`Injecting ${actionLabel} into ${target.data.name}...`);
     try {
       const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
-      const clusterId = useTopologyStore.getState().activeCluster || "mini-todo";
+      const clusterId = useTopologyStore.getState().activeCluster;
+      if (!clusterId) {
+        setChaosActionMsg("Error: No active cluster selected.");
+        return;
+      }
       const namespace = (target.data as K8sPodData).namespace || "default";
 
       const res = await fetch(`${API_BASE_URL}/api/v1/chaos/inject`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           clusterId: clusterId,
           namespace: namespace,

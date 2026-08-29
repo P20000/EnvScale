@@ -346,9 +346,9 @@ class LocalRunApp(Gtk.Window):
                 b64_kubeconfig = base64.b64encode(kubeconfig.encode()).decode()
                 req = urllib.request.Request("http://localhost:8080/api/v1/clusters/register", method="POST")
                 req.add_header("Content-Type", "application/json")
-                data = json.dumps({"clusterId": "mini-todo", "kubeconfig": b64_kubeconfig}).encode()
+                data = json.dumps({"clusterId": "minikube", "kubeconfig": b64_kubeconfig}).encode()
                 urllib.request.urlopen(req, data=data, timeout=10)
-                self.append_log("[AUTO-REGISTER] ✅ Automatically registered 'mini-todo' cluster with streaming gateway!")
+                self.append_log("[AUTO-REGISTER] ✅ Automatically registered 'minikube' cluster with streaming gateway!")
             except Exception as e:
                 self.append_log(f"[AUTO-REGISTER] ❌ Failed to auto-register cluster: {e}")
 

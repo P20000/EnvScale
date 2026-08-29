@@ -28,7 +28,7 @@ export function useResourceLogs({
 
   const wsRef = useRef<WebSocket | null>(null);
   const activeCluster = useTopologyStore((s) => s.activeCluster);
-  const targetCluster = clusterId || activeCluster || "mini-todo";
+  const targetCluster = clusterId || activeCluster;
 
   const clearLogs = useCallback(() => {
     setLogs([]);
@@ -42,7 +42,7 @@ export function useResourceLogs({
   }, [logs]);
 
   useEffect(() => {
-    if (!name || !enabled) {
+    if (!name || !enabled || !targetCluster) {
       return;
     }
 

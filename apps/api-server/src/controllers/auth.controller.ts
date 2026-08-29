@@ -9,6 +9,8 @@ import {
   verifyPassword,
 } from "../services/auth.service.js";
 
+import { ensureDefaultWorkspace } from "../services/workspace.service.js";
+
 const setRefreshCookie = (response: Response, token: string) => {
   response.cookie("refreshToken", token, {
     httpOnly: true,
@@ -28,9 +30,14 @@ export const register = async (request: Request, response: Response) => {
 
   try {
     const user = await registerUser(name, email, password);
+    const workspace = await ensureDefaultWorkspace(user.id, user.name);
     const tokens = await issueTokens(user);
     setRefreshCookie(response, tokens.refreshToken);
-    response.status(201).json({ accessToken: tokens.accessToken, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+    response.status(201).json({
+      accessToken: tokens.accessToken,
+      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      workspace,
+    });
   } catch (error) {
     console.error(error);
     response.status(500).json({ error: "Unable to register user" });
@@ -56,9 +63,14 @@ export const login = async (request: Request, response: Response) => {
     return;
   }
 
+  const workspace = await ensureDefaultWorkspace(user.id, user.name);
   const tokens = await issueTokens(user);
   setRefreshCookie(response, tokens.refreshToken);
-  response.json({ accessToken: tokens.accessToken, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+  response.json({
+    accessToken: tokens.accessToken,
+    user: { id: user.id, name: user.name, email: user.email, role: user.role },
+    workspace,
+  });
 };
 
 export const refresh = async (request: Request, response: Response) => {
@@ -83,7 +95,11 @@ export const me = async (request: Request, response: Response) => {
     response.status(401).json({ error: "User unavailable" });
     return;
   }
-  response.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+  const workspace = await ensureDefaultWorkspace(user.id, user.name);
+  response.json({
+    user: { id: user.id, name: user.name, email: user.email, role: user.role },
+    workspace,
+  });
 };
 
 export const getStreamerToken = async (request: Request, response: Response) => {

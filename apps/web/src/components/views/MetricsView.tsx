@@ -246,8 +246,7 @@ export function MetricsView() {
   const filteredPods = useMemo(() => {
     return pods.filter((pod) => {
       const ns = pod.namespace || "default";
-      if (Array.isArray(selectedNamespaces)) {
-        if (selectedNamespaces.length === 0) return false;
+      if (Array.isArray(selectedNamespaces) && selectedNamespaces.length > 0) {
         return selectedNamespaces.includes(ns);
       }
       if (!showSystemNamespaces && SYSTEM_NAMESPACES.has(ns)) return false;

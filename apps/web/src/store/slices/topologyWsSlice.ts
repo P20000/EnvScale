@@ -152,6 +152,20 @@ export function handleWsMessage(
     const snapshotDeployments = Array.isArray(payloadData.deployments) ? (payloadData.deployments as K8sDeploymentData[]) : [];
     const snapshotDS = Array.isArray(payloadData.daemonSets) ? (payloadData.daemonSets as K8sDaemonSetData[]) : [];
 
+    let updatedNamespaces = state.selectedNamespaces;
+    if (updatedNamespaces.length === 0) {
+      const nsSet = new Set<string>();
+      newRawNodes.forEach((n) => {
+        const d = n.data as Record<string, unknown> | undefined;
+        if (d?.namespace && typeof d.namespace === "string") {
+          nsSet.add(d.namespace);
+        }
+      });
+      const sysNs = new Set(["kube-system", "ingress-nginx", "local-path-storage", "kube-public", "kube-node-lease"]);
+      const nonSys = Array.from(nsSet).filter((ns) => !sysNs.has(ns));
+      updatedNamespaces = nonSys.length > 0 ? nonSys : Array.from(nsSet);
+    }
+
     set({
       rawNodes: newRawNodes,
       clusterCpuCores: parsedCpu,
@@ -162,6 +176,7 @@ export function handleWsMessage(
       replicaSets: snapshotRS,
       deployments: snapshotDeployments,
       daemonSets: snapshotDS,
+      selectedNamespaces: updatedNamespaces,
     });
     state.applyDagreLayout();
   } else if (

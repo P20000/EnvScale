@@ -281,10 +281,7 @@ export const aggregateNodesWithWorkloads = (
     const d = n.data as Record<string, unknown> | undefined;
     const ns = String(d?.namespace || "default");
 
-    if (Array.isArray(selectedNamespaces)) {
-      if (selectedNamespaces.length === 0) {
-        return false;
-      }
+    if (Array.isArray(selectedNamespaces) && selectedNamespaces.length > 0) {
       if (!selectedNamespaces.includes(ns)) {
         return false;
       }
@@ -418,8 +415,7 @@ export const aggregateNodesWithWorkloads = (
   const dsNodes: Node[] = (daemonSets || [])
     .filter((ds) => {
       const ns = ds.namespace || "default";
-      if (Array.isArray(selectedNamespaces)) {
-        if (selectedNamespaces.length === 0) return false;
+      if (Array.isArray(selectedNamespaces) && selectedNamespaces.length > 0) {
         return selectedNamespaces.includes(ns);
       }
       return showSystemNamespaces || !SYSTEM_NAMESPACES.has(ns);

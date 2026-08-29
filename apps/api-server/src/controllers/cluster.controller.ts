@@ -6,10 +6,22 @@ import {
   listClusters,
 } from "../services/cluster.service.js";
 
+import { ensureDefaultWorkspace } from "../services/workspace.service.js";
+
 export const connect = async (request: Request, response: Response) => {
-  const workspaceId = request.params.id as string;
+  let workspaceId = request.params.id as string | undefined;
 
   try {
+    if (!workspaceId && request.user) {
+      const workspace = await ensureDefaultWorkspace(request.user.id, request.user.name);
+      workspaceId = workspace.id;
+    }
+
+    if (!workspaceId) {
+      response.status(401).json({ error: "Authentication required to connect cluster" });
+      return;
+    }
+
     response.status(201).json(await connectCluster(workspaceId, request.body));
   } catch (error: unknown) {
     if (error instanceof ClusterConnectionError) {

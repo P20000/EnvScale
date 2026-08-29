@@ -120,8 +120,12 @@ export function useK8sStream(
   }, []);
 
   const connect = useCallback(async () => {
-    if (!shouldReconnectRef.current || !targetClusterId) {
-      if (!targetClusterId) setStatus("DISCONNECTED");
+    if (!shouldReconnectRef.current || !targetClusterId || targetClusterId === "mini-todo") {
+      if (!targetClusterId || targetClusterId === "mini-todo") {
+        queueMicrotask(() => {
+          if (isComponentMounted.current) setStatus("DISCONNECTED");
+        });
+      }
       return;
     }
 
@@ -138,20 +142,33 @@ export function useK8sStream(
       reconnectTimeoutRef.current = null;
     }
 
-    setStatus(reconnectAttemptRef.current > 0 ? "RECONNECTING" : "CONNECTING");
+    const nextStatus = reconnectAttemptRef.current > 0 ? "RECONNECTING" : "CONNECTING";
+    queueMicrotask(() => {
+      if (isComponentMounted.current) {
+        setStatus(nextStatus);
+      }
+    });
 
     try {
-      let authenticatedWsUrl = wsUrl;
       const token = await getStreamerToken();
-      if (token) {
-        try {
-          const urlObj = new URL(wsUrl);
-          urlObj.searchParams.set("token", token);
-          authenticatedWsUrl = urlObj.toString();
-        } catch {
-          const hasQuery = wsUrl.includes("?");
-          authenticatedWsUrl = `${wsUrl}${hasQuery ? "&" : "?"}token=${encodeURIComponent(token)}`;
-        }
+      if (!token) {
+        console.warn("[EnvScale WS] No active JWT authentication session found. Gating streamer WebSocket.");
+        queueMicrotask(() => {
+          if (isComponentMounted.current) {
+            setStatus("DISCONNECTED");
+          }
+        });
+        return;
+      }
+
+      let authenticatedWsUrl = wsUrl;
+      try {
+        const urlObj = new URL(wsUrl);
+        urlObj.searchParams.set("token", token);
+        authenticatedWsUrl = urlObj.toString();
+      } catch {
+        const hasQuery = wsUrl.includes("?");
+        authenticatedWsUrl = `${wsUrl}${hasQuery ? "&" : "?"}token=${encodeURIComponent(token)}`;
       }
 
       const socket = new WebSocket(authenticatedWsUrl);
@@ -319,7 +336,7 @@ export function useK8sStream(
         setLatencyMs(0);
       }
     }
-  }, [wsUrl, scheduleReconnect]);
+  }, [wsUrl, scheduleReconnect, targetClusterId]);
 
   const disconnect = useCallback(() => {
     shouldReconnectRef.current = false;

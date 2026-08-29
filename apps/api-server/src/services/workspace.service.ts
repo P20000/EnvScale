@@ -10,6 +10,17 @@ export const listUserWorkspaces = async (userId: string) =>
     .innerJoin(workspaces, eq(workspaceMembers.workspaceId, workspaces.id))
     .where(and(eq(workspaceMembers.userId, userId), eq(workspaces.isActive, true)));
 
+export const ensureDefaultWorkspace = async (userId: string, userName: string) => {
+  const existing = await listUserWorkspaces(userId);
+  if (existing.length > 0) {
+    return existing[0].workspace;
+  }
+  const cleanName = userName || "User";
+  const baseSlug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "user";
+  const slug = `${baseSlug}-workspace-${userId.slice(0, 6)}`;
+  return createWorkspace(userId, `${cleanName}'s Workspace`, slug, "Default personal workspace");
+};
+
 export const getWorkspace = async (workspaceId: string) => {
   const result = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId)).limit(1);
   return result[0];

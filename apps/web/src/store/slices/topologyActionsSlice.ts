@@ -21,11 +21,13 @@ export function handleUndoAction(
 
   if (action.type === "DELETE_RESOURCE") {
     const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
-    const clusterId = get().activeCluster || "mini-todo";
+    const clusterId = get().activeCluster;
+    if (!clusterId) return;
 
     fetch(`${API_BASE_URL}/api/v1/resource/apply`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({
         clusterId,
         namespace: action.namespace,
@@ -92,11 +94,13 @@ export function handleRedoAction(
 
   if (action.type === "DELETE_RESOURCE") {
     const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
-    const clusterId = get().activeCluster || "mini-todo";
+    const clusterId = get().activeCluster;
+    if (!clusterId) return;
 
     fetch(`${API_BASE_URL}/api/v1/resource/delete`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({
         clusterId,
         namespace: action.namespace,
@@ -158,17 +162,20 @@ export function handleRemoveTarget(
 
     if (!options?.skipApi) {
       const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
-      const clusterId = get().activeCluster || "mini-todo";
-      fetch(`${API_BASE_URL}/api/v1/resource/delete`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          clusterId,
-          namespace: ns,
-          resourceKind: resKind,
-          resourceName: resName,
-        }),
-      }).catch(() => {});
+      const clusterId = get().activeCluster;
+      if (clusterId) {
+        fetch(`${API_BASE_URL}/api/v1/resource/delete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            clusterId,
+            namespace: ns,
+            resourceKind: resKind,
+            resourceName: resName,
+          }),
+        }).catch(() => {});
+      }
     }
 
     if (!options?.skipHistory) {

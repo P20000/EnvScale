@@ -3,6 +3,7 @@ package k8s
 import (
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,9 +47,30 @@ func NewInformerManager(kubeconfigBytes []byte, hub *websocket.Hub, clusterID st
 		return nil, fmt.Errorf("failed to build rest config: %w", err)
 	}
 
+	restConfig.Timeout = 4 * time.Second
 	clientset, err := kubernetes.NewForConfig(restConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create kubernetes clientset: %w", err)
+	var pingErr error
+	if err == nil {
+		_, pingErr = clientset.Discovery().ServerVersion()
+	} else {
+		pingErr = err
+	}
+
+	if pingErr != nil && (strings.Contains(pingErr.Error(), "x509") || strings.Contains(pingErr.Error(), "unknown authority") || strings.Contains(pingErr.Error(), "verification error")) {
+		log.Printf("[K8s Informer] Self-signed TLS CA detected for cluster %s (%v). Retrying with Insecure=true fallback...", clusterID, pingErr)
+		restConfig.Insecure = true
+		restConfig.CAData = nil
+		restConfig.CAFile = ""
+		if cs, err2 := kubernetes.NewForConfig(restConfig); err2 == nil {
+			if _, err3 := cs.Discovery().ServerVersion(); err3 == nil {
+				clientset = cs
+				pingErr = nil
+			}
+		}
+	}
+
+	if pingErr != nil {
+		return nil, fmt.Errorf("cluster API server unreachable: %w", pingErr)
 	}
 
 	metricsClient, err := metricsv.NewForConfig(restConfig)

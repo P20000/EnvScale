@@ -9,7 +9,7 @@ import { standardLimiter, authLimiter } from "./middleware/rate-limit.js";
 import { authRouter } from "./routes/auth.routes.js";
 import { alertPolicyRouter, topLevelAlertPolicyRouter } from "./routes/alert-policy.routes.js";
 import { alertRouter, topLevelAlertRouter } from "./routes/alert.routes.js";
-import { clusterRouter } from "./routes/cluster.routes.js";
+import { clusterRouter, topLevelClusterRouter } from "./routes/cluster.routes.js";
 import { incidentRouter, topLevelIncidentRouter } from "./routes/incident.routes.js";
 import { healthHistoryRouter, leaderboardRouter } from "./routes/leaderboard.routes.js";
 import { workspaceRouter } from "./routes/workspace.routes.js";
@@ -66,6 +66,7 @@ app.get("/health", (_request, response) => {
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/workspaces", workspaceRouter);
 app.use("/api/v1/workspaces/:id/clusters", clusterRouter);
+app.use("/api/v1/clusters", topLevelClusterRouter);
 app.use("/api/v1/workspaces/:id/alert-policies", alertPolicyRouter);
 app.use("/api/v1/alert-policies", topLevelAlertPolicyRouter);
 app.use("/api/v1/workspaces/:id/alerts", alertRouter);
