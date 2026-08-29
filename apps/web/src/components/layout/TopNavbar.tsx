@@ -43,10 +43,14 @@ export function TopNavbar({
   const deleteCluster = useTopologyStore((s) => s.deleteCluster);
   const triggerWsReconnect = useTopologyStore((s) => s.triggerWsReconnect);
 
-  const handleDeleteCluster = (e: React.MouseEvent, clusterName: string) => {
+  const handleDeleteCluster = async (e: React.MouseEvent, clusterName: string) => {
     e.stopPropagation();
-    apiDisconnectCluster(clusterName);
-    deleteCluster(clusterName);
+    const success = await apiDisconnectCluster(clusterName);
+    if (success) {
+      deleteCluster(clusterName);
+    } else {
+      console.error(`Failed to delete cluster ${clusterName} from backend.`);
+    }
   };
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notifMenuOpen, setNotifMenuOpen] = useState(false);

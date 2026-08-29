@@ -38,7 +38,18 @@ export const list = async (request: Request, response: Response) => {
 };
 
 export const remove = async (request: Request, response: Response) => {
-  const workspaceId = request.params.id as string;
+  let workspaceId = request.params.id as string | undefined;
+
+  if (!workspaceId && request.user) {
+    const workspace = await ensureDefaultWorkspace(request.user.id, request.user.name);
+    workspaceId = workspace.id;
+  }
+
+  if (!workspaceId) {
+    response.status(401).json({ error: "Authentication required to delete cluster" });
+    return;
+  }
+
   const clusterId = request.params.clusterId as string;
   await deleteCluster(workspaceId, clusterId);
   response.status(204).send();

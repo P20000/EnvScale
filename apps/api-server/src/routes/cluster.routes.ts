@@ -15,3 +15,4 @@ export const topLevelClusterRouter: Router = Router();
 topLevelClusterRouter.use(requireAuth);
 topLevelClusterRouter.post("/", validate("body", clusterConnectSchema, "Invalid cluster data"), connect);
 topLevelClusterRouter.post("/connect", validate("body", clusterConnectSchema, "Invalid cluster data"), connect);
+topLevelClusterRouter.delete("/:clusterId", validate("params", clusterParamsSchema, "Invalid cluster parameters"), remove);

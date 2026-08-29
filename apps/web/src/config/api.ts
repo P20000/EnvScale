@@ -294,12 +294,12 @@ export async function apiDisconnectCluster(clusterId: string): Promise<boolean> 
     const headers: Record<string, string> = {};
     if (rawAuth && rawAuth !== "null") headers["Authorization"] = `Bearer ${rawAuth}`;
 
-    await fetch(`${API_BASE_URL}/api/v1/clusters/${clusterId}`, {
+    const res = await fetch(`${API_BASE_URL}/api/v1/clusters/${clusterId}`, {
       method: "DELETE",
       headers,
       credentials: "include",
     });
-    return true;
+    return res.ok;
   } catch {
     return false;
   }
