@@ -46,7 +46,7 @@ export function IncidentsView() {
   const clusters = useTopologyStore((s) => s.clusters);
   const activeCluster = useTopologyStore((s) => s.activeCluster);
   const pods = useTopologyStore((s) => s.pods);
-  const notifications = useTopologyStore((s) => s.notifications);
+
   const k8sEvents = useTopologyStore((s) => s.incidents);
 
   const alertRules = useAlertStore((s) => s.alertRules);
@@ -110,24 +110,7 @@ export function IncidentsView() {
       }
     });
 
-    notifications.forEach((n) => {
-      const shortId = n.id ? n.id.slice(-6).toUpperCase() : "ALERT";
-      const id = `INC-${shortId}`;
-      if (!seenIds.has(id)) {
-        seenIds.add(id);
-        list.push({
-          id,
-          pod: n.targetPod || "workload",
-          namespace: n.namespace || "default",
-          cluster: activeClusterName,
-          severity: n.type === "error" ? "CRITICAL" : n.type === "warning" ? "WARNING" : "INFO",
-          message: n.message,
-          time: formatPreciseTime(),
-          rawTimestamp: new Date().toISOString(),
-          status: "TRIGGERED",
-        });
-      }
-    });
+
 
     pods.forEach((p) => {
       const podName = p.name || (p as unknown as { id?: string }).id || "pod";
@@ -152,7 +135,7 @@ export function IncidentsView() {
     });
 
     return list.sort((a, b) => (b.rawTimestamp || "").localeCompare(a.rawTimestamp || ""));
-  }, [k8sEvents, notifications, pods, activeClusterName]);
+  }, [k8sEvents, pods, activeClusterName]);
 
   const selectedNamespaces = useUIStore((s) => s.selectedNamespaces);
   const showSystemNamespaces = useUIStore((s) => s.showSystemNamespaces);
