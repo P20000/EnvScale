@@ -157,12 +157,10 @@ export default function ConnectClusterWizard({
 
       if (res.error) {
         setConnectionError(res.error);
+      } else if (!res.cluster?.id) {
+        setConnectionError("Backend did not return a valid Cluster ID. Registration may have failed.");
       } else {
-        if (res.cluster?.id) {
-           setConnectedCluster({ id: res.cluster.id, name: res.cluster.name });
-        } else {
-           setConnectedCluster({ id: `temp-${Date.now()}`, name: parsed.data.name });
-        }
+        setConnectedCluster({ id: res.cluster.id, name: res.cluster.name });
         setIsConnected(true);
       }
     } catch (err) {

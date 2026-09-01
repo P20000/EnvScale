@@ -46,8 +46,8 @@ function AppContent() {
           dbClusters.forEach((c: { id: string; name: string }) => {
             if (c.id && c.name) store.addCluster({ id: c.id, name: c.name });
           });
-          if (!store.activeCluster && dbClusters[0]?.name) {
-            store.setActiveCluster(dbClusters[0].name);
+          if (!store.activeCluster && dbClusters[0]?.id) {
+            store.setActiveCluster(dbClusters[0].id);
           }
         }
       }

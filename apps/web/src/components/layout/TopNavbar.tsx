@@ -7,6 +7,7 @@ import {
   mdiCheck,
   mdiCheckAll,
   mdiTrashCanOutline,
+  mdiAlertCircle,
 } from "@mdi/js";
 import { useTopologyStore, type NotificationItem } from "../../store/useTopologyStore";
 import type { Cluster } from "../../store/types/topologyTypes";
@@ -45,8 +46,17 @@ export function TopNavbar({
   const deleteCluster = useTopologyStore((s) => s.deleteCluster);
   const triggerWsReconnect = useTopologyStore((s) => s.triggerWsReconnect);
 
-  const handleDeleteCluster = async (e: React.MouseEvent, cluster: Cluster) => {
+  const [pendingDeleteCluster, setPendingDeleteCluster] = useState<Cluster | null>(null);
+
+  const handleDeleteClusterClick = (e: React.MouseEvent, cluster: Cluster) => {
     e.stopPropagation();
+    setPendingDeleteCluster(cluster);
+  };
+
+  const confirmDeleteCluster = async () => {
+    if (!pendingDeleteCluster) return;
+    const cluster = pendingDeleteCluster;
+    setPendingDeleteCluster(null);
     // Optimistically remove from frontend to prevent ghost clusters
     deleteCluster(cluster.id);
     const success = await apiDisconnectCluster(cluster.id);
@@ -54,6 +64,7 @@ export function TopNavbar({
       console.error(`Failed to delete cluster ${cluster.name || cluster.id} from backend, but it was removed locally.`);
     }
   };
+
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notifMenuOpen, setNotifMenuOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
@@ -137,7 +148,7 @@ export function TopNavbar({
             onClick={toggleDropdown}
             className="flex items-center gap-2 text-xs font-mono font-bold tracking-wider text-zinc-100 hover:text-white transition-colors"
           >
-            <span>{activeCluster || "Select Cluster"}</span>
+            <span>{clusters.find(c => c.id === activeCluster)?.name || "Select Cluster"}</span>
             <Icon path={mdiChevronDown} size={0.65} className="text-zinc-400" />
           </button>
 
@@ -152,24 +163,24 @@ export function TopNavbar({
                   <div
                     key={cluster.id}
                     onClick={() => {
-                      onSelectCluster(cluster.name);
+                      onSelectCluster(cluster.id);
                       setDropdownOpen(false);
                     }}
                     className={`group w-full flex items-center justify-between rounded-md px-2.5 py-1.5 text-xs font-mono cursor-pointer transition-colors ${
-                      activeCluster === cluster.name
+                      activeCluster === cluster.id
                         ? "bg-blue-500/10 text-blue-400 font-semibold"
                         : "text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
                     }`}
                   >
                     <span className="flex items-center gap-2 truncate">
-                      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${activeCluster === cluster.name ? "bg-emerald-500" : "bg-zinc-600"}`} />
+                      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${activeCluster === cluster.id ? "bg-emerald-500" : "bg-zinc-600"}`} />
                       <span className="truncate">{cluster.name}</span>
                     </span>
                     <div className="flex items-center gap-1 shrink-0">
-                      {activeCluster === cluster.name && <Icon path={mdiCheck} size={0.65} className="text-blue-400" />}
+                      {activeCluster === cluster.id && <Icon path={mdiCheck} size={0.65} className="text-blue-400" />}
                       <button
                         type="button"
-                        onClick={(e) => handleDeleteCluster(e, cluster)}
+                        onClick={(e) => handleDeleteClusterClick(e, cluster)}
                         title={`Delete cluster ${cluster.name}`}
                         className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-red-400 p-1 rounded transition-all"
                       >
@@ -339,6 +350,45 @@ export function TopNavbar({
           addCluster({ id: `mock-${Date.now()}`, name: mockName });
         }}
       />
+
+      {/* Cluster Deletion Confirmation Dialog */}
+      {pendingDeleteCluster && (
+        <>
+          <div
+            className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm"
+            onClick={() => setPendingDeleteCluster(null)}
+          />
+          <div className="fixed z-[90] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] rounded-2xl border border-zinc-700 bg-[#18181c] p-6 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-500/10 border border-red-500/20">
+                <Icon path={mdiAlertCircle} size={0.9} className="text-red-400" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-zinc-100 font-heading">Delete Cluster</h3>
+                <p className="mt-1 text-xs text-zinc-400 leading-relaxed">
+                  Are you sure you want to disconnect and remove{" "}
+                  <span className="font-semibold text-zinc-200">{pendingDeleteCluster.name}</span>?
+                  This will unregister it from the streaming gateway and delete it from the database.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setPendingDeleteCluster(null)}
+                className="rounded-lg px-4 py-2 text-xs font-medium text-zinc-300 border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteCluster}
+                className="rounded-lg px-4 py-2 text-xs font-semibold text-white bg-red-500 hover:bg-red-600 transition-colors"
+              >
+                Delete Cluster
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 }

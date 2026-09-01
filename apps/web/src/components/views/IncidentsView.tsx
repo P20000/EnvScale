@@ -65,6 +65,10 @@ export function IncidentsView() {
     markAllNotificationsRead();
   }, [markAllNotificationsRead]);
 
+  const activeClusterName = useMemo(() => {
+    return clusters.find((c) => c.id === activeCluster)?.name || activeCluster || "minikube";
+  }, [clusters, activeCluster]);
+
   const incidents = useMemo<IncidentItem[]>(() => {
     const list: IncidentItem[] = [];
     const seenIds = new Set<string>();
@@ -96,7 +100,7 @@ export function IncidentsView() {
           id,
           pod: evt.targetPod || "cluster-node",
           namespace: evt.namespace || "default",
-          cluster: activeCluster || "minikube",
+          cluster: activeClusterName,
           severity,
           message: `${evt.reason || "K8s Event"}: ${evt.message}`,
           time: evt.timestamp ? formatPreciseTime(evt.timestamp) : "Just now",
@@ -115,7 +119,7 @@ export function IncidentsView() {
           id,
           pod: n.targetPod || "workload",
           namespace: n.namespace || "default",
-          cluster: activeCluster || "minikube",
+          cluster: activeClusterName,
           severity: n.type === "error" ? "CRITICAL" : n.type === "warning" ? "WARNING" : "INFO",
           message: n.message,
           time: formatPreciseTime(),
@@ -136,7 +140,7 @@ export function IncidentsView() {
             id,
             pod: podName,
             namespace: p.namespace || "default",
-            cluster: activeCluster || "minikube",
+            cluster: activeClusterName,
             severity: "CRITICAL",
             message: `Pod entered state ${status} (Restarts: ${p.restarts ?? 0})`,
             time: formatPreciseTime(),
@@ -148,7 +152,7 @@ export function IncidentsView() {
     });
 
     return list.sort((a, b) => (b.rawTimestamp || "").localeCompare(a.rawTimestamp || ""));
-  }, [k8sEvents, notifications, pods, activeCluster]);
+  }, [k8sEvents, notifications, pods, activeClusterName]);
 
   const selectedNamespaces = useUIStore((s) => s.selectedNamespaces);
   const showSystemNamespaces = useUIStore((s) => s.showSystemNamespaces);

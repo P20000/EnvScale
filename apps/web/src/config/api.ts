@@ -163,22 +163,8 @@ export async function apiConnectCluster(clusterData: {
   workspaceId?: string;
 }): Promise<ClusterResponse> {
   try {
-    // 1. Direct registration to Go k8s-streamer gateway (http://localhost:8080) for instant streaming
-    const streamerRes = await fetch(`${STREAMER_BASE_URL}/api/v1/clusters/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        clusterId: clusterData.name,
-        kubeconfig: clusterData.kubeconfig,
-      }),
-    });
-
-    if (!streamerRes.ok) {
-      const errText = await streamerRes.text();
-      return { error: errText || `Failed to connect cluster to streamer gateway (${streamerRes.status})` };
-    }
-
-    console.log(`[EnvScale] Cluster "${clusterData.name}" registered with k8s-streamer gateway`);
+    // 1. Direct registration removed; API server now handles it with correct UUID
+    // 2. Persist cluster registration in REST API server (http://localhost:3000)
 
     // 2. Persist cluster registration in REST API server (http://localhost:3000)
     try {
@@ -205,9 +191,12 @@ export async function apiConnectCluster(clusterData: {
       });
 
       if (res.ok) {
-        const data = (await res.json()) as ClusterResponse;
+        const data = await res.json();
         console.log(`[EnvScale] Cluster "${clusterData.name}" persisted to PostgreSQL DB`);
-        return data;
+        // The backend returns the cluster object at the root level (e.g. { id, name, type, ... }).
+        // Normalize into the { cluster: { id, name } } shape the wizard expects.
+        const cluster = data.cluster || data;
+        return { cluster: { id: cluster.id, name: cluster.name, environment: cluster.type } } as ClusterResponse;
       } else {
         const errJson = await res.json().catch(() => ({}));
         console.warn("[EnvScale] REST server cluster persistence error response:", errJson);

@@ -76,7 +76,7 @@ export const connectCluster = async (
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        clusterId: cluster.id || values.name,
+        clusterId: cluster.id,
         kubeconfig: values.kubeconfig,
       }),
     });
@@ -100,7 +100,7 @@ export const listClusters = async (workspaceId: string) => {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            clusterId: c.name,
+            clusterId: c.id,
             kubeconfig: rawKubeconfig,
           }),
         });

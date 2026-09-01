@@ -120,8 +120,8 @@ export function useK8sStream(
   }, []);
 
   const connect = useCallback(async () => {
-    if (!shouldReconnectRef.current || !targetClusterId || targetClusterId === "mini-todo") {
-      if (!targetClusterId || targetClusterId === "mini-todo") {
+    if (!shouldReconnectRef.current || !targetClusterId) {
+      if (!targetClusterId) {
         queueMicrotask(() => {
           if (isComponentMounted.current) setStatus("DISCONNECTED");
         });
