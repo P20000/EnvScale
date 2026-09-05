@@ -2,12 +2,20 @@ import { and, eq } from "drizzle-orm";
 import { KubeConfig, CoreV1Api } from "@kubernetes/client-node";
 import { db } from "../db/client.js";
 import { clusters } from "../db/schema.js";
-import { decryptKubeconfig, encryptKubeconfig } from "../utils/crypto.js";
+import { encryptKubeconfig } from "../utils/crypto.js";
+import { clusterConnectSchema, idSchema } from "../schemas/request.schemas.js";
 
 export class ClusterConnectionError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ClusterConnectionError";
+  }
+}
+
+export class ClusterNotFoundError extends Error {
+  constructor(clusterId: string) {
+    super(`Cluster with ID ${clusterId} was not found in this workspace`);
+    this.name = "ClusterNotFoundError";
   }
 }
 
@@ -25,6 +33,30 @@ const publicClusterFields = {
   metadata: clusters.metadata,
   createdAt: clusters.createdAt,
   updatedAt: clusters.updatedAt,
+};
+
+const notifyStreamerGateway = async (endpoint: string, method: "POST" | "DELETE", payload: object) => {
+  const streamerUrl = process.env.K8S_STREAMER_URL || "http://localhost:8080";
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    const res = await fetch(`${streamerUrl}${endpoint}`, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => "Unknown error");
+      console.warn(`[ClusterService] Gateway notify failed (${res.status}): ${errorText}`);
+    }
+  } catch (err) {
+    clearTimeout(timeoutId);
+    console.warn(`[ClusterService] Gateway network error (${method} ${endpoint}):`, err instanceof Error ? err.message : err);
+  }
 };
 
 const validateKubeconfig = async (kubeconfig: string) => {
@@ -51,11 +83,15 @@ const validateKubeconfig = async (kubeconfig: string) => {
 };
 
 export const connectCluster = async (
-  workspaceId: string,
-  values: { name: string; type: string; kubeconfig: string }
+  rawWorkspaceId: string,
+  rawValues: { name: string; type: string; kubeconfig: string }
 ) => {
+  const workspaceId = idSchema.parse(rawWorkspaceId);
+  const values = clusterConnectSchema.parse(rawValues);
+
   const connection = await validateKubeconfig(values.kubeconfig);
   const encryptedKubeconfig = encryptKubeconfig(values.kubeconfig);
+
   const [cluster] = await db
     .insert(clusters)
     .values({
@@ -69,64 +105,34 @@ export const connectCluster = async (
     })
     .returning(publicClusterFields);
 
-  // Automatically register cluster with Go k8s-streamer gateway
-  const streamerUrl = process.env.K8S_STREAMER_URL || "http://localhost:8080";
-  try {
-    await fetch(`${streamerUrl}/api/v1/clusters/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        clusterId: cluster.id,
-        kubeconfig: values.kubeconfig,
-      }),
-    });
-    console.log(`[ClusterService] Successfully registered cluster ${cluster.name} (${cluster.id}) with k8s-streamer gateway`);
-  } catch (err) {
-    console.warn(`[ClusterService] Warning: Could not auto-notify k8s-streamer at ${streamerUrl}:`, err);
-  }
+  void notifyStreamerGateway("/api/v1/clusters/register", "POST", {
+    clusterId: cluster.id,
+    kubeconfig: values.kubeconfig,
+  });
 
   return cluster;
 };
 
-export const listClusters = async (workspaceId: string) => {
-  const result = await db.select().from(clusters).where(eq(clusters.workspaceId, workspaceId));
-  const streamerUrl = process.env.K8S_STREAMER_URL || "http://localhost:8080";
-
-  for (const c of result) {
-    if (c.kubeconfig) {
-      try {
-        const rawKubeconfig = decryptKubeconfig(c.kubeconfig);
-        await fetch(`${streamerUrl}/api/v1/clusters/register`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            clusterId: c.id,
-            kubeconfig: rawKubeconfig,
-          }),
-        });
-        console.log(`[ClusterService] Auto-registered active workspace cluster "${c.name}" with streamer gateway`);
-      } catch (err) {
-        console.warn(`[ClusterService] Notice: Could not auto-register cluster "${c.name}" with streamer gateway:`, err);
-      }
-    }
-  }
-
-  return result.map((c) => ({
-    id: c.id,
-    workspaceId: c.workspaceId,
-    name: c.name,
-    type: c.type,
-    apiServerUrl: c.apiServerUrl,
-    version: c.version,
-    nodeCount: c.nodeCount,
-    healthScore: c.healthScore,
-    status: c.status,
-    lastSyncAt: c.lastSyncAt,
-    metadata: c.metadata,
-    createdAt: c.createdAt,
-    updatedAt: c.updatedAt,
-  }));
+export const listClusters = async (rawWorkspaceId: string) => {
+  const workspaceId = idSchema.parse(rawWorkspaceId);
+  return db
+    .select(publicClusterFields)
+    .from(clusters)
+    .where(eq(clusters.workspaceId, workspaceId));
 };
 
-export const deleteCluster = (workspaceId: string, clusterId: string) =>
-  db.delete(clusters).where(and(eq(clusters.workspaceId, workspaceId), eq(clusters.id, clusterId)));
+export const deleteCluster = async (rawWorkspaceId: string, rawClusterId: string) => {
+  const workspaceId = idSchema.parse(rawWorkspaceId);
+  const clusterId = idSchema.parse(rawClusterId);
+
+  const deletedRows = await db
+    .delete(clusters)
+    .where(and(eq(clusters.workspaceId, workspaceId), eq(clusters.id, clusterId)))
+    .returning({ id: clusters.id });
+
+  if (deletedRows.length === 0) {
+    throw new ClusterNotFoundError(clusterId);
+  }
+
+  void notifyStreamerGateway("/api/v1/clusters/deregister", "DELETE", { clusterId });
+};

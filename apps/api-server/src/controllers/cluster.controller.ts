@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import {
   ClusterConnectionError,
+  ClusterNotFoundError,
   connectCluster,
   deleteCluster,
   listClusters,
@@ -51,6 +52,14 @@ export const remove = async (request: Request, response: Response) => {
   }
 
   const clusterId = request.params.clusterId as string;
-  await deleteCluster(workspaceId, clusterId);
-  response.status(204).send();
+  try {
+    await deleteCluster(workspaceId, clusterId);
+    response.status(204).send();
+  } catch (error: unknown) {
+    if (error instanceof ClusterNotFoundError) {
+      response.status(404).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
 };
