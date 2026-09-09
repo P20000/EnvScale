@@ -210,7 +210,7 @@ export const useTopologyStore = create<TopologyState>()(
         };
         set({
           clusters: [...currentClusters, cluster],
-          activeCluster: cluster.name,
+          activeCluster: cluster.id,
           notifications: [newNotif, ...get().notifications].slice(0, 50),
         });
       },
@@ -254,32 +254,37 @@ export const useTopologyStore = create<TopologyState>()(
       deleteCluster: (clusterId) => {
         const clusterToDelete = get().clusters.find((c) => c.id === clusterId);
         if (!clusterToDelete) return;
-        const clusterName = clusterToDelete.name;
 
         const updatedClusters = get().clusters.filter((c) => c.id !== clusterId);
-        const nextActive =
-          get().activeCluster === clusterName
-            ? updatedClusters[0]?.name || ""
-            : get().activeCluster;
+        const wasActive = get().activeCluster === clusterId;
+        const nextActive = wasActive
+          ? updatedClusters[0]?.id || ""
+          : get().activeCluster;
 
-        const remainingNodes = get().nodes.filter((node) => {
-          const name = (node.data as Record<string, unknown>)?.name;
-          return name !== clusterName;
-        });
-
-        const remainingNodeIds = new Set(remainingNodes.map((n) => n.id));
-        const remainingEdges = get().edges.filter(
-          (edge) => remainingNodeIds.has(edge.source) && remainingNodeIds.has(edge.target)
-        );
-
-        set({
-          clusters: updatedClusters,
-          activeCluster: nextActive,
-          nodes: remainingNodes,
-          services: extractServices(remainingNodes),
-          pods: extractPods(remainingNodes),
-          edges: remainingEdges,
-        });
+        if (wasActive) {
+          // Active cluster was deleted — clear all topology state so the canvas
+          // doesn't show stale nodes from the old cluster.
+          set({
+            clusters: updatedClusters,
+            activeCluster: nextActive,
+            rawNodes: [],
+            nodes: [],
+            edges: [],
+            services: [],
+            pods: [],
+            ingresses: [],
+            replicaSets: [],
+            deployments: [],
+            daemonSets: [],
+            cronJobs: [],
+            incidents: [],
+            selectedNode: null,
+            wsReconnectTick: get().wsReconnectTick + 1,
+          });
+        } else {
+          // Non-active cluster deleted — just remove it from the list.
+          set({ clusters: updatedClusters });
+        }
       },
 
       deleteNode: (nodeId) => {
@@ -452,22 +457,19 @@ export const useTopologyStore = create<TopologyState>()(
           const parsedClusters: Cluster[] = [];
           for (const c of (state.clusters || [])) {
             if (typeof c === "string") {
-              if (c && c !== "mini-todo") parsedClusters.push({ id: `migrated-${Date.now()}`, name: c });
+              if (c) parsedClusters.push({ id: `migrated-${Date.now()}`, name: c });
               needsUpdate = true;
-            } else if (c && c.name && c.name !== "mini-todo") {
+            } else if (c && c.name) {
               parsedClusters.push(c);
             } else {
               needsUpdate = true;
             }
           }
           
-          const cleanedActive = state.activeCluster === "mini-todo" ? parsedClusters[0]?.name || "" : state.activeCluster;
-          if (state.activeCluster === "mini-todo") needsUpdate = true;
-
           if (needsUpdate) {
             useTopologyStore.setState({
               clusters: parsedClusters,
-              activeCluster: cleanedActive,
+              activeCluster: state.activeCluster,
             });
           }
         }

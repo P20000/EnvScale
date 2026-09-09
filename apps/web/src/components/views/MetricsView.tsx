@@ -240,6 +240,10 @@ export function MetricsView() {
   const selectedNamespaces = useUIStore((s) => s.selectedNamespaces);
   const showSystemNamespaces = useUIStore((s) => s.showSystemNamespaces);
   const activeCluster = useTopologyStore((s) => s.activeCluster);
+  const clusters = useTopologyStore((s) => s.clusters);
+  const activeClusterName = useMemo(() => {
+    return clusters.find((c) => c.id === activeCluster)?.name || activeCluster;
+  }, [clusters, activeCluster]);
   const clusterCpuCores = useTopologyStore((s) => s.clusterCpuCores) || 12;
   const clusterMemoryGB = useTopologyStore((s) => s.clusterMemoryGB) || 14.8;
 
@@ -328,7 +332,7 @@ export function MetricsView() {
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-surface border border-neutral-800 text-xs font-mono text-neutral-300">
             <Icon path={mdiServer} size={0.65} className="text-blue-400" />
-            <span>{activeCluster}</span>
+            <span>{activeClusterName}</span>
           </div>
           <button
             onClick={() => {
