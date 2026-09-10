@@ -4,6 +4,7 @@ import { db } from "../db/client.js";
 import { clusters } from "../db/schema.js";
 import { encryptKubeconfig } from "../utils/crypto.js";
 import { clusterConnectSchema, idSchema } from "../schemas/request.schemas.js";
+import { syncClusterWithStreamer } from "./cluster-sync.service.js";
 
 export class ClusterConnectionError extends Error {
   constructor(message: string) {
@@ -35,7 +36,7 @@ const publicClusterFields = {
   updatedAt: clusters.updatedAt,
 };
 
-const notifyStreamerGateway = async (endpoint: string, method: "POST" | "DELETE", payload: object) => {
+const notifyStreamerGateway = async (endpoint: string, method: "POST" | "DELETE", payload?: object) => {
   const streamerUrl = process.env.K8S_STREAMER_URL || "http://localhost:8080";
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -44,7 +45,7 @@ const notifyStreamerGateway = async (endpoint: string, method: "POST" | "DELETE"
     const res = await fetch(`${streamerUrl}${endpoint}`, {
       method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: payload ? JSON.stringify(payload) : undefined,
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
@@ -100,15 +101,18 @@ export const connectCluster = async (
       type: values.type,
       kubeconfig: encryptedKubeconfig,
       apiServerUrl: connection.apiServerUrl,
-      status: "connected",
+      status: "disconnected",
       lastSyncAt: new Date(),
     })
     .returning(publicClusterFields);
 
-  void notifyStreamerGateway("/api/v1/clusters/register", "POST", {
-    clusterId: cluster.id,
-    kubeconfig: values.kubeconfig,
-  });
+  // Synchronously attempt initial registration with streamer gateway
+  const syncResult = await syncClusterWithStreamer(cluster, values.kubeconfig);
+  if (syncResult.success) {
+    cluster.status = "connected";
+  } else {
+    console.log(`[ClusterService] Cluster ${cluster.name} registered offline. Background reconciler will auto-connect once reachable.`);
+  }
 
   return cluster;
 };
@@ -134,5 +138,5 @@ export const deleteCluster = async (rawWorkspaceId: string, rawClusterId: string
     throw new ClusterNotFoundError(clusterId);
   }
 
-  void notifyStreamerGateway("/api/v1/clusters/deregister", "DELETE", { clusterId });
+  void notifyStreamerGateway(`/api/v1/clusters?clusterId=${encodeURIComponent(clusterId)}`, "DELETE");
 };

@@ -60,6 +60,7 @@ type PodStatusDelta struct {
 	NodeName       string            `json:"nodeName"`
 	PodIP          string            `json:"podIp"`
 	Phase          string            `json:"phase"`
+	IsTerminating  bool              `json:"isTerminating"`
 	RestartCount   int32             `json:"restartCount"`
 	CpuUsageMcores int64             `json:"cpuUsageMcores"`
 	MemoryUsageMiB int64             `json:"memoryUsageMiB"`

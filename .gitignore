@@ -32,3 +32,5 @@ __pycache__/
 # Compiled binaries
 apps/k8s-streamer/main
 apps/k8s-streamer/server
+apps/k8s-streamer/k8s-streamer-bin
+*-bin

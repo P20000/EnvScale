@@ -77,6 +77,12 @@
 - **Files:** `apps/api-server/src/utils/crypto.ts`, `apps/api-server/src/controllers/cluster.controller.ts`
 - **Acceptance Criteria:** Kubeconfig file is encrypted before DB insert; raw secret is never logged or exposed in plaintext via API responses.
 
+#### [VIN-06B] Cluster Lifecycle, Startup Hydration & Self-Healing Reconciler
+- **Description:** Automatic cluster hydration on `api-server` boot, dynamic status updates (`connected` vs `disconnected`), and a recursive background reconciliation worker that auto-reconnects clusters started out-of-order or after service restarts. Includes frontend exponential backoff circuit breaking.
+- **Documentation:** See full architectural spec in [docs/cluster-lifecycle-and-resilience.md](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/docs/cluster-lifecycle-and-resilience.md).
+- **Files:** `apps/api-server/src/services/cluster-sync.service.ts`, `apps/api-server/src/workers/cluster-reconcile.worker.ts`, `apps/web/src/hooks/useK8sStream.ts`
+- **Acceptance Criteria:** Offline clusters connect automatically once started without requiring UI reload or re-uploading kubeconfig. Non-overlapping execution guaranteed via recursive timer. Clean teardown on `SIGINT`/`SIGTERM`.
+
 #### [VIN-07] Zod API Payload Validation Middleware
 - **Description:** Create central Zod validation middleware to validate request bodies, query params, and route parameters across all API endpoints.
 - **Files:** `apps/api-server/src/middleware/validate.ts`, `apps/api-server/src/schemas/*.ts`

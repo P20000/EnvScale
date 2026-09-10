@@ -26,6 +26,9 @@ Here is the architectural execution plan to integrate **Better Auth** with GitHu
 
 ```
 
+> **Cluster Lifecycle & Out-of-Order Startup Resilience:**  
+> For the complete specification on startup hydration, the recursive background cluster reconciliation worker, and frontend exponential backoff circuit breaking, see [docs/cluster-lifecycle-and-resilience.md](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/docs/cluster-lifecycle-and-resilience.md).
+
 ---
 
 ### Step 1: Install Better Auth Dependencies

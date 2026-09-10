@@ -93,6 +93,39 @@ func TestExtractPodDeltaCrashLoopBackOff(t *testing.T) {
 	}
 }
 
+func TestExtractPodDeltaTerminating(t *testing.T) {
+	now := metav1.Now()
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "draining-pod-1",
+			Namespace:         "production",
+			DeletionTimestamp: &now,
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:         "app",
+					RestartCount: 0,
+				},
+			},
+		},
+	}
+
+	hub := websocket.NewHub()
+	im := NewInformerManagerWithClientset(fake.NewSimpleClientset(), hub, "test-cluster-1")
+
+	delta := im.extractPodDelta(pod)
+
+	if !delta.IsTerminating {
+		t.Errorf("Expected IsTerminating to be true when DeletionTimestamp is set")
+	}
+
+	if delta.Phase != "Terminating" {
+		t.Errorf("Expected phase 'Terminating', got '%s'", delta.Phase)
+	}
+}
+
 func TestClusterManagerLifecycle(t *testing.T) {
 	hub := websocket.NewHub()
 	cm := NewClusterManager(hub)

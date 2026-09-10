@@ -20,17 +20,12 @@ export const extractPods = (nodes: Node[]): K8sPodData[] =>
     .map((n) => n.data as K8sPodData);
 
 export const getPodPrefix = (name: string, podData?: K8sPodData) => {
-  if (podData?.ownerName) {
-    return podData.ownerName.replace(/-(?:[a-f0-9]{8,10}|\d{8,10})$/i, "");
-  }
-  let prefix = name;
-  if (name.includes("-")) {
-    prefix = name
-      .replace(/-(?:[a-f0-9]{8,10}|\d{8,10})-[a-z0-9]{4,6}$/i, "")
-      .replace(/-\d+$/i, "")
-      .replace(/-[a-z0-9]{4,6}$/i, "");
-  }
-  return prefix;
+  if (podData?.ownerName) return podData.ownerName.replace(/-(?:[a-f0-9]{8,10}|\d{8,10})$/i, "");
+  if (!name.includes("-")) return name;
+  return name
+    .replace(/-(?:[a-f0-9]{8,10}|\d{8,10})-[a-z0-9]{4,6}$/i, "")
+    .replace(/-\d+$/i, "")
+    .replace(/-[a-z0-9]{4,6}$/i, "");
 };
 
 export type EdgeHealthStatus = "healthy" | "broken" | "degraded" | "idle";
@@ -83,22 +78,25 @@ export const extractPodList = (groupPodsInput: unknown): unknown[] => {
 export const calculateEdgeHealth = (
   _svc: unknown,
   groupPodsInput: unknown
-): { healthStatus: EdgeHealthStatus; strokeColor: string } => {
+): { healthStatus: EdgeHealthStatus; strokeColor: string; isDraining?: boolean } => {
   const podList = extractPodList(groupPodsInput);
-
-  if (!podList || podList.length === 0) {
-    return { healthStatus: "broken", strokeColor: "#ef4444" };
-  }
+  if (!podList || podList.length === 0) return { healthStatus: "broken", strokeColor: "#ef4444" };
 
   let healthyCount = 0;
   let failingCount = 0;
+  let drainingCount = 0;
 
   podList.forEach((p) => {
-    const isReady = isPodReady(p);
     const pData = ((p as Record<string, unknown>).data as Record<string, unknown>) || (p as Record<string, unknown>);
     const status = String(pData.phase || pData.status || "").toLowerCase();
+    const isTerminating = Boolean(pData.isTerminating || status === "terminating");
 
-    if (isReady) {
+    if (isTerminating) {
+      drainingCount++;
+      return;
+    }
+
+    if (isPodReady(p)) {
       healthyCount++;
     } else if (
       status.includes("crash") ||
@@ -110,15 +108,12 @@ export const calculateEdgeHealth = (
     }
   });
 
-  if (failingCount > 0 && healthyCount > 0) {
-    return { healthStatus: "degraded", strokeColor: "#f59e0b" };
+  if (healthyCount === 0 && failingCount === 0 && drainingCount > 0) {
+    return { healthStatus: "idle", strokeColor: "#52525b", isDraining: true };
   }
-  if (failingCount > 0 && healthyCount === 0) {
-    return { healthStatus: "broken", strokeColor: "#ef4444" };
-  }
-  if (healthyCount > 0) {
-    return { healthStatus: "healthy", strokeColor: "#10b981" };
-  }
+  if (failingCount > 0 && healthyCount > 0) return { healthStatus: "degraded", strokeColor: "#f59e0b" };
+  if (failingCount > 0 && healthyCount === 0) return { healthStatus: "broken", strokeColor: "#ef4444" };
+  if (healthyCount > 0) return { healthStatus: "healthy", strokeColor: "#10b981" };
 
   return { healthStatus: "idle", strokeColor: "#475569" };
 };
@@ -139,9 +134,7 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
       const rulesBySvc = new Map<string, IngressRuleData[]>();
       rules.forEach((rule) => {
         if (rule.serviceName) {
-          const svc = services.find(
-            (s) => s.id === rule.serviceName || (s.data as K8sServiceData).name === rule.serviceName
-          );
+          const svc = services.find((s) => s.id === rule.serviceName || (s.data as K8sServiceData).name === rule.serviceName);
           if (svc) {
             const existing = rulesBySvc.get(svc.id) || [];
             existing.push(rule);
@@ -151,21 +144,15 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
       });
 
       rulesBySvc.forEach((svcRules, svcId) => {
-        const formattedPaths = svcRules.map((r) => {
-          const pathStr = r.path || "/";
-          const portStr = r.servicePort ? `:${r.servicePort}` : "";
-          return `${pathStr}${portStr}`;
-        });
+        const formattedPaths = svcRules.map((r) => `${r.path || "/"}${r.servicePort ? `:${r.servicePort}` : ""}`);
         const labelText = Array.from(new Set(formattedPaths)).join(" • ");
-
         const targetSvc = services.find((s) => s.id === svcId);
-        let strokeColor = "#8b5cf6"; // Purple Ingress default
+        let strokeColor = "#8b5cf6";
         if (targetSvc) {
           const svcSelector = (targetSvc.data as K8sServiceData).selector;
           if (svcSelector && Object.keys(svcSelector).length > 0) {
             const matched = pods.filter((p) => {
-              const pData = p.data as K8sPodData;
-              const labels = pData.labels as Record<string, string>;
+              const labels = (p.data as K8sPodData).labels as Record<string, string>;
               return labels && Object.keys(svcSelector).every((k) => labels[k] === svcSelector[k]);
             });
             const health = calculateEdgeHealth(targetSvc, matched);
@@ -197,12 +184,8 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
         const podData = pod.data as K8sPodData;
         const labels = podData.labels as Record<string, string>;
         if (labels) {
-          const match = Object.keys(svcSelector).every(
-            (key) => labels[key] === svcSelector[key as keyof typeof svcSelector]
-          );
-          if (match && pod.parentId) {
-            targetedGroups.add(pod.parentId);
-          }
+          const match = Object.keys(svcSelector).every((key) => labels[key] === svcSelector[key as keyof typeof svcSelector]);
+          if (match && pod.parentId) targetedGroups.add(pod.parentId);
           return match;
         }
         return false;
@@ -211,7 +194,7 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
       targetedGroups.forEach((groupId) => {
         const groupPods = matchingPods.filter((p) => p.parentId === groupId);
         const podsToCheck = groupPods.length > 0 ? groupPods : matchingPods;
-        const { healthStatus, strokeColor } = calculateEdgeHealth(svc, podsToCheck);
+        const { healthStatus, strokeColor, isDraining } = calculateEdgeHealth(svc, podsToCheck);
 
         sysEdges.push({
           id: `e-sys-${svc.id}-${groupId}`,
@@ -219,8 +202,8 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
           target: groupId,
           type: "k8sEdge",
           animated: false,
-          data: { healthStatus, strokeColor },
-          style: { stroke: strokeColor, strokeWidth: 2, strokeDasharray: "none" },
+          data: { healthStatus, strokeColor, isDraining },
+          style: { stroke: strokeColor, strokeWidth: 2, strokeDasharray: isDraining ? "4 4" : "none" },
         });
       });
     }
@@ -339,11 +322,9 @@ export const aggregateNodesWithWorkloads = (
       return false;
     }
 
-    const rawRes = (podData?.rawResource as Record<string, unknown>) || {};
-    const meta = (rawRes.metadata as Record<string, unknown>) || {};
     const podPhase = String(podData?.phase || podData?.status || "").toLowerCase();
 
-    if (meta.deletionTimestamp || podPhase === "terminating" || podPhase === "deleted") {
+    if (podPhase === "deleted") {
       return false;
     }
 
@@ -381,8 +362,15 @@ export const aggregateNodesWithWorkloads = (
     const groupId = `group-${prefix}`;
 
     const sortedGroupPods = [...groupPods].sort((a, b) => {
-      const pA = String((a.data as K8sPodData)?.phase || (a.data as K8sPodData)?.status || "").toLowerCase();
-      const pB = String((b.data as K8sPodData)?.phase || (b.data as K8sPodData)?.status || "").toLowerCase();
+      const pAData = a.data as K8sPodData;
+      const pBData = b.data as K8sPodData;
+      const pA = String(pAData?.phase || pAData?.status || "").toLowerCase();
+      const pB = String(pBData?.phase || pBData?.status || "").toLowerCase();
+      const isATerminating = Boolean(pAData?.isTerminating || pA === "terminating");
+      const isBTerminating = Boolean(pBData?.isTerminating || pB === "terminating");
+
+      if (!isATerminating && isBTerminating) return -1;
+      if (isATerminating && !isBTerminating) return 1;
 
       const isAActive = pA === "running" || pA === "ready" || pA.includes("crash") || pA.includes("oom");
       const isBActive = pB === "running" || pB === "ready" || pB.includes("crash") || pB.includes("oom");
@@ -390,17 +378,25 @@ export const aggregateNodesWithWorkloads = (
       if (isAActive && !isBActive) return -1;
       if (!isAActive && isBActive) return 1;
 
-      const timeA = new Date(String((a.data as K8sPodData)?.createdAt || 0)).getTime();
-      const timeB = new Date(String((b.data as K8sPodData)?.createdAt || 0)).getTime();
+      const timeA = new Date(String(pAData?.createdAt || 0)).getTime();
+      const timeB = new Date(String(pBData?.createdAt || 0)).getTime();
       return timeB - timeA;
     });
 
     const activeRunningPods = sortedGroupPods.filter((p) => {
-      const ph = String((p.data as K8sPodData)?.phase || (p.data as K8sPodData)?.status || "").toLowerCase();
-      return ph === "running" || ph === "ready" || ph.includes("crash") || ph.includes("oom");
+      const pData = p.data as K8sPodData;
+      const ph = String(pData?.phase || pData?.status || "").toLowerCase();
+      const isTerminating = Boolean(pData?.isTerminating || ph === "terminating");
+      return !isTerminating && (ph === "running" || ph === "ready" || ph.includes("crash") || ph.includes("oom"));
     });
 
-    const activeCap = Math.max(2, activeRunningPods.length);
+    const drainingPods = sortedGroupPods.filter((p) => {
+      const pData = p.data as K8sPodData;
+      const ph = String(pData?.phase || pData?.status || "").toLowerCase();
+      return Boolean(pData?.isTerminating || ph === "terminating");
+    });
+
+    const activeCap = Math.max(2, activeRunningPods.length + drainingPods.length);
     const finalGroupPods = sortedGroupPods.slice(0, activeCap);
 
     const firstPodData = groupPods[0]?.data as K8sPodData | undefined;
@@ -492,12 +488,7 @@ export const sanitizeManifestSnapshot = (node: Node): Record<string, unknown> =>
   };
 
   const meta = manifest.metadata as Record<string, unknown>;
-  delete meta.resourceVersion;
-  delete meta.uid;
-  delete meta.creationTimestamp;
-  delete meta.generation;
-  delete meta.managedFields;
+  ["resourceVersion", "uid", "creationTimestamp", "generation", "managedFields"].forEach((k) => delete meta[k]);
   delete manifest.status;
-
   return manifest;
 };
