@@ -6,4 +6,7 @@ export { K8sIngressNode, type K8sIngressData, type IngressRuleData } from "./K8s
 export { K8sGroupNode, type K8sGroupData } from "./K8sGroup";
 export { K8sDaemonSetNode } from "./K8sDaemonSet";
 export { K8sCronJobNode } from "./K8sCronJob";
+export { K8sJobNode } from "./K8sJob";
+export { K8sCompletedJobsNode } from "./K8sCompletedJobsNode";
 export { K8sEdge, type K8sEdgeData } from "./K8sEdge";
+

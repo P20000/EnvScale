@@ -28,8 +28,11 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
       const height = Math.max(80, 40 + rows * 32 + (rows - 1) * 10 + 16);
       return { width, height };
     }
-    if (node.type === "k8sDaemonSet" || node.type === "k8sCronJob") {
+    if (node.type === "k8sDaemonSet" || node.type === "k8sCronJob" || node.type === "k8sJob") {
       return { width: 260, height: 58 };
+    }
+    if (node.type === "k8sCompletedJobs") {
+      return { width: 260, height: 48 };
     }
     return { width: 240, height: 44 };
   };
@@ -128,7 +131,7 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
 
   const isOrphanNode = (node: Node): boolean => {
     if (node.parentId) return false;
-    if (node.type === "k8sDaemonSet" || node.type === "k8sCronJob") return true;
+    if (node.type === "k8sDaemonSet" || node.type === "k8sCronJob" || node.type === "k8sJob" || node.type === "k8sCompletedJobs") return true;
     return !connectedIds.has(node.id);
   };
 
@@ -137,7 +140,9 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
     if (node.type === "k8sGroup") return 2;      // Unrouted Workload Group (e.g. WORKER-POOL)
     if (node.type === "k8sDaemonSet") return 3;  // DaemonSets (e.g. node-telemetry-agent)
     if (node.type === "k8sCronJob") return 4;    // CronJobs (e.g. db-audit-cronjob)
-    return 5;                                    // Standalone unrouted workloads
+    if (node.type === "k8sJob") return 5;        // Standalone batch jobs
+    if (node.type === "k8sCompletedJobs") return 6; // Collapsed Completed Jobs
+    return 7;                                    // Standalone unrouted workloads
   };
 
   const orphanNodes = topLevelNodes.filter(isOrphanNode).sort((a, b) => {

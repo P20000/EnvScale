@@ -31,6 +31,7 @@ const (
 	EventChaosFaultCleared  = "EVENT_CHAOS_FAULT_CLEARED"
 
 	EventK8sIncidentCreated = "EVENT_K8S_INCIDENT_CREATED"
+	EventRolloutRollback    = "EVENT_ROLLOUT_ROLLBACK"
 )
 
 // K8sIncidentEvent encapsulates authentic Kubernetes v1.Event telemetry
@@ -70,6 +71,8 @@ type PodStatusDelta struct {
 	OwnerUID       string            `json:"ownerUid,omitempty"`
 	OwnerName      string            `json:"ownerName,omitempty"`
 	OwnerKind      string            `json:"ownerKind,omitempty"`
+	IsStaticPod    bool              `json:"isStaticPod,omitempty"`
+	IsControlPlane bool              `json:"isControlPlane,omitempty"`
 	CreatedAt      time.Time         `json:"createdAt"`
 }
 
@@ -132,6 +135,24 @@ type CronJobStatusDelta struct {
 	LastSuccessfulTime *time.Time `json:"lastSuccessfulTime,omitempty"`
 	Images             []string   `json:"images,omitempty"`
 	CreatedAt          time.Time  `json:"createdAt"`
+}
+
+// JobStatusDelta encapsulates standalone Kubernetes Job state updates
+type JobStatusDelta struct {
+	Name            string            `json:"name"`
+	Namespace       string            `json:"namespace"`
+	Completions     int32             `json:"completions"`
+	Parallelism     int32             `json:"parallelism"`
+	Succeeded       int32             `json:"succeeded"`
+	Failed          int32             `json:"failed"`
+	Active          int32             `json:"active"`
+	StartTime       *time.Time        `json:"startTime,omitempty"`
+	CompletionTime  *time.Time        `json:"completionTime,omitempty"`
+	DurationSeconds int64             `json:"durationSeconds"`
+	Labels          map[string]string `json:"labels,omitempty"`
+	OwnerKind       string            `json:"ownerKind,omitempty"`
+	OwnerName       string            `json:"ownerName,omitempty"`
+	CreatedAt       time.Time         `json:"createdAt"`
 }
 
 // NodeStatusDelta encapsulates node health state updates

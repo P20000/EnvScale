@@ -4,7 +4,7 @@ import type { K8sNodeData } from "../../components/canvas/K8sNode";
 import type { K8sServiceData } from "../../components/canvas/K8sService";
 import type { K8sIngressData } from "../../components/canvas/K8sIngress";
 import type { K8sReplicaSetData, K8sDeploymentData } from "../helpers/rolloutHelpers";
-import type { K8sDaemonSetData, K8sCronJobData } from "../types/topologyTypes";
+import type { K8sDaemonSetData, K8sCronJobData, K8sJobData } from "../types/topologyTypes";
 import type { TopologyState } from "../useTopologyStore";
 import { extractServices, extractPods } from "../helpers/topologyHelpers";
 import { useUIStore } from "../useUIStore";
@@ -127,6 +127,7 @@ export function handleSnapshotSync(
   const snapshotDeployments = Array.isArray(payloadData.deployments) ? (payloadData.deployments as K8sDeploymentData[]) : [];
   const snapshotDS = Array.isArray(payloadData.daemonSets) ? (payloadData.daemonSets as K8sDaemonSetData[]) : [];
   const snapshotCronJobs = Array.isArray(payloadData.cronJobs) ? (payloadData.cronJobs as K8sCronJobData[]) : [];
+  const snapshotJobs = Array.isArray(payloadData.jobs) ? (payloadData.jobs as K8sJobData[]) : [];
 
   let updatedNamespaces = useUIStore.getState().selectedNamespaces;
   if (updatedNamespaces.length === 0) {
@@ -154,6 +155,7 @@ export function handleSnapshotSync(
     deployments: snapshotDeployments,
     daemonSets: snapshotDS,
     cronJobs: snapshotCronJobs,
+    jobs: snapshotJobs,
   });
   state.applyDagreLayout();
 }

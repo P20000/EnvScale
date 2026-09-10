@@ -30,6 +30,10 @@ export function LogsTab({ target, onOpenLogTerminal }: LogsTabProps) {
       ? "Service"
       : target.type === "ingress"
       ? "Ingress"
+      : target.type === "job"
+      ? "Job"
+      : target.type === "daemonset"
+      ? "DaemonSet"
       : "Workload";
 
   const {

@@ -4,7 +4,7 @@ import type { K8sPodData } from "../canvas/K8sPod";
 import type { K8sNodeData } from "../canvas/K8sNode";
 import type { K8sServiceData } from "../canvas/K8sService";
 import type { K8sIngressData } from "../canvas/K8sIngress";
-import type { K8sDaemonSetData, K8sCronJobData } from "../../store/types/topologyTypes";
+import type { K8sDaemonSetData, K8sCronJobData, K8sJobData } from "../../store/types/topologyTypes";
 import { useTopologyStore } from "../../store/useTopologyStore";
 import { OverviewTab } from "./inspector/OverviewTab";
 import { LogsTab } from "./inspector/LogsTab";
@@ -18,7 +18,9 @@ export type SelectedTarget =
   | { type: "ingress"; data: K8sIngressData }
   | { type: "daemonset"; data: K8sDaemonSetData }
   | { type: "cronjob"; data: K8sCronJobData }
+  | { type: "job"; data: K8sJobData }
   | null;
+
 
 interface InspectorDrawerProps {
   target: SelectedTarget;
@@ -86,6 +88,10 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
       const capStr = nodeData.cpuCapacity || (clusterCpuCores ? `${clusterCpuCores} cores` : "Allocating");
       return { label: `${pct}% (${capStr})`, pct: Math.min(100, Math.max(0, pct)) };
     }
+    if (target.type === "job") {
+      const jobData = target.data as K8sJobData;
+      return { label: `Batch Task (${jobData.status})`, pct: jobData.status === "Completed" ? 100 : 50 };
+    }
     const podData = target.data as K8sPodData;
     const mcores = podData.cpuUsageMcores ?? 0;
     const maxMcores = (clusterCpuCores || 12) * 1000;
@@ -100,6 +106,10 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
       const capStr = nodeData.memoryCapacity || (clusterMemoryGB ? `${clusterMemoryGB.toFixed(1)} GiB` : "Allocating");
       return { label: `${pct}% (${capStr})`, pct: Math.min(100, Math.max(0, pct)) };
     }
+    if (target.type === "job") {
+      const jobData = target.data as K8sJobData;
+      return { label: `${jobData.succeeded ?? 0}/${jobData.completions ?? 1} pods`, pct: ((jobData.succeeded ?? 0) / (jobData.completions || 1)) * 100 };
+    }
     const podData = target.data as K8sPodData;
     const mib = podData.memoryUsageMiB ?? 0;
     const totalMib = (clusterMemoryGB || 14.8) * 1024;
@@ -111,14 +121,39 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
     <aside className="fixed right-0 top-0 bottom-0 z-50 w-[420px] bg-[#141417] border-l border-neutral-800 shadow-2xl flex flex-col animate-in slide-in-from-right duration-250">
       <div className="flex items-center justify-between p-4 border-b border-neutral-800 bg-neutral-900/50">
         <div className="flex items-center gap-2.5 min-w-0">
-          <span className={`flex h-2.5 w-2.5 rounded-full shrink-0 ${target.type === "ingress" ? "bg-violet-400" : "bg-emerald-500"}`} />
+          <span className={`flex h-2.5 w-2.5 rounded-full shrink-0 ${
+            target.type === "ingress"
+              ? "bg-violet-400"
+              : target.type === "daemonset"
+              ? "bg-purple-400"
+              : target.type === "job"
+              ? ((target.data as K8sJobData).status === "Completed" ? "bg-emerald-500" : (target.data as K8sJobData).status === "Failed" ? "bg-rose-500" : "bg-blue-500 animate-pulse")
+              : target.type === "cronjob"
+              ? "bg-cyan-400"
+              : "bg-emerald-500"
+          }`} />
           <div className="min-w-0">
             <h3 className="text-sm font-bold text-neutral-100 truncate">{target.data.name}</h3>
-            <p className="text-[11px] font-mono text-neutral-400 capitalize flex items-center gap-1.5">
+            <p className="text-[11px] font-mono text-neutral-400 capitalize flex items-center gap-1.5 flex-wrap">
               Type: {target.type}
               {target.type === "ingress" && (
                 <span className="rounded border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.2 text-[10px] font-mono text-violet-300">
                   INGRESS ROUTER
+                </span>
+              )}
+              {target.type === "job" && (
+                <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.2 text-[10px] font-mono text-amber-300">
+                  BATCH JOB
+                </span>
+              )}
+              {target.type === "daemonset" && (
+                <span className="rounded border border-purple-500/30 bg-purple-500/10 px-1.5 py-0.2 text-[10px] font-mono text-purple-300">
+                  DAEMONSET
+                </span>
+              )}
+              {target.type === "pod" && ((target.data as K8sPodData).isStaticPod || (target.data as K8sPodData).isControlPlane) && (
+                <span className="rounded border border-blue-500/30 bg-blue-500/10 px-1.5 py-0.2 text-[10px] font-mono text-blue-300">
+                  STATIC MIRROR POD
                 </span>
               )}
             </p>

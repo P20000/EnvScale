@@ -1,11 +1,19 @@
-import type { Node, Edge } from "@xyflow/react";
+import type { Node } from "@xyflow/react";
 import type { K8sPodData } from "../../components/canvas/K8sPod";
 import type { K8sNodeData } from "../../components/canvas/K8sNode";
 import type { K8sServiceData } from "../../components/canvas/K8sService";
-import type { K8sIngressData, IngressRuleData } from "../../components/canvas/K8sIngress";
+import type { K8sIngressData } from "../../components/canvas/K8sIngress";
+import type { K8sDaemonSetData, K8sCronJobData, K8sJobData } from "../types/topologyTypes";
 import type { SelectedTarget } from "../../components/drawer/InspectorDrawer";
-import type { K8sDaemonSetData, K8sCronJobData } from "../types/topologyTypes";
 import { calculateRolloutInfo, type K8sDeploymentData, type K8sReplicaSetData } from "./rolloutHelpers";
+export {
+  type EdgeHealthStatus,
+  isPodReady,
+  extractPodList,
+  calculateEdgeHealth,
+  getEdgeHealth,
+  generateDynamicEdges,
+} from "./edgeHelpers";
 
 export const SYSTEM_NAMESPACES = new Set(["kube-system", "kube-public", "kube-node-lease", "ingress-nginx"]);
 
@@ -28,189 +36,7 @@ export const getPodPrefix = (name: string, podData?: K8sPodData) => {
     .replace(/-[a-z0-9]{4,6}$/i, "");
 };
 
-export type EdgeHealthStatus = "healthy" | "broken" | "degraded" | "idle";
 
-export const isPodReady = (pod: unknown): boolean => {
-  if (!pod) return false;
-  const p = pod as Record<string, unknown>;
-  const podData = (p.data as Record<string, unknown>) || p;
-  const raw = (podData.rawResource as Record<string, unknown>) || podData;
-  const statusObj = (podData.status || raw.status || {}) as Record<string, unknown>;
-
-  const phaseStr = String(
-    (typeof statusObj === "string" ? statusObj : statusObj.phase) ||
-    podData.phase ||
-    podData.status ||
-    ""
-  ).toLowerCase();
-
-  const isReadyCondition = Array.isArray(statusObj.conditions)
-    ? statusObj.conditions.some(
-        (c: Record<string, unknown>) => c.type === "Ready" && c.status === "True"
-      )
-    : false;
-
-  const isReadyFlag = podData.ready === true || raw.ready === true;
-
-  return (
-    phaseStr === "running" ||
-    phaseStr === "ready" ||
-    phaseStr === "succeeded" ||
-    phaseStr === "completed" ||
-    Boolean(isReadyCondition) ||
-    isReadyFlag
-  );
-};
-
-export const extractPodList = (groupPodsInput: unknown): unknown[] => {
-  if (!groupPodsInput) return [];
-  if (Array.isArray(groupPodsInput)) return groupPodsInput;
-
-  const nodeObj = groupPodsInput as Record<string, unknown>;
-  const nodeData = (nodeObj.data as Record<string, unknown>) || nodeObj;
-
-  if (Array.isArray(nodeData.pods)) return nodeData.pods;
-  if (Array.isArray(nodeData.children)) return nodeData.children;
-
-  return [groupPodsInput];
-};
-
-export const calculateEdgeHealth = (
-  _svc: unknown,
-  groupPodsInput: unknown
-): { healthStatus: EdgeHealthStatus; strokeColor: string; isDraining?: boolean } => {
-  const podList = extractPodList(groupPodsInput);
-  if (!podList || podList.length === 0) return { healthStatus: "broken", strokeColor: "#ef4444" };
-
-  let healthyCount = 0;
-  let failingCount = 0;
-  let drainingCount = 0;
-
-  podList.forEach((p) => {
-    const pData = ((p as Record<string, unknown>).data as Record<string, unknown>) || (p as Record<string, unknown>);
-    const status = String(pData.phase || pData.status || "").toLowerCase();
-    const isTerminating = Boolean(pData.isTerminating || status === "terminating");
-
-    if (isTerminating) {
-      drainingCount++;
-      return;
-    }
-
-    if (isPodReady(p)) {
-      healthyCount++;
-    } else if (
-      status.includes("crash") ||
-      status.includes("fail") ||
-      status.includes("error") ||
-      status.includes("oom")
-    ) {
-      failingCount++;
-    }
-  });
-
-  if (healthyCount === 0 && failingCount === 0 && drainingCount > 0) {
-    return { healthStatus: "idle", strokeColor: "#52525b", isDraining: true };
-  }
-  if (failingCount > 0 && healthyCount > 0) return { healthStatus: "degraded", strokeColor: "#f59e0b" };
-  if (failingCount > 0 && healthyCount === 0) return { healthStatus: "broken", strokeColor: "#ef4444" };
-  if (healthyCount > 0) return { healthStatus: "healthy", strokeColor: "#10b981" };
-
-  return { healthStatus: "idle", strokeColor: "#475569" };
-};
-
-export const getEdgeHealth = calculateEdgeHealth;
-
-export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): Edge[] => {
-  const baseEdges = currentEdges.filter((e) => !e.id.startsWith("e-sys-"));
-  const sysEdges: Edge[] = [];
-
-  const pods = nodes.filter((n) => n.type === "k8sPod");
-  const services = nodes.filter((n) => n.type === "k8sService");
-  const ingresses = nodes.filter((n) => n.type === "k8sIngress");
-
-  ingresses.forEach((ing) => {
-    const rules = (ing.data as K8sIngressData).rules as IngressRuleData[];
-    if (rules && rules.length > 0) {
-      const rulesBySvc = new Map<string, IngressRuleData[]>();
-      rules.forEach((rule) => {
-        if (rule.serviceName) {
-          const svc = services.find((s) => s.id === rule.serviceName || (s.data as K8sServiceData).name === rule.serviceName);
-          if (svc) {
-            const existing = rulesBySvc.get(svc.id) || [];
-            existing.push(rule);
-            rulesBySvc.set(svc.id, existing);
-          }
-        }
-      });
-
-      rulesBySvc.forEach((svcRules, svcId) => {
-        const formattedPaths = svcRules.map((r) => `${r.path || "/"}${r.servicePort ? `:${r.servicePort}` : ""}`);
-        const labelText = Array.from(new Set(formattedPaths)).join(" • ");
-        const targetSvc = services.find((s) => s.id === svcId);
-        let strokeColor = "#8b5cf6";
-        if (targetSvc) {
-          const svcSelector = (targetSvc.data as K8sServiceData).selector;
-          if (svcSelector && Object.keys(svcSelector).length > 0) {
-            const matched = pods.filter((p) => {
-              const labels = (p.data as K8sPodData).labels as Record<string, string>;
-              return labels && Object.keys(svcSelector).every((k) => labels[k] === svcSelector[k]);
-            });
-            const health = calculateEdgeHealth(targetSvc, matched);
-            if (health.healthStatus === "broken") strokeColor = "#ef4444";
-            else if (health.healthStatus === "degraded") strokeColor = "#f59e0b";
-          }
-        }
-
-        sysEdges.push({
-          id: `e-sys-${ing.id}-${svcId}`,
-          source: ing.id,
-          target: svcId,
-          type: "k8sEdge",
-          animated: false,
-          label: labelText,
-          data: { label: labelText, strokeColor },
-          style: { stroke: strokeColor, strokeWidth: 2, strokeDasharray: "none" },
-        });
-      });
-    }
-  });
-
-  services.forEach((svc) => {
-    const svcData = svc.data as K8sServiceData;
-    const svcSelector = svcData.selector;
-    if (svcSelector && Object.keys(svcSelector).length > 0) {
-      const targetedGroups = new Set<string>();
-      const matchingPods = pods.filter((pod) => {
-        const podData = pod.data as K8sPodData;
-        const labels = podData.labels as Record<string, string>;
-        if (labels) {
-          const match = Object.keys(svcSelector).every((key) => labels[key] === svcSelector[key as keyof typeof svcSelector]);
-          if (match && pod.parentId) targetedGroups.add(pod.parentId);
-          return match;
-        }
-        return false;
-      });
-
-      targetedGroups.forEach((groupId) => {
-        const groupPods = matchingPods.filter((p) => p.parentId === groupId);
-        const podsToCheck = groupPods.length > 0 ? groupPods : matchingPods;
-        const { healthStatus, strokeColor, isDraining } = calculateEdgeHealth(svc, podsToCheck);
-
-        sysEdges.push({
-          id: `e-sys-${svc.id}-${groupId}`,
-          source: svc.id,
-          target: groupId,
-          type: "k8sEdge",
-          animated: false,
-          data: { healthStatus, strokeColor, isDraining },
-          style: { stroke: strokeColor, strokeWidth: 2, strokeDasharray: isDraining ? "4 4" : "none" },
-        });
-      });
-    }
-  });
-
-  return [...baseEdges, ...sysEdges];
-};
 
 export const syncSelectedNode = (nodes: Node[], currentSelected: SelectedTarget): SelectedTarget => {
   if (!currentSelected || !currentSelected.data) return null;
@@ -234,6 +60,12 @@ export const syncSelectedNode = (nodes: Node[], currentSelected: SelectedTarget)
       return { type: "service", data: matched.data as K8sServiceData };
     } else if (matched.type === "k8sIngress") {
       return { type: "ingress", data: matched.data as K8sIngressData };
+    } else if (matched.type === "k8sJob") {
+      return { type: "job", data: matched.data as K8sJobData };
+    } else if (matched.type === "k8sDaemonSet") {
+      return { type: "daemonset", data: matched.data as K8sDaemonSetData };
+    } else if (matched.type === "k8sCronJob") {
+      return { type: "cronjob", data: matched.data as K8sCronJobData };
     }
   }
   return currentSelected;
@@ -259,7 +91,9 @@ export const aggregateNodesWithWorkloads = (
   deployments: K8sDeploymentData[] = [],
   replicaSets: K8sReplicaSetData[] = [],
   daemonSets: K8sDaemonSetData[] = [],
-  cronJobs: K8sCronJobData[] = []
+  cronJobs: K8sCronJobData[] = [],
+  jobs: K8sJobData[] = [],
+  showCompletedJobs: boolean = false
 ): Node[] => {
   const appNodes = nodes.filter((n) => {
     const d = n.data as Record<string, unknown> | undefined;
@@ -342,7 +176,26 @@ export const aggregateNodesWithWorkloads = (
 
     return true;
   });
-  const nonPodNodes = appNodes.filter((n) => n.type !== "k8sPod");
+  const nonPodNodes = appNodes
+    .filter((n) => n.type !== "k8sPod")
+    .map((n) => {
+      if (n.type === "k8sWorker" && daemonSets && daemonSets.length > 0) {
+        const workerData = n.data as K8sNodeData;
+        const daemonAgents = daemonSets.map((ds) => ({
+          name: ds.name,
+          namespace: ds.namespace,
+          ready: (ds.numberReady ?? 0) > 0,
+        }));
+        return {
+          ...n,
+          data: {
+            ...workerData,
+            daemonAgents,
+          },
+        };
+      }
+      return n;
+    });
 
   const podsByPrefix = new Map<string, Node[]>();
 
@@ -469,7 +322,64 @@ export const aggregateNodesWithWorkloads = (
       data: cj,
     }));
 
-  return [...nonPodNodes, ...dsNodes, ...cjNodes, ...processedNodes];
+  const jobNodes: Node[] = [];
+  const filteredJobs = (jobs || []).filter((j) => {
+    const ns = j.namespace || "default";
+    let isExplicitlyRequested = false;
+    if (typeof selectedNamespaces === "string" && selectedNamespaces !== "all") {
+      if (ns !== selectedNamespaces) return false;
+      isExplicitlyRequested = true;
+    } else if (Array.isArray(selectedNamespaces) && selectedNamespaces.length > 0) {
+      if (selectedNamespaces.includes("__NONE__")) return false;
+      if (!selectedNamespaces.includes(ns)) return false;
+      isExplicitlyRequested = true;
+    }
+    if (!showSystemNamespaces && !isExplicitlyRequested && SYSTEM_NAMESPACES.has(ns)) return false;
+    return true;
+  });
+
+  const activeOrFailedJobs: K8sJobData[] = [];
+  const completedJobs: K8sJobData[] = [];
+
+  filteredJobs.forEach((j) => {
+    const isCompleted = (j.succeeded ?? 0) >= (j.completions ?? 1) || (j.active === 0 && (j.failed ?? 0) === 0);
+    if (isCompleted) {
+      completedJobs.push(j);
+    } else {
+      activeOrFailedJobs.push(j);
+    }
+  });
+
+  // Active and Failed jobs are always rendered as individual cards on the side-rail
+  activeOrFailedJobs.forEach((j) => {
+    jobNodes.push({
+      id: `job-${j.name}`,
+      type: "k8sJob",
+      position: { x: 0, y: 0 },
+      data: j,
+    });
+  });
+
+  // Completed jobs: if showCompletedJobs is true, render individually; otherwise collapse into a single summary card
+  if (showCompletedJobs) {
+    completedJobs.forEach((j) => {
+      jobNodes.push({
+        id: `job-${j.name}`,
+        type: "k8sJob",
+        position: { x: 0, y: 0 },
+        data: j,
+      });
+    });
+  } else if (completedJobs.length > 0) {
+    jobNodes.push({
+      id: "completed-jobs-summary",
+      type: "k8sCompletedJobs",
+      position: { x: 0, y: 0 },
+      data: { count: completedJobs.length },
+    });
+  }
+
+  return [...nonPodNodes, ...dsNodes, ...cjNodes, ...jobNodes, ...processedNodes];
 };
 
 export const sanitizeManifestSnapshot = (node: Node): Record<string, unknown> => {

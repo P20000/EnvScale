@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -53,19 +54,46 @@ func (im *InformerManager) extractPodDelta(pod *corev1.Pod) types.PodStatusDelta
 		ownerKind = pod.OwnerReferences[0].Kind
 	}
 
+	var isStaticPod bool
+	if pod.Annotations != nil {
+		if pod.Annotations["kubernetes.io/config.mirror"] != "" || pod.Annotations["kubernetes.io/config.source"] == "file" {
+			isStaticPod = true
+		}
+	}
+
+	var isControlPlane bool
+	compLabel := ""
+	if pod.Labels != nil {
+		compLabel = pod.Labels["component"]
+		if pod.Labels["tier"] == "control-plane" {
+			isControlPlane = true
+		}
+	}
+	if compLabel == "kube-apiserver" || compLabel == "etcd" || compLabel == "kube-scheduler" || compLabel == "kube-controller-manager" {
+		isControlPlane = true
+	} else if strings.HasPrefix(pod.Name, "kube-apiserver-") || strings.HasPrefix(pod.Name, "etcd-") || strings.HasPrefix(pod.Name, "kube-scheduler-") || strings.HasPrefix(pod.Name, "kube-controller-manager-") {
+		isControlPlane = true
+	}
+
+	if isControlPlane && len(pod.OwnerReferences) == 0 {
+		isStaticPod = true
+	}
+
 	return types.PodStatusDelta{
-		Name:          pod.Name,
-		Namespace:     pod.Namespace,
-		NodeName:      pod.Spec.NodeName,
-		PodIP:         pod.Status.PodIP,
-		Phase:         phase,
-		IsTerminating: isTerminating,
-		RestartCount:  totalRestarts,
-		Labels:        pod.Labels,
-		OwnerUID:      ownerUID,
-		OwnerName:     ownerName,
-		OwnerKind:     ownerKind,
-		CreatedAt:     pod.CreationTimestamp.Time.UTC(),
+		Name:           pod.Name,
+		Namespace:      pod.Namespace,
+		NodeName:       pod.Spec.NodeName,
+		PodIP:          pod.Status.PodIP,
+		Phase:          phase,
+		IsTerminating:  isTerminating,
+		RestartCount:   totalRestarts,
+		Labels:         pod.Labels,
+		OwnerUID:       ownerUID,
+		OwnerName:      ownerName,
+		OwnerKind:      ownerKind,
+		IsStaticPod:    isStaticPod,
+		IsControlPlane: isControlPlane,
+		CreatedAt:      pod.CreationTimestamp.Time.UTC(),
 	}
 }
 

@@ -12,6 +12,7 @@ import {
   extractPods,
   syncSelectedNode,
 } from "../helpers/topologyHelpers";
+import { handleJobWsEvent } from "../helpers/wsEventHandlers";
 import { handleSnapshotSync } from "./topologySnapshotHandler";
 
 export function handleWsMessage(
@@ -406,6 +407,16 @@ export function handleWsMessage(
     const currentCJ = state.cronJobs || [];
     const updatedCJ = currentCJ.filter((c) => c.name !== name);
     set({ cronJobs: updatedCJ });
+    state.applyDagreLayout();
+  } else if (eventType === "EVENT_JOB_MUTATED" || eventType === "EVENT_JOB_ADDED") {
+    const currentJobs = state.jobs || [];
+    const updatedJobs = handleJobWsEvent(currentJobs, payloadData, false);
+    set({ jobs: updatedJobs });
+    state.applyDagreLayout();
+  } else if (eventType === "EVENT_JOB_DELETED") {
+    const currentJobs = state.jobs || [];
+    const updatedJobs = handleJobWsEvent(currentJobs, payloadData, true);
+    set({ jobs: updatedJobs });
     state.applyDagreLayout();
   }
 }

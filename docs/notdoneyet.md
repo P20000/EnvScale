@@ -1,9 +1,10 @@
-**1. Compute & Workload Subtypes**
+**1. Compute & Workload Subtypes (COMPLETED)**
 
-* **DaemonSets:** No representation of system workloads that run a replica on every physical node (e.g., Fluentd, Node Exporter, Cilium agents).
-* **Jobs & CronJobs:** No visual cards for run-to-completion batch tasks, scheduled execution timelines, or completion/failure states.
-* **ReplicaSets (Direct):** Workload cards represent the top-level Deployment, but the underlying ReplicaSet revision history and rollout rollbacks are invisible.
-* **Static Pods & Mirror Pods:** Kubelet-managed control plane pods (e.g., `kube-apiserver`, `etcd`, `kube-scheduler`) are not shown.
+* **[x] DaemonSets:** Host-agent placement & health surfaced per physical node; resident daemon agent badges on worker node cards (`K8sWorkerNode`); detailed per-node distribution grid in inspector drawer (`DaemonSetOverviewSection`).
+* **[x] Jobs & CronJobs:** Dedicated canvas cards (`K8sJobNode`) for run-to-completion batch tasks with real-time lifecycle tracking, completion progress, execution duration timer, collapsible completed jobs summary (`K8sCompletedJobsNode`), and CronJob child job filtering.
+* **[x] ReplicaSets (Direct):** Revision history cards with image tags, age, replica counts, and authenticated 1-click Rollback endpoint (`POST /api/v1/clusters/:id/rollout/rollback`) featuring JWT Auth Guard, `retry.RetryOnConflict`, and audit logging.
+* **[x] Static Pods & Mirror Pods:** Kubelet control plane pod detection (`kubernetes.io/config.mirror` / well-known components) with visual `CP` badge on canvas pods and static mirror pod drawer callout.
+
 
 **2. Storage & Persistent Volumes**
 
