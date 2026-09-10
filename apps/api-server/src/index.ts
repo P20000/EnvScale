@@ -14,6 +14,8 @@ import { incidentRouter, topLevelIncidentRouter } from "./routes/incident.routes
 import { healthHistoryRouter, leaderboardRouter } from "./routes/leaderboard.routes.js";
 import { workspaceRouter } from "./routes/workspace.routes.js";
 import { startHealthSnapshotWorker } from "./workers/snapshot.worker.js";
+import { startClusterReconcileWorker, stopClusterReconcileWorker } from "./workers/cluster-reconcile.worker.js";
+import { hydrateClustersOnStartup } from "./services/cluster-sync.service.js";
 
 const app: Express = express();
 const port = env.PORT;
@@ -82,12 +84,27 @@ app.use((error: unknown, _request: express.Request, response: express.Response, 
 });
 
 if (process.env.NODE_ENV !== "test") {
-  app.listen(port, () => {
+  const server = app.listen(port, () => {
     console.log(`API server listening on port ${port}`);
     console.log(`  Environment: ${env.NODE_ENV}`);
     console.log(`  CORS origins: ${env.CORS_ORIGIN}`);
     startHealthSnapshotWorker();
+    startClusterReconcileWorker();
+    void hydrateClustersOnStartup();
   });
+
+  const gracefulShutdown = (signal: string) => {
+    console.log(`\n[API Server] ${signal} signal received: initiating clean teardown...`);
+    stopClusterReconcileWorker();
+    server.close(() => {
+      console.log("[API Server] HTTP server closed cleanly.");
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(0), 3000).unref();
+  };
+
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 }
 
 export default app;

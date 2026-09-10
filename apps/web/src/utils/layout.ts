@@ -88,8 +88,11 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
     connectedTopLevel.forEach((n) => {
       const gNode = dagreGraph.node(n.id);
       if (gNode) {
-        const rightX = gNode.x + gNode.width / 2;
-        const topY = gNode.y - gNode.height / 2;
+        const dims = getNodeDimensions(n);
+        const w = gNode.width ?? dims.width;
+        const h = gNode.height ?? dims.height;
+        const rightX = gNode.x + w / 2;
+        const topY = gNode.y - h / 2;
         if (rightX > maxX) maxX = rightX;
         if (topY < minY) minY = topY;
       }
@@ -100,8 +103,11 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
     topLevelNodes.forEach((n) => {
       const gNode = dagreGraph.node(n.id);
       if (gNode) {
-        const rightX = gNode.x + gNode.width / 2;
-        const topY = gNode.y - gNode.height / 2;
+        const dims = getNodeDimensions(n);
+        const w = gNode.width ?? dims.width;
+        const h = gNode.height ?? dims.height;
+        const rightX = gNode.x + w / 2;
+        const topY = gNode.y - h / 2;
         if (rightX > dagreMaxX) dagreMaxX = rightX;
         if (topY < dagreMinY) dagreMinY = topY;
       }
@@ -109,7 +115,11 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
   }
 
   const MIN_SIDE_RAIL_X = 1100;
-  const dockStartX = Math.max(dagreMaxX + 160, MIN_SIDE_RAIL_X);
+  // Dynamic offset: always placed to the right of the widest Dagre node
+  // In TB mode (or narrow graphs), preserve at least MIN_SIDE_RAIL_X margin
+  const dockStartX = connectedTopLevel.length > 0
+    ? Math.max(dagreMaxX + 160, MIN_SIDE_RAIL_X)
+    : 40;
   const dockStartY = Math.max(dagreMinY, 40);
 
   const isTB = direction === "TB";
@@ -119,13 +129,15 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
   const isOrphanNode = (node: Node): boolean => {
     if (node.parentId) return false;
     if (node.type === "k8sDaemonSet" || node.type === "k8sCronJob") return true;
-    return isTB && !connectedIds.has(node.id);
+    return !connectedIds.has(node.id);
   };
 
   const getOrphanTier = (node: Node): number => {
-    if (node.type === "k8sDaemonSet") return 2;
-    if (node.type === "k8sCronJob") return 3;
-    return 1; // unrouted worker pool k8sGroup
+    if (node.type === "k8sWorker") return 1;     // Host Node (e.g. minikube)
+    if (node.type === "k8sGroup") return 2;      // Unrouted Workload Group (e.g. WORKER-POOL)
+    if (node.type === "k8sDaemonSet") return 3;  // DaemonSets (e.g. node-telemetry-agent)
+    if (node.type === "k8sCronJob") return 4;    // CronJobs (e.g. db-audit-cronjob)
+    return 5;                                    // Standalone unrouted workloads
   };
 
   const orphanNodes = topLevelNodes.filter(isOrphanNode).sort((a, b) => {
@@ -140,6 +152,9 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
 
   orphanNodes.forEach((node) => {
     const dims = getNodeDimensions(node);
+    if (node.type === "k8sGroup") {
+      node.style = { ...node.style, width: dims.width, height: dims.height };
+    }
     orphanPosMap.set(node.id, { x: dockStartX, y: currentOrphanY });
     currentOrphanY += dims.height + 24;
   });
@@ -164,8 +179,9 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
     }
 
     const nodeWithPosition = dagreGraph.node(node.id);
-    const w = nodeWithPosition ? nodeWithPosition.width : 240;
-    const h = nodeWithPosition ? nodeWithPosition.height : 44;
+    const dims = getNodeDimensions(node);
+    const w = nodeWithPosition?.width ?? dims.width;
+    const h = nodeWithPosition?.height ?? dims.height;
 
     return {
       ...node,

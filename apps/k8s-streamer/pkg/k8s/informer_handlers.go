@@ -32,12 +32,17 @@ func (im *InformerManager) extractPodDelta(pod *corev1.Pod) types.PodStatusDelta
 		totalRestarts += cs.RestartCount
 	}
 
+	isTerminating := pod.DeletionTimestamp != nil && !pod.DeletionTimestamp.IsZero()
 	phase := string(pod.Status.Phase)
-	for _, cs := range pod.Status.ContainerStatuses {
-		if cs.State.Terminated != nil && cs.State.Terminated.Reason != "" {
-			phase = cs.State.Terminated.Reason
-		} else if cs.State.Waiting != nil && cs.State.Waiting.Reason != "" {
-			phase = cs.State.Waiting.Reason
+	if isTerminating {
+		phase = "Terminating"
+	} else {
+		for _, cs := range pod.Status.ContainerStatuses {
+			if cs.State.Terminated != nil && cs.State.Terminated.Reason != "" {
+				phase = cs.State.Terminated.Reason
+			} else if cs.State.Waiting != nil && cs.State.Waiting.Reason != "" {
+				phase = cs.State.Waiting.Reason
+			}
 		}
 	}
 
@@ -49,17 +54,18 @@ func (im *InformerManager) extractPodDelta(pod *corev1.Pod) types.PodStatusDelta
 	}
 
 	return types.PodStatusDelta{
-		Name:         pod.Name,
-		Namespace:    pod.Namespace,
-		NodeName:     pod.Spec.NodeName,
-		PodIP:        pod.Status.PodIP,
-		Phase:        phase,
-		RestartCount: totalRestarts,
-		Labels:       pod.Labels,
-		OwnerUID:     ownerUID,
-		OwnerName:    ownerName,
-		OwnerKind:    ownerKind,
-		CreatedAt:    pod.CreationTimestamp.Time.UTC(),
+		Name:          pod.Name,
+		Namespace:     pod.Namespace,
+		NodeName:      pod.Spec.NodeName,
+		PodIP:         pod.Status.PodIP,
+		Phase:         phase,
+		IsTerminating: isTerminating,
+		RestartCount:  totalRestarts,
+		Labels:        pod.Labels,
+		OwnerUID:      ownerUID,
+		OwnerName:     ownerName,
+		OwnerKind:     ownerKind,
+		CreatedAt:     pod.CreationTimestamp.Time.UTC(),
 	}
 }
 

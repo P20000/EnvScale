@@ -7,6 +7,7 @@ export interface K8sPodData extends Record<string, unknown> {
   namespace: string;
   nodeName?: string;
   status: "Running" | "CrashLoopBackOff" | "Pending" | "ContainerCreating" | "Terminating" | "Terminated" | "Failed" | "Unknown" | "Succeeded" | "Completed" | "OOMKilled";
+  isTerminating?: boolean;
   restarts: number;
   ip?: string;
   podIp?: string;
@@ -38,11 +39,22 @@ export function K8sPodNode({ data }: { data: K8sPodData }) {
   const terminatedReason = String((terminated?.terminated as Record<string, unknown>)?.reason || terminated?.reason || "");
   const rawPhase = String(data.phase || data.status || "").trim();
 
+  const isTerminating = Boolean(
+    data.isTerminating ||
+    rawPhase === "Terminating" ||
+    rawPhase === "Terminated" ||
+    (rawRes.metadata as Record<string, unknown>)?.deletionTimestamp
+  );
+
   let dotClass = "bg-zinc-700";
   let textClass = "text-zinc-500";
   let badgeLabel = "";
 
-  if (
+  if (isTerminating) {
+    dotClass = "bg-zinc-600 animate-pulse";
+    textClass = "text-zinc-500";
+    badgeLabel = "DRAINING";
+  } else if (
     terminatedReason === "OOMKilled" ||
     waitingReason === "CrashLoopBackOff" ||
     waitingReason === "OOMKilled" ||
@@ -68,8 +80,15 @@ export function K8sPodNode({ data }: { data: K8sPodData }) {
 
   const restarts = Number(data.restarts ?? 0);
 
+  const containerClass = isTerminating
+    ? "h-8 w-[208px] bg-[#09090b]/60 border border-dashed border-zinc-700/60 rounded-md px-2 flex items-center justify-between opacity-40 grayscale select-none group relative transition-all duration-300"
+    : "h-8 w-[208px] bg-[#09090b] border border-zinc-800/80 rounded-md px-2 flex items-center justify-between transition-colors hover:border-zinc-600 select-none group relative";
+
   return (
-    <div className="h-8 w-[208px] bg-[#09090b] border border-zinc-800/80 rounded-md px-2 flex items-center justify-between transition-colors hover:border-zinc-600 select-none group relative">
+    <div
+      className={containerClass}
+      title={isTerminating ? `${data.name} (Terminating / Draining)` : data.name}
+    >
       <Handle
         type="target"
         position={isTB ? Position.Top : Position.Left}
@@ -86,19 +105,24 @@ export function K8sPodNode({ data }: { data: K8sPodData }) {
       />
 
       <div className="flex items-center gap-1.5 min-w-0">
-        <Icon className="text-zinc-400 text-sm shrink-0" />
+        <Icon className={`${isTerminating ? "text-zinc-600" : "text-zinc-400"} text-sm shrink-0`} />
         <span className={`text-[11px] font-mono font-semibold truncate max-w-[95px] ${textClass}`}>
           {data.name}
         </span>
       </div>
 
       <div className="flex items-center gap-1 shrink-0">
-        {restarts > 0 && (
+        {restarts > 0 && !isTerminating && (
           <span className="text-[9px] font-mono font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 rounded" title={`${restarts} Restarts`}>
             ↺ {restarts}
           </span>
         )}
-        {badgeLabel && (
+        {badgeLabel && badgeLabel === "DRAINING" && (
+          <span className="text-[8.5px] font-mono font-bold text-amber-400/90 bg-amber-500/10 border border-amber-500/20 px-1 rounded uppercase tracking-wider">
+            DRAINING
+          </span>
+        )}
+        {badgeLabel && badgeLabel !== "DRAINING" && (
           <span className="text-[8.5px] font-mono font-black text-rose-300 bg-rose-500/20 border border-rose-500/30 px-1 rounded uppercase tracking-wider">
             {badgeLabel}
           </span>
