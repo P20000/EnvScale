@@ -26,6 +26,8 @@ import {
   handleRedoAction,
   handleRemoveTarget,
   handleCreateNode,
+  handleDeleteCluster,
+  handleDeleteNode,
 } from "./slices/topologyActionsSlice";
 import {
   handleUpsertService,
@@ -33,6 +35,7 @@ import {
   handleSetServices,
 } from "./slices/topologyCrudSlice";
 import { handleAddToken, handleAddNotification } from "./slices/topologyNotifSlice";
+import { handleRehydrateStorage } from "./slices/topologyRehydrate";
 import {
   type ApiToken,
   type NotificationItem,
@@ -64,11 +67,9 @@ export {
 
 export const defaultInitialNodes: Node[] = [];
 export const defaultInitialEdges: Edge[] = [];
-const defaultClusters: Cluster[] = [];
-const defaultInitialTokens: ApiToken[] = [];
-const defaultInitialNotifications: NotificationItem[] = [];
 
 export interface TopologyState {
+
   clusters: Cluster[];
   activeCluster: string;
   clusterCpuCores: number;
@@ -96,7 +97,11 @@ export interface TopologyState {
   showSystemNamespaces: boolean;
   setShowSystemNamespaces: (show: boolean) => void;
 
+  showStorageLayer: boolean;
+  setShowStorageLayer: (show: boolean) => void;
+
   selectedNamespaces: string[];
+
   setSelectedNamespaces: (namespaces: string[] | ((prev: string[]) => string[])) => void;
 
   layoutDirection: "TB" | "LR";
@@ -186,8 +191,9 @@ export const useTopologyStore = create<TopologyState>()(
       cronJobs: [],
       incidents: [],
       selectedNode: null,
-      tokens: defaultInitialTokens,
-      notifications: defaultInitialNotifications,
+      tokens: [],
+      notifications: [],
+
       wsStatus: "DISCONNECTED",
       wsLatencyMs: 0,
       wsReconnectTick: 0,
@@ -216,7 +222,14 @@ export const useTopologyStore = create<TopologyState>()(
         get().applyDagreLayout();
       },
 
+      showStorageLayer: true,
+      setShowStorageLayer: (show) => {
+        set({ showStorageLayer: show });
+        get().applyDagreLayout();
+      },
+
       setSelectedNamespaces: (namespaces) => {
+
         const next = typeof namespaces === "function" ? namespaces(get().selectedNamespaces) : namespaces;
         set({ selectedNamespaces: next });
         get().applyDagreLayout();
@@ -325,59 +338,9 @@ export const useTopologyStore = create<TopologyState>()(
 
       createNode: (type, customName) => handleCreateNode(get, set, type, customName),
 
-      deleteCluster: (clusterId) => {
-        const clusterToDelete = get().clusters.find((c) => c.id === clusterId);
-        if (!clusterToDelete) return;
-        const clusterName = clusterToDelete.name;
+      deleteCluster: (clusterId) => handleDeleteCluster(get, set, clusterId),
+      deleteNode: (nodeId) => handleDeleteNode(get, nodeId),
 
-        const updatedClusters = get().clusters.filter((c) => c.id !== clusterId);
-        const nextActive =
-          get().activeCluster === clusterName
-            ? updatedClusters[0]?.name || ""
-            : get().activeCluster;
-
-        const remainingNodes = get().nodes.filter((node) => {
-          const name = (node.data as Record<string, unknown>)?.name;
-          return name !== clusterName;
-        });
-
-        const remainingNodeIds = new Set(remainingNodes.map((n) => n.id));
-        const remainingEdges = get().edges.filter(
-          (edge) => remainingNodeIds.has(edge.source) && remainingNodeIds.has(edge.target)
-        );
-
-        set({
-          clusters: updatedClusters,
-          activeCluster: nextActive,
-          nodes: remainingNodes,
-          services: extractServices(remainingNodes),
-          pods: extractPods(remainingNodes),
-          edges: remainingEdges,
-        });
-      },
-
-      deleteNode: (nodeId) => {
-        const currentRaw = get().rawNodes || [];
-        const currentNodes = get().nodes || [];
-        const targetNode =
-          currentRaw.find(
-            (n) => n.id === nodeId || (n.data as Record<string, unknown>)?.name === nodeId
-          ) ||
-          currentNodes.find(
-            (n) => n.id === nodeId || (n.data as Record<string, unknown>)?.name === nodeId
-          );
-
-        if (targetNode) {
-          const resData = (targetNode.data as Record<string, unknown>) || {};
-          const resName = String(resData.name || targetNode.id);
-          const resKind = targetNode.type?.replace("k8s", "") || "Resource";
-          const ns = String(resData.namespace || "default");
-
-          get().openDeleteModal(nodeId, resName, resKind, ns);
-        } else {
-          get().removeTarget(nodeId);
-        }
-      },
 
       setNodes: (nodesInput) => {
         const nextNodes = typeof nodesInput === "function" ? nodesInput(get().nodes) : nodesInput;
@@ -426,7 +389,7 @@ export const useTopologyStore = create<TopologyState>()(
 
       applyDagreLayout: (direction) => {
         const targetDir = direction || get().layoutDirection || "TB";
-        const { rawNodes, nodes, edges, showCompletedPods, showSystemNamespaces, selectedNamespaces, deployments, replicaSets, daemonSets, cronJobs } = get();
+        const { rawNodes, nodes, edges, showCompletedPods, showSystemNamespaces, selectedNamespaces, deployments, replicaSets, daemonSets, cronJobs, showStorageLayer } = get();
         const baseNodes = rawNodes && rawNodes.length > 0 ? rawNodes : nodes;
         if (baseNodes.length === 0 && (!daemonSets || daemonSets.length === 0) && (!cronJobs || cronJobs.length === 0)) return;
 
@@ -438,8 +401,10 @@ export const useTopologyStore = create<TopologyState>()(
           deployments,
           replicaSets,
           daemonSets,
-          cronJobs
+          cronJobs,
+          showStorageLayer ?? true
         );
+
 
         const dynamicEdges = generateDynamicEdges(aggregatedNodes, edges);
 
@@ -525,34 +490,11 @@ export const useTopologyStore = create<TopologyState>()(
         tokens: state.tokens,
         showCompletedPods: state.showCompletedPods,
         showSystemNamespaces: state.showSystemNamespaces,
+        showStorageLayer: state.showStorageLayer,
         layoutDirection: state.layoutDirection,
       }),
-      onRehydrateStorage: () => (state) => {
-        if (state) {
-          let needsUpdate = false;
-          const parsedClusters: Cluster[] = [];
-          for (const c of (state.clusters || [])) {
-            if (typeof c === "string") {
-              if (c && c !== "mini-todo") parsedClusters.push({ id: `migrated-${Date.now()}`, name: c });
-              needsUpdate = true;
-            } else if (c && c.name && c.name !== "mini-todo") {
-              parsedClusters.push(c);
-            } else {
-              needsUpdate = true;
-            }
-          }
-          
-          const cleanedActive = state.activeCluster === "mini-todo" ? parsedClusters[0]?.name || "" : state.activeCluster;
-          if (state.activeCluster === "mini-todo") needsUpdate = true;
 
-          if (needsUpdate) {
-            useTopologyStore.setState({
-              clusters: parsedClusters,
-              activeCluster: cleanedActive,
-            });
-          }
-        }
-      },
+      onRehydrateStorage: handleRehydrateStorage,
     }
   )
 );

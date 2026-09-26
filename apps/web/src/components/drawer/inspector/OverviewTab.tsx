@@ -10,7 +10,13 @@ import type { K8sIngressData, IngressRuleData } from "../../canvas/K8sIngress";
 import { useResourceLogs } from "../../../hooks/useResourceLogs";
 import { LogRow } from "../LogRow";
 import { ReplicasRevisionsSection } from "./ReplicasRevisionsSection";
+import { PvcOverviewSection } from "./PvcOverviewSection";
+import { PvOverviewSection } from "./PvOverviewSection";
+import { StorageClassOverviewSection } from "./StorageClassOverviewSection";
+import { VolumeSnapshotOverviewSection } from "./VolumeSnapshotOverviewSection";
+import { VolumeSnapshotContentOverviewSection } from "./VolumeSnapshotContentOverviewSection";
 import { getPodPrefix } from "../../../store/helpers/topologyHelpers";
+
 
 interface OverviewTabProps {
   target: NonNullable<SelectedTarget>;
@@ -31,7 +37,26 @@ export function OverviewTab({
 
   const { logs } = useResourceLogs({
     name: target.data?.name || null,
-    kind: target.type === "pod" ? "Pod" : target.type === "service" ? "Service" : target.type === "ingress" ? "Ingress" : target.type === "daemonset" ? "DaemonSet" : "Workload",
+    kind:
+      target.type === "pod"
+        ? "Pod"
+        : target.type === "service"
+        ? "Service"
+        : target.type === "ingress"
+        ? "Ingress"
+        : target.type === "daemonset"
+        ? "DaemonSet"
+        : target.type === "pvc"
+        ? "PersistentVolumeClaim"
+        : target.type === "pv"
+        ? "PersistentVolume"
+        : target.type === "storageclass"
+        ? "StorageClass"
+        : target.type === "volumesnapshot"
+        ? "VolumeSnapshot"
+        : target.type === "volumesnapshotcontent"
+        ? "VolumeSnapshotContent"
+        : "Workload",
     namespace: String(targetRecord.namespace || "default"),
     enabled: isEmbeddedLogOpen,
   });
@@ -63,7 +88,18 @@ export function OverviewTab({
 
   return (
     <div className="space-y-4">
-      {target.type === "ingress" ? (
+      {target.type === "pvc" ? (
+        <PvcOverviewSection target={target} nowMs={nowMs} />
+      ) : target.type === "pv" ? (
+        <PvOverviewSection target={target} nowMs={nowMs} />
+      ) : target.type === "storageclass" ? (
+        <StorageClassOverviewSection target={target} nowMs={nowMs} />
+      ) : target.type === "volumesnapshot" ? (
+        <VolumeSnapshotOverviewSection target={target} nowMs={nowMs} />
+      ) : target.type === "volumesnapshotcontent" ? (
+        <VolumeSnapshotContentOverviewSection target={target} nowMs={nowMs} />
+      ) : target.type === "ingress" ? (
+
         <>
           <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3.5 space-y-2.5">
             <h4 className="text-xs font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">

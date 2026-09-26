@@ -3,9 +3,11 @@ import type { K8sPodData } from "../../components/canvas/K8sPod";
 import type { K8sNodeData } from "../../components/canvas/K8sNode";
 import type { K8sServiceData } from "../../components/canvas/K8sService";
 import type { K8sIngressData, IngressRuleData } from "../../components/canvas/K8sIngress";
+import type { K8sPVCData } from "../../components/canvas/K8sPVC";
 import type { SelectedTarget } from "../../components/drawer/InspectorDrawer";
 import type { K8sDaemonSetData, K8sCronJobData } from "../types/topologyTypes";
 import { calculateRolloutInfo, type K8sDeploymentData, type K8sReplicaSetData } from "./rolloutHelpers";
+import { generateStorageEdges } from "./storageTopologyHelpers";
 
 export const SYSTEM_NAMESPACES = new Set(["kube-system", "kube-public", "kube-node-lease", "ingress-nginx"]);
 
@@ -33,97 +35,15 @@ export const getPodPrefix = (name: string, podData?: K8sPodData) => {
   return prefix;
 };
 
-export type EdgeHealthStatus = "healthy" | "broken" | "degraded" | "idle";
+export {
+  type EdgeHealthStatus,
+  isPodReady,
+  extractPodList,
+  calculateEdgeHealth,
+  getEdgeHealth,
+} from "./edgeHealthHelpers";
+import { calculateEdgeHealth } from "./edgeHealthHelpers";
 
-export const isPodReady = (pod: unknown): boolean => {
-  if (!pod) return false;
-  const p = pod as Record<string, unknown>;
-  const podData = (p.data as Record<string, unknown>) || p;
-  const raw = (podData.rawResource as Record<string, unknown>) || podData;
-  const statusObj = (podData.status || raw.status || {}) as Record<string, unknown>;
-
-  const phaseStr = String(
-    (typeof statusObj === "string" ? statusObj : statusObj.phase) ||
-    podData.phase ||
-    podData.status ||
-    ""
-  ).toLowerCase();
-
-  const isReadyCondition = Array.isArray(statusObj.conditions)
-    ? statusObj.conditions.some(
-        (c: Record<string, unknown>) => c.type === "Ready" && c.status === "True"
-      )
-    : false;
-
-  const isReadyFlag = podData.ready === true || raw.ready === true;
-
-  return (
-    phaseStr === "running" ||
-    phaseStr === "ready" ||
-    phaseStr === "succeeded" ||
-    phaseStr === "completed" ||
-    Boolean(isReadyCondition) ||
-    isReadyFlag
-  );
-};
-
-export const extractPodList = (groupPodsInput: unknown): unknown[] => {
-  if (!groupPodsInput) return [];
-  if (Array.isArray(groupPodsInput)) return groupPodsInput;
-
-  const nodeObj = groupPodsInput as Record<string, unknown>;
-  const nodeData = (nodeObj.data as Record<string, unknown>) || nodeObj;
-
-  if (Array.isArray(nodeData.pods)) return nodeData.pods;
-  if (Array.isArray(nodeData.children)) return nodeData.children;
-
-  return [groupPodsInput];
-};
-
-export const calculateEdgeHealth = (
-  _svc: unknown,
-  groupPodsInput: unknown
-): { healthStatus: EdgeHealthStatus; strokeColor: string } => {
-  const podList = extractPodList(groupPodsInput);
-
-  if (!podList || podList.length === 0) {
-    return { healthStatus: "broken", strokeColor: "#ef4444" };
-  }
-
-  let healthyCount = 0;
-  let failingCount = 0;
-
-  podList.forEach((p) => {
-    const isReady = isPodReady(p);
-    const pData = ((p as Record<string, unknown>).data as Record<string, unknown>) || (p as Record<string, unknown>);
-    const status = String(pData.phase || pData.status || "").toLowerCase();
-
-    if (isReady) {
-      healthyCount++;
-    } else if (
-      status.includes("crash") ||
-      status.includes("fail") ||
-      status.includes("error") ||
-      status.includes("oom")
-    ) {
-      failingCount++;
-    }
-  });
-
-  if (failingCount > 0 && healthyCount > 0) {
-    return { healthStatus: "degraded", strokeColor: "#f59e0b" };
-  }
-  if (failingCount > 0 && healthyCount === 0) {
-    return { healthStatus: "broken", strokeColor: "#ef4444" };
-  }
-  if (healthyCount > 0) {
-    return { healthStatus: "healthy", strokeColor: "#10b981" };
-  }
-
-  return { healthStatus: "idle", strokeColor: "#475569" };
-};
-
-export const getEdgeHealth = calculateEdgeHealth;
 
 export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): Edge[] => {
   const baseEdges = currentEdges.filter((e) => !e.id.startsWith("e-sys-"));
@@ -226,6 +146,14 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
     }
   });
 
+  // Storage: PVC mount and PV binding edges
+  const storageEdges = generateStorageEdges(nodes);
+  storageEdges.forEach((se) => {
+    if (!sysEdges.find((e) => e.id === se.id)) {
+      sysEdges.push(se);
+    }
+  });
+
   return [...baseEdges, ...sysEdges];
 };
 
@@ -251,6 +179,8 @@ export const syncSelectedNode = (nodes: Node[], currentSelected: SelectedTarget)
       return { type: "service", data: matched.data as K8sServiceData };
     } else if (matched.type === "k8sIngress") {
       return { type: "ingress", data: matched.data as K8sIngressData };
+    } else if (matched.type === "k8sPVC") {
+      return { type: "pvc", data: matched.data as K8sPVCData };
     }
   }
   return currentSelected;
@@ -276,39 +206,66 @@ export const aggregateNodesWithWorkloads = (
   deployments: K8sDeploymentData[] = [],
   replicaSets: K8sReplicaSetData[] = [],
   daemonSets: K8sDaemonSetData[] = [],
-  cronJobs: K8sCronJobData[] = []
+  cronJobs: K8sCronJobData[] = [],
+  showStorageLayer: boolean = true
 ): Node[] => {
   const appNodes = nodes.filter((n) => {
+    // 1. Storage layer filter (controls PVC, PV, SC, VolumeSnapshot, VolumeSnapshotContent)
+    const isStorageNode =
+      n.type === "k8sPVC" ||
+      n.type === "k8sPV" ||
+      n.type === "k8sPersistentVolume" ||
+      n.type === "k8sStorageClass" ||
+      n.type === "k8sVolumeSnapshot" ||
+      n.type === "k8sVolumeSnapshotContent";
+
+    if (!showStorageLayer && isStorageNode) {
+      return false;
+    }
+
+    // 2. Cluster-scoped resources (PV, StorageClass, VolumeSnapshotContent, Node) do not have a namespace
+    const isClusterScoped =
+      n.type === "k8sNode" ||
+      n.type === "k8sPV" ||
+      n.type === "k8sPersistentVolume" ||
+      n.type === "k8sStorageClass" ||
+      n.type === "k8sVolumeSnapshotContent";
+
     const d = n.data as Record<string, unknown> | undefined;
-    const ns = String(d?.namespace || "default");
+    const ns = d?.namespace ? String(d.namespace) : undefined;
 
-    let isExplicitlyRequested = false;
-    if (typeof selectedNamespaces === "string" && selectedNamespaces !== "all") {
-      if (ns !== selectedNamespaces) return false;
-      isExplicitlyRequested = true;
-    } else if (Array.isArray(selectedNamespaces) && selectedNamespaces.length > 0) {
-      if (selectedNamespaces.includes("__NONE__")) return false;
-      if (!selectedNamespaces.includes(ns)) return false;
-      isExplicitlyRequested = true;
+    // Only apply namespace filtering to namespaced resources
+    if (!isClusterScoped && ns) {
+      let isExplicitlyRequested = false;
+      if (typeof selectedNamespaces === "string" && selectedNamespaces !== "all") {
+        if (ns !== selectedNamespaces) return false;
+        isExplicitlyRequested = true;
+      } else if (Array.isArray(selectedNamespaces) && selectedNamespaces.length > 0) {
+        if (selectedNamespaces.includes("__NONE__")) return false;
+        if (!selectedNamespaces.includes(ns)) return false;
+        isExplicitlyRequested = true;
+      }
+
+      if (!showSystemNamespaces && !isExplicitlyRequested) {
+        if (SYSTEM_NAMESPACES.has(ns)) {
+          return false;
+        }
+        const name = String(d?.name || n.id || "");
+        if (
+          name.startsWith("node-minikube") ||
+          name === "minikube" ||
+          name.includes("coredns") ||
+          name.includes("metrics-server") ||
+          name.includes("ingress-nginx-controller")
+        ) {
+          return false;
+        }
+      }
     }
 
-    if (!showSystemNamespaces && !isExplicitlyRequested) {
-      if (SYSTEM_NAMESPACES.has(ns)) {
-        return false;
-      }
-      const name = String(d?.name || n.id || "");
-      if (
-        name.startsWith("node-minikube") ||
-        name === "minikube" ||
-        name.includes("coredns") ||
-        name.includes("metrics-server") ||
-        name.includes("ingress-nginx-controller")
-      ) {
-        return false;
-      }
-    }
     return true;
   });
+
 
   const daemonSetNames = new Set((daemonSets || []).map((ds) => ds.name));
   const cronJobNames = new Set((cronJobs || []).map((cj) => cj.name));
@@ -472,6 +429,10 @@ export const aggregateNodesWithWorkloads = (
       position: { x: 0, y: 0 },
       data: cj,
     }));
+
+  // PVC nodes pass through namespace filtering but are never grouped/overridden —
+  // they are already present in nonPodNodes (since type !== "k8sPod").
+  // The nonPodNodes list already includes k8sPVC nodes from rawNodes.
 
   return [...nonPodNodes, ...dsNodes, ...cjNodes, ...processedNodes];
 };

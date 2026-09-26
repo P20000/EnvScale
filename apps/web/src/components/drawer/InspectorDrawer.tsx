@@ -4,7 +4,15 @@ import type { K8sPodData } from "../canvas/K8sPod";
 import type { K8sNodeData } from "../canvas/K8sNode";
 import type { K8sServiceData } from "../canvas/K8sService";
 import type { K8sIngressData } from "../canvas/K8sIngress";
-import type { K8sDaemonSetData, K8sCronJobData } from "../../store/types/topologyTypes";
+import type {
+  K8sDaemonSetData,
+  K8sCronJobData,
+  K8sPVData,
+  K8sStorageClassData,
+  K8sVolumeSnapshotData,
+  K8sVolumeSnapshotContentData,
+} from "../../store/types/topologyTypes";
+import type { K8sPVCData } from "../canvas/K8sPVC";
 import { useTopologyStore } from "../../store/useTopologyStore";
 import { OverviewTab } from "./inspector/OverviewTab";
 import { LogsTab } from "./inspector/LogsTab";
@@ -18,7 +26,13 @@ export type SelectedTarget =
   | { type: "ingress"; data: K8sIngressData }
   | { type: "daemonset"; data: K8sDaemonSetData }
   | { type: "cronjob"; data: K8sCronJobData }
+  | { type: "pvc"; data: K8sPVCData }
+  | { type: "pv"; data: K8sPVData }
+  | { type: "storageclass"; data: K8sStorageClassData }
+  | { type: "volumesnapshot"; data: K8sVolumeSnapshotData }
+  | { type: "volumesnapshotcontent"; data: K8sVolumeSnapshotContentData }
   | null;
+
 
 interface InspectorDrawerProps {
   target: SelectedTarget;
@@ -111,18 +125,69 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
     <aside className="fixed right-0 top-0 bottom-0 z-50 w-[420px] bg-[#141417] border-l border-neutral-800 shadow-2xl flex flex-col animate-in slide-in-from-right duration-250">
       <div className="flex items-center justify-between p-4 border-b border-neutral-800 bg-neutral-900/50">
         <div className="flex items-center gap-2.5 min-w-0">
-          <span className={`flex h-2.5 w-2.5 rounded-full shrink-0 ${target.type === "ingress" ? "bg-violet-400" : "bg-emerald-500"}`} />
+          <span
+            className={`flex h-2.5 w-2.5 rounded-full shrink-0 ${
+              target.type === "ingress" || target.type === "pv"
+                ? "bg-violet-400"
+                : target.type === "pvc"
+                ? "bg-cyan-400"
+                : target.type === "storageclass"
+                ? "bg-indigo-400"
+                : target.type === "volumesnapshot"
+                ? "bg-teal-400"
+                : target.type === "volumesnapshotcontent"
+                ? "bg-slate-400"
+                : "bg-emerald-500"
+            }`}
+          />
           <div className="min-w-0">
             <h3 className="text-sm font-bold text-neutral-100 truncate">{target.data.name}</h3>
-            <p className="text-[11px] font-mono text-neutral-400 capitalize flex items-center gap-1.5">
-              Type: {target.type}
+            <p className="text-[11px] font-mono text-neutral-400 capitalize flex items-center gap-1.5 flex-wrap">
+              Type:{" "}
+              {target.type === "pvc"
+                ? "PersistentVolumeClaim"
+                : target.type === "pv"
+                ? "PersistentVolume"
+                : target.type === "storageclass"
+                ? "StorageClass"
+                : target.type === "volumesnapshot"
+                ? "VolumeSnapshot"
+                : target.type === "volumesnapshotcontent"
+                ? "VolumeSnapshotContent"
+                : target.type}
               {target.type === "ingress" && (
                 <span className="rounded border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.2 text-[10px] font-mono text-violet-300">
                   INGRESS ROUTER
                 </span>
               )}
+              {target.type === "pvc" && (
+                <span className="rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.2 text-[10px] font-mono text-cyan-300">
+                  STORAGE CLAIM
+                </span>
+              )}
+              {target.type === "pv" && (
+                <span className="rounded border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.2 text-[10px] font-mono text-violet-300">
+                  PERSISTENT VOLUME
+                </span>
+              )}
+              {target.type === "storageclass" && (
+                <span className="rounded border border-indigo-500/30 bg-indigo-500/10 px-1.5 py-0.2 text-[10px] font-mono text-indigo-300">
+                  STORAGE CLASS
+                </span>
+              )}
+              {target.type === "volumesnapshot" && (
+                <span className="rounded border border-teal-500/30 bg-teal-500/10 px-1.5 py-0.2 text-[10px] font-mono text-teal-300">
+                  VOLUME SNAPSHOT
+                </span>
+              )}
+              {target.type === "volumesnapshotcontent" && (
+                <span className="rounded border border-slate-500/30 bg-slate-500/10 px-1.5 py-0.2 text-[10px] font-mono text-slate-300">
+                  SNAPSHOT CONTENT
+                </span>
+              )}
             </p>
           </div>
+
         </div>
         <button
           onClick={onClose}
