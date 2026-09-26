@@ -3,7 +3,6 @@ import sys
 import time
 import shutil
 import subprocess
-import webbrowser
 import threading
 
 def worker_deploy_k8s(app, project_root):
@@ -25,7 +24,7 @@ def worker_deploy_k8s(app, project_root):
         code = app._exec_cmd("minikube start --force")
         if code != 0:
             app.append_log("[WARNING] Standard start failed. Cleaning dangling docker system cache and retrying...")
-            subprocess.run("docker system prune -f", shell=True)
+            subprocess.run("docker system prune -f", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             code = app._exec_cmd("minikube delete && minikube start --force")
             if code != 0:
                 app.append_log("[ERROR] Failed to start Minikube cluster even with --force.")
@@ -66,7 +65,7 @@ def worker_deploy_k8s(app, project_root):
 
     app.append_log("[K8S] Generating flattened portable Kubeconfig for EnvScale integration...")
     flat_path = "/tmp/minikube-flat.yaml"
-    subprocess.run(f"kubectl config view --flatten > {flat_path}", shell=True)
+    subprocess.run(f"kubectl config view --flatten > {flat_path}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     ip_res = subprocess.run("minikube ip", shell=True, capture_output=True, text=True)
     mk_ip = ip_res.stdout.strip() or "127.0.0.1"

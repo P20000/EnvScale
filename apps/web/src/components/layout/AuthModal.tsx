@@ -4,21 +4,32 @@ import {
   mdiClose,
   mdiLock,
   mdiEmail,
+  mdiAccount,
   mdiAlertCircle,
   mdiCheckCircle,
   mdiLoading,
+  mdiShieldLockOutline,
 } from "@mdi/js";
-import { apiLogin } from "../../config/api";
+import { apiLogin, apiRegister } from "../../config/api";
 import { authClient } from "../../lib/auth-client";
+import { useAuthStore } from "../../store/useAuthStore";
 import { EnvScaleLogo } from "../ui/EnvScaleLogo";
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onLoginSuccess?: (userEmail: string) => void;
+  reason?: string | null;
 }
 
-export function AuthModal({ isOpen, onClose, onLoginSuccess }: AuthModalProps) {
+export function AuthModal({ isOpen, onClose, onLoginSuccess, reason: propsReason }: AuthModalProps) {
+  const storeReason = useAuthStore((s) => s.authModalReason);
+  const loginWithToken = useAuthStore((s) => s.loginWithToken);
+
+  const displayReason = propsReason || storeReason;
+
+  const [mode, setMode] = useState<"signin" | "register">("signin");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -33,28 +44,35 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess }: AuthModalProps) {
       setError("Please provide both email and password.");
       return;
     }
+    if (mode === "register" && !name.trim()) {
+      setError("Please provide your full name.");
+      return;
+    }
 
     setIsLoading(true);
     setError(null);
     setSuccessMsg(null);
 
-    const result = await apiLogin({ email, password });
+    const result = mode === "register"
+      ? await apiRegister({ name: name.trim(), email: email.trim(), password })
+      : await apiLogin({ email: email.trim(), password });
+
     setIsLoading(false);
 
     if (result.error) {
       setError(result.error);
     } else {
-      setSuccessMsg("Authenticated successfully!");
-      // API server returns the field as 'accessToken', not 'token'
+      setSuccessMsg(mode === "register" ? "Account created successfully!" : "Authenticated successfully!");
       const jwt = result.accessToken || result.token;
       if (jwt) {
-        localStorage.setItem("envscale_auth_token", jwt);
+        loginWithToken(jwt, result.user);
       }
       setTimeout(() => {
-        onLoginSuccess?.(email); // token already in localStorage before this fires
+        onLoginSuccess?.(email);
         onClose();
         setSuccessMsg(null);
         setPassword("");
+        setName("");
       }, 800);
     }
   };
@@ -68,8 +86,12 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess }: AuthModalProps) {
               <EnvScaleLogo className="h-5 w-5 text-blue-400" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-neutral-100 font-heading">EnvScale Authentication</h3>
-              <p className="text-xs text-neutral-400">Sign in to your team workspace</p>
+              <h3 className="text-sm font-bold text-neutral-100 font-heading">
+                {mode === "signin" ? "Sign In to EnvScale" : "Create EnvScale Account"}
+              </h3>
+              <p className="text-xs text-neutral-400">
+                {mode === "signin" ? "Sign in to access your Kubernetes workspace" : "Register to start managing Kubernetes clusters"}
+              </p>
             </div>
           </div>
           <button
@@ -79,6 +101,13 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess }: AuthModalProps) {
             <Icon path={mdiClose} size={0.7} />
           </button>
         </div>
+
+        {displayReason && (
+          <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-3 text-xs font-medium text-blue-300 flex items-start gap-2.5">
+            <Icon path={mdiShieldLockOutline} size={0.75} className="shrink-0 text-blue-400 mt-0.5" />
+            <div className="leading-relaxed">{displayReason}</div>
+          </div>
+        )}
 
         {error && (
           <div className="rounded-md border border-red-500/30 bg-red-500/10 p-3 text-xs font-medium text-red-400 flex items-center gap-2">
@@ -94,6 +123,38 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess }: AuthModalProps) {
           </div>
         )}
 
+        {/* Tab switcher: Sign In vs Register */}
+        <div className="flex rounded-lg bg-background p-1 border border-neutral-800 text-xs font-medium">
+          <button
+            type="button"
+            onClick={() => {
+              setMode("signin");
+              setError(null);
+            }}
+            className={`flex-1 py-1.5 rounded-md text-center transition-colors ${
+              mode === "signin"
+                ? "bg-neutral-800 text-white font-semibold"
+                : "text-neutral-400 hover:text-neutral-200"
+            }`}
+          >
+            Sign In
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMode("register");
+              setError(null);
+            }}
+            className={`flex-1 py-1.5 rounded-md text-center transition-colors ${
+              mode === "register"
+                ? "bg-neutral-800 text-white font-semibold"
+                : "text-neutral-400 hover:text-neutral-200"
+            }`}
+          >
+            Create Account
+          </button>
+        </div>
+
         <div className="space-y-2">
           <button
             type="button"
@@ -101,7 +162,7 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess }: AuthModalProps) {
               try {
                 const res = await authClient.signIn.social({ provider: "google", callbackURL: window.location.origin });
                 if (res?.error) {
-                  setError(res.error.message || "Google OAuth is not configured on the server. Please set GOOGLE_CLIENT_ID & GOOGLE_CLIENT_SECRET in apps/api-server/.env");
+                  setError(res.error.message || "Google OAuth is not configured on the server.");
                 }
               } catch (err: unknown) {
                 setError((err as Error)?.message || "Google OAuth authentication failed.");
@@ -127,7 +188,7 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess }: AuthModalProps) {
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
               />
             </svg>
-            <span>Sign in with Google</span>
+            <span>Continue with Google</span>
           </button>
 
           <button
@@ -136,7 +197,7 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess }: AuthModalProps) {
               try {
                 const res = await authClient.signIn.social({ provider: "github", callbackURL: window.location.origin });
                 if (res?.error) {
-                  setError(res.error.message || "GitHub OAuth is not configured on the server. Please set GITHUB_CLIENT_ID & GITHUB_CLIENT_SECRET in apps/api-server/.env");
+                  setError(res.error.message || "GitHub OAuth is not configured on the server.");
                 }
               } catch (err: unknown) {
                 setError((err as Error)?.message || "GitHub OAuth authentication failed.");
@@ -147,7 +208,7 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess }: AuthModalProps) {
             <svg className="h-4 w-4 fill-current text-white" viewBox="0 0 24 24">
               <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
             </svg>
-            <span>Sign in with GitHub</span>
+            <span>Continue with GitHub</span>
           </button>
         </div>
 
@@ -159,6 +220,23 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess }: AuthModalProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {mode === "register" && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-neutral-300 flex items-center gap-1.5 font-heading">
+                <Icon path={mdiAccount} size={0.6} className="text-neutral-400" />
+                Full Name
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Jane Doe"
+                required={mode === "register"}
+                className="w-full rounded-sm border border-neutral-800 bg-background px-3.5 py-2.5 text-xs font-mono text-neutral-100 placeholder-neutral-500 focus:border-blue-500 focus:outline-none transition-colors"
+              />
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-neutral-300 flex items-center gap-1.5 font-heading">
               <Icon path={mdiEmail} size={0.6} className="text-neutral-400" />
@@ -203,7 +281,15 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess }: AuthModalProps) {
               className="flex items-center gap-2 rounded-md bg-blue-500 px-5 py-2 text-xs font-semibold text-white hover:bg-blue-600 transition-colors disabled:opacity-50"
             >
               {isLoading && <Icon path={mdiLoading} size={0.65} className="animate-spin" />}
-              <span>{isLoading ? "Authenticating..." : "Sign In"}</span>
+              <span>
+                {isLoading
+                  ? mode === "register"
+                    ? "Creating Account..."
+                    : "Authenticating..."
+                  : mode === "register"
+                  ? "Register"
+                  : "Sign In"}
+              </span>
             </button>
           </div>
         </form>

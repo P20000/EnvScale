@@ -16,6 +16,7 @@ import { AuthModal } from "./AuthModal";
 import { WorkspaceModal } from "./WorkspaceModal";
 import { NamespaceFilterPill } from "./NamespaceFilterPill";
 import { EnvScaleLogo } from "../ui/EnvScaleLogo";
+import { useAuthStore } from "../../store/useAuthStore";
 
 import type { WsConnectionStatus } from "../../hooks/useK8sStream";
 
@@ -65,9 +66,14 @@ export function TopNavbar({
     }
   };
 
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const openAuthModal = useAuthStore((s) => s.openAuthModal);
+  const authModalOpen = useAuthStore((s) => s.authModalOpen);
+  const closeAuthModal = useAuthStore((s) => s.closeAuthModal);
+  const authModalReason = useAuthStore((s) => s.authModalReason);
+
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notifMenuOpen, setNotifMenuOpen] = useState(false);
-  const [authModalOpen, setAuthModalOpen] = useState(false);
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -194,6 +200,10 @@ export function TopNavbar({
               <button
                 onClick={() => {
                   setDropdownOpen(false);
+                  if (!isAuthenticated) {
+                    openAuthModal("Sign in to your account or workspace to connect a new Kubernetes cluster.");
+                    return;
+                  }
                   onOpenConnectModal();
                 }}
                 className="w-full flex items-center gap-2 rounded-md px-2.5 py-2 text-xs font-medium text-blue-400 hover:bg-blue-500/10 transition-colors"
@@ -334,9 +344,10 @@ export function TopNavbar({
       {/* Auth & Workspace Modals */}
       <AuthModal
         isOpen={authModalOpen}
-        onClose={() => setAuthModalOpen(false)}
+        reason={authModalReason}
+        onClose={closeAuthModal}
         onLoginSuccess={() => {
-          setAuthModalOpen(false);
+          closeAuthModal();
           // Immediately reconnect WebSocket with the JWT now in localStorage
           triggerWsReconnect();
         }}

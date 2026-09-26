@@ -20,6 +20,7 @@ os.chdir(PROJECT_ROOT)
 sys.path.insert(0, SCRIPT_DIR)
 from lib.gui_styles import CSS_STYLES
 from lib.service_manager import check_port, check_redis
+from lib.log_redirector import StreamRedirector, open_browser_detached
 from lib.workers import (
     worker_deploy_k8s,
     worker_teardown_k8s,
@@ -34,6 +35,7 @@ class LocalRunApp(Gtk.Window):
 
         self.running_processes = []
         self.is_busy = False
+        self.redirector = StreamRedirector(self.append_log)
 
         style_provider = Gtk.CssProvider()
         style_provider.load_from_data(CSS_STYLES)
@@ -230,7 +232,7 @@ class LocalRunApp(Gtk.Window):
         threading.Thread(target=self._worker_stop_stack, daemon=True).start()
 
     def on_open_web_clicked(self, widget):
-        webbrowser.open("http://localhost:5173")
+        open_browser_detached("http://localhost:5173")
 
     def on_deploy_k8s_clicked(self, widget):
         if self.is_busy:
@@ -251,7 +253,7 @@ class LocalRunApp(Gtk.Window):
         if mk_ip:
             url = f"http://{mk_ip}/"
             self.append_log(f"[OPEN] Opening Todo Ingress: {url}")
-            webbrowser.open(url)
+            open_browser_detached(url)
         else:
             self.append_log("[ERROR] Minikube is not running or IP unavailable.")
 
@@ -440,6 +442,8 @@ class LocalRunApp(Gtk.Window):
         return proc.returncode
 
     def on_window_destroy(self, widget):
+        if hasattr(self, "redirector"):
+            self.redirector.restore()
         for name, proc in list(self.running_processes):
             try:
                 pgid = os.getpgid(proc.pid)

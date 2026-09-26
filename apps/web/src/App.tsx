@@ -14,6 +14,7 @@ import { useTopologyStore } from "./store/useTopologyStore";
 import { useUIStore } from "./store/useUIStore";
 import ConnectClusterWizard from "./components/onboarding/ConnectClusterWizard";
 import { apiMe, apiGetWorkspaceClusters } from "./config/api";
+import { useAuthStore } from "./store/useAuthStore";
 
 import { SYSTEM_NAMESPACES } from "./store/helpers/topologyHelpers";
 
@@ -35,6 +36,10 @@ function AppContent() {
   const selectedNamespaces = useUIStore((s) => s.selectedNamespaces);
   const showSystemNamespaces = useUIStore((s) => s.showSystemNamespaces);
   const wsReconnectTick = useTopologyStore((s) => s.wsReconnectTick);
+
+  useEffect(() => {
+    useAuthStore.getState().checkAuth();
+  }, []);
 
   useEffect(() => {
     async function hydrateUserWorkspace() {
@@ -116,7 +121,13 @@ function AppContent() {
         activeCluster={activeCluster}
         clusters={clusters}
         onSelectCluster={(cluster) => setActiveCluster(cluster)}
-        onOpenConnectModal={() => setShowConnectWizard(true)}
+        onOpenConnectModal={() => {
+          if (!useAuthStore.getState().isAuthenticated) {
+            useAuthStore.getState().openAuthModal("Sign in to your account or workspace to connect a new Kubernetes cluster.");
+          } else {
+            setShowConnectWizard(true);
+          }
+        }}
         activeIncidentsCount={activeIncidentsCount}
         wsLatencyMs={wsLatencyMs}
         wsStatus={wsStatus}
