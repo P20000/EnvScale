@@ -6,4 +6,10 @@ export { K8sIngressNode, type K8sIngressData, type IngressRuleData } from "./K8s
 export { K8sGroupNode, type K8sGroupData } from "./K8sGroup";
 export { K8sDaemonSetNode } from "./K8sDaemonSet";
 export { K8sCronJobNode } from "./K8sCronJob";
+export { K8sPVCNode, type K8sPVCData } from "./K8sPVC";
+export { K8sPVNode } from "./K8sPV";
+export { K8sStorageClassNode } from "./K8sStorageClass";
+export { K8sVolumeSnapshotNode } from "./K8sVolumeSnapshot";
+export { K8sVolumeSnapshotContentNode } from "./K8sVolumeSnapshotContent";
 export { K8sEdge, type K8sEdgeData } from "./K8sEdge";
+

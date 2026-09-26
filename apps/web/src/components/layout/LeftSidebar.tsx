@@ -91,7 +91,7 @@ export function LeftSidebar({
     // 2. Fetch active session via Better-Auth (Google / GitHub OAuth)
     authClient
       .getSession()
-      .then((res) => {
+      .then((res: { data?: { user?: { email?: string; name?: string; image?: string } } } | null) => {
         if (res?.data?.user) {
           const user = res.data.user;
           if (user.email) setLoggedInEmail(user.email);
@@ -327,7 +327,7 @@ export function LeftSidebar({
           useTopologyStore.getState().triggerWsReconnect();
           authClient
             .getSession()
-            .then((res) => {
+            .then((res: { data?: { user?: { email?: string; name?: string; image?: string } } } | null) => {
               if (res?.data?.user) {
                 const user = res.data.user;
                 if (user.email) setLoggedInEmail(user.email);

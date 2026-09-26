@@ -15,18 +15,41 @@ import {
   mdiCrosshairsGps,
 } from "@mdi/js";
 
-import { K8sPodNode, K8sWorkerNode, K8sServiceNode, K8sWorkloadNode, K8sIngressNode, K8sGroupNode, K8sDaemonSetNode, K8sCronJobNode, K8sEdge } from "../canvas";
+import {
+  K8sPodNode,
+  K8sWorkerNode,
+  K8sServiceNode,
+  K8sWorkloadNode,
+  K8sIngressNode,
+  K8sGroupNode,
+  K8sDaemonSetNode,
+  K8sCronJobNode,
+  K8sPVCNode,
+  K8sPVNode,
+  K8sStorageClassNode,
+  K8sVolumeSnapshotNode,
+  K8sVolumeSnapshotContentNode,
+  K8sEdge,
+} from "../canvas";
 import type { K8sPodData } from "../canvas/K8sPod";
 import type { K8sNodeData } from "../canvas/K8sNode";
 import type { K8sServiceData } from "../canvas/K8sService";
 import type { K8sIngressData } from "../canvas/K8sIngress";
+import type { K8sPVCData } from "../canvas/K8sPVC";
 import { useTopologyStore } from "../../store/useTopologyStore";
 import type { SelectedTarget } from "../drawer/InspectorDrawer";
 import { useK8sStream, type WsTopologyMessage } from "../../hooks/useK8sStream";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
 import { DeleteConfirmationModal } from "../modals/DeleteConfirmationModal";
 
-import type { K8sDaemonSetData, K8sCronJobData } from "../../store/types/topologyTypes";
+import type {
+  K8sDaemonSetData,
+  K8sCronJobData,
+  K8sPVData,
+  K8sStorageClassData,
+  K8sVolumeSnapshotData,
+  K8sVolumeSnapshotContentData,
+} from "../../store/types/topologyTypes";
 
 const nodeTypes = {
   k8sPod: K8sPodNode,
@@ -40,7 +63,14 @@ const nodeTypes = {
   k8sWorkload: K8sWorkloadNode,
   k8sIngress: K8sIngressNode,
   k8sGroup: K8sGroupNode,
+  k8sPVC: K8sPVCNode,
+  k8sPV: K8sPVNode,
+  k8sPersistentVolume: K8sPVNode,
+  k8sStorageClass: K8sStorageClassNode,
+  k8sVolumeSnapshot: K8sVolumeSnapshotNode,
+  k8sVolumeSnapshotContent: K8sVolumeSnapshotContentNode,
 };
+
 
 const edgeTypes = {
   argo: K8sEdge,
@@ -102,6 +132,16 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         target = { type: "daemonset", data: node.data as K8sDaemonSetData };
       } else if (node.type === "k8sCronJob") {
         target = { type: "cronjob", data: node.data as K8sCronJobData };
+      } else if (node.type === "k8sPVC") {
+        target = { type: "pvc", data: node.data as K8sPVCData };
+      } else if (node.type === "k8sPV" || node.type === "k8sPersistentVolume") {
+        target = { type: "pv", data: node.data as K8sPVData };
+      } else if (node.type === "k8sStorageClass") {
+        target = { type: "storageclass", data: node.data as K8sStorageClassData };
+      } else if (node.type === "k8sVolumeSnapshot") {
+        target = { type: "volumesnapshot", data: node.data as K8sVolumeSnapshotData };
+      } else if (node.type === "k8sVolumeSnapshotContent") {
+        target = { type: "volumesnapshotcontent", data: node.data as K8sVolumeSnapshotContentData };
       }
       setSelectedNode(target);
       onSelectTarget(target);

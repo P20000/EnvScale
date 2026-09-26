@@ -289,3 +289,65 @@ export function handleCreateNode(
     pods: extractPods(nextNodes),
   });
 }
+
+export function handleDeleteCluster(
+  get: () => TopologyState,
+  set: (partial: Partial<TopologyState>) => void,
+  clusterId: string
+) {
+  const clusterToDelete = get().clusters.find((c) => c.id === clusterId);
+  if (!clusterToDelete) return;
+  const clusterName = clusterToDelete.name;
+
+  const updatedClusters = get().clusters.filter((c) => c.id !== clusterId);
+  const nextActive =
+    get().activeCluster === clusterName
+      ? updatedClusters[0]?.name || ""
+      : get().activeCluster;
+
+  const remainingNodes = get().nodes.filter((node) => {
+    const name = (node.data as Record<string, unknown>)?.name;
+    return name !== clusterName;
+  });
+
+  const remainingNodeIds = new Set(remainingNodes.map((n) => n.id));
+  const remainingEdges = get().edges.filter(
+    (edge) => remainingNodeIds.has(edge.source) && remainingNodeIds.has(edge.target)
+  );
+
+  set({
+    clusters: updatedClusters,
+    activeCluster: nextActive,
+    nodes: remainingNodes,
+    services: extractServices(remainingNodes),
+    pods: extractPods(remainingNodes),
+    edges: remainingEdges,
+  });
+}
+
+export function handleDeleteNode(
+  get: () => TopologyState,
+  nodeId: string
+) {
+  const currentRaw = get().rawNodes || [];
+  const currentNodes = get().nodes || [];
+  const targetNode =
+    currentRaw.find(
+      (n) => n.id === nodeId || (n.data as Record<string, unknown>)?.name === nodeId
+    ) ||
+    currentNodes.find(
+      (n) => n.id === nodeId || (n.data as Record<string, unknown>)?.name === nodeId
+    );
+
+  if (targetNode) {
+    const resData = (targetNode.data as Record<string, unknown>) || {};
+    const resName = String(resData.name || targetNode.id);
+    const resKind = targetNode.type?.replace("k8s", "") || "Resource";
+    const ns = String(resData.namespace || "default");
+
+    get().openDeleteModal(nodeId, resName, resKind, ns);
+  } else {
+    get().removeTarget(nodeId);
+  }
+}
+
