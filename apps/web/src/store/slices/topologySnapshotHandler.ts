@@ -41,8 +41,8 @@ export function handleSnapshotSync(
     }
   }
 
-  const parsedCpu = totalCpu > 0 ? totalCpu : 12;
-  const parsedMem = totalMemKi > 0 ? parseFloat((totalMemKi / (1024 * 1024)).toFixed(1)) : 14.8;
+  const parsedCpu = totalCpu > 0 ? totalCpu : 0;
+  const parsedMem = totalMemKi > 0 ? parseFloat((totalMemKi / (1024 * 1024)).toFixed(1)) : 0;
 
   const newRawNodes: Node[] = [];
 

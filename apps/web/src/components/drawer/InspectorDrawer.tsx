@@ -94,7 +94,10 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
     }
     const podData = target.data as K8sPodData;
     const mcores = podData.cpuUsageMcores ?? 0;
-    const maxMcores = (clusterCpuCores || 12) * 1000;
+    if (!clusterCpuCores || clusterCpuCores === 0) {
+      return { label: `${mcores} mcores (Detecting…)`, pct: 0 };
+    }
+    const maxMcores = clusterCpuCores * 1000;
     const pct = Math.min(100, parseFloat(((mcores / maxMcores) * 100).toFixed(1)));
     return { label: `${mcores} mcores (${pct}%)`, pct };
   };
@@ -112,7 +115,10 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
     }
     const podData = target.data as K8sPodData;
     const mib = podData.memoryUsageMiB ?? 0;
-    const totalMib = (clusterMemoryGB || 14.8) * 1024;
+    if (!clusterMemoryGB || clusterMemoryGB === 0) {
+      return { label: `${mib.toFixed(1)} MiB (Detecting…)`, pct: 0 };
+    }
+    const totalMib = clusterMemoryGB * 1024;
     const pct = Math.min(100, parseFloat(((mib / totalMib) * 100).toFixed(1)));
     return { label: `${mib.toFixed(1)} MiB / ${(totalMib / 1024).toFixed(1)} GiB (${pct}%)`, pct };
   };
