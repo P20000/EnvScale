@@ -15,7 +15,7 @@ import {
   mdiCrosshairsGps,
 } from "@mdi/js";
 
-import { K8sPodNode, K8sWorkerNode, K8sServiceNode, K8sWorkloadNode, K8sIngressNode, K8sGroupNode, K8sDaemonSetNode, K8sCronJobNode, K8sEdge } from "../canvas";
+import { K8sPodNode, K8sWorkerNode, K8sServiceNode, K8sWorkloadNode, K8sIngressNode, K8sGroupNode, K8sDaemonSetNode, K8sCronJobNode, K8sJobNode, K8sCompletedJobsNode, K8sEdge } from "../canvas";
 import type { K8sPodData } from "../canvas/K8sPod";
 import type { K8sNodeData } from "../canvas/K8sNode";
 import type { K8sServiceData } from "../canvas/K8sService";
@@ -27,7 +27,7 @@ import { useK8sStream, type WsTopologyMessage } from "../../hooks/useK8sStream";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
 import { DeleteConfirmationModal } from "../modals/DeleteConfirmationModal";
 
-import type { K8sDaemonSetData, K8sCronJobData } from "../../store/types/topologyTypes";
+import type { K8sDaemonSetData, K8sCronJobData, K8sJobData } from "../../store/types/topologyTypes";
 
 const nodeTypes = {
   k8sPod: K8sPodNode,
@@ -38,6 +38,8 @@ const nodeTypes = {
   k8sStatefulSet: K8sWorkloadNode,
   k8sDaemonSet: K8sDaemonSetNode,
   k8sCronJob: K8sCronJobNode,
+  k8sJob: K8sJobNode,
+  k8sCompletedJobs: K8sCompletedJobsNode,
   k8sWorkload: K8sWorkloadNode,
   k8sIngress: K8sIngressNode,
   k8sGroup: K8sGroupNode,
@@ -63,11 +65,18 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
   const applyDelta = useTopologyStore((s) => s.applyDelta);
   const setSelectedNode = useTopologyStore((s) => s.setSelectedNode);
   const setWsStatus = useTopologyStore((s) => s.setWsStatus);
+  const jobs = useTopologyStore((s) => s.jobs);
   const deleteModal = useUIStore((s) => s.deleteModal);
   const closeDeleteModal = useUIStore((s) => s.closeDeleteModal);
 
   const layoutDirection = useUIStore((s) => s.layoutDirection);
   const setLayoutDirection = useUIStore((s) => s.setLayoutDirection);
+  const showCompletedJobs = useUIStore((s) => s.showCompletedJobs);
+  const setShowCompletedJobs = useUIStore((s) => s.setShowCompletedJobs);
+
+  const completedJobsCount = (jobs || []).filter(
+    (j) => (j.succeeded ?? 0) >= (j.completions ?? 1) || (j.active === 0 && (j.failed ?? 0) === 0)
+  ).length;
 
   const { fitView } = useReactFlow();
 
@@ -103,6 +112,8 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         target = { type: "daemonset", data: node.data as K8sDaemonSetData };
       } else if (node.type === "k8sCronJob") {
         target = { type: "cronjob", data: node.data as K8sCronJobData };
+      } else if (node.type === "k8sJob") {
+        target = { type: "job", data: node.data as K8sJobData };
       }
       setSelectedNode(target);
       onSelectTarget(target);
@@ -220,6 +231,24 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
           <Icon path={mdiCrosshairsGps} size={0.65} className="text-blue-400" />
           <span>Recenter View</span>
         </button>
+
+        {completedJobsCount > 0 && (
+          <button
+            onClick={() => setShowCompletedJobs(!showCompletedJobs)}
+            className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors font-heading cursor-pointer ${
+              showCompletedJobs
+                ? "border-emerald-500/50 bg-emerald-950/20 text-emerald-400"
+                : "bg-background border-neutral-800 text-neutral-400 hover:border-neutral-700 hover:text-neutral-200"
+            }`}
+            title={showCompletedJobs ? "Collapse Completed Jobs" : "Show Completed Jobs"}
+          >
+            <span className={showCompletedJobs ? "text-emerald-400 font-bold" : "text-neutral-500"}>✓</span>
+            <span>{showCompletedJobs ? "Hide Done Jobs" : "Show Done Jobs"}</span>
+            <span className="text-[10px] font-mono px-1 rounded bg-neutral-800 border border-neutral-700 text-neutral-300">
+              {completedJobsCount}
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Delete Intent Confirmation Modal */}

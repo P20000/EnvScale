@@ -1,6 +1,13 @@
-import { MdLayers as LayersIcon, MdSync as SyncIcon } from "react-icons/md";
+import { useState } from "react";
+import {
+  MdLayers as LayersIcon,
+  MdSync as SyncIcon,
+  MdHistory as UndoIcon,
+  MdWarning as AlertTriangle,
+} from "react-icons/md";
 import { useTopologyStore } from "../../../store/useTopologyStore";
-import { calculateRolloutInfo } from "../../../store/helpers/rolloutHelpers";
+import { calculateRolloutInfo, type RevisionItem } from "../../../store/helpers/rolloutHelpers";
+import { apiRollbackDeployment } from "../../../config/api";
 
 interface ReplicasRevisionsSectionProps {
   workloadName: string;
@@ -15,6 +22,11 @@ export function ReplicasRevisionsSection({
 }: ReplicasRevisionsSectionProps) {
   const deployments = useTopologyStore((s) => s.deployments);
   const replicaSets = useTopologyStore((s) => s.replicaSets);
+  const activeCluster = useTopologyStore((s) => s.activeCluster);
+
+  const [confirmRollbackTarget, setConfirmRollbackTarget] = useState<string | null>(null);
+  const [isRollingBack, setIsRollingBack] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   const rolloutInfo = calculateRolloutInfo(workloadName, namespace, deployments, replicaSets);
 
@@ -31,6 +43,40 @@ export function ReplicasRevisionsSection({
     const h = Math.floor(m / 60);
     const d = Math.floor(h / 24);
     return d > 0 ? `${d}d ${h % 24}h` : h > 0 ? `${h}h ${m % 60}m` : `${m}m ago`;
+  };
+
+  const handleRollback = async (rev: RevisionItem) => {
+    if (!activeCluster) {
+      setFeedback({ type: "error", message: "No active cluster selected" });
+      return;
+    }
+    setIsRollingBack(true);
+    setFeedback(null);
+    try {
+      const res = await apiRollbackDeployment({
+        clusterId: activeCluster,
+        namespace,
+        deploymentName: workloadName,
+        replicaSetName: rev.name,
+      });
+      if (res.success) {
+        setFeedback({
+          type: "success",
+          message: res.message || `Rollback triggered to revision #${rev.hash} (${rev.name})`,
+        });
+        setConfirmRollbackTarget(null);
+      } else {
+        setFeedback({
+          type: "error",
+          message: res.error || "Rollback request failed",
+        });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Rollback failed";
+      setFeedback({ type: "error", message: msg });
+    } finally {
+      setIsRollingBack(false);
+    }
   };
 
   return (
@@ -54,6 +100,24 @@ export function ReplicasRevisionsSection({
           </span>
         )}
       </div>
+
+      {feedback && (
+        <div
+          className={`rounded-lg border p-2.5 text-xs font-mono flex items-center justify-between gap-2 ${
+            feedback.type === "success"
+              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+              : "border-rose-500/30 bg-rose-500/10 text-rose-300"
+          }`}
+        >
+          <span className="truncate">{feedback.message}</span>
+          <button
+            onClick={() => setFeedback(null)}
+            className="text-neutral-400 hover:text-neutral-200 text-xs shrink-0 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
         {rolloutInfo.allRevisions.map((rev) => {
@@ -80,16 +144,30 @@ export function ReplicasRevisionsSection({
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="text-neutral-200 font-bold truncate max-w-[170px]" title={rev.name}>
+                  <span className="text-neutral-200 font-bold truncate max-w-[150px]" title={rev.name}>
                     {rev.name}
                   </span>
                   <span className="text-[10px] text-neutral-400 px-1 py-0.2 rounded bg-neutral-800 border border-neutral-700">
                     #{rev.hash}
                   </span>
                 </div>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded border ${statusBadgeColor}`}>
-                  {rev.status}
-                </span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {!isCurrent && confirmRollbackTarget !== rev.name && (
+                    <button
+                      onClick={() => {
+                        setConfirmRollbackTarget(rev.name);
+                        setFeedback(null);
+                      }}
+                      className="text-[10px] px-2 py-0.5 rounded border border-neutral-700 bg-neutral-800 text-neutral-300 hover:bg-amber-500/20 hover:border-amber-500/40 hover:text-amber-300 transition-colors flex items-center gap-1 cursor-pointer font-sans"
+                    >
+                      <UndoIcon className="h-3 w-3" />
+                      Rollback
+                    </button>
+                  )}
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded border ${statusBadgeColor}`}>
+                    {rev.status}
+                  </span>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2 text-[11px] pt-0.5">
@@ -113,6 +191,35 @@ export function ReplicasRevisionsSection({
                   </span>
                 </div>
               )}
+
+              {confirmRollbackTarget === rev.name && (
+                <div className="pt-2 mt-1 border-t border-neutral-800/80 bg-neutral-950/90 -mx-2.5 -mb-2.5 p-2.5 rounded-b-lg space-y-1.5">
+                  <div className="text-[11px] text-amber-300 font-sans font-medium flex items-center gap-1">
+                    <AlertTriangle className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                    Rollback to #{rev.hash}?
+                  </div>
+                  <p className="text-[10px] text-neutral-400 font-mono">
+                    Restores deployment spec from {rev.name}.
+                  </p>
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      disabled={isRollingBack}
+                      onClick={() => handleRollback(rev)}
+                      className="px-2.5 py-1 rounded bg-amber-500 text-neutral-950 text-[11px] font-bold font-mono hover:bg-amber-400 transition-colors disabled:opacity-50 cursor-pointer flex items-center gap-1"
+                    >
+                      {isRollingBack && <SyncIcon className="h-3 w-3 animate-spin" />}
+                      Confirm Rollback
+                    </button>
+                    <button
+                      disabled={isRollingBack}
+                      onClick={() => setConfirmRollbackTarget(null)}
+                      className="px-2 py-1 rounded bg-neutral-800 text-neutral-300 text-[11px] font-mono hover:bg-neutral-700 transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
@@ -120,3 +227,4 @@ export function ReplicasRevisionsSection({
     </div>
   );
 }
+

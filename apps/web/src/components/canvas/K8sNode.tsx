@@ -2,6 +2,12 @@ import { Handle, Position } from '@xyflow/react';
 import { MdDns as Icon } from 'react-icons/md';
 import { useUIStore } from '../../store/useUIStore';
 
+export interface DaemonAgentInfo {
+  name: string;
+  namespace?: string;
+  ready: boolean;
+}
+
 export interface K8sNodeData extends Record<string, unknown> {
   name: string;
   ip: string;
@@ -11,6 +17,7 @@ export interface K8sNodeData extends Record<string, unknown> {
   cpuPct: number;
   memoryPct: number;
   status: "Ready" | "NotReady" | "Running" | "Warning" | "Error" | "Inactive";
+  daemonAgents?: DaemonAgentInfo[];
 }
 
 export function K8sWorkerNode({ data }: { data: K8sNodeData }) {
@@ -38,12 +45,20 @@ export function K8sWorkerNode({ data }: { data: K8sNodeData }) {
 
       <div className="flex items-center gap-2 min-w-0">
         <Icon size={16} className="text-zinc-400 shrink-0" />
-        <span className="text-xs font-mono font-medium truncate text-zinc-300 max-w-[140px]">
+        <span className="text-xs font-mono font-medium truncate text-zinc-300 max-w-[125px]">
           {data.name}
         </span>
       </div>
 
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-1.5 shrink-0">
+        {data.daemonAgents && data.daemonAgents.length > 0 && (
+          <span
+            className="text-[9px] font-mono px-1 py-0.2 rounded border border-purple-500/30 bg-purple-500/10 text-purple-300 font-semibold"
+            title={`Resident DaemonSets: ${data.daemonAgents.map((a) => a.name).join(", ")}`}
+          >
+            {data.daemonAgents.length} DS
+          </span>
+        )}
         <span className="text-[10px] font-mono text-zinc-500">
           {data.cpuPct}% CPU
         </span>

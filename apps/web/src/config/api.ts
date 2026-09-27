@@ -322,3 +322,53 @@ export const getStreamerToken = async (): Promise<string | null> => {
   }
   return null;
 };
+
+export interface RollbackParams {
+  clusterId: string;
+  namespace: string;
+  deploymentName: string;
+  replicaSetName: string;
+}
+
+export interface RollbackResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * Trigger an authenticated rollback of a deployment to a target ReplicaSet
+ * Endpoint: POST /api/v1/clusters/:id/rollout/rollback
+ */
+export async function apiRollbackDeployment(params: RollbackParams): Promise<RollbackResponse> {
+  try {
+    let token = await getStreamerToken();
+    if (!token) {
+      const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+      if (rawAuth && rawAuth !== "null") token = rawAuth;
+    }
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${STREAMER_BASE_URL}/api/v1/clusters/${encodeURIComponent(params.clusterId)}/rollout/rollback`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(params),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { success: false, error: data.error || `Rollback failed (HTTP ${res.status})` };
+    }
+    return { success: true, message: data.message || "Rollback initiated successfully" };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : "Network error during rollback";
+    return { success: false, error: errorMsg };
+  }
+}
+

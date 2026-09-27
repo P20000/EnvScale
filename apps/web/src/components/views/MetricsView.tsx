@@ -6,6 +6,7 @@ import {
   mdiMemory,
   mdiServer,
   mdiRefresh,
+  mdiLoading,
 } from "@mdi/js";
 import { useTopologyStore } from "../../store/useTopologyStore";
 import { useUIStore } from "../../store/useUIStore";
@@ -244,8 +245,10 @@ export function MetricsView() {
   const activeClusterName = useMemo(() => {
     return clusters.find((c) => c.id === activeCluster)?.name || activeCluster;
   }, [clusters, activeCluster]);
-  const clusterCpuCores = useTopologyStore((s) => s.clusterCpuCores) || 12;
-  const clusterMemoryGB = useTopologyStore((s) => s.clusterMemoryGB) || 14.8;
+  const clusterCpuCores = useTopologyStore((s) => s.clusterCpuCores);
+  const clusterMemoryGB = useTopologyStore((s) => s.clusterMemoryGB);
+  const cpuDetected = (clusterCpuCores ?? 0) > 0;
+  const memoryDetected = (clusterMemoryGB ?? 0) > 0;
 
   // Filter pods by active namespace selection
   const filteredPods = useMemo(() => {
@@ -285,17 +288,21 @@ export function MetricsView() {
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
-      const maxMcores = clusterCpuCores * 1000;
-      const maxMemoryMiB = clusterMemoryGB * 1024;
-      const cpuPct = Math.min(100, Math.max(0, (metricsRef.current.totalCpuMcores / maxMcores) * 100));
-      const memPct = Math.min(100, Math.max(0, (metricsRef.current.totalMemoryMiB / maxMemoryMiB) * 100));
+      const maxMcores = (clusterCpuCores || 0) * 1000;
+      const maxMemoryMiB = (clusterMemoryGB || 0) * 1024;
+      const cpuPct = cpuDetected && maxMcores > 0
+        ? Math.min(100, Math.max(0, (metricsRef.current.totalCpuMcores / maxMcores) * 100))
+        : 0;
+      const memPct = memoryDetected && maxMemoryMiB > 0
+        ? Math.min(100, Math.max(0, (metricsRef.current.totalMemoryMiB / maxMemoryMiB) * 100))
+        : 0;
 
       setCpuHistory((prev) => [...prev.slice(1), { timestamp: now, value: cpuPct }]);
       setMemoryHistory((prev) => [...prev.slice(1), { timestamp: now, value: memPct }]);
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [clusterCpuCores, clusterMemoryGB]);
+  }, [clusterCpuCores, clusterMemoryGB, cpuDetected, memoryDetected]);
 
   const podResourceMetrics = useMemo(() => {
     return filteredPods
@@ -337,10 +344,14 @@ export function MetricsView() {
           <button
             onClick={() => {
               const now = Date.now();
-              const maxMcores = clusterCpuCores * 1000;
-              const maxMemoryMiB = clusterMemoryGB * 1024;
-              const cpuPct = Math.min(100, Math.max(0, (totalCpuMcores / maxMcores) * 100));
-              const memPct = Math.min(100, Math.max(0, (totalMemoryMiB / maxMemoryMiB) * 100));
+              const maxMcores = (clusterCpuCores || 0) * 1000;
+              const maxMemoryMiB = (clusterMemoryGB || 0) * 1024;
+              const cpuPct = cpuDetected && maxMcores > 0
+                ? Math.min(100, Math.max(0, (totalCpuMcores / maxMcores) * 100))
+                : 0;
+              const memPct = memoryDetected && maxMemoryMiB > 0
+                ? Math.min(100, Math.max(0, (totalMemoryMiB / maxMemoryMiB) * 100))
+                : 0;
               setCpuHistory((prev) => [...prev.slice(1), { timestamp: now, value: cpuPct }]);
               setMemoryHistory((prev) => [...prev.slice(1), { timestamp: now, value: memPct }]);
             }}
@@ -367,12 +378,21 @@ export function MetricsView() {
               </div>
             </div>
             <div className="text-right font-mono flex items-center gap-2">
-              <div>
-                <div className="text-base text-neutral-100 font-semibold">{currentCpuCores} / {clusterCpuCores.toFixed(1)} Cores</div>
-                <div className="text-xs text-neutral-500">({currentCpuPct.toFixed(1)}% load)</div>
-              </div>
-              {currentCpuPct > 85 && (
-                <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" title="High CPU Load > 85%" />
+              {cpuDetected ? (
+                <>
+                  <div>
+                    <div className="text-base text-neutral-100 font-semibold">{currentCpuCores} / {clusterCpuCores.toFixed(1)} Cores</div>
+                    <div className="text-xs text-neutral-500">({currentCpuPct.toFixed(1)}% load)</div>
+                  </div>
+                  {currentCpuPct > 85 && (
+                    <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" title="High CPU Load > 85%" />
+                  )}
+                </>
+              ) : (
+                <div className="flex items-center gap-2 text-xs text-neutral-400">
+                  <Icon path={mdiLoading} size={0.6} className="animate-spin text-blue-400" />
+                  <span>Detecting…</span>
+                </div>
               )}
             </div>
           </div>
@@ -398,12 +418,21 @@ export function MetricsView() {
               </div>
             </div>
             <div className="text-right font-mono flex items-center gap-2">
-              <div>
-                <div className="text-base text-neutral-100 font-semibold">{currentMemoryGB} GB / {clusterMemoryGB.toFixed(1)} GB</div>
-                <div className="text-xs text-neutral-500">({currentMemoryPct.toFixed(1)}% pressure)</div>
-              </div>
-              {currentMemoryPct > 85 && (
-                <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" title="High RAM Pressure > 85%" />
+              {memoryDetected ? (
+                <>
+                  <div>
+                    <div className="text-base text-neutral-100 font-semibold">{currentMemoryGB} GB / {clusterMemoryGB.toFixed(1)} GB</div>
+                    <div className="text-xs text-neutral-500">({currentMemoryPct.toFixed(1)}% pressure)</div>
+                  </div>
+                  {currentMemoryPct > 85 && (
+                    <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" title="High RAM Pressure > 85%" />
+                  )}
+                </>
+              ) : (
+                <div className="flex items-center gap-2 text-xs text-neutral-400">
+                  <Icon path={mdiLoading} size={0.6} className="animate-spin text-emerald-400" />
+                  <span>Detecting…</span>
+                </div>
               )}
             </div>
           </div>

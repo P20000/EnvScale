@@ -17,7 +17,7 @@ import type { K8sPodData } from "../components/canvas/K8sPod";
 import type { K8sServiceData } from "../components/canvas/K8sService";
 import type { K8sIngressData } from "../components/canvas/K8sIngress";
 import type { K8sReplicaSetData, K8sDeploymentData } from "./helpers/rolloutHelpers";
-import type { K8sDaemonSetData, K8sCronJobData } from "./types/topologyTypes";
+import type { K8sDaemonSetData, K8sCronJobData, K8sJobData } from "./types/topologyTypes";
 import type { WsConnectionStatus, WsTopologyMessage } from "../hooks/useK8sStream";
 import type { SelectedTarget } from "../components/drawer/InspectorDrawer";
 import { getLayoutedElements } from "../utils/layout";
@@ -84,6 +84,7 @@ export interface TopologyState {
   deployments: K8sDeploymentData[];
   daemonSets: K8sDaemonSetData[];
   cronJobs: K8sCronJobData[];
+  jobs: K8sJobData[];
   incidents: K8sIncidentEvent[];
   selectedNode: SelectedTarget;
   tokens: ApiToken[];
@@ -166,6 +167,7 @@ export const useTopologyStore = create<TopologyState>()(
       deployments: [],
       daemonSets: [],
       cronJobs: [],
+      jobs: [],
       incidents: [],
       selectedNode: null,
       tokens: defaultInitialTokens,
@@ -277,6 +279,7 @@ export const useTopologyStore = create<TopologyState>()(
             deployments: [],
             daemonSets: [],
             cronJobs: [],
+            jobs: [],
             incidents: [],
             selectedNode: null,
             wsReconnectTick: get().wsReconnectTick + 1,
@@ -356,11 +359,11 @@ export const useTopologyStore = create<TopologyState>()(
       },
 
       applyDagreLayout: (direction) => {
-        const { layoutDirection, showCompletedPods, showSystemNamespaces, selectedNamespaces } = useUIStore.getState();
+        const { layoutDirection, showCompletedPods, showCompletedJobs, showSystemNamespaces, selectedNamespaces } = useUIStore.getState();
         const targetDir = direction || layoutDirection || "TB";
-        const { rawNodes, nodes, edges, deployments, replicaSets, daemonSets, cronJobs } = get();
+        const { rawNodes, nodes, edges, deployments, replicaSets, daemonSets, cronJobs, jobs } = get();
         const baseNodes = rawNodes && rawNodes.length > 0 ? rawNodes : nodes;
-        if (baseNodes.length === 0 && (!daemonSets || daemonSets.length === 0) && (!cronJobs || cronJobs.length === 0)) return;
+        if (baseNodes.length === 0 && (!daemonSets || daemonSets.length === 0) && (!cronJobs || cronJobs.length === 0) && (!jobs || jobs.length === 0)) return;
 
         const aggregatedNodes = aggregateNodesWithWorkloads(
           baseNodes,
@@ -370,7 +373,9 @@ export const useTopologyStore = create<TopologyState>()(
           deployments,
           replicaSets,
           daemonSets,
-          cronJobs
+          cronJobs,
+          jobs,
+          showCompletedJobs
         );
 
         const dynamicEdges = generateDynamicEdges(aggregatedNodes, edges);
@@ -432,6 +437,8 @@ export const useTopologyStore = create<TopologyState>()(
           replicaSets: [],
           deployments: [],
           daemonSets: [],
+          cronJobs: [],
+          jobs: [],
           incidents: [],
           selectedNode: null,
           notifications: [],

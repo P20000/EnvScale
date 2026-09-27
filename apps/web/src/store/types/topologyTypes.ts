@@ -80,3 +80,21 @@ export interface K8sCronJobData extends Record<string, unknown> {
   labels?: Record<string, string>;
   createdAt?: string;
 }
+
+export interface K8sJobData extends Record<string, unknown> {
+  name: string;
+  namespace: string;
+  completions: number;
+  parallelism: number;
+  succeeded: number;
+  failed: number;
+  active: number;
+  startTime?: string;
+  completionTime?: string;
+  durationSeconds: number;
+  labels?: Record<string, string>;
+  ownerKind?: string;
+  ownerName?: string;
+  createdAt?: string;
+}
+

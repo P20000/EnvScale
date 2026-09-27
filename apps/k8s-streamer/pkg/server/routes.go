@@ -81,6 +81,8 @@ func SetupRoutes(
 		HandleUniversalLogStream(clusterManager, w, r)
 	})
 
+	setupRollbackRoutes(mux, clusterManager, hub)
+
 	mux.HandleFunc("/api/v1/clusters/register", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -141,7 +143,7 @@ func SetupRoutes(
 			return
 		}
 
-		pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, cronJobs, err := clusterManager.GetClusterSnapshot(clusterID)
+		pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, cronJobs, jobs, err := clusterManager.GetClusterSnapshot(clusterID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
@@ -159,6 +161,7 @@ func SetupRoutes(
 			"ingresses":    ingresses,
 			"incidents":    incidents,
 			"cronJobs":     cronJobs,
+			"jobs":         jobs,
 		})
 	})
 

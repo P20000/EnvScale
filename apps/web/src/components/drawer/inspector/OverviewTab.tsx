@@ -2,14 +2,20 @@ import {
   MdPublic as IngressIcon,
   MdCheckCircle as CheckCircle2,
   MdTerminal as Terminal,
+  MdSecurity as SecurityIcon,
+  MdLayers as DaemonIcon,
 } from "react-icons/md";
 import type { SelectedTarget } from "../InspectorDrawer";
 import type { K8sPodData } from "../../canvas/K8sPod";
+import type { K8sNodeData } from "../../canvas/K8sNode";
 import type { K8sIngressData, IngressRuleData } from "../../canvas/K8sIngress";
+import type { K8sJobData, K8sDaemonSetData } from "../../../store/types/topologyTypes";
 
 import { useResourceLogs } from "../../../hooks/useResourceLogs";
 import { LogRow } from "../LogRow";
 import { ReplicasRevisionsSection } from "./ReplicasRevisionsSection";
+import { JobOverviewSection } from "./JobOverviewSection";
+import { DaemonSetOverviewSection } from "./DaemonSetOverviewSection";
 import { getPodPrefix } from "../../../store/helpers/topologyHelpers";
 
 interface OverviewTabProps {
@@ -151,8 +157,24 @@ export function OverviewTab({
             </div>
           </div>
         </>
+      ) : target.type === "job" ? (
+        <JobOverviewSection data={target.data as K8sJobData} nowMs={nowMs} />
+      ) : target.type === "daemonset" ? (
+        <DaemonSetOverviewSection data={target.data as K8sDaemonSetData} />
       ) : (
         <>
+          {target.type === "pod" && ((target.data as K8sPodData).isStaticPod || (target.data as K8sPodData).isControlPlane) && (
+            <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-3 space-y-1 font-mono text-xs text-blue-200">
+              <div className="flex items-center gap-1.5 font-semibold text-blue-300">
+                <SecurityIcon className="h-4 w-4" />
+                Control Plane / Static Mirror Pod
+              </div>
+              <p className="text-[11px] text-neutral-300 leading-snug">
+                Managed directly by host Kubelet (<code className="bg-neutral-900 px-1 py-0.2 rounded text-blue-300">/etc/kubernetes/manifests</code>). Runs independently without parent Deployment/ReplicaSet controller.
+              </p>
+            </div>
+          )}
+
           <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3.5 space-y-2.5">
             <h4 className="text-xs font-semibold text-neutral-300 uppercase tracking-wider">
               Workload Details
@@ -234,7 +256,26 @@ export function OverviewTab({
             </div>
           </div>
 
-          {target.type !== "node" && (
+          {target.type === "node" && (target.data as K8sNodeData).daemonAgents && (target.data as K8sNodeData).daemonAgents!.length > 0 && (
+            <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3.5 space-y-2">
+              <h4 className="text-xs font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
+                <DaemonIcon className="h-4 w-4 text-purple-400" />
+                Resident Daemon Agents ({(target.data as K8sNodeData).daemonAgents!.length})
+              </h4>
+              <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1">
+                {(target.data as K8sNodeData).daemonAgents!.map((agent) => (
+                  <div key={agent.name} className="flex items-center justify-between text-xs font-mono p-2 rounded bg-neutral-950 border border-neutral-800/80">
+                    <span className="text-neutral-200">{agent.name}</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
+                      Resident Agent
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {target.type !== "node" && !(target.data as K8sPodData)?.isStaticPod && (
             <ReplicasRevisionsSection
               workloadName={
                 targetRecord.ownerName
@@ -248,7 +289,7 @@ export function OverviewTab({
         </>
       )}
 
-      {target.type === "pod" && (
+      {(target.type === "pod" || target.type === "job") && (
         isEmbeddedLogOpen ? (
           <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3.5 space-y-2.5">
             <div className="flex items-center justify-between">

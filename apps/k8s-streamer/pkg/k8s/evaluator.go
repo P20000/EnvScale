@@ -109,6 +109,7 @@ type SnapshotProvider interface {
 		[]types.IngressStatusDelta,
 		[]types.K8sIncidentEvent,
 		[]types.CronJobStatusDelta,
+		[]types.JobStatusDelta,
 		error,
 	)
 	ListClusters() map[string]bool
@@ -288,7 +289,7 @@ func (me *MetricEvaluator) evaluate() {
 			continue
 		}
 
-		pods, nodes, _, _, _, _, _, _, _, _, err := me.provider.GetClusterSnapshot(clusterID)
+		pods, nodes, _, _, _, _, _, _, _, _, _, err := me.provider.GetClusterSnapshot(clusterID)
 		if err != nil {
 			continue
 		}

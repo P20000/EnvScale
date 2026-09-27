@@ -11,7 +11,9 @@ import {
   extractServices,
   extractPods,
   syncSelectedNode,
+  calculateClusterCapacity,
 } from "../helpers/topologyHelpers";
+import { handleJobWsEvent } from "../helpers/wsEventHandlers";
 import { handleSnapshotSync } from "./topologySnapshotHandler";
 
 export function handleWsMessage(
@@ -169,8 +171,12 @@ export function handleWsMessage(
       updatedRaw = [...currentRaw, newNode];
     }
 
+    const { clusterCpuCores, clusterMemoryGB } = calculateClusterCapacity(updatedRaw);
+
     set({
       rawNodes: updatedRaw,
+      clusterCpuCores: clusterCpuCores || state.clusterCpuCores,
+      clusterMemoryGB: clusterMemoryGB || state.clusterMemoryGB,
       services: extractServices(updatedRaw),
       pods: extractPods(updatedRaw),
       selectedNode: syncSelectedNode(updatedRaw, state.selectedNode),
@@ -406,6 +412,16 @@ export function handleWsMessage(
     const currentCJ = state.cronJobs || [];
     const updatedCJ = currentCJ.filter((c) => c.name !== name);
     set({ cronJobs: updatedCJ });
+    state.applyDagreLayout();
+  } else if (eventType === "EVENT_JOB_MUTATED" || eventType === "EVENT_JOB_ADDED") {
+    const currentJobs = state.jobs || [];
+    const updatedJobs = handleJobWsEvent(currentJobs, payloadData, false);
+    set({ jobs: updatedJobs });
+    state.applyDagreLayout();
+  } else if (eventType === "EVENT_JOB_DELETED") {
+    const currentJobs = state.jobs || [];
+    const updatedJobs = handleJobWsEvent(currentJobs, payloadData, true);
+    set({ jobs: updatedJobs });
     state.applyDagreLayout();
   }
 }

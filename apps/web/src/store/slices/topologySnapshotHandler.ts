@@ -4,9 +4,9 @@ import type { K8sNodeData } from "../../components/canvas/K8sNode";
 import type { K8sServiceData } from "../../components/canvas/K8sService";
 import type { K8sIngressData } from "../../components/canvas/K8sIngress";
 import type { K8sReplicaSetData, K8sDeploymentData } from "../helpers/rolloutHelpers";
-import type { K8sDaemonSetData, K8sCronJobData } from "../types/topologyTypes";
+import type { K8sDaemonSetData, K8sCronJobData, K8sJobData } from "../types/topologyTypes";
 import type { TopologyState } from "../useTopologyStore";
-import { extractServices, extractPods } from "../helpers/topologyHelpers";
+import { extractServices, extractPods, calculateClusterCapacity } from "../helpers/topologyHelpers";
 import { useUIStore } from "../useUIStore";
 
 export function handleSnapshotSync(
@@ -18,31 +18,6 @@ export function handleSnapshotSync(
   const snapshotNodes = Array.isArray(payloadData.nodes) ? (payloadData.nodes as Record<string, unknown>[]) : [];
   const snapshotServices = Array.isArray(payloadData.services) ? (payloadData.services as Record<string, unknown>[]) : [];
   const snapshotIngresses = Array.isArray(payloadData.ingresses) ? (payloadData.ingresses as Record<string, unknown>[]) : [];
-
-  let totalCpu = 0;
-  let totalMemKi = 0;
-  for (const n of snapshotNodes) {
-    if (n.cpuCapacity) {
-      const cpuNum = parseFloat(String(n.cpuCapacity));
-      if (!isNaN(cpuNum)) totalCpu += cpuNum;
-    }
-    if (n.memoryCapacity) {
-      const memStr = String(n.memoryCapacity);
-      if (memStr.endsWith("Ki")) {
-        const ki = parseFloat(memStr.replace("Ki", ""));
-        if (!isNaN(ki)) totalMemKi += ki;
-      } else if (memStr.endsWith("Mi")) {
-        const mi = parseFloat(memStr.replace("Mi", ""));
-        if (!isNaN(mi)) totalMemKi += mi * 1024;
-      } else if (memStr.endsWith("Gi")) {
-        const gi = parseFloat(memStr.replace("Gi", ""));
-        if (!isNaN(gi)) totalMemKi += gi * 1024 * 1024;
-      }
-    }
-  }
-
-  const parsedCpu = totalCpu > 0 ? totalCpu : 12;
-  const parsedMem = totalMemKi > 0 ? parseFloat((totalMemKi / (1024 * 1024)).toFixed(1)) : 14.8;
 
   const newRawNodes: Node[] = [];
 
@@ -127,6 +102,7 @@ export function handleSnapshotSync(
   const snapshotDeployments = Array.isArray(payloadData.deployments) ? (payloadData.deployments as K8sDeploymentData[]) : [];
   const snapshotDS = Array.isArray(payloadData.daemonSets) ? (payloadData.daemonSets as K8sDaemonSetData[]) : [];
   const snapshotCronJobs = Array.isArray(payloadData.cronJobs) ? (payloadData.cronJobs as K8sCronJobData[]) : [];
+  const snapshotJobs = Array.isArray(payloadData.jobs) ? (payloadData.jobs as K8sJobData[]) : [];
 
   let updatedNamespaces = useUIStore.getState().selectedNamespaces;
   if (updatedNamespaces.length === 0) {
@@ -143,10 +119,12 @@ export function handleSnapshotSync(
     useUIStore.getState().setSelectedNamespaces(updatedNamespaces);
   }
 
+    const { clusterCpuCores, clusterMemoryGB } = calculateClusterCapacity(newRawNodes);
+
   set({
     rawNodes: newRawNodes,
-    clusterCpuCores: parsedCpu,
-    clusterMemoryGB: parsedMem,
+    clusterCpuCores,
+    clusterMemoryGB,
     services: extractServices(newRawNodes),
     pods: extractPods(newRawNodes),
     ingresses: (newRawNodes.filter((n) => n.type === "k8sIngress").map((n) => n.data) as K8sIngressData[]),
@@ -154,6 +132,7 @@ export function handleSnapshotSync(
     deployments: snapshotDeployments,
     daemonSets: snapshotDS,
     cronJobs: snapshotCronJobs,
+    jobs: snapshotJobs,
   });
   state.applyDagreLayout();
 }

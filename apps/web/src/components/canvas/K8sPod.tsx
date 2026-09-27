@@ -20,6 +20,8 @@ export interface K8sPodData extends Record<string, unknown> {
   ownerKind?: string;
   ownerUid?: string;
   labels?: Record<string, string>;
+  isStaticPod?: boolean;
+  isControlPlane?: boolean;
   containers?: unknown[];
   containerStatuses?: unknown[];
 }
@@ -112,6 +114,11 @@ export function K8sPodNode({ data }: { data: K8sPodData }) {
       </div>
 
       <div className="flex items-center gap-1 shrink-0">
+        {(data.isControlPlane || data.isStaticPod) && !isTerminating && (
+          <span className="text-[8.5px] font-mono font-bold text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 px-1 rounded uppercase tracking-wider" title="Control Plane / Static Pod (Kubelet Managed)">
+            CP
+          </span>
+        )}
         {restarts > 0 && !isTerminating && (
           <span className="text-[9px] font-mono font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 rounded" title={`${restarts} Restarts`}>
             ↺ {restarts}

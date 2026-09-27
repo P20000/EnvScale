@@ -1,4 +1,4 @@
-import type { K8sDaemonSetData, K8sCronJobData } from "../types/topologyTypes";
+import type { K8sDaemonSetData, K8sCronJobData, K8sJobData } from "../types/topologyTypes";
 import type { K8sReplicaSetData, K8sDeploymentData } from "./rolloutHelpers";
 
 export function handleReplicaSetWsEvent(
@@ -127,3 +127,40 @@ export function handleCronJobWsEvent(
   }
   return [...currentCJ, newItem];
 }
+
+export function handleJobWsEvent(
+  currentJobs: K8sJobData[],
+  payloadData: Record<string, unknown>,
+  isDeleted: boolean
+): K8sJobData[] {
+  const name = String(payloadData.name || payloadData.id || "");
+  if (!name) return currentJobs;
+  if (isDeleted) {
+    return currentJobs.filter((j) => j.name !== name);
+  }
+  const idx = currentJobs.findIndex((j) => j.name === name);
+  const existing = idx >= 0 ? currentJobs[idx] : undefined;
+  const newItem: K8sJobData = {
+    name,
+    namespace: String(payloadData.namespace || existing?.namespace || "default"),
+    completions: Number(payloadData.completions ?? existing?.completions ?? 1),
+    parallelism: Number(payloadData.parallelism ?? existing?.parallelism ?? 1),
+    succeeded: Number(payloadData.succeeded ?? existing?.succeeded ?? 0),
+    failed: Number(payloadData.failed ?? existing?.failed ?? 0),
+    active: Number(payloadData.active ?? existing?.active ?? 0),
+    startTime: payloadData.startTime ? String(payloadData.startTime) : existing?.startTime,
+    completionTime: payloadData.completionTime ? String(payloadData.completionTime) : existing?.completionTime,
+    durationSeconds: Number(payloadData.durationSeconds ?? existing?.durationSeconds ?? 0),
+    labels: (payloadData.labels as Record<string, string>) || existing?.labels || {},
+    ownerKind: payloadData.ownerKind ? String(payloadData.ownerKind) : existing?.ownerKind,
+    ownerName: payloadData.ownerName ? String(payloadData.ownerName) : existing?.ownerName,
+    createdAt: payloadData.createdAt ? String(payloadData.createdAt) : existing?.createdAt,
+  };
+  if (idx >= 0) {
+    const copy = [...currentJobs];
+    copy[idx] = { ...copy[idx], ...newItem };
+    return copy;
+  }
+  return [...currentJobs, newItem];
+}
+

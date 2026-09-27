@@ -309,48 +309,11 @@ func (im *InformerManager) Start(stopCh <-chan struct{}) {
 		},
 	})
 
+	im.setupJobInformer()
+
 	im.factory.Start(stopCh)
 	go im.startMetricsPulse(stopCh)
 	log.Printf("[K8s Informer] Informers started for cluster: %s", im.clusterID)
-}
-
-func (im *InformerManager) startMetricsPulse(stopCh <-chan struct{}) {
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-stopCh:
-			return
-		case <-ticker.C:
-			if !im.IsRunning() {
-				return
-			}
-			metricsMap := im.FetchPodMetricsMap()
-			if len(metricsMap) == 0 {
-				continue
-			}
-
-			podList := im.factory.Core().V1().Pods().Informer().GetStore().List()
-			for _, obj := range podList {
-				if pod, ok := obj.(*corev1.Pod); ok {
-					key := fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)
-					if m, ok := metricsMap[key]; ok {
-						delta := im.extractPodDelta(pod)
-						delta.CpuUsageMcores = int64(m.CPUUsagePct)
-						delta.MemoryUsageMiB = int64(m.MemoryUsageMb)
-						delta.CPUUsagePct = m.CPUUsagePct
-						delta.MemoryUsageMb = m.MemoryUsageMb
-
-						dedupKey := fmt.Sprintf("PodMetric/%s/%s", pod.Namespace, pod.Name)
-						if im.dedup.ShouldEmit(dedupKey, delta) {
-							im.hub.BroadcastEvent(types.EventPodStatusChanged, im.clusterID, delta)
-						}
-					}
-				}
-			}
-		}
-	}
 }
 
 func (im *InformerManager) StartAsync() {
@@ -397,6 +360,7 @@ func (im *InformerManager) GetSnapshot() (
 	ingresses []types.IngressStatusDelta,
 	incidents []types.K8sIncidentEvent,
 	cronJobs []types.CronJobStatusDelta,
+	jobs []types.JobStatusDelta,
 ) {
 	im.factory.WaitForCacheSync(im.stopCh)
 	metricsMap := im.FetchPodMetricsMap()
@@ -507,5 +471,7 @@ func (im *InformerManager) GetSnapshot() (
 		}
 	}
 
-	return pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, cronJobs
+	jobs = im.getJobsSnapshot()
+
+	return pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, cronJobs, jobs
 }
