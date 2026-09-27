@@ -11,6 +11,7 @@ import {
   extractServices,
   extractPods,
   syncSelectedNode,
+  calculateClusterCapacity,
 } from "../helpers/topologyHelpers";
 import { handleJobWsEvent } from "../helpers/wsEventHandlers";
 import { handleSnapshotSync } from "./topologySnapshotHandler";
@@ -170,8 +171,12 @@ export function handleWsMessage(
       updatedRaw = [...currentRaw, newNode];
     }
 
+    const { clusterCpuCores, clusterMemoryGB } = calculateClusterCapacity(updatedRaw);
+
     set({
       rawNodes: updatedRaw,
+      clusterCpuCores: clusterCpuCores || state.clusterCpuCores,
+      clusterMemoryGB: clusterMemoryGB || state.clusterMemoryGB,
       services: extractServices(updatedRaw),
       pods: extractPods(updatedRaw),
       selectedNode: syncSelectedNode(updatedRaw, state.selectedNode),

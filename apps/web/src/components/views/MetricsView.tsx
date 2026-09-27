@@ -247,7 +247,8 @@ export function MetricsView() {
   }, [clusters, activeCluster]);
   const clusterCpuCores = useTopologyStore((s) => s.clusterCpuCores);
   const clusterMemoryGB = useTopologyStore((s) => s.clusterMemoryGB);
-  const capacityDetected = clusterCpuCores > 0 && clusterMemoryGB > 0;
+  const cpuDetected = (clusterCpuCores ?? 0) > 0;
+  const memoryDetected = (clusterMemoryGB ?? 0) > 0;
 
   // Filter pods by active namespace selection
   const filteredPods = useMemo(() => {
@@ -287,22 +288,21 @@ export function MetricsView() {
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
-      if (!capacityDetected) {
-        setCpuHistory((prev) => [...prev.slice(1), { timestamp: now, value: 0 }]);
-        setMemoryHistory((prev) => [...prev.slice(1), { timestamp: now, value: 0 }]);
-        return;
-      }
-      const maxMcores = clusterCpuCores * 1000;
-      const maxMemoryMiB = clusterMemoryGB * 1024;
-      const cpuPct = Math.min(100, Math.max(0, (metricsRef.current.totalCpuMcores / maxMcores) * 100));
-      const memPct = Math.min(100, Math.max(0, (metricsRef.current.totalMemoryMiB / maxMemoryMiB) * 100));
+      const maxMcores = (clusterCpuCores || 0) * 1000;
+      const maxMemoryMiB = (clusterMemoryGB || 0) * 1024;
+      const cpuPct = cpuDetected && maxMcores > 0
+        ? Math.min(100, Math.max(0, (metricsRef.current.totalCpuMcores / maxMcores) * 100))
+        : 0;
+      const memPct = memoryDetected && maxMemoryMiB > 0
+        ? Math.min(100, Math.max(0, (metricsRef.current.totalMemoryMiB / maxMemoryMiB) * 100))
+        : 0;
 
       setCpuHistory((prev) => [...prev.slice(1), { timestamp: now, value: cpuPct }]);
       setMemoryHistory((prev) => [...prev.slice(1), { timestamp: now, value: memPct }]);
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [clusterCpuCores, clusterMemoryGB, capacityDetected]);
+  }, [clusterCpuCores, clusterMemoryGB, cpuDetected, memoryDetected]);
 
   const podResourceMetrics = useMemo(() => {
     return filteredPods
@@ -343,12 +343,15 @@ export function MetricsView() {
           </div>
           <button
             onClick={() => {
-              if (!capacityDetected) return;
               const now = Date.now();
-              const maxMcores = clusterCpuCores * 1000;
-              const maxMemoryMiB = clusterMemoryGB * 1024;
-              const cpuPct = Math.min(100, Math.max(0, (totalCpuMcores / maxMcores) * 100));
-              const memPct = Math.min(100, Math.max(0, (totalMemoryMiB / maxMemoryMiB) * 100));
+              const maxMcores = (clusterCpuCores || 0) * 1000;
+              const maxMemoryMiB = (clusterMemoryGB || 0) * 1024;
+              const cpuPct = cpuDetected && maxMcores > 0
+                ? Math.min(100, Math.max(0, (totalCpuMcores / maxMcores) * 100))
+                : 0;
+              const memPct = memoryDetected && maxMemoryMiB > 0
+                ? Math.min(100, Math.max(0, (totalMemoryMiB / maxMemoryMiB) * 100))
+                : 0;
               setCpuHistory((prev) => [...prev.slice(1), { timestamp: now, value: cpuPct }]);
               setMemoryHistory((prev) => [...prev.slice(1), { timestamp: now, value: memPct }]);
             }}
@@ -375,7 +378,7 @@ export function MetricsView() {
               </div>
             </div>
             <div className="text-right font-mono flex items-center gap-2">
-              {capacityDetected ? (
+              {cpuDetected ? (
                 <>
                   <div>
                     <div className="text-base text-neutral-100 font-semibold">{currentCpuCores} / {clusterCpuCores.toFixed(1)} Cores</div>
@@ -415,7 +418,7 @@ export function MetricsView() {
               </div>
             </div>
             <div className="text-right font-mono flex items-center gap-2">
-              {capacityDetected ? (
+              {memoryDetected ? (
                 <>
                   <div>
                     <div className="text-base text-neutral-100 font-semibold">{currentMemoryGB} GB / {clusterMemoryGB.toFixed(1)} GB</div>
