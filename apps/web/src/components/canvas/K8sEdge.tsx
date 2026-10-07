@@ -108,13 +108,13 @@ export function K8sEdge({
       const effSourceY = sourcePosition === Position.Top ? sourceY + 76 : sourceY;
       const bottomBaseY = Math.max(effSourceY, effTargetY);
       const dx = Math.abs(targetX - sourceX);
-      const baseArcDrop = Math.max(55, Math.min(95, 45 + dx * 0.07));
+      const baseArcDrop = Math.max(65, Math.min(110, 50 + dx * 0.08));
       const arcDrop = baseArcDrop * zoomScale;
       const arcBottomY = bottomBaseY + arcDrop;
 
       edgePath = `M ${sourceX} ${effSourceY} C ${sourceX} ${arcBottomY}, ${targetX} ${arcBottomY}, ${targetX} ${effTargetY}`;
       labelX = (sourceX + targetX) / 2;
-      labelY = (effSourceY + effTargetY) / 8 + (3 * arcBottomY) / 4;
+      labelY = arcBottomY;
     } else {
       // LR Layout: Peer cards sit vertically along Y at same tier X.
       // Route the curve outward to the right in X around intermediate cards.
@@ -122,12 +122,12 @@ export function K8sEdge({
       const effSourceX = sourcePosition === Position.Left ? sourceX + 270 : sourceX;
       const rightBaseX = Math.max(effSourceX, effTargetX);
       const dy = Math.abs(targetY - sourceY);
-      const baseArcDrop = Math.max(55, Math.min(95, 45 + dy * 0.07));
+      const baseArcDrop = Math.max(80, Math.min(135, 65 + dy * 0.09));
       const arcDrop = baseArcDrop * zoomScale;
       const arcRightX = rightBaseX + arcDrop;
 
       edgePath = `M ${effSourceX} ${sourceY} C ${arcRightX} ${sourceY}, ${arcRightX} ${targetY}, ${effTargetX} ${targetY}`;
-      labelX = (effSourceX + effTargetX) / 8 + (3 * arcRightX) / 4;
+      labelX = arcRightX;
       labelY = (sourceY + targetY) / 2;
     }
   } else {

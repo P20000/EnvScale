@@ -138,14 +138,6 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
     }, 50);
   };
 
-  const handleToggleDirection = () => {
-    const nextDir = layoutDirection === "TB" ? "LR" : "TB";
-    setLayoutDirection(nextDir);
-    setTimeout(() => {
-      fitView({ duration: 400, padding: 0.11, maxZoom: 0.92 });
-    }, 50);
-  };
-
   const handleRecenterView = () => {
     fitView({ duration: 400, padding: 0.11, maxZoom: 0.92 });
   };
@@ -210,14 +202,43 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
 
       {/* Top Right Canvas Actions Capsule (Layout Direction Toggle + Auto Layout + Recenter View) */}
       <div className="absolute top-20 right-6 z-40 flex flex-col gap-1.5 rounded-2xl bg-surface border border-neutral-800 p-2">
-        <button
-          onClick={handleToggleDirection}
-          className="flex items-center gap-2 rounded-md bg-background border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:border-blue-500/50 hover:bg-neutral-800 hover:text-blue-400 transition-colors font-heading cursor-pointer"
-          title={`Switch layout to ${layoutDirection === "TB" ? "Horizontal (LR)" : "Vertical (TB)"}`}
-        >
-          <span className="text-blue-400 font-bold">{layoutDirection === "TB" ? "↕" : "↔"}</span>
-          <span>{layoutDirection === "TB" ? "Vertical" : "Horizontal"}</span>
-        </button>
+        {/* Layout Direction Segmented Pill */}
+        <div className="flex items-center rounded-lg bg-background border border-neutral-800 p-0.5 text-xs font-medium select-none">
+          <button
+            onClick={() => {
+              if (layoutDirection !== "TB") {
+                setLayoutDirection("TB");
+                setTimeout(() => fitView({ duration: 400, padding: 0.11, maxZoom: 0.92 }), 50);
+              }
+            }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+              layoutDirection === "TB"
+                ? "bg-blue-600/20 text-blue-400 border border-blue-500/30 font-semibold shadow-xs"
+                : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50 border border-transparent"
+            }`}
+            title="Switch to Vertical Layout (Top-to-Bottom)"
+          >
+            <span className="font-bold">↕</span>
+            <span>Vertical</span>
+          </button>
+          <button
+            onClick={() => {
+              if (layoutDirection !== "LR") {
+                setLayoutDirection("LR");
+                setTimeout(() => fitView({ duration: 400, padding: 0.11, maxZoom: 0.92 }), 50);
+              }
+            }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+              layoutDirection === "LR"
+                ? "bg-blue-600/20 text-blue-400 border border-blue-500/30 font-semibold shadow-xs"
+                : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50 border border-transparent"
+            }`}
+            title="Switch to Horizontal Layout (Left-to-Right)"
+          >
+            <span className="font-bold">↔</span>
+            <span>Horizontal</span>
+          </button>
+        </div>
 
         <button
           onClick={handleAutoLayout}
