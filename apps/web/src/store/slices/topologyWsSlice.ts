@@ -190,6 +190,7 @@ export function handleWsMessage(
   ) {
     const svcName = String(payloadData.name || payloadData.serviceName || payloadData.id || "");
     if (!svcName) return;
+    const svcNs = String(payloadData.namespace || "default");
 
     const idx = currentRaw.findIndex(
       (n) => n.id === svcName || n.id === `service-${svcName}` || (n.data as K8sServiceData)?.name === svcName
@@ -198,10 +199,17 @@ export function handleWsMessage(
     let updatedRaw: Node[];
     if (idx >= 0) {
       const existing = currentRaw[idx];
+      const existingData = existing.data as K8sServiceData;
       updatedRaw = [...currentRaw];
       updatedRaw[idx] = {
         ...existing,
-        data: { ...(existing.data as K8sServiceData), ...payloadData, name: svcName },
+        data: {
+          ...existingData,
+          ...payloadData,
+          name: svcName,
+          namespace: payloadData.namespace ? String(payloadData.namespace) : existingData?.namespace || svcNs,
+          selector: (payloadData.selector as Record<string, string>) || existingData?.selector,
+        },
       };
     } else {
       const newSvc: Node = {
@@ -210,6 +218,7 @@ export function handleWsMessage(
         position: { x: 350, y: 150 },
         data: {
           name: svcName,
+          namespace: svcNs,
           type: String(payloadData.type || "ClusterIP"),
           port: String(payloadData.port || ":8080"),
           selector: payloadData.selector as Record<string, string>,

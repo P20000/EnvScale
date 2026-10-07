@@ -104,6 +104,9 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
   const services = nodes.filter((n) => n.type === "k8sService");
   const ingresses = nodes.filter((n) => n.type === "k8sIngress");
 
+  const groups = nodes.filter((n) => n.type === "k8sGroup");
+  const allGroupPods = groups.flatMap((g) => ((g.data as Record<string, unknown>)?.pods as K8sPodData[]) || []);
+
   ingresses.forEach((ing) => {
     const rules = (ing.data as K8sIngressData).rules as IngressRuleData[];
     if (rules && rules.length > 0) {
@@ -125,11 +128,13 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
         const targetSvc = services.find((s) => s.id === svcId);
         let strokeColor = "#8b5cf6";
         if (targetSvc) {
-          const svcSelector = (targetSvc.data as K8sServiceData).selector;
-          if (svcSelector && Object.keys(svcSelector).length > 0) {
-            const matched = pods.filter((p) => {
-              const labels = (p.data as K8sPodData).labels as Record<string, string>;
-              return labels && Object.keys(svcSelector).every((k) => labels[k] === svcSelector[k]);
+          const rawSelector = (targetSvc.data as K8sServiceData)?.selector;
+          const selectorEntries = Object.entries(rawSelector || {}).filter(([k, v]) => Boolean(k) && typeof v === "string" && v.trim().length > 0);
+          if (selectorEntries.length > 0) {
+            const candidatePods = [...pods, ...allGroupPods];
+            const matched = candidatePods.filter((p) => {
+              const labels = ((p as Record<string, unknown>).labels || ((p as Record<string, unknown>).data as Record<string, unknown>)?.labels || {}) as Record<string, string>;
+              return selectorEntries.every(([k, v]) => labels[k] === v);
             });
             const health = calculateEdgeHealth(targetSvc, matched);
             if (health.healthStatus === "broken") strokeColor = "#ef4444";
@@ -151,53 +156,73 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
     }
   });
 
-  const groups = nodes.filter((n) => n.type === "k8sGroup");
+  const genericLabels = new Set(["app.kubernetes.io/part-of", "app.kubernetes.io/managed-by", "heritage", "chart"]);
 
   services.forEach((svc) => {
     const svcData = svc.data as K8sServiceData;
-    const svcSelector = svcData.selector;
-    if (svcSelector && Object.keys(svcSelector).length > 0) {
-      groups.forEach((group) => {
-        const groupData = group.data as Record<string, unknown> | undefined;
-        const groupPods = (groupData?.pods as K8sPodData[]) || [];
-        const isMatch = groupPods.some((pod) => {
-          const labels = pod.labels as Record<string, string>;
-          return labels && Object.keys(svcSelector).every((key) => labels[key] === svcSelector[key]);
-        });
+    const rawSelector = svcData.selector || ((svcData.rawResource as Record<string, unknown>)?.spec as Record<string, unknown>)?.selector;
+    if (!rawSelector || typeof rawSelector !== "object") return;
 
-        if (isMatch) {
-          const { healthStatus, strokeColor, isDraining } = calculateEdgeHealth(svc, groupPods);
-          sysEdges.push({
-            id: `e-sys-${svc.id}-${group.id}`,
-            source: svc.id,
-            target: group.id,
-            type: "k8sEdge",
-            animated: false,
-            data: { healthStatus, strokeColor, isDraining },
-            style: { stroke: strokeColor, strokeWidth: 2, strokeDasharray: isDraining ? "4 4" : "none" },
-          });
-        }
+    // Filter selector entries to non-empty, discriminating key-value pairs
+    const selectorEntries = Object.entries(rawSelector).filter(
+      ([key, val]) => key && !genericLabels.has(key) && typeof val === "string" && val.trim().length > 0
+    );
+
+    // CRITICAL: A Service must NEVER match workloads if selector has no discriminating keys
+    if (selectorEntries.length === 0) return;
+
+    const svcNs = String(svcData.namespace || "default");
+
+    groups.forEach((group) => {
+      const groupData = group.data as Record<string, unknown> | undefined;
+      const groupNs = String(groupData?.namespace || "default");
+      // Enforce namespace match: services in namespace A must not cross into namespace B
+      if (svcNs !== groupNs) return;
+
+      const groupPods = (groupData?.pods as K8sPodData[]) || [];
+      if (groupPods.length === 0) return;
+
+      // A Service must only connect to a Workload if EVERY key-value pair in selector matches
+      const isMatch = groupPods.some((pod) => {
+        const podLabels = (pod.labels || {}) as Record<string, string>;
+        if (!podLabels || Object.keys(podLabels).length === 0) return false;
+        return selectorEntries.every(([k, v]) => podLabels[k] === v);
       });
 
-      const matchingStandalone = pods.filter((pod) => {
-        const podData = pod.data as K8sPodData;
-        const labels = podData.labels as Record<string, string>;
-        return labels && !pod.parentId && Object.keys(svcSelector).every((key) => labels[key] === svcSelector[key]);
-      });
-
-      matchingStandalone.forEach((pod) => {
-        const { healthStatus, strokeColor } = calculateEdgeHealth(svc, [pod]);
+      if (isMatch) {
+        const { healthStatus, strokeColor, isDraining } = calculateEdgeHealth(svc, groupPods);
         sysEdges.push({
-          id: `e-sys-${svc.id}-${pod.id}`,
+          id: `e-sys-${svc.id}-${group.id}`,
           source: svc.id,
-          target: pod.id,
+          target: group.id,
           type: "k8sEdge",
           animated: false,
-          data: { healthStatus, strokeColor },
-          style: { stroke: strokeColor, strokeWidth: 2 },
+          data: { healthStatus, strokeColor, isDraining },
+          style: { stroke: strokeColor, strokeWidth: 2, strokeDasharray: isDraining ? "4 4" : "none" },
         });
+      }
+    });
+
+    const matchingStandalone = pods.filter((pod) => {
+      const podData = pod.data as K8sPodData;
+      const podNs = String(podData?.namespace || "default");
+      if (svcNs !== podNs || pod.parentId) return false;
+      const labels = (podData?.labels || {}) as Record<string, string>;
+      return selectorEntries.every(([key, val]) => labels[key] === val);
+    });
+
+    matchingStandalone.forEach((pod) => {
+      const { healthStatus, strokeColor } = calculateEdgeHealth(svc, [pod]);
+      sysEdges.push({
+        id: `e-sys-${svc.id}-${pod.id}`,
+        source: svc.id,
+        target: pod.id,
+        type: "k8sEdge",
+        animated: false,
+        data: { healthStatus, strokeColor },
+        style: { stroke: strokeColor, strokeWidth: 2 },
       });
-    }
+    });
   });
 
   const storageEdges = generateStorageEdges(nodes);

@@ -43,12 +43,14 @@ export function handleSnapshotSync(
   snapshotServices.forEach((svc) => {
     const name = String(svc.name || svc.id || "");
     if (!name) return;
+    const ns = String(svc.namespace || "default");
     newRawNodes.push({
       id: `service-${name}`,
       type: "k8sService",
       position: { x: 350, y: 150 },
       data: {
         name,
+        namespace: ns,
         type: String(svc.type || "ClusterIP"),
         port: String(svc.port || ":8080"),
         selector: svc.selector as Record<string, string>,
