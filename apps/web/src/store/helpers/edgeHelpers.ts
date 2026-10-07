@@ -97,7 +97,9 @@ export const calculateEdgeHealth = (
 export const getEdgeHealth = calculateEdgeHealth;
 
 export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): Edge[] => {
-  const baseEdges = currentEdges.filter((e) => !e.id.startsWith("e-sys-"));
+  const baseEdges = currentEdges.filter(
+    (e) => !e.id.startsWith("e-sys-") && !e.id.startsWith("e-storage-")
+  );
   const sysEdges: Edge[] = [];
 
   const pods = nodes.filter((n) => n.type === "k8sPod");
@@ -161,17 +163,13 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
   services.forEach((svc) => {
     const svcData = svc.data as K8sServiceData;
     const rawSelector = svcData.selector || ((svcData.rawResource as Record<string, unknown>)?.spec as Record<string, unknown>)?.selector;
-    if (!rawSelector || typeof rawSelector !== "object") return;
 
-    // Filter selector entries to non-empty, discriminating key-value pairs
-    const selectorEntries = Object.entries(rawSelector).filter(
+    const selectorEntries = Object.entries(rawSelector || {}).filter(
       ([key, val]) => key && !genericLabels.has(key) && typeof val === "string" && val.trim().length > 0
     );
 
-    // CRITICAL: A Service must NEVER match workloads if selector has no discriminating keys
-    if (selectorEntries.length === 0) return;
-
     const svcNs = String(svcData.namespace || "default");
+    if (selectorEntries.length === 0) return;
 
     groups.forEach((group) => {
       const groupData = group.data as Record<string, unknown> | undefined;
@@ -182,9 +180,10 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
       const groupPods = (groupData?.pods as K8sPodData[]) || [];
       if (groupPods.length === 0) return;
 
-      // A Service must only connect to a Workload if EVERY key-value pair in selector matches
       const isMatch = groupPods.some((pod) => {
-        const podLabels = (pod.labels || {}) as Record<string, string>;
+        const podObj = (pod as Record<string, unknown>) || {};
+        const innerData = (podObj.data as Record<string, unknown>) || podObj;
+        const podLabels = (innerData.labels || podObj.labels || {}) as Record<string, string>;
         if (!podLabels || Object.keys(podLabels).length === 0) return false;
         return selectorEntries.every(([k, v]) => podLabels[k] === v);
       });
@@ -226,5 +225,11 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
   });
 
   const storageEdges = generateStorageEdges(nodes);
-  return [...baseEdges, ...sysEdges, ...storageEdges];
+  const allEdges = [...baseEdges, ...sysEdges, ...storageEdges];
+  const seenIds = new Set<string>();
+  return allEdges.filter((e) => {
+    if (seenIds.has(e.id)) return false;
+    seenIds.add(e.id);
+    return true;
+  });
 };

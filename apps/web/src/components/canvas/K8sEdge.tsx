@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   type EdgeProps,
-  getSmoothStepPath,
+  getBezierPath,
   EdgeLabelRenderer,
   Position,
 } from "@xyflow/react";
@@ -78,14 +78,14 @@ export function K8sEdge({
     ? (isBlastRadiusHighlighted ? 1 : 0.15)
     : (isDraining ? 0.45 : 0.85);
 
-  const [edgePath, labelX, labelY] = getSmoothStepPath({
+  const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,
     sourcePosition,
     targetX,
     targetY,
     targetPosition,
-    borderRadius: 8,
+    curvature: 0.25,
   });
 
   return (

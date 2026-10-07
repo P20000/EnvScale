@@ -97,41 +97,43 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
   const tier3 = dagNodes.filter((n) => n.type === "k8sPVC");
 
   const anchor0 = tier0[0];
-  const anchor1 = tier1[0];
-  const anchor2 = tier2[0];
 
-  // Align unrouted Services to Tier 1
+  // Align unrouted components deterministically to their architecture tier:
+  // Tier 0: Ingress (rank 0)
+  // Tier 1: Service (rank 1)
+  // Tier 2: Workload (rank 2)
+  // Tier 3: Storage (rank 3)
   if (anchor0) {
     tier1.forEach((svc) => {
       if ((inDegrees.get(svc.id) || 0) === 0) {
         dagreGraph.setEdge(anchor0.id, svc.id, { minlen: 1, weight: 0 });
       }
     });
-  }
-
-  // Align unrouted Workloads (Deployments/StatefulSets) to Tier 2
-  const higherTierForWorkload = anchor1
-    ? { node: anchor1, minlen: 1 }
-    : anchor0
-    ? { node: anchor0, minlen: 2 }
-    : null;
-
-  if (higherTierForWorkload) {
     tier2.forEach((grp) => {
       if ((inDegrees.get(grp.id) || 0) === 0) {
-        dagreGraph.setEdge(higherTierForWorkload.node.id, grp.id, {
-          minlen: higherTierForWorkload.minlen,
-          weight: 0,
-        });
+        dagreGraph.setEdge(anchor0.id, grp.id, { minlen: 2, weight: 0 });
       }
     });
-  }
-
-  // Align unrouted PVCs to Tier 3
-  if (anchor2) {
     tier3.forEach((pvc) => {
       if ((inDegrees.get(pvc.id) || 0) === 0) {
-        dagreGraph.setEdge(anchor2.id, pvc.id, { minlen: 1, weight: 0 });
+        dagreGraph.setEdge(anchor0.id, pvc.id, { minlen: 3, weight: 0 });
+      }
+    });
+  } else {
+    dagreGraph.setNode("__virtual_root__", { width: 1, height: 1 });
+    tier1.forEach((svc) => {
+      if ((inDegrees.get(svc.id) || 0) === 0) {
+        dagreGraph.setEdge("__virtual_root__", svc.id, { minlen: 1, weight: 0 });
+      }
+    });
+    tier2.forEach((grp) => {
+      if ((inDegrees.get(grp.id) || 0) === 0) {
+        dagreGraph.setEdge("__virtual_root__", grp.id, { minlen: 2, weight: 0 });
+      }
+    });
+    tier3.forEach((pvc) => {
+      if ((inDegrees.get(pvc.id) || 0) === 0) {
+        dagreGraph.setEdge("__virtual_root__", pvc.id, { minlen: 3, weight: 0 });
       }
     });
   }
