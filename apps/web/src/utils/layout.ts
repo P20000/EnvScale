@@ -86,7 +86,17 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
   const tier2 = dagNodes.filter((n) => n.type === "k8sGroup");
   const tier3 = dagNodes.filter((n) => n.type === "k8sPVC");
 
-  const unroutedWorkloads = tier2.filter((grp) => !routedWorkloadIds.has(grp.id));
+  const unroutedWorkloads = tier2
+    .filter((grp) => !routedWorkloadIds.has(grp.id))
+    .sort((a, b) => {
+      // Prioritize pure compute workloads (e.g. WORKER-POOL) before storage-attached workloads.
+      // Moving storage-attached workloads (e.g. TODO-MEDIA-STORAGE) and its PVC to the far right end
+      // keeps all Tier 3 storage nodes clustered at the outer edge rather than between compute workloads.
+      const aHasStorage = realDagEdges.some((e) => e.source === a.id);
+      const bHasStorage = realDagEdges.some((e) => e.source === b.id);
+      if (aHasStorage !== bHasStorage) return aHasStorage ? 1 : -1;
+      return a.id.localeCompare(b.id);
+    });
   const routedDagNodes = routedWorkloadIds.size > 0
     ? dagNodes.filter((n) => n.type === "k8sIngress" || n.type === "k8sService" || routedWorkloadIds.has(n.id))
     : dagNodes;

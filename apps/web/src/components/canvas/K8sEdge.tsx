@@ -4,8 +4,10 @@ import {
   getBezierPath,
   EdgeLabelRenderer,
   Position,
+  useViewport,
 } from "@xyflow/react";
 import { useTopologyStore } from "../../store/useTopologyStore";
+import { useUIStore } from "../../store/useUIStore";
 
 export interface K8sEdgeData extends Record<string, unknown> {
   healthStatus?: "healthy" | "broken" | "degraded" | "idle" | "draining";
@@ -32,6 +34,9 @@ export function K8sEdge({
   markerEnd,
 }: EdgeProps) {
   const [isHovered, setIsHovered] = useState(false);
+  const layoutDirection = useUIStore((s) => s.layoutDirection);
+  const isTB = layoutDirection === "TB";
+  const { zoom } = useViewport();
 
   const isEndpointTerminating = useTopologyStore((s) => {
     const node = s.nodes.find((n) => (target && n.id === target) || (source && n.id === source));
@@ -84,7 +89,8 @@ export function K8sEdge({
     id.startsWith("e-dep-") ||
     edgeData.isCrossWorkload ||
     edgeData.isPeerDependency ||
-    (sourcePosition === Position.Bottom && targetPosition === Position.Top && Math.abs(sourceY - (targetY + 76)) < 20 && Math.abs(sourceX - targetX) > 80)
+    (isTB && sourcePosition === Position.Bottom && targetPosition === Position.Top && Math.abs(sourceY - (targetY + 76)) < 20 && Math.abs(sourceX - targetX) > 80) ||
+    (!isTB && Math.abs(sourceX - targetX) < 80 && Math.abs(sourceY - targetY) > 80)
   );
 
   let edgePath: string;
@@ -92,22 +98,38 @@ export function K8sEdge({
   let labelY: number;
 
   if (isPeerDependency) {
-    // Cross-workload peer dependency (e.g. TODO-BACKEND -> REDIS-DB):
-    // Route the path in a downward arc below the workload cards so neither the line
-    // nor its port label slice through intermediate sibling cards (e.g. CANARY).
-    const effTargetY = targetPosition === Position.Top ? targetY + 76 : targetY;
-    const effSourceY = sourcePosition === Position.Top ? sourceY + 76 : sourceY;
-    const bottomBaseY = Math.max(effSourceY, effTargetY);
-    const dx = Math.abs(targetX - sourceX);
-    // Generous downward arc drop scaling with peer distance (65px - 110px)
-    // Ensures adjacent peers loop at ~75px and skip-sibling peers loop at ~105px
-    const arcDrop = Math.max(65, Math.min(110, 50 + dx * 0.08));
-    const arcBottomY = bottomBaseY + arcDrop;
+    // Scale arc drop proportionally when zooming out to prevent flattening at smaller scales
+    const zoomScale = zoom > 0 ? Math.max(1, Math.min(1.8, 1 / Math.sqrt(zoom))) : 1;
 
-    edgePath = `M ${sourceX} ${effSourceY} C ${sourceX} ${arcBottomY}, ${targetX} ${arcBottomY}, ${targetX} ${effTargetY}`;
-    labelX = (sourceX + targetX) / 2;
-    // Position label along the curve apex in open space well below all card boundaries
-    labelY = (effSourceY + effTargetY) / 8 + (3 * arcBottomY) / 4;
+    if (isTB) {
+      // TB Layout: Peer cards sit horizontally along X at same tier Y.
+      // Route the curve downwards in a loop below the workload cards.
+      const effTargetY = targetPosition === Position.Top ? targetY + 76 : targetY;
+      const effSourceY = sourcePosition === Position.Top ? sourceY + 76 : sourceY;
+      const bottomBaseY = Math.max(effSourceY, effTargetY);
+      const dx = Math.abs(targetX - sourceX);
+      const baseArcDrop = Math.max(55, Math.min(95, 45 + dx * 0.07));
+      const arcDrop = baseArcDrop * zoomScale;
+      const arcBottomY = bottomBaseY + arcDrop;
+
+      edgePath = `M ${sourceX} ${effSourceY} C ${sourceX} ${arcBottomY}, ${targetX} ${arcBottomY}, ${targetX} ${effTargetY}`;
+      labelX = (sourceX + targetX) / 2;
+      labelY = (effSourceY + effTargetY) / 8 + (3 * arcBottomY) / 4;
+    } else {
+      // LR Layout: Peer cards sit vertically along Y at same tier X.
+      // Route the curve outward to the right in X around intermediate cards.
+      const effTargetX = targetPosition === Position.Left ? targetX + 270 : targetX;
+      const effSourceX = sourcePosition === Position.Left ? sourceX + 270 : sourceX;
+      const rightBaseX = Math.max(effSourceX, effTargetX);
+      const dy = Math.abs(targetY - sourceY);
+      const baseArcDrop = Math.max(55, Math.min(95, 45 + dy * 0.07));
+      const arcDrop = baseArcDrop * zoomScale;
+      const arcRightX = rightBaseX + arcDrop;
+
+      edgePath = `M ${effSourceX} ${sourceY} C ${arcRightX} ${sourceY}, ${arcRightX} ${targetY}, ${effTargetX} ${targetY}`;
+      labelX = (effSourceX + effTargetX) / 8 + (3 * arcRightX) / 4;
+      labelY = (sourceY + targetY) / 2;
+    }
   } else {
     const [bezierPath, bX, bY] = getBezierPath({
       sourceX,
