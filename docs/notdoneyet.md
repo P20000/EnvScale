@@ -6,12 +6,12 @@
 * **[x] Static Pods & Mirror Pods:** Kubelet control plane pod detection (`kubernetes.io/config.mirror` / well-known components) with visual `CP` badge on canvas pods and static mirror pod drawer callout.
 
 
-**2. Storage & Persistent Volumes**
+**2. Storage & Persistent Volumes (COMPLETED)**
 
-* **PersistentVolumeClaims (PVCs):** No nodes or links indicating which pods request storage.
-* **PersistentVolumes (PVs):** No representation of actual bound physical storage volumes.
-* **StorageClasses:** No indicators for dynamic provisioning backends (e.g., AWS EBS `gp3`, Ceph, local-path).
-* **Volume Snapshots:** No representation of `VolumeSnapshot` or `VolumeSnapshotContent` resources.
+* **[x] PersistentVolumeClaims (PVCs):** Dedicated React Flow canvas nodes (`K8sPVCNode`) displaying capacity, phase (`Bound`, `Pending`, `Lost`), access modes (`RWO`, `RWX`), and StorageClass badges. Real-time pod mount edges (`Pod -> PVC`) with container mount paths (e.g. `:/var/lib/postgresql/data`).
+* **[x] PersistentVolumes (PVs):** Physical cluster-scoped volume details consolidated in the Inspector Drawer (`StorageOverviewSection`), displaying bound PV names, reclaim policies (`Delete`, `Retain`, `Recycle`), and driver sources (`HostPath`, `CSI`, `NFS`, `Local`).
+* **[x] StorageClasses:** Provisioner driver identification and StorageClass metadata surfaced per volume claim card and inspector overview.
+* **[ ] Volume Snapshots:** No representation of `VolumeSnapshot` or `VolumeSnapshotContent` resources.
 
 **3. Configuration & Secrets**
 

@@ -14,6 +14,7 @@ import {
   calculateClusterCapacity,
 } from "../helpers/topologyHelpers";
 import { handleJobWsEvent } from "../helpers/wsEventHandlers";
+import { handlePVCWsEvent, handlePVWsEvent } from "../helpers/storageHelpers";
 import { handleSnapshotSync } from "./topologySnapshotHandler";
 
 export function handleWsMessage(
@@ -423,5 +424,23 @@ export function handleWsMessage(
     const updatedJobs = handleJobWsEvent(currentJobs, payloadData, true);
     set({ jobs: updatedJobs });
     state.applyDagreLayout();
+  } else if (eventType === "EVENT_PVC_MUTATED" || eventType === "EVENT_PVC_ADDED") {
+    const currentPVCs = state.pvcs || [];
+    const updatedPVCs = handlePVCWsEvent(currentPVCs, payloadData, false);
+    set({ pvcs: updatedPVCs });
+    state.applyDagreLayout();
+  } else if (eventType === "EVENT_PVC_DELETED") {
+    const currentPVCs = state.pvcs || [];
+    const updatedPVCs = handlePVCWsEvent(currentPVCs, payloadData, true);
+    set({ pvcs: updatedPVCs });
+    state.applyDagreLayout();
+  } else if (eventType === "EVENT_PV_MUTATED" || eventType === "EVENT_PV_ADDED") {
+    const currentPVs = state.pvs || [];
+    const updatedPVs = handlePVWsEvent(currentPVs, payloadData, false);
+    set({ pvs: updatedPVs });
+  } else if (eventType === "EVENT_PV_DELETED") {
+    const currentPVs = state.pvs || [];
+    const updatedPVs = handlePVWsEvent(currentPVs, payloadData, true);
+    set({ pvs: updatedPVs });
   }
 }

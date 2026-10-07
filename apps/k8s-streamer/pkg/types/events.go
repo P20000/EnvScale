@@ -32,6 +32,11 @@ const (
 
 	EventK8sIncidentCreated = "EVENT_K8S_INCIDENT_CREATED"
 	EventRolloutRollback    = "EVENT_ROLLOUT_ROLLBACK"
+
+	EventPVCMutated = "EVENT_PVC_MUTATED"
+	EventPVCDeleted = "EVENT_PVC_DELETED"
+	EventPVMutated  = "EVENT_PV_MUTATED"
+	EventPVDeleted  = "EVENT_PV_DELETED"
 )
 
 // K8sIncidentEvent encapsulates authentic Kubernetes v1.Event telemetry
@@ -71,9 +76,10 @@ type PodStatusDelta struct {
 	OwnerUID       string            `json:"ownerUid,omitempty"`
 	OwnerName      string            `json:"ownerName,omitempty"`
 	OwnerKind      string            `json:"ownerKind,omitempty"`
-	IsStaticPod    bool              `json:"isStaticPod,omitempty"`
-	IsControlPlane bool              `json:"isControlPlane,omitempty"`
-	CreatedAt      time.Time         `json:"createdAt"`
+	IsStaticPod    bool                 `json:"isStaticPod,omitempty"`
+	IsControlPlane bool                 `json:"isControlPlane,omitempty"`
+	Volumes        []PodVolumeMountInfo `json:"volumes,omitempty"`
+	CreatedAt      time.Time            `json:"createdAt"`
 }
 
 // DeploymentStatusDelta encapsulates Deployment state updates
@@ -264,4 +270,43 @@ type AlertTriggeredEvent struct {
 	Threshold  string `json:"threshold"`  // The threshold expression (e.g., "> 5")
 	Message    string `json:"message"`    // Full human-readable alert description
 	Timestamp  string `json:"timestamp"`
+}
+
+// PodVolumeMountInfo encapsulates volume mount reference from a Pod
+type PodVolumeMountInfo struct {
+	Name      string `json:"name"`
+	PVCName   string `json:"pvcName,omitempty"`
+	MountPath string `json:"mountPath,omitempty"`
+	ReadOnly  bool   `json:"readOnly,omitempty"`
+}
+
+// PVCStatusDelta encapsulates real-time PVC state updates
+type PVCStatusDelta struct {
+	Name             string            `json:"name"`
+	Namespace        string            `json:"namespace"`
+	Phase            string            `json:"phase"` // "Bound", "Pending", "Lost"
+	VolumeName       string            `json:"volumeName,omitempty"`
+	StorageClassName string            `json:"storageClassName,omitempty"`
+	RequestedSize    string            `json:"requestedSize,omitempty"`
+	Capacity         string            `json:"capacity,omitempty"`
+	AccessModes      []string          `json:"accessModes,omitempty"`
+	VolumeMode       string            `json:"volumeMode,omitempty"`
+	Labels           map[string]string `json:"labels,omitempty"`
+	MountedByPods    []string          `json:"mountedByPods,omitempty"`
+	CreatedAt        time.Time         `json:"createdAt"`
+}
+
+// PVStatusDelta encapsulates cluster-scoped PersistentVolume states
+type PVStatusDelta struct {
+	Name             string            `json:"name"`
+	Phase            string            `json:"phase"` // "Available", "Bound", "Released", "Failed"
+	Capacity         string            `json:"capacity,omitempty"`
+	AccessModes      []string          `json:"accessModes,omitempty"`
+	ReclaimPolicy    string            `json:"reclaimPolicy,omitempty"`
+	StorageClassName string            `json:"storageClassName,omitempty"`
+	ClaimRefName     string            `json:"claimRefName,omitempty"`
+	ClaimRefNs       string            `json:"claimRefNs,omitempty"`
+	VolumeSourceType string            `json:"volumeSourceType,omitempty"`
+	Labels           map[string]string `json:"labels,omitempty"`
+	CreatedAt        time.Time         `json:"createdAt"`
 }

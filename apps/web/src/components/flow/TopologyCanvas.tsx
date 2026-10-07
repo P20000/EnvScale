@@ -15,7 +15,7 @@ import {
   mdiCrosshairsGps,
 } from "@mdi/js";
 
-import { K8sPodNode, K8sWorkerNode, K8sServiceNode, K8sWorkloadNode, K8sIngressNode, K8sGroupNode, K8sDaemonSetNode, K8sCronJobNode, K8sJobNode, K8sCompletedJobsNode, K8sEdge } from "../canvas";
+import { K8sPodNode, K8sWorkerNode, K8sServiceNode, K8sWorkloadNode, K8sIngressNode, K8sGroupNode, K8sDaemonSetNode, K8sCronJobNode, K8sJobNode, K8sCompletedJobsNode, K8sPVCNode, K8sEdge } from "../canvas";
 import type { K8sPodData } from "../canvas/K8sPod";
 import type { K8sNodeData } from "../canvas/K8sNode";
 import type { K8sServiceData } from "../canvas/K8sService";
@@ -27,7 +27,7 @@ import { useK8sStream, type WsTopologyMessage } from "../../hooks/useK8sStream";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
 import { DeleteConfirmationModal } from "../modals/DeleteConfirmationModal";
 
-import type { K8sDaemonSetData, K8sCronJobData, K8sJobData } from "../../store/types/topologyTypes";
+import type { K8sDaemonSetData, K8sCronJobData, K8sJobData, K8sPVCData } from "../../store/types/topologyTypes";
 
 const nodeTypes = {
   k8sPod: K8sPodNode,
@@ -40,6 +40,7 @@ const nodeTypes = {
   k8sCronJob: K8sCronJobNode,
   k8sJob: K8sJobNode,
   k8sCompletedJobs: K8sCompletedJobsNode,
+  k8sPVC: K8sPVCNode,
   k8sWorkload: K8sWorkloadNode,
   k8sIngress: K8sIngressNode,
   k8sGroup: K8sGroupNode,
@@ -73,6 +74,8 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
   const setLayoutDirection = useUIStore((s) => s.setLayoutDirection);
   const showCompletedJobs = useUIStore((s) => s.showCompletedJobs);
   const setShowCompletedJobs = useUIStore((s) => s.setShowCompletedJobs);
+  const showStorage = useUIStore((s) => s.showStorage);
+  const setShowStorage = useUIStore((s) => s.setShowStorage);
 
   const completedJobsCount = (jobs || []).filter(
     (j) => (j.succeeded ?? 0) >= (j.completions ?? 1) || (j.active === 0 && (j.failed ?? 0) === 0)
@@ -114,6 +117,8 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         target = { type: "cronjob", data: node.data as K8sCronJobData };
       } else if (node.type === "k8sJob") {
         target = { type: "job", data: node.data as K8sJobData };
+      } else if (node.type === "k8sPVC") {
+        target = { type: "pvc", data: node.data as K8sPVCData };
       }
       setSelectedNode(target);
       onSelectTarget(target);
@@ -230,6 +235,19 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         >
           <Icon path={mdiCrosshairsGps} size={0.65} className="text-blue-400" />
           <span>Recenter View</span>
+        </button>
+
+        <button
+          onClick={() => setShowStorage(!showStorage)}
+          className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors font-heading cursor-pointer ${
+            showStorage
+              ? "border-cyan-500/50 bg-cyan-950/20 text-cyan-400"
+              : "bg-background border-neutral-800 text-neutral-400 hover:border-neutral-700 hover:text-neutral-200"
+          }`}
+          title={showStorage ? "Hide Storage (PVC) Nodes" : "Show Storage (PVC) Nodes"}
+        >
+          <span className={showStorage ? "text-cyan-400 font-bold" : "text-neutral-500"}>💾</span>
+          <span>{showStorage ? "Storage Visible" : "Storage Hidden"}</span>
         </button>
 
         {completedJobsCount > 0 && (

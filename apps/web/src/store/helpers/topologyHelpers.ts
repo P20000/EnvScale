@@ -3,7 +3,7 @@ import type { K8sPodData } from "../../components/canvas/K8sPod";
 import type { K8sNodeData } from "../../components/canvas/K8sNode";
 import type { K8sServiceData } from "../../components/canvas/K8sService";
 import type { K8sIngressData } from "../../components/canvas/K8sIngress";
-import type { K8sDaemonSetData, K8sCronJobData, K8sJobData } from "../types/topologyTypes";
+import type { K8sDaemonSetData, K8sCronJobData, K8sJobData, K8sPVCData } from "../types/topologyTypes";
 import type { SelectedTarget } from "../../components/drawer/InspectorDrawer";
 import { calculateRolloutInfo, type K8sDeploymentData, type K8sReplicaSetData } from "./rolloutHelpers";
 export {
@@ -66,6 +66,8 @@ export const syncSelectedNode = (nodes: Node[], currentSelected: SelectedTarget)
       return { type: "daemonset", data: matched.data as K8sDaemonSetData };
     } else if (matched.type === "k8sCronJob") {
       return { type: "cronjob", data: matched.data as K8sCronJobData };
+    } else if (matched.type === "k8sPVC") {
+      return { type: "pvc", data: matched.data as K8sPVCData };
     }
   }
   return currentSelected;

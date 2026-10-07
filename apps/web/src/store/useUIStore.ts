@@ -10,6 +10,9 @@ export interface UIState {
   showCompletedJobs: boolean;
   setShowCompletedJobs: (show: boolean) => void;
 
+  showStorage: boolean;
+  setShowStorage: (show: boolean) => void;
+
   showSystemNamespaces: boolean;
   setShowSystemNamespaces: (show: boolean) => void;
 
@@ -32,6 +35,7 @@ export const useUIStore = create<UIState>()(
     (set, get) => ({
       showCompletedPods: false,
       showCompletedJobs: false,
+      showStorage: true,
       showSystemNamespaces: false,
       selectedNamespaces: [],
       layoutDirection: "TB",
@@ -51,6 +55,11 @@ export const useUIStore = create<UIState>()(
 
       setShowCompletedJobs: (show) => {
         set({ showCompletedJobs: show });
+        useTopologyStore.getState().applyDagreLayout();
+      },
+
+      setShowStorage: (show) => {
+        set({ showStorage: show });
         useTopologyStore.getState().applyDagreLayout();
       },
 

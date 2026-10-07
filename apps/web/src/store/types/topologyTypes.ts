@@ -98,3 +98,38 @@ export interface K8sJobData extends Record<string, unknown> {
   createdAt?: string;
 }
 
+export interface PodVolumeInfo {
+  name: string;
+  pvcName?: string;
+  mountPath?: string;
+  readOnly?: boolean;
+}
+
+export interface K8sPVCData extends Record<string, unknown> {
+  name: string;
+  namespace: string;
+  phase: "Bound" | "Pending" | "Lost";
+  volumeName?: string;
+  storageClassName?: string;
+  requestedSize?: string;
+  capacity?: string;
+  accessModes?: string[];
+  volumeMode?: string;
+  labels?: Record<string, string>;
+  mountedByPods?: string[];
+  createdAt?: string;
+}
+
+export interface K8sPVData extends Record<string, unknown> {
+  name: string;
+  phase: "Available" | "Bound" | "Released" | "Failed";
+  capacity?: string;
+  accessModes?: string[];
+  reclaimPolicy?: string;
+  storageClassName?: string;
+  claimRefName?: string;
+  claimRefNs?: string;
+  volumeSourceType?: string;
+  labels?: Record<string, string>;
+  createdAt?: string;
+}

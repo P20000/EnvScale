@@ -2,6 +2,7 @@ import type { Node, Edge } from "@xyflow/react";
 import type { K8sPodData } from "../../components/canvas/K8sPod";
 import type { K8sServiceData } from "../../components/canvas/K8sService";
 import type { K8sIngressData, IngressRuleData } from "../../components/canvas/K8sIngress";
+import { generateStorageEdges } from "./storageHelpers";
 
 export type EdgeHealthStatus = "healthy" | "broken" | "degraded" | "idle";
 
@@ -184,5 +185,6 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
     }
   });
 
-  return [...baseEdges, ...sysEdges];
+  const storageEdges = generateStorageEdges(nodes);
+  return [...baseEdges, ...sysEdges, ...storageEdges];
 };

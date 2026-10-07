@@ -93,6 +93,7 @@ func (im *InformerManager) extractPodDelta(pod *corev1.Pod) types.PodStatusDelta
 		OwnerKind:      ownerKind,
 		IsStaticPod:    isStaticPod,
 		IsControlPlane: isControlPlane,
+		Volumes:        ExtractPodVolumeClaims(pod),
 		CreatedAt:      pod.CreationTimestamp.Time.UTC(),
 	}
 }
