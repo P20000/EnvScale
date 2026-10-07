@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: todo-media-pvc
+  namespace: testing-todo
+  labels:
+    app: todo-media
+    tier: storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: todo-media-storage
+  namespace: testing-todo
+  labels:
+    app: todo-media-storage
+    tier: storage
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: todo-media-storage
+  template:
+    metadata:
+      labels:
+        app: todo-media-storage
+        tier: storage
+    spec:
+      containers:
+        - name: media-sync
+          image: alpine:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - "echo 'Storage mount initialized' > /mnt/media/ready.txt; while true; do date >> /mnt/media/access.log; sleep 15; done"
+          volumeMounts:
+            - name: media-volume
+              mountPath: /mnt/media
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+      volumes:
+        - name: media-volume
+          persistentVolumeClaim:
+            claimName: todo-media-pvc
