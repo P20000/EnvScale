@@ -71,52 +71,57 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
   });
 
   const dagNodeIdSet = new Set(dagNodes.map((n) => n.id));
+  // Filter out cross-dependency lateral edges from Dagre rank constraints
   const realDagEdges = edges.filter(
-    (e) => dagNodeIdSet.has(e.source) && dagNodeIdSet.has(e.target)
+    (e) => !e.id.startsWith("e-dep-") && dagNodeIdSet.has(e.source) && dagNodeIdSet.has(e.target)
   );
 
-  realDagEdges.forEach((edge) => {
-    dagreGraph.setEdge(edge.source, edge.target, { weight: 2 });
-  });
+  const serviceIds = new Set(dagNodes.filter((n) => n.type === "k8sService").map((n) => n.id));
+  const routedWorkloadIds = new Set(
+    realDagEdges.filter((e) => serviceIds.has(e.source)).map((e) => e.target)
+  );
 
-  // Calculate in-degree of DAG nodes from real edges
-  const inDegrees = new Map<string, number>();
-  dagNodes.forEach((n) => inDegrees.set(n.id, 0));
-  realDagEdges.forEach((e) => {
-    inDegrees.set(e.target, (inDegrees.get(e.target) || 0) + 1);
-  });
-
-  // Strict 4-Tier Directional Layout Alignment:
-  // Tier 0: Ingress
-  // Tier 1: Service
-  // Tier 2: Workload (k8sGroup)
-  // Tier 3: Storage (k8sPVC)
   const tier0 = dagNodes.filter((n) => n.type === "k8sIngress");
   const tier1 = dagNodes.filter((n) => n.type === "k8sService");
   const tier2 = dagNodes.filter((n) => n.type === "k8sGroup");
   const tier3 = dagNodes.filter((n) => n.type === "k8sPVC");
 
+  const unroutedWorkloads = tier2.filter((grp) => !routedWorkloadIds.has(grp.id));
+  const routedDagNodes = routedWorkloadIds.size > 0
+    ? dagNodes.filter((n) => n.type === "k8sIngress" || n.type === "k8sService" || routedWorkloadIds.has(n.id))
+    : dagNodes;
+
+  // Add routed DAG nodes to dagre graph
+  routedDagNodes.forEach((node) => {
+    const dims = getNodeDimensions(node);
+    if (node.type === "k8sGroup") {
+      node.style = { ...node.style, width: dims.width, height: dims.height };
+    }
+    dagreGraph.setNode(node.id, { width: dims.width, height: dims.height });
+  });
+
+  const routedNodeIdSet = new Set(routedDagNodes.map((n) => n.id));
+  const routedDagEdges = realDagEdges.filter(
+    (e) => routedNodeIdSet.has(e.source) && routedNodeIdSet.has(e.target)
+  );
+
+  routedDagEdges.forEach((edge) => {
+    dagreGraph.setEdge(edge.source, edge.target, { weight: 2 });
+  });
+
+  const inDegrees = new Map<string, number>();
+  routedDagNodes.forEach((n) => inDegrees.set(n.id, 0));
+  routedDagEdges.forEach((e) => {
+    inDegrees.set(e.target, (inDegrees.get(e.target) || 0) + 1);
+  });
+
   const anchor0 = tier0[0];
 
-  // Align unrouted components deterministically to their architecture tier:
-  // Tier 0: Ingress (rank 0)
-  // Tier 1: Service (rank 1)
-  // Tier 2: Workload (rank 2)
-  // Tier 3: Storage (rank 3)
+  // Align unrouted Services (e.g. redis-headless-service) to Tier 1
   if (anchor0) {
     tier1.forEach((svc) => {
       if ((inDegrees.get(svc.id) || 0) === 0) {
         dagreGraph.setEdge(anchor0.id, svc.id, { minlen: 1, weight: 0 });
-      }
-    });
-    tier2.forEach((grp) => {
-      if ((inDegrees.get(grp.id) || 0) === 0) {
-        dagreGraph.setEdge(anchor0.id, grp.id, { minlen: 2, weight: 0 });
-      }
-    });
-    tier3.forEach((pvc) => {
-      if ((inDegrees.get(pvc.id) || 0) === 0) {
-        dagreGraph.setEdge(anchor0.id, pvc.id, { minlen: 3, weight: 0 });
       }
     });
   } else {
@@ -126,30 +131,21 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
         dagreGraph.setEdge("__virtual_root__", svc.id, { minlen: 1, weight: 0 });
       }
     });
-    tier2.forEach((grp) => {
-      if ((inDegrees.get(grp.id) || 0) === 0) {
-        dagreGraph.setEdge("__virtual_root__", grp.id, { minlen: 2, weight: 0 });
-      }
-    });
-    tier3.forEach((pvc) => {
-      if ((inDegrees.get(pvc.id) || 0) === 0) {
-        dagreGraph.setEdge("__virtual_root__", pvc.id, { minlen: 3, weight: 0 });
-      }
-    });
   }
 
-  if (dagNodes.length > 0) {
+  if (routedDagNodes.length > 0) {
     dagre.layout(dagreGraph);
   }
 
-  // Compute bounding box of DAG layout
-  let dagreMaxX = 300;
-  let dagreMinY = 40;
+  // Calculate bounding box and Tier Y levels from routed layout
+  let maxRoutedX = 300;
+  let minRoutedY = 40;
+  let tier2Y = 350;
 
-  if (dagNodes.length > 0) {
+  if (routedDagNodes.length > 0) {
     let maxX = -Infinity;
     let minY = Infinity;
-    dagNodes.forEach((n) => {
+    routedDagNodes.forEach((n) => {
       const gNode = dagreGraph.node(n.id);
       if (gNode) {
         const dims = getNodeDimensions(n);
@@ -159,17 +155,47 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
         const topY = gNode.y - h / 2;
         if (rightX > maxX) maxX = rightX;
         if (topY < minY) minY = topY;
+        if (n.type === "k8sGroup") tier2Y = gNode.y;
       }
     });
-    if (maxX !== -Infinity) dagreMaxX = maxX;
-    if (minY !== Infinity) dagreMinY = minY;
+    if (maxX !== -Infinity) maxRoutedX = maxX;
+    if (minY !== Infinity) minRoutedY = minY;
   }
 
+  const tier3Y = tier2Y + 160;
+
+  // Custom positioning map for unrouted compute & attached storage
+  const customPosMap = new Map<string, { x: number; y: number }>();
+
+  // Place unrouted standalone compute workloads together to the right of the routed tree
+  let currentUnroutedX = maxRoutedX + 60;
+  let totalDagMaxX = maxRoutedX;
+
+  unroutedWorkloads.forEach((u) => {
+    const dims = getNodeDimensions(u);
+    if (u.type === "k8sGroup") {
+      u.style = { ...u.style, width: dims.width, height: dims.height };
+    }
+    const posX = currentUnroutedX + dims.width / 2;
+    customPosMap.set(u.id, { x: posX - dims.width / 2, y: tier2Y - dims.height / 2 });
+
+    // If unrouted workload has an attached PVC, drop it directly below
+    const attachedPVCEdge = realDagEdges.find((e) => e.source === u.id);
+    if (attachedPVCEdge) {
+      const pvcNode = tier3.find((p) => p.id === attachedPVCEdge.target);
+      if (pvcNode) {
+        const pDims = getNodeDimensions(pvcNode);
+        customPosMap.set(pvcNode.id, { x: posX - pDims.width / 2, y: tier3Y - pDims.height / 2 });
+      }
+    }
+
+    currentUnroutedX += dims.width + 60;
+    if (currentUnroutedX > totalDagMaxX) totalDagMaxX = currentUnroutedX;
+  });
+
   const MIN_SIDE_RAIL_X = 1100;
-  const dockStartX = dagNodes.length > 0
-    ? Math.max(dagreMaxX + 160, MIN_SIDE_RAIL_X)
-    : 40;
-  const dockStartY = Math.max(dagreMinY, 40);
+  const dockStartX = Math.max(totalDagMaxX + 100, MIN_SIDE_RAIL_X);
+  const dockStartY = Math.max(minRoutedY, 40);
 
   const isTB = direction === "TB";
   const targetPos = isTB ? Position.Top : Position.Left;
@@ -218,6 +244,15 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
         targetPosition: targetPos,
         sourcePosition: sourcePos,
         position: dockPosMap.get(node.id)!,
+      };
+    }
+
+    if (customPosMap.has(node.id)) {
+      return {
+        ...node,
+        targetPosition: targetPos,
+        sourcePosition: sourcePos,
+        position: customPosMap.get(node.id)!,
       };
     }
 

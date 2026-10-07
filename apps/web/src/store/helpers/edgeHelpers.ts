@@ -98,7 +98,7 @@ export const getEdgeHealth = calculateEdgeHealth;
 
 export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): Edge[] => {
   const baseEdges = currentEdges.filter(
-    (e) => !e.id.startsWith("e-sys-") && !e.id.startsWith("e-storage-")
+    (e) => !e.id.startsWith("e-sys-") && !e.id.startsWith("e-storage-") && !e.id.startsWith("e-dep-")
   );
   const sysEdges: Edge[] = [];
 
@@ -224,8 +224,68 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
     });
   });
 
+  // Cross-workload peer dependencies (e.g. backend -> redis database)
+  const depEdges: Edge[] = [];
+  groups.forEach((srcGrp) => {
+    const srcData = srcGrp.data as Record<string, unknown> | undefined;
+    const srcName = String(srcData?.name || "").toLowerCase();
+    const srcNs = String(srcData?.namespace || "default");
+    const srcPods = (srcData?.pods as K8sPodData[]) || [];
+
+    groups.forEach((targetGrp) => {
+      if (srcGrp.id === targetGrp.id) return;
+      const targetData = targetGrp.data as Record<string, unknown> | undefined;
+      const targetNs = String(targetData?.namespace || "default");
+      if (srcNs !== targetNs) return;
+
+      const targetName = String(targetData?.name || "").toLowerCase();
+      const isTargetDb = targetName.includes("redis") || targetName.includes("db") || targetName.includes("database") || targetData?.workloadType === "StatefulSet";
+
+      let hasEnvRef = false;
+      let refLabel = "";
+
+      srcPods.forEach((pod) => {
+        const podAny = pod as Record<string, unknown>;
+        const envList = (podAny.env || podAny.containers || []) as Array<Record<string, unknown>>;
+        if (Array.isArray(envList)) {
+          envList.forEach((item) => {
+            const val = String(item.value || item.val || "");
+            const name = String(item.name || item.key || "");
+            if (val.includes(targetName) || (isTargetDb && (name.includes("REDIS") || name.includes("DB")))) {
+              hasEnvRef = true;
+              refLabel = `${name || "SERVICE_HOST"} :6379`;
+            }
+          });
+        }
+      });
+
+      const isBackendApi = srcName.includes("backend") || srcName.includes("api");
+      if ((hasEnvRef || (isBackendApi && isTargetDb)) && isTargetDb) {
+        const edgeLabel = refLabel || "tcp://6379 • REDIS_HOST";
+        depEdges.push({
+          id: `e-dep-${srcGrp.id}-${targetGrp.id}`,
+          source: srcGrp.id,
+          target: targetGrp.id,
+          type: "k8sEdge",
+          animated: true,
+          label: edgeLabel,
+          data: {
+            label: edgeLabel,
+            strokeColor: "#38bdf8",
+            healthStatus: "healthy",
+          },
+          style: {
+            stroke: "#38bdf8",
+            strokeWidth: 1.5,
+            strokeDasharray: "4 4",
+          },
+        });
+      }
+    });
+  });
+
   const storageEdges = generateStorageEdges(nodes);
-  const allEdges = [...baseEdges, ...sysEdges, ...storageEdges];
+  const allEdges = [...baseEdges, ...sysEdges, ...storageEdges, ...depEdges];
   const seenIds = new Set<string>();
   return allEdges.filter((e) => {
     if (seenIds.has(e.id)) return false;
