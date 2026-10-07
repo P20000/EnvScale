@@ -8,25 +8,24 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
   dagreGraph.setGraph({
     rankdir: direction,
     nodesep: 60,
-    ranksep: 100,
+    ranksep: 90,
     marginx: 40,
     marginy: 40,
   });
 
-  const parentNodes = nodes.filter((n) => n.type === "k8sGroup");
-  const childNodes = nodes.filter((n) => n.parentId);
-  const otherNodes = nodes.filter((n) => n.type !== "k8sGroup" && !n.parentId);
-
   // Helper to determine node dimensions
   const getNodeDimensions = (node: Node) => {
     if (node.type === "k8sGroup") {
-      const children = childNodes.filter((c) => c.parentId === node.id);
-      const numChildren = children.length || 1;
-      const cols = Math.min(numChildren, 2);
-      const rows = Math.ceil(numChildren / 2);
-      const width = Math.max(280, 16 * 2 + cols * 208 + (cols - 1) * 10);
-      const height = Math.max(80, 40 + rows * 32 + (rows - 1) * 10 + 16);
-      return { width, height };
+      return { width: 270, height: 76 };
+    }
+    if (node.type === "k8sPVC") {
+      return { width: 200, height: 70 };
+    }
+    if (node.type === "k8sIngress") {
+      return { width: 240, height: 52 };
+    }
+    if (node.type === "k8sService") {
+      return { width: 220, height: 46 };
     }
     if (node.type === "k8sDaemonSet" || node.type === "k8sCronJob" || node.type === "k8sJob") {
       return { width: 260, height: 58 };
@@ -34,61 +33,121 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
     if (node.type === "k8sCompletedJobs") {
       return { width: 260, height: 48 };
     }
+    if (node.type === "k8sWorker") {
+      return { width: 240, height: 44 };
+    }
     return { width: 240, height: 44 };
   };
 
-  // Find set of connected node IDs (including parents of connected children)
-  const connectedIds = new Set<string>();
-  edges.forEach((e) => {
-    connectedIds.add(e.source);
-    connectedIds.add(e.target);
+  // Classify nodes: Architecture DAG nodes vs Side-Rail Dock nodes
+  // Architecture DAG nodes: Ingress, Service, Workloads (Deployments/StatefulSets), and PVC Storage
+  // Side-Rail Dock nodes: Host workers, DaemonSets, CronJobs, standalone batch jobs, completed jobs
+  const isDockNodeType = (node: Node): boolean => {
+    if (node.type === "k8sWorker" ||
+        node.type === "k8sDaemonSet" ||
+        node.type === "k8sCronJob" ||
+        node.type === "k8sJob" ||
+        node.type === "k8sCompletedJobs") {
+      return true;
+    }
+    // Default cluster internal service with zero connections goes to dock
+    if (node.type === "k8sService" && (node.id === "kubernetes" || (node.data as { name?: string })?.name === "kubernetes")) {
+      const hasConnection = edges.some((e) => e.source === node.id || e.target === node.id);
+      if (!hasConnection) return true;
+    }
+    return false;
+  };
 
-    // If child is connected, mark parent group as connected too
-    const sourceNode = nodes.find((n) => n.id === e.source);
-    if (sourceNode?.parentId) connectedIds.add(sourceNode.parentId);
+  const dockNodes = nodes.filter(isDockNodeType);
+  const dagNodes = nodes.filter((n) => !isDockNodeType(n) && !n.parentId);
 
-    const targetNode = nodes.find((n) => n.id === e.target);
-    if (targetNode?.parentId) connectedIds.add(targetNode.parentId);
-  });
-
-  const topLevelNodes = [...parentNodes, ...otherNodes];
-  const connectedTopLevel = topLevelNodes.filter((n) => connectedIds.has(n.id));
-
-  // Add ONLY connected top-level nodes to dagre graph for layout math
-  connectedTopLevel.forEach((node) => {
-    const { width, height } = getNodeDimensions(node);
+  // Add DAG nodes to dagre graph
+  dagNodes.forEach((node) => {
+    const dims = getNodeDimensions(node);
     if (node.type === "k8sGroup") {
-      node.style = { ...node.style, width, height };
+      node.style = { ...node.style, width: dims.width, height: dims.height };
     }
-    dagreGraph.setNode(node.id, { width, height });
+    dagreGraph.setNode(node.id, { width: dims.width, height: dims.height });
   });
 
-  // Ensure orphan group nodes get proper dimensions set in style
-  topLevelNodes.forEach((node) => {
-    if (!connectedIds.has(node.id) && node.type === "k8sGroup") {
-      const { width, height } = getNodeDimensions(node);
-      node.style = { ...node.style, width, height };
-    }
+  const dagNodeIdSet = new Set(dagNodes.map((n) => n.id));
+  const realDagEdges = edges.filter(
+    (e) => dagNodeIdSet.has(e.source) && dagNodeIdSet.has(e.target)
+  );
+
+  realDagEdges.forEach((edge) => {
+    dagreGraph.setEdge(edge.source, edge.target, { weight: 2 });
   });
 
-  edges.forEach((edge) => {
-    if (connectedIds.has(edge.source) || connectedIds.has(edge.target)) {
-      dagreGraph.setEdge(edge.source, edge.target);
-    }
+  // Calculate in-degree of DAG nodes from real edges
+  const inDegrees = new Map<string, number>();
+  dagNodes.forEach((n) => inDegrees.set(n.id, 0));
+  realDagEdges.forEach((e) => {
+    inDegrees.set(e.target, (inDegrees.get(e.target) || 0) + 1);
   });
 
-  if (connectedTopLevel.length > 0) {
+  // Strict 4-Tier Directional Layout Alignment:
+  // Tier 0: Ingress
+  // Tier 1: Service
+  // Tier 2: Workload (k8sGroup)
+  // Tier 3: Storage (k8sPVC)
+  const tier0 = dagNodes.filter((n) => n.type === "k8sIngress");
+  const tier1 = dagNodes.filter((n) => n.type === "k8sService");
+  const tier2 = dagNodes.filter((n) => n.type === "k8sGroup");
+  const tier3 = dagNodes.filter((n) => n.type === "k8sPVC");
+
+  const anchor0 = tier0[0];
+  const anchor1 = tier1[0];
+  const anchor2 = tier2[0];
+
+  // Align unrouted Services to Tier 1
+  if (anchor0) {
+    tier1.forEach((svc) => {
+      if ((inDegrees.get(svc.id) || 0) === 0) {
+        dagreGraph.setEdge(anchor0.id, svc.id, { minlen: 1, weight: 0 });
+      }
+    });
+  }
+
+  // Align unrouted Workloads (Deployments/StatefulSets) to Tier 2
+  const higherTierForWorkload = anchor1
+    ? { node: anchor1, minlen: 1 }
+    : anchor0
+    ? { node: anchor0, minlen: 2 }
+    : null;
+
+  if (higherTierForWorkload) {
+    tier2.forEach((grp) => {
+      if ((inDegrees.get(grp.id) || 0) === 0) {
+        dagreGraph.setEdge(higherTierForWorkload.node.id, grp.id, {
+          minlen: higherTierForWorkload.minlen,
+          weight: 0,
+        });
+      }
+    });
+  }
+
+  // Align unrouted PVCs to Tier 3
+  if (anchor2) {
+    tier3.forEach((pvc) => {
+      if ((inDegrees.get(pvc.id) || 0) === 0) {
+        dagreGraph.setEdge(anchor2.id, pvc.id, { minlen: 1, weight: 0 });
+      }
+    });
+  }
+
+  if (dagNodes.length > 0) {
     dagre.layout(dagreGraph);
   }
 
-  // Compute bounding box strictly across connected top-level nodes
+  // Compute bounding box of DAG layout
   let dagreMaxX = 300;
   let dagreMinY = 40;
 
-  if (connectedTopLevel.length > 0) {
+  if (dagNodes.length > 0) {
     let maxX = -Infinity;
     let minY = Infinity;
-    connectedTopLevel.forEach((n) => {
+    dagNodes.forEach((n) => {
       const gNode = dagreGraph.node(n.id);
       if (gNode) {
         const dims = getNodeDimensions(n);
@@ -102,25 +161,10 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
     });
     if (maxX !== -Infinity) dagreMaxX = maxX;
     if (minY !== Infinity) dagreMinY = minY;
-  } else {
-    topLevelNodes.forEach((n) => {
-      const gNode = dagreGraph.node(n.id);
-      if (gNode) {
-        const dims = getNodeDimensions(n);
-        const w = gNode.width ?? dims.width;
-        const h = gNode.height ?? dims.height;
-        const rightX = gNode.x + w / 2;
-        const topY = gNode.y - h / 2;
-        if (rightX > dagreMaxX) dagreMaxX = rightX;
-        if (topY < dagreMinY) dagreMinY = topY;
-      }
-    });
   }
 
   const MIN_SIDE_RAIL_X = 1100;
-  // Dynamic offset: always placed to the right of the widest Dagre node
-  // In TB mode (or narrow graphs), preserve at least MIN_SIDE_RAIL_X margin
-  const dockStartX = connectedTopLevel.length > 0
+  const dockStartX = dagNodes.length > 0
     ? Math.max(dagreMaxX + 160, MIN_SIDE_RAIL_X)
     : 40;
   const dockStartY = Math.max(dagreMinY, 40);
@@ -129,44 +173,36 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
   const targetPos = isTB ? Position.Top : Position.Left;
   const sourcePos = isTB ? Position.Bottom : Position.Right;
 
-  const isOrphanNode = (node: Node): boolean => {
-    if (node.parentId) return false;
-    if (node.type === "k8sDaemonSet" || node.type === "k8sCronJob" || node.type === "k8sJob" || node.type === "k8sCompletedJobs") return true;
-    return !connectedIds.has(node.id);
+  const getDockTier = (node: Node): number => {
+    if (node.type === "k8sWorker") return 1;        // Host Node (e.g. minikube)
+    if (node.type === "k8sDaemonSet") return 2;     // DaemonSets (e.g. node-telemetry-agent)
+    if (node.type === "k8sCronJob") return 3;       // CronJobs (e.g. db-audit-cronjob)
+    if (node.type === "k8sJob") return 4;           // Standalone batch jobs
+    if (node.type === "k8sCompletedJobs") return 5; // Collapsed Completed Jobs
+    return 6;                                       // Standalone utilities (e.g. default kubernetes svc)
   };
 
-  const getOrphanTier = (node: Node): number => {
-    if (node.type === "k8sWorker") return 1;     // Host Node (e.g. minikube)
-    if (node.type === "k8sGroup") return 2;      // Unrouted Workload Group (e.g. WORKER-POOL)
-    if (node.type === "k8sDaemonSet") return 3;  // DaemonSets (e.g. node-telemetry-agent)
-    if (node.type === "k8sCronJob") return 4;    // CronJobs (e.g. db-audit-cronjob)
-    if (node.type === "k8sJob") return 5;        // Standalone batch jobs
-    if (node.type === "k8sCompletedJobs") return 6; // Collapsed Completed Jobs
-    return 7;                                    // Standalone unrouted workloads
-  };
-
-  const orphanNodes = topLevelNodes.filter(isOrphanNode).sort((a, b) => {
-    const tierA = getOrphanTier(a);
-    const tierB = getOrphanTier(b);
+  const sortedDockNodes = [...dockNodes].sort((a, b) => {
+    const tierA = getDockTier(a);
+    const tierB = getDockTier(b);
     if (tierA !== tierB) return tierA - tierB;
     return a.id.localeCompare(b.id);
   });
 
-  const orphanPosMap = new Map<string, { x: number; y: number }>();
-  let currentOrphanY = dockStartY;
+  const dockPosMap = new Map<string, { x: number; y: number }>();
+  let currentDockY = dockStartY;
 
-  orphanNodes.forEach((node) => {
+  sortedDockNodes.forEach((node) => {
     const dims = getNodeDimensions(node);
     if (node.type === "k8sGroup") {
       node.style = { ...node.style, width: dims.width, height: dims.height };
     }
-    orphanPosMap.set(node.id, { x: dockStartX, y: currentOrphanY });
-    currentOrphanY += dims.height + 24;
+    dockPosMap.set(node.id, { x: dockStartX, y: currentDockY });
+    currentDockY += dims.height + 20;
   });
 
   const layoutedNodes = nodes.map((node) => {
     if (node.parentId) {
-      // Child nodes keep relative position inside group boundary
       return {
         ...node,
         targetPosition: targetPos,
@@ -174,12 +210,12 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
       };
     }
 
-    if (orphanPosMap.has(node.id)) {
+    if (dockPosMap.has(node.id)) {
       return {
         ...node,
         targetPosition: targetPos,
         sourcePosition: sourcePos,
-        position: orphanPosMap.get(node.id)!,
+        position: dockPosMap.get(node.id)!,
       };
     }
 

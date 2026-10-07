@@ -52,9 +52,58 @@ export const generateStorageEdges = (nodes: Node[]): Edge[] => {
   if (!nodes || nodes.length === 0) return edges;
 
   const pods = nodes.filter((n) => n.type === "k8sPod");
+  const groups = nodes.filter((n) => n.type === "k8sGroup");
   const pvcNodes = nodes.filter((n) => n.type === "k8sPVC");
-  if (pods.length === 0 || pvcNodes.length === 0) return edges;
+  if ((pods.length === 0 && groups.length === 0) || pvcNodes.length === 0) return edges;
 
+  // 1. Connect Workload Groups (Deployments, StatefulSets) to target PVCs
+  groups.forEach((group) => {
+    const groupData = group.data as Record<string, unknown> | undefined;
+    const groupPods = (groupData?.pods as K8sPodData[]) || [];
+    const seenPVC = new Set<string>();
+
+    groupPods.forEach((podData) => {
+      if (!Array.isArray(podData.volumes) || podData.volumes.length === 0) return;
+
+      podData.volumes.forEach((vol) => {
+        if (!vol.pvcName || seenPVC.has(vol.pvcName)) return;
+
+        const targetPVC = pvcNodes.find((pvcNode) => {
+          const pvcData = pvcNode.data as K8sPVCData;
+          return pvcData.name === vol.pvcName && (pvcData.namespace === podData.namespace || !podData.namespace);
+        });
+
+        if (targetPVC) {
+          seenPVC.add(vol.pvcName);
+          const pvcData = targetPVC.data as K8sPVCData;
+          const isBound = pvcData.phase === "Bound";
+          const strokeColor = isBound ? "#06b6d4" : "#f59e0b";
+          const mountLabel = vol.mountPath ? `📁 ${vol.mountPath}` : undefined;
+
+          edges.push({
+            id: `e-storage-${group.id}-${targetPVC.id}`,
+            source: group.id,
+            target: targetPVC.id,
+            type: "k8sEdge",
+            animated: false,
+            label: mountLabel,
+            data: {
+              label: mountLabel,
+              strokeColor,
+              healthStatus: isBound ? "healthy" : "degraded",
+            },
+            style: {
+              stroke: strokeColor,
+              strokeWidth: 1.5,
+              strokeDasharray: "4 4",
+            },
+          });
+        }
+      });
+    });
+  });
+
+  // 2. Connect any standalone Pods (if not grouped)
   pods.forEach((pod) => {
     const podData = pod.data as K8sPodData | undefined;
     if (!podData || !Array.isArray(podData.volumes) || podData.volumes.length === 0) return;
@@ -70,16 +119,13 @@ export const generateStorageEdges = (nodes: Node[]): Edge[] => {
       if (targetPVC) {
         const pvcData = targetPVC.data as K8sPVCData;
         const isBound = pvcData.phase === "Bound";
-        const strokeColor = isBound ? "#06b6d4" : "#f59e0b"; // cyan-500 or amber-500
-        const mountLabel = vol.mountPath ? `:${vol.mountPath}` : undefined;
+        const strokeColor = isBound ? "#06b6d4" : "#f59e0b";
+        const mountLabel = vol.mountPath ? `📁 ${vol.mountPath}` : undefined;
 
-        // Strictly orient source: pod.id (right-source) -> target: pvc.id (left-target) to maintain Dagre LR rank order
         edges.push({
           id: `e-storage-${pod.id}-${targetPVC.id}-${vol.name}`,
           source: pod.id,
-          sourceHandle: "right-source",
           target: targetPVC.id,
-          targetHandle: "left-target",
           type: "k8sEdge",
           animated: false,
           label: mountLabel,

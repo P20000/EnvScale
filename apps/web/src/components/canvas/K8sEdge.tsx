@@ -46,14 +46,37 @@ export function K8sEdge({
     style.strokeDasharray === "4 4"
   );
 
+  const selectedNode = useTopologyStore((s) => s.selectedNode);
+  const selectedTargetName = selectedNode?.data
+    ? String((selectedNode.data as { name?: string; id?: string }).name || (selectedNode.data as { name?: string; id?: string }).id || "")
+    : "";
+
+  const isConnectedToSelected = Boolean(
+    selectedTargetName && (
+      source === selectedTargetName ||
+      target === selectedTargetName ||
+      source === `group-${selectedTargetName}` ||
+      target === `group-${selectedTargetName}` ||
+      source.includes(selectedTargetName) ||
+      target.includes(selectedTargetName)
+    )
+  );
+
+  const hasSelection = Boolean(selectedTargetName);
+  const isBlastRadiusHighlighted = isConnectedToSelected || isHovered;
+
   const defaultStroke = isDraining
     ? "#52525b"
     : edgeData.strokeColor || (style.stroke as string) || "#52525b";
 
-  const strokeColor = isHovered
-    ? (isDraining ? "#71717a" : "#a1a1aa")
+  const strokeColor = isBlastRadiusHighlighted
+    ? (isDraining ? "#71717a" : edgeData.strokeColor || "#38bdf8")
     : defaultStroke;
   const labelText = (label as string) || edgeData.label || "";
+
+  const edgeOpacity = hasSelection
+    ? (isBlastRadiusHighlighted ? 1 : 0.15)
+    : (isDraining ? 0.45 : 0.85);
 
   const [edgePath, labelX, labelY] = getSmoothStepPath({
     sourceX,
@@ -77,10 +100,10 @@ export function K8sEdge({
         style={{
           ...style,
           stroke: strokeColor,
-          strokeWidth: isHovered ? (isDraining ? 2 : 2.5) : 1.5,
-          opacity: isDraining ? 0.45 : 1,
-          transition: "stroke 0.15s ease, stroke-width 0.15s ease, opacity 0.3s ease",
-          strokeDasharray: isDraining ? "4 4" : "none",
+          strokeWidth: isBlastRadiusHighlighted ? (isDraining ? 2 : 2.5) : 1.5,
+          opacity: edgeOpacity,
+          transition: "stroke 0.2s ease, stroke-width 0.2s ease, opacity 0.25s ease",
+          strokeDasharray: isDraining ? "4 4" : style.strokeDasharray || "none",
         }}
       />
 

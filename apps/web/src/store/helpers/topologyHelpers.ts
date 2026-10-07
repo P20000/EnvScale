@@ -245,38 +245,27 @@ export const aggregateNodesWithWorkloads = (
       return !isTerminating && (ph === "running" || ph === "ready" || ph.includes("crash") || ph.includes("oom"));
     });
 
-    const drainingPods = sortedGroupPods.filter((p) => {
-      const pData = p.data as K8sPodData;
-      const ph = String(pData?.phase || pData?.status || "").toLowerCase();
-      return Boolean(pData?.isTerminating || ph === "terminating");
-    });
-
-    const activeCap = Math.max(2, activeRunningPods.length + drainingPods.length);
-    const finalGroupPods = sortedGroupPods.slice(0, activeCap);
-
     const firstPodData = groupPods[0]?.data as K8sPodData | undefined;
     const ns = firstPodData?.namespace || "default";
     const rolloutInfo = calculateRolloutInfo(prefix, ns, deployments, replicaSets);
+    const podsData = groupPods.map((p) => p.data as K8sPodData);
+
+    const isStateful = prefix.toLowerCase().includes("db") || prefix.toLowerCase().includes("redis") || prefix.toLowerCase().includes("stateful");
+    const workloadType = isStateful ? "StatefulSet" : "Deployment";
 
     processedNodes.push({
       id: groupId,
       type: "k8sGroup",
       position: { x: 0, y: 0 },
-      data: { name: prefix, namespace: ns, rolloutInfo },
-    });
-
-    finalGroupPods.forEach((pod, index) => {
-      const col = index % 2;
-      const row = Math.floor(index / 2);
-      const x = 16 + col * (208 + 10);
-      const y = 40 + row * (32 + 10);
-
-      processedNodes.push({
-        ...pod,
-        parentId: groupId,
-        extent: "parent",
-        position: { x, y },
-      });
+      data: {
+        name: prefix,
+        namespace: ns,
+        workloadType,
+        rolloutInfo,
+        pods: podsData,
+        replicas: groupPods.length,
+        readyReplicas: activeRunningPods.length,
+      },
     });
   });
 

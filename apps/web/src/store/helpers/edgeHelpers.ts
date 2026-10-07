@@ -151,35 +151,50 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
     }
   });
 
+  const groups = nodes.filter((n) => n.type === "k8sGroup");
+
   services.forEach((svc) => {
     const svcData = svc.data as K8sServiceData;
     const svcSelector = svcData.selector;
     if (svcSelector && Object.keys(svcSelector).length > 0) {
-      const targetedGroups = new Set<string>();
-      const matchingPods = pods.filter((pod) => {
-        const podData = pod.data as K8sPodData;
-        const labels = podData.labels as Record<string, string>;
-        if (labels) {
-          const match = Object.keys(svcSelector).every((key) => labels[key] === svcSelector[key as keyof typeof svcSelector]);
-          if (match && pod.parentId) targetedGroups.add(pod.parentId);
-          return match;
+      groups.forEach((group) => {
+        const groupData = group.data as Record<string, unknown> | undefined;
+        const groupPods = (groupData?.pods as K8sPodData[]) || [];
+        const isMatch = groupPods.some((pod) => {
+          const labels = pod.labels as Record<string, string>;
+          return labels && Object.keys(svcSelector).every((key) => labels[key] === svcSelector[key]);
+        });
+
+        if (isMatch) {
+          const { healthStatus, strokeColor, isDraining } = calculateEdgeHealth(svc, groupPods);
+          sysEdges.push({
+            id: `e-sys-${svc.id}-${group.id}`,
+            source: svc.id,
+            target: group.id,
+            type: "k8sEdge",
+            animated: false,
+            data: { healthStatus, strokeColor, isDraining },
+            style: { stroke: strokeColor, strokeWidth: 2, strokeDasharray: isDraining ? "4 4" : "none" },
+          });
         }
-        return false;
       });
 
-      targetedGroups.forEach((groupId) => {
-        const groupPods = matchingPods.filter((p) => p.parentId === groupId);
-        const podsToCheck = groupPods.length > 0 ? groupPods : matchingPods;
-        const { healthStatus, strokeColor, isDraining } = calculateEdgeHealth(svc, podsToCheck);
+      const matchingStandalone = pods.filter((pod) => {
+        const podData = pod.data as K8sPodData;
+        const labels = podData.labels as Record<string, string>;
+        return labels && !pod.parentId && Object.keys(svcSelector).every((key) => labels[key] === svcSelector[key]);
+      });
 
+      matchingStandalone.forEach((pod) => {
+        const { healthStatus, strokeColor } = calculateEdgeHealth(svc, [pod]);
         sysEdges.push({
-          id: `e-sys-${svc.id}-${groupId}`,
+          id: `e-sys-${svc.id}-${pod.id}`,
           source: svc.id,
-          target: groupId,
+          target: pod.id,
           type: "k8sEdge",
           animated: false,
-          data: { healthStatus, strokeColor, isDraining },
-          style: { stroke: strokeColor, strokeWidth: 2, strokeDasharray: isDraining ? "4 4" : "none" },
+          data: { healthStatus, strokeColor },
+          style: { stroke: strokeColor, strokeWidth: 2 },
         });
       });
     }
