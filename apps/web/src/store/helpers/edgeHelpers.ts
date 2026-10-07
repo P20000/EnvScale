@@ -266,6 +266,7 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
           id: `e-dep-${srcGrp.id}-${targetGrp.id}`,
           source: srcGrp.id,
           target: targetGrp.id,
+          targetHandle: "bottom-target",
           type: "k8sEdge",
           animated: true,
           label: edgeLabel,
@@ -273,6 +274,7 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
             label: edgeLabel,
             strokeColor: "#38bdf8",
             healthStatus: "healthy",
+            isCrossWorkload: true,
           },
           style: {
             stroke: "#38bdf8",

@@ -7,8 +7,8 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
 
   dagreGraph.setGraph({
     rankdir: direction,
-    nodesep: 60,
-    ranksep: 90,
+    nodesep: 80,
+    ranksep: 70,
     marginx: 40,
     marginy: 40,
   });
@@ -168,7 +168,7 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
   const customPosMap = new Map<string, { x: number; y: number }>();
 
   // Place unrouted standalone compute workloads together to the right of the routed tree
-  let currentUnroutedX = maxRoutedX + 60;
+  let currentUnroutedX = maxRoutedX + 80;
   let totalDagMaxX = maxRoutedX;
 
   unroutedWorkloads.forEach((u) => {
@@ -189,7 +189,7 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
       }
     }
 
-    currentUnroutedX += dims.width + 60;
+    currentUnroutedX += dims.width + 80;
     if (currentUnroutedX > totalDagMaxX) totalDagMaxX = currentUnroutedX;
   });
 

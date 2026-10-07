@@ -12,6 +12,8 @@ export interface K8sEdgeData extends Record<string, unknown> {
   strokeColor?: string;
   label?: string;
   isDraining?: boolean;
+  isCrossWorkload?: boolean;
+  isPeerDependency?: boolean;
 }
 
 export function K8sEdge({
@@ -78,15 +80,47 @@ export function K8sEdge({
     ? (isBlastRadiusHighlighted ? 1 : 0.15)
     : (isDraining ? 0.45 : 0.85);
 
-  const [edgePath, labelX, labelY] = getBezierPath({
-    sourceX,
-    sourceY,
-    sourcePosition,
-    targetX,
-    targetY,
-    targetPosition,
-    curvature: 0.25,
-  });
+  const isPeerDependency = Boolean(
+    id.startsWith("e-dep-") ||
+    edgeData.isCrossWorkload ||
+    edgeData.isPeerDependency ||
+    (sourcePosition === Position.Bottom && targetPosition === Position.Top && Math.abs(sourceY - (targetY + 76)) < 20 && Math.abs(sourceX - targetX) > 80)
+  );
+
+  let edgePath: string;
+  let labelX: number;
+  let labelY: number;
+
+  if (isPeerDependency) {
+    // Cross-workload peer dependency (e.g. TODO-BACKEND -> REDIS-DB):
+    // Route the path in a downward arc below the workload cards so neither the line
+    // nor its port label slice through intermediate sibling cards (e.g. CANARY).
+    const effTargetY = targetPosition === Position.Top ? targetY + 76 : targetY;
+    const effSourceY = sourcePosition === Position.Top ? sourceY + 76 : sourceY;
+    const bottomBaseY = Math.max(effSourceY, effTargetY);
+    const dx = Math.abs(targetX - sourceX);
+    // Arc drop scales smoothly with horizontal distance between peers
+    const arcDrop = Math.max(45, Math.min(80, 35 + dx * 0.06));
+    const arcBottomY = bottomBaseY + arcDrop;
+
+    edgePath = `M ${sourceX} ${effSourceY} C ${sourceX} ${arcBottomY}, ${targetX} ${arcBottomY}, ${targetX} ${effTargetY}`;
+    labelX = (sourceX + targetX) / 2;
+    // Position label along the bottom of the arc in clear space below all cards
+    labelY = (effSourceY + effTargetY) / 8 + (3 * arcBottomY) / 4;
+  } else {
+    const [bezierPath, bX, bY] = getBezierPath({
+      sourceX,
+      sourceY,
+      sourcePosition,
+      targetX,
+      targetY,
+      targetPosition,
+      curvature: 0.25,
+    });
+    edgePath = bezierPath;
+    labelX = bX;
+    labelY = bY;
+  }
 
   return (
     <>

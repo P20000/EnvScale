@@ -94,6 +94,13 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
         className="!opacity-0 !w-0 !h-0 !min-w-0 !min-h-0 !border-0 !bg-transparent pointer-events-none"
       />
       <Handle
+        type="target"
+        position={isTB ? Position.Bottom : Position.Right}
+        id="bottom-target"
+        isConnectable={false}
+        className="!opacity-0 !w-0 !h-0 !min-w-0 !min-h-0 !border-0 !bg-transparent pointer-events-none"
+      />
+      <Handle
         type="source"
         position={isTB ? Position.Bottom : Position.Right}
         id="right-source"
