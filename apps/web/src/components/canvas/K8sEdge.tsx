@@ -99,13 +99,14 @@ export function K8sEdge({
     const effSourceY = sourcePosition === Position.Top ? sourceY + 76 : sourceY;
     const bottomBaseY = Math.max(effSourceY, effTargetY);
     const dx = Math.abs(targetX - sourceX);
-    // Arc drop scales smoothly with horizontal distance between peers
-    const arcDrop = Math.max(45, Math.min(80, 35 + dx * 0.06));
+    // Generous downward arc drop scaling with peer distance (65px - 110px)
+    // Ensures adjacent peers loop at ~75px and skip-sibling peers loop at ~105px
+    const arcDrop = Math.max(65, Math.min(110, 50 + dx * 0.08));
     const arcBottomY = bottomBaseY + arcDrop;
 
     edgePath = `M ${sourceX} ${effSourceY} C ${sourceX} ${arcBottomY}, ${targetX} ${arcBottomY}, ${targetX} ${effTargetY}`;
     labelX = (sourceX + targetX) / 2;
-    // Position label along the bottom of the arc in clear space below all cards
+    // Position label along the curve apex in open space well below all card boundaries
     labelY = (effSourceY + effTargetY) / 8 + (3 * arcBottomY) / 4;
   } else {
     const [bezierPath, bX, bY] = getBezierPath({
@@ -148,10 +149,11 @@ export function K8sEdge({
               position: "absolute",
               transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
               pointerEvents: "all",
+              zIndex: 20,
             }}
-            className={`nodrag nopan text-[11px] font-mono px-1.5 py-0.5 rounded bg-zinc-900 border ${
+            className={`nodrag nopan text-[11px] font-mono px-2 py-0.5 rounded bg-zinc-900 border ${
               isDraining ? "border-zinc-800 text-zinc-500 opacity-60" : "border-zinc-700 text-zinc-300"
-            } shadow-sm select-none`}
+            } shadow-md select-none`}
           >
             {labelText}
           </div>
