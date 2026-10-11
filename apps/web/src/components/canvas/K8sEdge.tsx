@@ -86,11 +86,14 @@ export function K8sEdge({
     : (isDraining ? 0.45 : 0.85);
 
   const isPeerDependency = Boolean(
-    id.startsWith("e-dep-") ||
-    edgeData.isCrossWorkload ||
-    edgeData.isPeerDependency ||
-    (isTB && sourcePosition === Position.Bottom && targetPosition === Position.Top && Math.abs(sourceY - (targetY + 76)) < 20 && Math.abs(sourceX - targetX) > 80) ||
-    (!isTB && Math.abs(sourceX - targetX) < 80 && Math.abs(sourceY - targetY) > 80)
+    !id.startsWith("e-storage-") &&
+    !id.startsWith("e-sys-") &&
+    (
+      id.startsWith("e-dep-") ||
+      edgeData.isCrossWorkload ||
+      edgeData.isPeerDependency ||
+      (isTB && sourcePosition === Position.Bottom && targetPosition === Position.Top && Math.abs(sourceY - (targetY + 76)) < 20 && Math.abs(sourceX - targetX) > 80)
+    )
   );
 
   let edgePath: string;
@@ -103,12 +106,13 @@ export function K8sEdge({
 
     if (isTB) {
       // TB Layout: Peer cards sit horizontally along X at same tier Y.
-      // Route the curve downwards in a loop below the workload cards.
+      // Route the curve downwards in a compact loop below the workload cards.
       const effTargetY = targetPosition === Position.Top ? targetY + 76 : targetY;
       const effSourceY = sourcePosition === Position.Top ? sourceY + 76 : sourceY;
       const bottomBaseY = Math.max(effSourceY, effTargetY);
       const dx = Math.abs(targetX - sourceX);
-      const baseArcDrop = Math.max(65, Math.min(110, 50 + dx * 0.08));
+      const staggerOffset = Math.abs((sourceX * 13) % 20) * 0.4;
+      const baseArcDrop = Math.max(45, Math.min(65, 35 + dx * 0.05)) + staggerOffset;
       const arcDrop = baseArcDrop * zoomScale;
       const arcBottomY = bottomBaseY + arcDrop;
 
@@ -117,12 +121,13 @@ export function K8sEdge({
       labelY = arcBottomY;
     } else {
       // LR Layout: Peer cards sit vertically along Y at same tier X.
-      // Route the curve outward to the right in X around intermediate cards.
+      // Route the curve outward to the right in X within the dedicated channel between Col 3 and Col 4.
       const effTargetX = targetPosition === Position.Left ? targetX + 270 : targetX;
       const effSourceX = sourcePosition === Position.Left ? sourceX + 270 : sourceX;
       const rightBaseX = Math.max(effSourceX, effTargetX);
       const dy = Math.abs(targetY - sourceY);
-      const baseArcDrop = Math.max(80, Math.min(135, 65 + dy * 0.09));
+      const staggerOffset = Math.abs((sourceY * 17) % 25) * 0.4;
+      const baseArcDrop = Math.max(45, Math.min(65, 35 + dy * 0.05)) + staggerOffset;
       const arcDrop = baseArcDrop * zoomScale;
       const arcRightX = rightBaseX + arcDrop;
 
@@ -138,7 +143,7 @@ export function K8sEdge({
       targetX,
       targetY,
       targetPosition,
-      curvature: 0.25,
+      curvature: 0.45,
     });
     edgePath = bezierPath;
     labelX = bX;

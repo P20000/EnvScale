@@ -5,10 +5,11 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
   const dagreGraph = new dagre.graphlib.Graph();
   dagreGraph.setDefaultEdgeLabel(() => ({}));
 
+  const isLR = direction === "LR";
   dagreGraph.setGraph({
     rankdir: direction,
-    nodesep: 100,
-    ranksep: 85,
+    nodesep: isLR ? 70 : 55,
+    ranksep: isLR ? 115 : 110,
     marginx: 40,
     marginy: 40,
   });
@@ -147,64 +148,107 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
     dagre.layout(dagreGraph);
   }
 
-  // Calculate bounding box and Tier Y levels from routed layout
+  // Calculate bounding box and Tier levels from routed layout
+  let minRoutedX = 40;
   let maxRoutedX = 300;
   let minRoutedY = 40;
-  let tier2Y = 350;
+  let maxRoutedY = 350;
 
   if (routedDagNodes.length > 0) {
+    let minX = Infinity;
     let maxX = -Infinity;
     let minY = Infinity;
+    let maxY = -Infinity;
     routedDagNodes.forEach((n) => {
       const gNode = dagreGraph.node(n.id);
       if (gNode) {
         const dims = getNodeDimensions(n);
         const w = gNode.width ?? dims.width;
         const h = gNode.height ?? dims.height;
+        const leftX = gNode.x - w / 2;
         const rightX = gNode.x + w / 2;
         const topY = gNode.y - h / 2;
+        const bottomY = gNode.y + h / 2;
+        if (leftX < minX) minX = leftX;
         if (rightX > maxX) maxX = rightX;
         if (topY < minY) minY = topY;
-        if (n.type === "k8sGroup") tier2Y = gNode.y;
+        if (bottomY > maxY) maxY = bottomY;
       }
     });
+    if (minX !== Infinity) minRoutedX = minX;
     if (maxX !== -Infinity) maxRoutedX = maxX;
     if (minY !== Infinity) minRoutedY = minY;
+    if (maxY !== -Infinity) maxRoutedY = maxY;
   }
-
-  const tier3Y = tier2Y + 160;
 
   // Custom positioning map for unrouted compute & attached storage
   const customPosMap = new Map<string, { x: number; y: number }>();
+  let totalDagMaxX: number;
 
-  // Place unrouted standalone compute workloads together to the right of the routed tree
-  let currentUnroutedX = maxRoutedX + 100;
-  let totalDagMaxX = maxRoutedX;
+  if (isLR) {
+    // Horizontal (LR) mode: Stack unrouted workloads vertically into a dedicated Column 4
+    // 170px clearance gives Column 3 lateral peer dependency curves (e.g. backend -> redis) a dedicated, collision-free channel
+    const unroutedColX = maxRoutedX + 170;
+    let currentUnroutedY = Math.max(minRoutedY, 40);
 
-  unroutedWorkloads.forEach((u) => {
-    const dims = getNodeDimensions(u);
-    if (u.type === "k8sGroup") {
-      u.style = { ...u.style, width: dims.width, height: dims.height };
-    }
-    const posX = currentUnroutedX + dims.width / 2;
-    customPosMap.set(u.id, { x: posX - dims.width / 2, y: tier2Y - dims.height / 2 });
-
-    // If unrouted workload has an attached PVC, drop it directly below
-    const attachedPVCEdge = realDagEdges.find((e) => e.source === u.id);
-    if (attachedPVCEdge) {
-      const pvcNode = tier3.find((p) => p.id === attachedPVCEdge.target);
-      if (pvcNode) {
-        const pDims = getNodeDimensions(pvcNode);
-        customPosMap.set(pvcNode.id, { x: posX - pDims.width / 2, y: tier3Y - pDims.height / 2 });
+    unroutedWorkloads.forEach((u) => {
+      const dims = getNodeDimensions(u);
+      if (u.type === "k8sGroup") {
+        u.style = { ...u.style, width: dims.width, height: dims.height };
       }
-    }
+      customPosMap.set(u.id, { x: unroutedColX, y: currentUnroutedY });
 
-    currentUnroutedX += dims.width + 100;
-    if (currentUnroutedX > totalDagMaxX) totalDagMaxX = currentUnroutedX;
-  });
+      // If unrouted workload has an attached PVC, drop it directly below
+      const attachedPVCEdge = realDagEdges.find((e) => e.source === u.id);
+      if (attachedPVCEdge) {
+        const pvcNode = tier3.find((p) => p.id === attachedPVCEdge.target);
+        if (pvcNode) {
+          const pDims = getNodeDimensions(pvcNode);
+          const pvcY = currentUnroutedY + dims.height + 35;
+          const pvcX = unroutedColX + (dims.width - pDims.width) / 2;
+          customPosMap.set(pvcNode.id, { x: pvcX, y: pvcY });
+          currentUnroutedY = pvcY + pDims.height + 25;
+          return;
+        }
+      }
+
+      currentUnroutedY += dims.height + 25;
+    });
+
+    totalDagMaxX = unroutedWorkloads.length > 0 ? unroutedColX + 270 : maxRoutedX;
+  } else {
+    // Vertical (TB) mode: Place unrouted standalone workloads in a dedicated lower tier (Tier 3) directly below Tier 2
+    // This prevents stretching the canvas into a 2,800px-wide ribbon and creates a compact, screen-fitting vertical hierarchy
+    const tier3Y = maxRoutedY + 90;
+    let currentUnroutedX = minRoutedX;
+
+    unroutedWorkloads.forEach((u) => {
+      const dims = getNodeDimensions(u);
+      if (u.type === "k8sGroup") {
+        u.style = { ...u.style, width: dims.width, height: dims.height };
+      }
+      customPosMap.set(u.id, { x: currentUnroutedX, y: tier3Y });
+
+      // If unrouted workload has an attached PVC, drop it directly below at Tier 4
+      const attachedPVCEdge = realDagEdges.find((e) => e.source === u.id);
+      if (attachedPVCEdge) {
+        const pvcNode = tier3.find((p) => p.id === attachedPVCEdge.target);
+        if (pvcNode) {
+          const pDims = getNodeDimensions(pvcNode);
+          const pvcY = tier3Y + dims.height + 35;
+          const pvcX = currentUnroutedX + (dims.width - pDims.width) / 2;
+          customPosMap.set(pvcNode.id, { x: pvcX, y: pvcY });
+        }
+      }
+
+      currentUnroutedX += dims.width + 45;
+    });
+
+    totalDagMaxX = Math.max(maxRoutedX, currentUnroutedX - 45);
+  }
 
   const MIN_SIDE_RAIL_X = 1100;
-  const dockStartX = Math.max(totalDagMaxX + 100, MIN_SIDE_RAIL_X);
+  const dockStartX = Math.max(totalDagMaxX + 80, MIN_SIDE_RAIL_X);
   const dockStartY = Math.max(minRoutedY, 40);
 
   const isTB = direction === "TB";
@@ -282,5 +326,92 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
     };
   });
 
-  return { nodes: layoutedNodes, edges };
+  const nodePosMap = new Map<string, { x: number; y: number; width: number; height: number }>();
+  layoutedNodes.forEach((n) => {
+    const dims = getNodeDimensions(n);
+    nodePosMap.set(n.id, {
+      x: n.position.x,
+      y: n.position.y,
+      width: dims.width,
+      height: dims.height,
+    });
+  });
+
+  const layoutedEdges = edges.map((edge) => {
+    const src = nodePosMap.get(edge.source);
+    const tgt = nodePosMap.get(edge.target);
+    if (!src || !tgt) return edge;
+
+    const scx = src.x + src.width / 2;
+    const scy = src.y + src.height / 2;
+    const tcx = tgt.x + tgt.width / 2;
+    const tcy = tgt.y + tgt.height / 2;
+
+    const dx = tcx - scx;
+    const dy = tcy - scy;
+
+    // 1. Attached Storage Volumes (Workload -> PVC)
+    if (edge.id.startsWith("e-storage-")) {
+      // If the PVC is stacked vertically below the workload
+      if (dy > 40 && Math.abs(dx) < 120) {
+        return {
+          ...edge,
+          sourceHandle: "source-bottom",
+          targetHandle: "target-top",
+        };
+      }
+      return {
+        ...edge,
+        sourceHandle: "source-right",
+        targetHandle: "target-left",
+      };
+    }
+
+    // 2. Cross-workload peer dependencies (e.g. backend -> redis database)
+    if (edge.id.startsWith("e-dep-") || edge.data?.isCrossWorkload) {
+      return edge;
+    }
+
+    // 3. Architecture DAG connections (Ingress -> Service, Service -> Workload)
+    if (isLR) {
+      // If target is directly below source (vertical drop branch)
+      if (dy > 60 && Math.abs(dx) < 80) {
+        return {
+          ...edge,
+          sourceHandle: "source-bottom",
+          targetHandle: "target-top",
+        };
+      }
+      // If target is directly above source
+      if (dy < -60 && Math.abs(dx) < 80) {
+        return {
+          ...edge,
+          sourceHandle: "source-top",
+          targetHandle: "target-bottom",
+        };
+      }
+      // Standard horizontal left-to-right flow
+      return {
+        ...edge,
+        sourceHandle: "source-right",
+        targetHandle: "target-left",
+      };
+    } else {
+      // Vertical (TB) flow:
+      if (Math.abs(dx) > 80 && Math.abs(dy) < 60) {
+        return {
+          ...edge,
+          sourceHandle: dx > 0 ? "source-right" : "source-left",
+          targetHandle: dx > 0 ? "target-left" : "target-right",
+        };
+      }
+      return {
+        ...edge,
+        sourceHandle: "source-bottom",
+        targetHandle: "target-top",
+      };
+    }
+  });
+
+  return { nodes: layoutedNodes, edges: layoutedEdges };
 };

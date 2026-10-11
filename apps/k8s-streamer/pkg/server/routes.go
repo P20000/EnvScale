@@ -143,7 +143,7 @@ func SetupRoutes(
 			return
 		}
 
-		pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, cronJobs, jobs, pvcs, pvs, err := clusterManager.GetClusterSnapshot(clusterID)
+		pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, cronJobs, jobs, pvcs, pvs, configMaps, secrets, err := clusterManager.GetClusterSnapshot(clusterID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
@@ -164,6 +164,8 @@ func SetupRoutes(
 			"jobs":         jobs,
 			"pvcs":         pvcs,
 			"pvs":          pvs,
+			"configMaps":   configMaps,
+			"secrets":      secrets,
 		})
 	})
 

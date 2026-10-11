@@ -35,6 +35,14 @@ spec:
               value: "6379"
             - name: DB_HOST
               value: redis-headless-service.testing-todo.svc.cluster.local
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-db-credentials
+                  key: DB_PASSWORD
+          envFrom:
+            - configMapRef:
+                name: app-runtime-config
           resources:
             requests:
               cpu: 50m

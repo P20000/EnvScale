@@ -133,3 +133,58 @@ export interface K8sPVData extends Record<string, unknown> {
   labels?: Record<string, string>;
   createdAt?: string;
 }
+
+export interface PodConfigReference {
+  name: string;
+  type: "volume" | "env" | "envFrom";
+  mountPath?: string;
+  key?: string;
+  optional?: boolean;
+}
+
+export interface PodSecretReference {
+  name: string;
+  type: "volume" | "env" | "envFrom";
+  mountPath?: string;
+  key?: string;
+  optional?: boolean;
+}
+
+export interface K8sConfigMapData extends Record<string, unknown> {
+  name: string;
+  namespace: string;
+  keys: string[];
+  binaryKeys?: string[];
+  dataCount: number;
+  immutable: boolean;
+  labels?: Record<string, string>;
+  mountedByWorkloads?: string[];
+  createdAt?: string;
+  age?: string;
+}
+
+export interface K8sSecretData extends Record<string, unknown> {
+  name: string;
+  namespace: string;
+  type: string;
+  keys: string[]; // Key names only
+  dataCount: number;
+  immutable: boolean;
+  labels?: Record<string, string>;
+  mountedByWorkloads?: string[];
+  createdAt?: string;
+  age?: string;
+}
+
+export interface ChaosFaultEvent {
+  faultId: string;
+  faultType: "crash" | "oom-pressure" | "scale-down" | string;
+  target: string;
+  name: string;
+  namespace: string;
+  clusterId: string;
+  status: "injected" | "cleared" | "failed" | string;
+  message?: string;
+  timestamp: string;
+}
+

@@ -43,6 +43,9 @@ import {
   type Cluster,
   type K8sPVCData,
   type K8sPVData,
+  type K8sConfigMapData,
+  type K8sSecretData,
+  type ChaosFaultEvent,
 } from "./types/topologyTypes";
 import {
   extractServices,
@@ -55,16 +58,8 @@ import {
 } from "./helpers/topologyHelpers";
 import { filterPVCsForDisplay, createPVCReactFlowNodes } from "./helpers/storageHelpers";
 
-export type { ApiToken, NotificationItem, K8sIncidentEvent, HistoryAction, DeleteModalState };
-export {
-  extractServices,
-  extractPods,
-  getPodPrefix,
-  generateDynamicEdges,
-  syncSelectedNode,
-  aggregateNodesWithWorkloads,
-  sanitizeManifestSnapshot,
-};
+export type { ApiToken, NotificationItem, K8sIncidentEvent, HistoryAction, DeleteModalState, ChaosFaultEvent };
+export { extractServices, extractPods, getPodPrefix, generateDynamicEdges, syncSelectedNode, aggregateNodesWithWorkloads, sanitizeManifestSnapshot };
 
 export const defaultInitialNodes: Node[] = [];
 export const defaultInitialEdges: Edge[] = [];
@@ -90,7 +85,10 @@ export interface TopologyState {
   jobs: K8sJobData[];
   pvcs: K8sPVCData[];
   pvs: K8sPVData[];
+  configMaps: K8sConfigMapData[];
+  secrets: K8sSecretData[];
   incidents: K8sIncidentEvent[];
+  activeChaosFaults: Record<string, ChaosFaultEvent>;
   selectedNode: SelectedTarget;
   tokens: ApiToken[];
   notifications: NotificationItem[];
@@ -175,7 +173,10 @@ export const useTopologyStore = create<TopologyState>()(
       jobs: [],
       pvcs: [],
       pvs: [],
+      configMaps: [],
+      secrets: [],
       incidents: [],
+      activeChaosFaults: {},
       selectedNode: null,
       tokens: defaultInitialTokens,
       notifications: defaultInitialNotifications,
@@ -453,6 +454,7 @@ export const useTopologyStore = create<TopologyState>()(
           pvcs: [],
           pvs: [],
           incidents: [],
+          activeChaosFaults: {},
           selectedNode: null,
           notifications: [],
           undoStack: [],

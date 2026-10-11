@@ -135,6 +135,8 @@ func (cm *ClusterManager) GetClusterSnapshot(clusterID string) (
 	[]types.JobStatusDelta,
 	[]types.PVCStatusDelta,
 	[]types.PVStatusDelta,
+	[]types.ConfigMapStatusDelta,
+	[]types.SecretStatusDelta,
 	error,
 ) {
 	cm.mu.RLock()
@@ -142,10 +144,10 @@ func (cm *ClusterManager) GetClusterSnapshot(clusterID string) (
 	cm.mu.RUnlock()
 
 	if !ok {
-		return nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("cluster %s not found", clusterID)
+		return nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("cluster %s not found", clusterID)
 	}
-	pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, cronJobs, jobs, pvcs, pvs := im.GetSnapshot()
-	return pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, cronJobs, jobs, pvcs, pvs, nil
+	pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, cronJobs, jobs, pvcs, pvs, configMaps, secrets := im.GetSnapshot()
+	return pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, cronJobs, jobs, pvcs, pvs, configMaps, secrets, nil
 }
 
 // GetCluster returns the InformerManager associated with the given clusterID.
