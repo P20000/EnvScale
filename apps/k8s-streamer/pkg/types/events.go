@@ -37,6 +37,11 @@ const (
 	EventPVCDeleted = "EVENT_PVC_DELETED"
 	EventPVMutated  = "EVENT_PV_MUTATED"
 	EventPVDeleted  = "EVENT_PV_DELETED"
+
+	EventConfigMapMutated = "EVENT_CONFIGMAP_MUTATED"
+	EventConfigMapDeleted = "EVENT_CONFIGMAP_DELETED"
+	EventSecretMutated    = "EVENT_SECRET_MUTATED"
+	EventSecretDeleted    = "EVENT_SECRET_DELETED"
 )
 
 // K8sIncidentEvent encapsulates authentic Kubernetes v1.Event telemetry
@@ -79,6 +84,8 @@ type PodStatusDelta struct {
 	IsStaticPod    bool                 `json:"isStaticPod,omitempty"`
 	IsControlPlane bool                 `json:"isControlPlane,omitempty"`
 	Volumes        []PodVolumeMountInfo `json:"volumes,omitempty"`
+	ConfigMaps     []PodConfigRef       `json:"configMaps,omitempty"`
+	Secrets        []PodSecretRef       `json:"secrets,omitempty"`
 	CreatedAt      time.Time            `json:"createdAt"`
 }
 
@@ -309,4 +316,50 @@ type PVStatusDelta struct {
 	VolumeSourceType string            `json:"volumeSourceType,omitempty"`
 	Labels           map[string]string `json:"labels,omitempty"`
 	CreatedAt        time.Time         `json:"createdAt"`
+}
+
+// PodConfigRef encapsulates a ConfigMap referenced by a Pod
+type PodConfigRef struct {
+	Name      string `json:"name"`
+	Type      string `json:"type"` // "volume" | "env" | "envFrom"
+	MountPath string `json:"mountPath,omitempty"`
+	Key       string `json:"key,omitempty"`
+	Optional  bool   `json:"optional,omitempty"`
+}
+
+// PodSecretRef encapsulates a Secret referenced by a Pod
+type PodSecretRef struct {
+	Name      string `json:"name"`
+	Type      string `json:"type"` // "volume" | "env" | "envFrom"
+	MountPath string `json:"mountPath,omitempty"`
+	Key       string `json:"key,omitempty"`
+	Optional  bool   `json:"optional,omitempty"`
+}
+
+// ConfigMapStatusDelta encapsulates real-time ConfigMap state updates
+type ConfigMapStatusDelta struct {
+	Name               string            `json:"name"`
+	Namespace          string            `json:"namespace"`
+	Keys               []string          `json:"keys"`
+	BinaryKeys         []string          `json:"binaryKeys,omitempty"`
+	DataCount          int               `json:"dataCount"`
+	Immutable          bool              `json:"immutable"`
+	Labels             map[string]string `json:"labels,omitempty"`
+	MountedByWorkloads []string          `json:"mountedByWorkloads,omitempty"`
+	CreatedAt          time.Time         `json:"createdAt"`
+	Age                string            `json:"age"`
+}
+
+// SecretStatusDelta encapsulates real-time sanitized Secret state updates (strictly metadata)
+type SecretStatusDelta struct {
+	Name               string            `json:"name"`
+	Namespace          string            `json:"namespace"`
+	Type               string            `json:"type"` // e.g. "Opaque", "kubernetes.io/tls"
+	Keys               []string          `json:"keys"` // Key names ONLY — never raw data values
+	DataCount          int               `json:"dataCount"`
+	Immutable          bool              `json:"immutable"`
+	Labels             map[string]string `json:"labels,omitempty"`
+	MountedByWorkloads []string          `json:"mountedByWorkloads,omitempty"`
+	CreatedAt          time.Time         `json:"createdAt"`
+	Age                string            `json:"age"`
 }

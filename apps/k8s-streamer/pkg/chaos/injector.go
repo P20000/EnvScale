@@ -147,12 +147,13 @@ func (inj *Injector) InjectFault(ctx context.Context, clusterID, namespace, name
 
 	case FaultScaleDown:
 		target = "deployment"
-		original, err := inj.injectScaleDown(ctx, clientset, namespace, name)
+		depName, original, err := inj.injectScaleDown(ctx, clientset, namespace, name)
 		if err != nil {
 			inj.emitFaultEvent(clusterID, faultID, string(faultType), target, name, namespace, "failed",
 				fmt.Sprintf("Failed to inject scale-down: %v", err))
 			return "", err
 		}
+		name = depName
 		originalValue = original
 		log.Printf("[Chaos] Scale-down injected — deployment %s/%s scaled to 0 (original replicas: %s)", namespace, name, original)
 
@@ -174,6 +175,19 @@ func (inj *Injector) InjectFault(ctx context.Context, clusterID, namespace, name
 	inj.mu.Lock()
 	inj.activeFaults[faultID] = fault
 	inj.mu.Unlock()
+
+	// For ephemeral crash faults, auto-clear after 15s so the UI has an active latch window
+	if faultType == FaultCrash {
+		go func(fID string) {
+			time.Sleep(15 * time.Second)
+			inj.mu.Lock()
+			_, exists := inj.activeFaults[fID]
+			inj.mu.Unlock()
+			if exists {
+				_ = inj.ClearFault(context.Background(), fID)
+			}
+		}(faultID)
+	}
 
 	inj.emitFaultEvent(clusterID, faultID, string(faultType), target, name, namespace, "injected",
 		fmt.Sprintf("Fault '%s' injected on %s %s/%s", faultType, target, namespace, name))
@@ -326,6 +340,15 @@ func (inj *Injector) recreatePodWithMemoryLimit(ctx context.Context, clientset k
 	}
 	newPod.Spec.Containers[0].Resources.Limits[corev1.ResourceMemory] = limit
 
+	// Ensure memory requests do not exceed limit to satisfy Kubernetes API validation
+	if newPod.Spec.Containers[0].Resources.Requests != nil {
+		if reqMem, ok := newPod.Spec.Containers[0].Resources.Requests[corev1.ResourceMemory]; ok {
+			if reqMem.Cmp(limit) > 0 {
+				newPod.Spec.Containers[0].Resources.Requests[corev1.ResourceMemory] = limit
+			}
+		}
+	}
+
 	if _, err := clientset.CoreV1().Pods(pod.Namespace).Create(ctx, newPod, metav1.CreateOptions{}); err != nil {
 		return fmt.Errorf("failed to recreate pod with OOM pressure: %w", err)
 	}
@@ -344,27 +367,64 @@ func (inj *Injector) clearOOMPressure(ctx context.Context, clientset kubernetes.
 	return err
 }
 
+// resolveDeployment attempts to resolve the parent Deployment name if targetName
+// is a Pod name or ReplicaSet name.
+func resolveDeployment(ctx context.Context, clientset kubernetes.Interface, namespace, targetName string) (string, error) {
+	if _, err := clientset.AppsV1().Deployments(namespace).Get(ctx, targetName, metav1.GetOptions{}); err == nil {
+		return targetName, nil
+	}
+	if pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, targetName, metav1.GetOptions{}); err == nil {
+		for _, ref := range pod.OwnerReferences {
+			if ref.Kind == "ReplicaSet" {
+				if rs, rErr := clientset.AppsV1().ReplicaSets(namespace).Get(ctx, ref.Name, metav1.GetOptions{}); rErr == nil {
+					for _, dRef := range rs.OwnerReferences {
+						if dRef.Kind == "Deployment" {
+							return dRef.Name, nil
+						}
+					}
+					return rs.Name, nil
+				}
+			} else if ref.Kind == "Deployment" {
+				return ref.Name, nil
+			}
+		}
+	}
+	if rs, err := clientset.AppsV1().ReplicaSets(namespace).Get(ctx, targetName, metav1.GetOptions{}); err == nil {
+		for _, ref := range rs.OwnerReferences {
+			if ref.Kind == "Deployment" {
+				return ref.Name, nil
+			}
+		}
+	}
+	return targetName, fmt.Errorf("deployment %s/%s not found", namespace, targetName)
+}
+
 // injectScaleDown patches the target Deployment's replica count to 0.
-// Returns the original replica count as a string for later restoration.
-func (inj *Injector) injectScaleDown(ctx context.Context, clientset kubernetes.Interface, namespace, deploymentName string) (string, error) {
-	dep, err := clientset.AppsV1().Deployments(namespace).Get(ctx, deploymentName, metav1.GetOptions{})
+// Resolves deployment name even if a pod or replicaSet name was passed.
+func (inj *Injector) injectScaleDown(ctx context.Context, clientset kubernetes.Interface, namespace, targetName string) (string, string, error) {
+	depName, err := resolveDeployment(ctx, clientset, namespace, targetName)
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch deployment %s/%s: %w", namespace, deploymentName, err)
+		return "", "", err
+	}
+
+	dep, err := clientset.AppsV1().Deployments(namespace).Get(ctx, depName, metav1.GetOptions{})
+	if err != nil {
+		return "", "", fmt.Errorf("failed to fetch deployment %s/%s: %w", namespace, depName, err)
 	}
 
 	originalReplicas := fmt.Sprintf("%d", *dep.Spec.Replicas)
 
 	patch := `{"spec":{"replicas":0}}`
 	_, err = clientset.AppsV1().Deployments(namespace).Patch(
-		ctx, deploymentName,
+		ctx, depName,
 		types.MergePatchType,
 		[]byte(patch),
 		metav1.PatchOptions{},
 	)
 	if err != nil {
-		return "", fmt.Errorf("failed to scale deployment %s/%s to 0: %w", namespace, deploymentName, err)
+		return "", "", fmt.Errorf("failed to scale deployment %s/%s to 0: %w", namespace, depName, err)
 	}
-	return originalReplicas, nil
+	return depName, originalReplicas, nil
 }
 
 // clearScaleDown restores the target Deployment to its original replica count.

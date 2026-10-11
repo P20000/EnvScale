@@ -27,6 +27,18 @@ export function K8sPVCNode({ data }: { data: K8sPVCData }) {
       className="group relative flex flex-col gap-1.5 p-2.5 rounded-xl border border-cyan-500/30 bg-zinc-950/90 hover:border-cyan-400/60 shadow-lg shadow-cyan-950/20 backdrop-blur-md transition-all duration-200 cursor-pointer min-w-[170px] max-w-[210px]"
       title={`PersistentVolumeClaim: ${data.name} (${phase})`}
     >
+      {/* 4-Cardinal Dynamic Handles */}
+      <Handle type="target" position={Position.Left} id="target-left" isConnectable={false} className="!opacity-0 !w-0 !h-0 pointer-events-none" />
+      <Handle type="target" position={Position.Right} id="target-right" isConnectable={false} className="!opacity-0 !w-0 !h-0 pointer-events-none" />
+      <Handle type="target" position={Position.Top} id="target-top" isConnectable={false} className="!opacity-0 !w-0 !h-0 pointer-events-none" />
+      <Handle type="target" position={Position.Bottom} id="target-bottom" isConnectable={false} className="!opacity-0 !w-0 !h-0 pointer-events-none" />
+
+      <Handle type="source" position={Position.Left} id="source-left" isConnectable={false} className="!opacity-0 !w-0 !h-0 pointer-events-none" />
+      <Handle type="source" position={Position.Right} id="source-right" isConnectable={false} className="!opacity-0 !w-0 !h-0 pointer-events-none" />
+      <Handle type="source" position={Position.Top} id="source-top" isConnectable={false} className="!opacity-0 !w-0 !h-0 pointer-events-none" />
+      <Handle type="source" position={Position.Bottom} id="source-bottom" isConnectable={false} className="!opacity-0 !w-0 !h-0 pointer-events-none" />
+
+      {/* Legacy Fallback Handles */}
       <Handle
         type="target"
         position={isTB ? Position.Top : Position.Left}

@@ -17,6 +17,7 @@ import { ReplicasRevisionsSection } from "./ReplicasRevisionsSection";
 import { JobOverviewSection } from "./JobOverviewSection";
 import { DaemonSetOverviewSection } from "./DaemonSetOverviewSection";
 import { StorageOverviewSection } from "./StorageOverviewSection";
+import { ConfigOverviewSection } from "./ConfigOverviewSection";
 import { getPodPrefix } from "../../../store/helpers/topologyHelpers";
 
 interface OverviewTabProps {
@@ -300,6 +301,10 @@ export function OverviewTab({
                 ))}
               </div>
             </div>
+          )}
+
+          {target.type === "pod" && (
+            <ConfigOverviewSection pod={target.data as K8sPodData} />
           )}
 
           {target.type !== "node" && !(target.data as K8sPodData)?.isStaticPod && (

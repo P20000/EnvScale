@@ -119,6 +119,17 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         target = { type: "job", data: node.data as K8sJobData };
       } else if (node.type === "k8sPVC") {
         target = { type: "pvc", data: node.data as K8sPVCData };
+      } else if (node.type === "k8sGroup") {
+        const groupData = node.data as { name?: string; podSummaries?: Array<{ podData?: K8sPodData }>; pods?: K8sPodData[] };
+        const firstPod = groupData.podSummaries?.[0]?.podData || groupData.pods?.[0];
+        if (firstPod) {
+          target = { type: "pod", data: { ...firstPod, ownerName: groupData.name } };
+        }
+      } else if (node.type === "k8sWorkload") {
+        const wData = node.data as { name?: string; pods?: K8sPodData[] };
+        if (wData.pods && wData.pods[0]) {
+          target = { type: "pod", data: { ...wData.pods[0], ownerName: wData.name } };
+        }
       }
       setSelectedNode(target);
       onSelectTarget(target);

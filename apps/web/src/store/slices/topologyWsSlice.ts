@@ -15,6 +15,8 @@ import {
 } from "../helpers/topologyHelpers";
 import { handleJobWsEvent } from "../helpers/wsEventHandlers";
 import { handlePVCWsEvent, handlePVWsEvent } from "../helpers/storageHelpers";
+import { handleConfigMapWsEvent, handleSecretWsEvent } from "../helpers/configHelpers";
+import { handleChaosWsEvent } from "../helpers/chaosHelpers";
 import { handleSnapshotSync } from "./topologySnapshotHandler";
 
 export function handleWsMessage(
@@ -451,5 +453,28 @@ export function handleWsMessage(
     const currentPVs = state.pvs || [];
     const updatedPVs = handlePVWsEvent(currentPVs, payloadData, true);
     set({ pvs: updatedPVs });
+  } else if (eventType === "EVENT_CONFIGMAP_MUTATED" || eventType === "EVENT_CONFIGMAP_ADDED") {
+    const currentCMs = state.configMaps || [];
+    const updatedCMs = handleConfigMapWsEvent(currentCMs, payloadData, false);
+    set({ configMaps: updatedCMs });
+  } else if (eventType === "EVENT_CONFIGMAP_DELETED") {
+    const currentCMs = state.configMaps || [];
+    const updatedCMs = handleConfigMapWsEvent(currentCMs, payloadData, true);
+    set({ configMaps: updatedCMs });
+  } else if (eventType === "EVENT_SECRET_MUTATED" || eventType === "EVENT_SECRET_ADDED") {
+    const currentSecrets = state.secrets || [];
+    const updatedSecrets = handleSecretWsEvent(currentSecrets, payloadData, false);
+    set({ secrets: updatedSecrets });
+  } else if (eventType === "EVENT_SECRET_DELETED") {
+    const currentSecrets = state.secrets || [];
+    const updatedSecrets = handleSecretWsEvent(currentSecrets, payloadData, true);
+    set({ secrets: updatedSecrets });
+  } else if (eventType === "EVENT_CHAOS_FAULT_INJECTED" || eventType === "EVENT_CHAOS_FAULT_CLEARED") {
+    const updatedFaults = handleChaosWsEvent(
+      state.activeChaosFaults || {},
+      payloadData,
+      eventType === "EVENT_CHAOS_FAULT_CLEARED"
+    );
+    set({ activeChaosFaults: updatedFaults });
   }
 }

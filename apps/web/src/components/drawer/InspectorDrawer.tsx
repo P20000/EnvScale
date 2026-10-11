@@ -10,6 +10,7 @@ import { OverviewTab } from "./inspector/OverviewTab";
 import { LogsTab } from "./inspector/LogsTab";
 import { MetricsTab } from "./inspector/MetricsTab";
 import { ChaosTab } from "./inspector/ChaosTab";
+import { STREAMER_BASE_URL } from "../../config/api";
 
 export type SelectedTarget =
   | { type: "pod"; data: K8sPodData }
@@ -46,24 +47,26 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
 
   const triggerChaos = async (faultType: "crash" | "oom-pressure" | "scale-down", actionLabel: string) => {
     if (!target) return;
-    setChaosActionMsg(`Injecting ${actionLabel} into ${target.data.name}...`);
+    const podData = target.data as K8sPodData;
+    const targetWorkloadName = podData.labels?.app || podData.ownerName || target.data.name;
+    const nameToInject = faultType === "scale-down" ? targetWorkloadName : target.data.name;
+
+    setChaosActionMsg(`Injecting ${actionLabel} into ${nameToInject}...`);
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
       const clusterId = useTopologyStore.getState().activeCluster;
       if (!clusterId) {
         setChaosActionMsg("Error: No active cluster selected.");
         return;
       }
-      const namespace = (target.data as K8sPodData).namespace || "default";
+      const namespace = podData.namespace || "default";
 
-      const res = await fetch(`${API_BASE_URL}/api/v1/chaos/inject`, {
+      const res = await fetch(`${STREAMER_BASE_URL}/api/v1/chaos/inject`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({
           clusterId: clusterId,
           namespace: namespace,
-          name: target.data.name,
+          name: nameToInject,
           faultType: faultType,
         }),
       });
@@ -71,11 +74,33 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
       if (res.ok) {
         setChaosActionMsg(`[CHAOS FAULT INJECTED]: ${actionLabel} applied live to cluster.`);
       } else {
-        setChaosActionMsg(`[CHAOS FAULT DISPATCHED]: ${actionLabel} sent to streaming engine.`);
+        const errText = await res.text();
+        setChaosActionMsg(`[CHAOS FAILED]: ${errText || "Cluster rejected injection request"}`);
+      }
+      setTimeout(() => setChaosActionMsg(null), 5000);
+    } catch (err: unknown) {
+      setChaosActionMsg(`[CHAOS ERROR]: ${err instanceof Error ? err.message : String(err)}`);
+      setTimeout(() => setChaosActionMsg(null), 5000);
+    }
+  };
+
+  const clearChaos = async (faultId: string) => {
+    try {
+      setChaosActionMsg("Reverting injected chaos fault...");
+      const res = await fetch(`${STREAMER_BASE_URL}/api/v1/chaos/inject`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ faultId }),
+      });
+      if (res.ok) {
+        setChaosActionMsg("[CHAOS HEALED]: Cluster fault reversed successfully.");
+      } else {
+        const errText = await res.text();
+        setChaosActionMsg(`[CLEAR FAILED]: ${errText || "Could not reverse fault"}`);
       }
       setTimeout(() => setChaosActionMsg(null), 4000);
-    } catch {
-      setChaosActionMsg(`[CHAOS FAULT DISPATCHED]: ${actionLabel} sent to streaming engine.`);
+    } catch (err: unknown) {
+      setChaosActionMsg(`[CLEAR ERROR]: ${err instanceof Error ? err.message : String(err)}`);
       setTimeout(() => setChaosActionMsg(null), 4000);
     }
   };
@@ -233,6 +258,7 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
             target={target}
             chaosActionMsg={chaosActionMsg}
             triggerChaos={triggerChaos}
+            clearChaos={clearChaos}
           />
         )}
       </div>

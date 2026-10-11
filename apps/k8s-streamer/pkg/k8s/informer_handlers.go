@@ -41,6 +41,8 @@ func (im *InformerManager) extractPodDelta(pod *corev1.Pod) types.PodStatusDelta
 		for _, cs := range pod.Status.ContainerStatuses {
 			if cs.State.Terminated != nil && cs.State.Terminated.Reason != "" {
 				phase = cs.State.Terminated.Reason
+			} else if cs.LastTerminationState.Terminated != nil && cs.LastTerminationState.Terminated.Reason == "OOMKilled" {
+				phase = "OOMKilled"
 			} else if cs.State.Waiting != nil && cs.State.Waiting.Reason != "" {
 				phase = cs.State.Waiting.Reason
 			}
@@ -79,6 +81,8 @@ func (im *InformerManager) extractPodDelta(pod *corev1.Pod) types.PodStatusDelta
 		isStaticPod = true
 	}
 
+	cms, secs := ExtractPodConfigReferences(pod)
+
 	return types.PodStatusDelta{
 		Name:           pod.Name,
 		Namespace:      pod.Namespace,
@@ -94,6 +98,8 @@ func (im *InformerManager) extractPodDelta(pod *corev1.Pod) types.PodStatusDelta
 		IsStaticPod:    isStaticPod,
 		IsControlPlane: isControlPlane,
 		Volumes:        ExtractPodVolumeClaims(pod),
+		ConfigMaps:     cms,
+		Secrets:        secs,
 		CreatedAt:      pod.CreationTimestamp.Time.UTC(),
 	}
 }

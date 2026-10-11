@@ -1,7 +1,9 @@
 import { Handle, Position } from "@xyflow/react";
 import { MdViewInAr as Icon } from "react-icons/md";
 import { useUIStore } from "../../store/useUIStore";
-import type { PodVolumeInfo } from "../../store/types/topologyTypes";
+import { useTopologyStore } from "../../store/useTopologyStore";
+import { getActivePodFault } from "../../store/helpers/chaosHelpers";
+import type { PodVolumeInfo, PodConfigReference, PodSecretReference } from "../../store/types/topologyTypes";
 
 export interface K8sPodData extends Record<string, unknown> {
   name: string;
@@ -26,6 +28,8 @@ export interface K8sPodData extends Record<string, unknown> {
   containers?: unknown[];
   containerStatuses?: unknown[];
   volumes?: PodVolumeInfo[];
+  configMaps?: PodConfigReference[];
+  secrets?: PodSecretReference[];
 }
 
 export function K8sPodNode({ data }: { data: K8sPodData }) {
@@ -43,6 +47,10 @@ export function K8sPodNode({ data }: { data: K8sPodData }) {
   const terminatedReason = String((terminated?.terminated as Record<string, unknown>)?.reason || terminated?.reason || "");
   const rawPhase = String(data.phase || data.status || "").trim();
 
+  const activeChaosFaults = useTopologyStore((s) => s.activeChaosFaults);
+  const podFault = getActivePodFault(activeChaosFaults, data.name);
+  const isChaosActive = Boolean(podFault);
+
   const isTerminating = Boolean(
     data.isTerminating ||
     rawPhase === "Terminating" ||
@@ -54,7 +62,11 @@ export function K8sPodNode({ data }: { data: K8sPodData }) {
   let textClass = "text-zinc-500";
   let badgeLabel = "";
 
-  if (isTerminating) {
+  if (isChaosActive) {
+    dotClass = "bg-rose-500 animate-ping";
+    textClass = "text-rose-300 font-bold";
+    badgeLabel = `⚡ ${podFault?.faultType.toUpperCase() || "CHAOS"}`;
+  } else if (isTerminating) {
     dotClass = "bg-zinc-600 animate-pulse";
     textClass = "text-zinc-500";
     badgeLabel = "DRAINING";
@@ -84,7 +96,9 @@ export function K8sPodNode({ data }: { data: K8sPodData }) {
 
   const restarts = Number(data.restarts ?? 0);
 
-  const containerClass = isTerminating
+  const containerClass = isChaosActive
+    ? "h-8 w-[208px] bg-rose-950/40 border border-rose-500/80 rounded-md px-2 flex items-center justify-between shadow-lg shadow-rose-950/60 ring-1 ring-rose-500/50 select-none group relative transition-all duration-300 animate-pulse"
+    : isTerminating
     ? "h-8 w-[208px] bg-[#09090b]/60 border border-dashed border-zinc-700/60 rounded-md px-2 flex items-center justify-between opacity-40 grayscale select-none group relative transition-all duration-300"
     : "h-8 w-[208px] bg-[#09090b] border border-zinc-800/80 rounded-md px-2 flex items-center justify-between transition-colors hover:border-zinc-600 select-none group relative";
 
@@ -93,6 +107,18 @@ export function K8sPodNode({ data }: { data: K8sPodData }) {
       className={containerClass}
       title={isTerminating ? `${data.name} (Terminating / Draining)` : data.name}
     >
+      {/* 4-Cardinal Dynamic Handles */}
+      <Handle type="target" position={Position.Left} id="target-left" isConnectable={false} className="!opacity-0 !w-0 !h-0 pointer-events-none" />
+      <Handle type="target" position={Position.Right} id="target-right" isConnectable={false} className="!opacity-0 !w-0 !h-0 pointer-events-none" />
+      <Handle type="target" position={Position.Top} id="target-top" isConnectable={false} className="!opacity-0 !w-0 !h-0 pointer-events-none" />
+      <Handle type="target" position={Position.Bottom} id="target-bottom" isConnectable={false} className="!opacity-0 !w-0 !h-0 pointer-events-none" />
+
+      <Handle type="source" position={Position.Left} id="source-left" isConnectable={false} className="!opacity-0 !w-0 !h-0 pointer-events-none" />
+      <Handle type="source" position={Position.Right} id="source-right" isConnectable={false} className="!opacity-0 !w-0 !h-0 pointer-events-none" />
+      <Handle type="source" position={Position.Top} id="source-top" isConnectable={false} className="!opacity-0 !w-0 !h-0 pointer-events-none" />
+      <Handle type="source" position={Position.Bottom} id="source-bottom" isConnectable={false} className="!opacity-0 !w-0 !h-0 pointer-events-none" />
+
+      {/* Legacy Fallback Handles */}
       <Handle
         type="target"
         position={isTB ? Position.Top : Position.Left}
