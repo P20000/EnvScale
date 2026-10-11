@@ -310,6 +310,7 @@ func (im *InformerManager) Start(stopCh <-chan struct{}) {
 	})
 
 	im.setupJobInformer()
+	im.setupStorageInformers()
 
 	im.factory.Start(stopCh)
 	go im.startMetricsPulse(stopCh)
@@ -361,6 +362,8 @@ func (im *InformerManager) GetSnapshot() (
 	incidents []types.K8sIncidentEvent,
 	cronJobs []types.CronJobStatusDelta,
 	jobs []types.JobStatusDelta,
+	pvcs []types.PVCStatusDelta,
+	pvs []types.PVStatusDelta,
 ) {
 	im.factory.WaitForCacheSync(im.stopCh)
 	metricsMap := im.FetchPodMetricsMap()
@@ -472,6 +475,8 @@ func (im *InformerManager) GetSnapshot() (
 	}
 
 	jobs = im.getJobsSnapshot()
+	pvcs = im.getPVCSnapshot()
+	pvs = im.getPVSnapshot()
 
-	return pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, cronJobs, jobs
+	return pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, cronJobs, jobs, pvcs, pvs
 }

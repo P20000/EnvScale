@@ -41,6 +41,8 @@ import {
   type HistoryAction,
   type DeleteModalState,
   type Cluster,
+  type K8sPVCData,
+  type K8sPVData,
 } from "./types/topologyTypes";
 import {
   extractServices,
@@ -51,6 +53,7 @@ import {
   aggregateNodesWithWorkloads,
   sanitizeManifestSnapshot,
 } from "./helpers/topologyHelpers";
+import { filterPVCsForDisplay, createPVCReactFlowNodes } from "./helpers/storageHelpers";
 
 export type { ApiToken, NotificationItem, K8sIncidentEvent, HistoryAction, DeleteModalState };
 export {
@@ -85,6 +88,8 @@ export interface TopologyState {
   daemonSets: K8sDaemonSetData[];
   cronJobs: K8sCronJobData[];
   jobs: K8sJobData[];
+  pvcs: K8sPVCData[];
+  pvs: K8sPVData[];
   incidents: K8sIncidentEvent[];
   selectedNode: SelectedTarget;
   tokens: ApiToken[];
@@ -168,6 +173,8 @@ export const useTopologyStore = create<TopologyState>()(
       daemonSets: [],
       cronJobs: [],
       jobs: [],
+      pvcs: [],
+      pvs: [],
       incidents: [],
       selectedNode: null,
       tokens: defaultInitialTokens,
@@ -359,11 +366,11 @@ export const useTopologyStore = create<TopologyState>()(
       },
 
       applyDagreLayout: (direction) => {
-        const { layoutDirection, showCompletedPods, showCompletedJobs, showSystemNamespaces, selectedNamespaces } = useUIStore.getState();
+        const { layoutDirection, showCompletedPods, showCompletedJobs, showStorage, showSystemNamespaces, selectedNamespaces } = useUIStore.getState();
         const targetDir = direction || layoutDirection || "TB";
-        const { rawNodes, nodes, edges, deployments, replicaSets, daemonSets, cronJobs, jobs } = get();
+        const { rawNodes, nodes, edges, deployments, replicaSets, daemonSets, cronJobs, jobs, pvcs } = get();
         const baseNodes = rawNodes && rawNodes.length > 0 ? rawNodes : nodes;
-        if (baseNodes.length === 0 && (!daemonSets || daemonSets.length === 0) && (!cronJobs || cronJobs.length === 0) && (!jobs || jobs.length === 0)) return;
+        if (baseNodes.length === 0 && (!daemonSets || daemonSets.length === 0) && (!cronJobs || cronJobs.length === 0) && (!jobs || jobs.length === 0) && (!pvcs || pvcs.length === 0)) return;
 
         const aggregatedNodes = aggregateNodesWithWorkloads(
           baseNodes,
@@ -378,10 +385,14 @@ export const useTopologyStore = create<TopologyState>()(
           showCompletedJobs
         );
 
-        const dynamicEdges = generateDynamicEdges(aggregatedNodes, edges);
+        const visiblePVCs = filterPVCsForDisplay(pvcs, showStorage, showSystemNamespaces, selectedNamespaces);
+        const pvcNodes = createPVCReactFlowNodes(visiblePVCs);
+        const allCanvasNodes = [...aggregatedNodes, ...pvcNodes];
+
+        const dynamicEdges = generateDynamicEdges(allCanvasNodes, edges);
 
         const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
-          aggregatedNodes,
+          allCanvasNodes,
           dynamicEdges,
           targetDir
         );
@@ -439,6 +450,8 @@ export const useTopologyStore = create<TopologyState>()(
           daemonSets: [],
           cronJobs: [],
           jobs: [],
+          pvcs: [],
+          pvs: [],
           incidents: [],
           selectedNode: null,
           notifications: [],
@@ -459,26 +472,11 @@ export const useTopologyStore = create<TopologyState>()(
         notifications: state.notifications,
       }),
       onRehydrateStorage: () => (state) => {
-        if (state) {
-          let needsUpdate = false;
-          const parsedClusters: Cluster[] = [];
-          for (const c of (state.clusters || [])) {
-            if (typeof c === "string") {
-              if (c) parsedClusters.push({ id: `migrated-${Date.now()}`, name: c });
-              needsUpdate = true;
-            } else if (c && c.name) {
-              parsedClusters.push(c);
-            } else {
-              needsUpdate = true;
-            }
-          }
-          
-          if (needsUpdate) {
-            useTopologyStore.setState({
-              clusters: parsedClusters,
-              activeCluster: state.activeCluster,
-            });
-          }
+        if (!state) return;
+        const raw = state.clusters || [];
+        const parsed = raw.map((c, i) => (typeof c === "string" ? { id: `migrated-${i}`, name: c } : c)).filter((c): c is Cluster => Boolean(c && c.name));
+        if (parsed.length !== raw.length || raw.some((c) => typeof c === "string")) {
+          useTopologyStore.setState({ clusters: parsed, activeCluster: state.activeCluster });
         }
       },
     }

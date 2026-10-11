@@ -14,6 +14,7 @@ import {
   calculateClusterCapacity,
 } from "../helpers/topologyHelpers";
 import { handleJobWsEvent } from "../helpers/wsEventHandlers";
+import { handlePVCWsEvent, handlePVWsEvent } from "../helpers/storageHelpers";
 import { handleSnapshotSync } from "./topologySnapshotHandler";
 
 export function handleWsMessage(
@@ -189,6 +190,7 @@ export function handleWsMessage(
   ) {
     const svcName = String(payloadData.name || payloadData.serviceName || payloadData.id || "");
     if (!svcName) return;
+    const svcNs = String(payloadData.namespace || "default");
 
     const idx = currentRaw.findIndex(
       (n) => n.id === svcName || n.id === `service-${svcName}` || (n.data as K8sServiceData)?.name === svcName
@@ -197,10 +199,17 @@ export function handleWsMessage(
     let updatedRaw: Node[];
     if (idx >= 0) {
       const existing = currentRaw[idx];
+      const existingData = existing.data as K8sServiceData;
       updatedRaw = [...currentRaw];
       updatedRaw[idx] = {
         ...existing,
-        data: { ...(existing.data as K8sServiceData), ...payloadData, name: svcName },
+        data: {
+          ...existingData,
+          ...payloadData,
+          name: svcName,
+          namespace: payloadData.namespace ? String(payloadData.namespace) : existingData?.namespace || svcNs,
+          selector: (payloadData.selector as Record<string, string>) || existingData?.selector,
+        },
       };
     } else {
       const newSvc: Node = {
@@ -209,6 +218,7 @@ export function handleWsMessage(
         position: { x: 350, y: 150 },
         data: {
           name: svcName,
+          namespace: svcNs,
           type: String(payloadData.type || "ClusterIP"),
           port: String(payloadData.port || ":8080"),
           selector: payloadData.selector as Record<string, string>,
@@ -423,5 +433,23 @@ export function handleWsMessage(
     const updatedJobs = handleJobWsEvent(currentJobs, payloadData, true);
     set({ jobs: updatedJobs });
     state.applyDagreLayout();
+  } else if (eventType === "EVENT_PVC_MUTATED" || eventType === "EVENT_PVC_ADDED") {
+    const currentPVCs = state.pvcs || [];
+    const updatedPVCs = handlePVCWsEvent(currentPVCs, payloadData, false);
+    set({ pvcs: updatedPVCs });
+    state.applyDagreLayout();
+  } else if (eventType === "EVENT_PVC_DELETED") {
+    const currentPVCs = state.pvcs || [];
+    const updatedPVCs = handlePVCWsEvent(currentPVCs, payloadData, true);
+    set({ pvcs: updatedPVCs });
+    state.applyDagreLayout();
+  } else if (eventType === "EVENT_PV_MUTATED" || eventType === "EVENT_PV_ADDED") {
+    const currentPVs = state.pvs || [];
+    const updatedPVs = handlePVWsEvent(currentPVs, payloadData, false);
+    set({ pvs: updatedPVs });
+  } else if (eventType === "EVENT_PV_DELETED") {
+    const currentPVs = state.pvs || [];
+    const updatedPVs = handlePVWsEvent(currentPVs, payloadData, true);
+    set({ pvs: updatedPVs });
   }
 }

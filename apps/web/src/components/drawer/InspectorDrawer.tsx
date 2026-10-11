@@ -4,7 +4,7 @@ import type { K8sPodData } from "../canvas/K8sPod";
 import type { K8sNodeData } from "../canvas/K8sNode";
 import type { K8sServiceData } from "../canvas/K8sService";
 import type { K8sIngressData } from "../canvas/K8sIngress";
-import type { K8sDaemonSetData, K8sCronJobData, K8sJobData } from "../../store/types/topologyTypes";
+import type { K8sDaemonSetData, K8sCronJobData, K8sJobData, K8sPVCData } from "../../store/types/topologyTypes";
 import { useTopologyStore } from "../../store/useTopologyStore";
 import { OverviewTab } from "./inspector/OverviewTab";
 import { LogsTab } from "./inspector/LogsTab";
@@ -19,6 +19,7 @@ export type SelectedTarget =
   | { type: "daemonset"; data: K8sDaemonSetData }
   | { type: "cronjob"; data: K8sCronJobData }
   | { type: "job"; data: K8sJobData }
+  | { type: "pvc"; data: K8sPVCData }
   | null;
 
 
@@ -92,6 +93,10 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
       const jobData = target.data as K8sJobData;
       return { label: `Batch Task (${jobData.status})`, pct: jobData.status === "Completed" ? 100 : 50 };
     }
+    if (target.type === "pvc") {
+      const pvcData = target.data as K8sPVCData;
+      return { label: `Storage (${pvcData.phase})`, pct: pvcData.phase === "Bound" ? 100 : 30 };
+    }
     const podData = target.data as K8sPodData;
     const mcores = podData.cpuUsageMcores ?? 0;
     if (!clusterCpuCores || clusterCpuCores === 0) {
@@ -113,6 +118,10 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
       const jobData = target.data as K8sJobData;
       return { label: `${jobData.succeeded ?? 0}/${jobData.completions ?? 1} pods`, pct: ((jobData.succeeded ?? 0) / (jobData.completions || 1)) * 100 };
     }
+    if (target.type === "pvc") {
+      const pvcData = target.data as K8sPVCData;
+      return { label: pvcData.capacity || pvcData.requestedSize || "Dynamic", pct: 100 };
+    }
     const podData = target.data as K8sPodData;
     const mib = podData.memoryUsageMiB ?? 0;
     if (!clusterMemoryGB || clusterMemoryGB === 0) {
@@ -132,6 +141,8 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
               ? "bg-violet-400"
               : target.type === "daemonset"
               ? "bg-purple-400"
+              : target.type === "pvc"
+              ? "bg-cyan-400"
               : target.type === "job"
               ? ((target.data as K8sJobData).status === "Completed" ? "bg-emerald-500" : (target.data as K8sJobData).status === "Failed" ? "bg-rose-500" : "bg-blue-500 animate-pulse")
               : target.type === "cronjob"
@@ -142,6 +153,11 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
             <h3 className="text-sm font-bold text-neutral-100 truncate">{target.data.name}</h3>
             <p className="text-[11px] font-mono text-neutral-400 capitalize flex items-center gap-1.5 flex-wrap">
               Type: {target.type}
+              {target.type === "pvc" && (
+                <span className="rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.2 text-[10px] font-mono text-cyan-300">
+                  PERSISTENT VOLUME CLAIM
+                </span>
+              )}
               {target.type === "ingress" && (
                 <span className="rounded border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.2 text-[10px] font-mono text-violet-300">
                   INGRESS ROUTER
@@ -174,7 +190,7 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
       </div>
 
       <div className="flex border-b border-neutral-800 bg-neutral-950 px-2 text-xs font-medium">
-        {(["overview", "logs", "metrics", "chaos"] as const).map((tab) => (
+        {(target.type === "pvc" ? (["overview"] as const) : (["overview", "logs", "metrics", "chaos"] as const)).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -184,7 +200,7 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
                 : "border-transparent text-neutral-400 hover:text-neutral-200"
             }`}
           >
-            {tab === "metrics" ? "Usage" : tab === "logs" ? "Live Logs" : tab}
+            {tab === "overview" && target.type === "pvc" ? "Storage Spec" : tab === "metrics" ? "Usage" : tab === "logs" ? "Live Logs" : tab}
           </button>
         ))}
       </div>

@@ -42,6 +42,10 @@ export const WS_EVENTS = {
   LOG_LINE: 'EVENT_LOG_LINE',
   ALERT_TRIGGERED: 'EVENT_ALERT_TRIGGERED',
   HEARTBEAT: 'EVENT_HEARTBEAT',
+  PVC_MUTATED: 'EVENT_PVC_MUTATED',
+  PVC_DELETED: 'EVENT_PVC_DELETED',
+  PV_MUTATED: 'EVENT_PV_MUTATED',
+  PV_DELETED: 'EVENT_PV_DELETED',
 } as const;
 
 export type WSEventType = typeof WS_EVENTS[keyof typeof WS_EVENTS];
@@ -66,6 +70,7 @@ export interface PodTopologyData {
   cpuUsagePct?: number;
   memoryUsageMb?: number;
   labels: Record<string, string>;
+  volumes?: PodVolumeMountInfo[];
   createdAt: string;
 }
 
@@ -97,4 +102,45 @@ export interface LogStreamPayload {
   log: string;
   stream: 'stdout' | 'stderr';
   timestamp: string;
+}
+
+// Pod Volume Mount Information
+export interface PodVolumeMountInfo {
+  name: string;
+  pvcName?: string;
+  mountPath?: string;
+  readOnly?: boolean;
+}
+
+// PVC State Payload for Topology Engine
+export type PVCStatusPhase = 'Bound' | 'Pending' | 'Lost';
+
+export interface PVCTopologyData {
+  name: string;
+  namespace: string;
+  phase: PVCStatusPhase;
+  volumeName: string;
+  storageClassName: string;
+  requestedSize: string;
+  capacity: string;
+  accessModes: string[];
+  volumeMode: string;
+  labels?: Record<string, string>;
+  mountedByPods?: string[];
+  createdAt: string;
+}
+
+// Physical PersistentVolume Data Payload
+export interface PVTopologyData {
+  name: string;
+  phase: 'Available' | 'Bound' | 'Released' | 'Failed';
+  capacity: string;
+  accessModes: string[];
+  reclaimPolicy: string;
+  storageClassName: string;
+  claimRefName?: string;
+  claimRefNs?: string;
+  volumeSourceType: string;
+  labels?: Record<string, string>;
+  createdAt: string;
 }

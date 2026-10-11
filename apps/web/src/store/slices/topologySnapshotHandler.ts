@@ -4,7 +4,7 @@ import type { K8sNodeData } from "../../components/canvas/K8sNode";
 import type { K8sServiceData } from "../../components/canvas/K8sService";
 import type { K8sIngressData } from "../../components/canvas/K8sIngress";
 import type { K8sReplicaSetData, K8sDeploymentData } from "../helpers/rolloutHelpers";
-import type { K8sDaemonSetData, K8sCronJobData, K8sJobData } from "../types/topologyTypes";
+import type { K8sDaemonSetData, K8sCronJobData, K8sJobData, K8sPVCData, K8sPVData } from "../types/topologyTypes";
 import type { TopologyState } from "../useTopologyStore";
 import { extractServices, extractPods, calculateClusterCapacity } from "../helpers/topologyHelpers";
 import { useUIStore } from "../useUIStore";
@@ -43,12 +43,14 @@ export function handleSnapshotSync(
   snapshotServices.forEach((svc) => {
     const name = String(svc.name || svc.id || "");
     if (!name) return;
+    const ns = String(svc.namespace || "default");
     newRawNodes.push({
       id: `service-${name}`,
       type: "k8sService",
       position: { x: 350, y: 150 },
       data: {
         name,
+        namespace: ns,
         type: String(svc.type || "ClusterIP"),
         port: String(svc.port || ":8080"),
         selector: svc.selector as Record<string, string>,
@@ -103,6 +105,8 @@ export function handleSnapshotSync(
   const snapshotDS = Array.isArray(payloadData.daemonSets) ? (payloadData.daemonSets as K8sDaemonSetData[]) : [];
   const snapshotCronJobs = Array.isArray(payloadData.cronJobs) ? (payloadData.cronJobs as K8sCronJobData[]) : [];
   const snapshotJobs = Array.isArray(payloadData.jobs) ? (payloadData.jobs as K8sJobData[]) : [];
+  const snapshotPVCs = Array.isArray(payloadData.pvcs) ? (payloadData.pvcs as K8sPVCData[]) : [];
+  const snapshotPVs = Array.isArray(payloadData.pvs) ? (payloadData.pvs as K8sPVData[]) : [];
 
   let updatedNamespaces = useUIStore.getState().selectedNamespaces;
   if (updatedNamespaces.length === 0) {
@@ -133,6 +137,8 @@ export function handleSnapshotSync(
     daemonSets: snapshotDS,
     cronJobs: snapshotCronJobs,
     jobs: snapshotJobs,
+    pvcs: snapshotPVCs,
+    pvs: snapshotPVs,
   });
   state.applyDagreLayout();
 }

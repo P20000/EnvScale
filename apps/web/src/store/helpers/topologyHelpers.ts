@@ -3,7 +3,7 @@ import type { K8sPodData } from "../../components/canvas/K8sPod";
 import type { K8sNodeData } from "../../components/canvas/K8sNode";
 import type { K8sServiceData } from "../../components/canvas/K8sService";
 import type { K8sIngressData } from "../../components/canvas/K8sIngress";
-import type { K8sDaemonSetData, K8sCronJobData, K8sJobData } from "../types/topologyTypes";
+import type { K8sDaemonSetData, K8sCronJobData, K8sJobData, K8sPVCData } from "../types/topologyTypes";
 import type { SelectedTarget } from "../../components/drawer/InspectorDrawer";
 import { calculateRolloutInfo, type K8sDeploymentData, type K8sReplicaSetData } from "./rolloutHelpers";
 export {
@@ -66,6 +66,8 @@ export const syncSelectedNode = (nodes: Node[], currentSelected: SelectedTarget)
       return { type: "daemonset", data: matched.data as K8sDaemonSetData };
     } else if (matched.type === "k8sCronJob") {
       return { type: "cronjob", data: matched.data as K8sCronJobData };
+    } else if (matched.type === "k8sPVC") {
+      return { type: "pvc", data: matched.data as K8sPVCData };
     }
   }
   return currentSelected;
@@ -243,38 +245,27 @@ export const aggregateNodesWithWorkloads = (
       return !isTerminating && (ph === "running" || ph === "ready" || ph.includes("crash") || ph.includes("oom"));
     });
 
-    const drainingPods = sortedGroupPods.filter((p) => {
-      const pData = p.data as K8sPodData;
-      const ph = String(pData?.phase || pData?.status || "").toLowerCase();
-      return Boolean(pData?.isTerminating || ph === "terminating");
-    });
-
-    const activeCap = Math.max(2, activeRunningPods.length + drainingPods.length);
-    const finalGroupPods = sortedGroupPods.slice(0, activeCap);
-
     const firstPodData = groupPods[0]?.data as K8sPodData | undefined;
     const ns = firstPodData?.namespace || "default";
     const rolloutInfo = calculateRolloutInfo(prefix, ns, deployments, replicaSets);
+    const podsData = groupPods.map((p) => p.data as K8sPodData);
+
+    const isStateful = prefix.toLowerCase().includes("db") || prefix.toLowerCase().includes("redis") || prefix.toLowerCase().includes("stateful");
+    const workloadType = isStateful ? "StatefulSet" : "Deployment";
 
     processedNodes.push({
       id: groupId,
       type: "k8sGroup",
       position: { x: 0, y: 0 },
-      data: { name: prefix, namespace: ns, rolloutInfo },
-    });
-
-    finalGroupPods.forEach((pod, index) => {
-      const col = index % 2;
-      const row = Math.floor(index / 2);
-      const x = 16 + col * (208 + 10);
-      const y = 40 + row * (32 + 10);
-
-      processedNodes.push({
-        ...pod,
-        parentId: groupId,
-        extent: "parent",
-        position: { x, y },
-      });
+      data: {
+        name: prefix,
+        namespace: ns,
+        workloadType,
+        rolloutInfo,
+        pods: podsData,
+        replicas: groupPods.length,
+        readyReplicas: activeRunningPods.length,
+      },
     });
   });
 

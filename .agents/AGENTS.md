@@ -85,6 +85,7 @@ When generating code or proposing implementations, AI assistants MUST strictly a
 - **No Silent Error Swallowing:** Do NOT wrap code in silent `try/catch` blocks that return empty fallback arrays or fake data. Log real errors and surface actionable feedback via standard API responses or toast notifications.
 - **Sub-Second Streaming:** Ensure WebSocket state deltas (`EVENT_POD_STATUS_CHANGED`, `EVENT_NODE_MUTATED`) deliver payload updates to the React Flow Zustand store within < 200ms.
 - **Preserve Documentation:** Do not erase docstrings, inline comments, or existing README/milestones files.
+- **No Redundant Documentation:** NEVER create duplicate, redundant, or overlapping markdown documentation files (`docs/*.md`). Explanations, answering user inquiries, summaries, or architectural discussions must be delivered directly in chat responses unless the user explicitly requests creating a dedicated markdown file. Never create new documents that duplicate existing authoritative sources of truth (e.g., `docs/milestones.md`, `docs/features.md`, `docs/system-architecture.md`, `docs/detailed-design.md`); update the canonical files instead of fragmenting information.
 
 ---
 

@@ -16,6 +16,7 @@ import { LogRow } from "../LogRow";
 import { ReplicasRevisionsSection } from "./ReplicasRevisionsSection";
 import { JobOverviewSection } from "./JobOverviewSection";
 import { DaemonSetOverviewSection } from "./DaemonSetOverviewSection";
+import { StorageOverviewSection } from "./StorageOverviewSection";
 import { getPodPrefix } from "../../../store/helpers/topologyHelpers";
 
 interface OverviewTabProps {
@@ -69,7 +70,9 @@ export function OverviewTab({
 
   return (
     <div className="space-y-4">
-      {target.type === "ingress" ? (
+      {target.type === "pvc" ? (
+        <StorageOverviewSection pvc={target.data} />
+      ) : target.type === "ingress" ? (
         <>
           <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3.5 space-y-2.5">
             <h4 className="text-xs font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
@@ -268,6 +271,30 @@ export function OverviewTab({
                     <span className="text-neutral-200">{agent.name}</span>
                     <span className="text-[10px] px-1.5 py-0.2 rounded border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
                       Resident Agent
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {target.type === "pod" && (target.data as K8sPodData).volumes && (target.data as K8sPodData).volumes!.length > 0 && (
+            <div className="rounded-xl border border-cyan-500/20 bg-neutral-900/50 p-3.5 space-y-2">
+              <h4 className="text-xs font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
+                <span className="text-cyan-400">💾</span>
+                Attached Storage Claims ({(target.data as K8sPodData).volumes!.length})
+              </h4>
+              <div className="space-y-1.5 text-xs font-mono">
+                {(target.data as K8sPodData).volumes!.map((vol) => (
+                  <div key={vol.name} className="flex items-center justify-between p-2 rounded bg-neutral-950 border border-neutral-800">
+                    <div className="flex flex-col min-w-0 pr-2">
+                      <span className="text-cyan-300 font-semibold truncate">{vol.pvcName || vol.name}</span>
+                      {vol.mountPath && (
+                        <span className="text-[10px] text-neutral-400 truncate">{vol.mountPath}</span>
+                      )}
+                    </div>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-neutral-400 shrink-0">
+                      {vol.readOnly ? "RO" : "RW"}
                     </span>
                   </div>
                 ))}

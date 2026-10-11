@@ -15,7 +15,7 @@ import {
   mdiCrosshairsGps,
 } from "@mdi/js";
 
-import { K8sPodNode, K8sWorkerNode, K8sServiceNode, K8sWorkloadNode, K8sIngressNode, K8sGroupNode, K8sDaemonSetNode, K8sCronJobNode, K8sJobNode, K8sCompletedJobsNode, K8sEdge } from "../canvas";
+import { K8sPodNode, K8sWorkerNode, K8sServiceNode, K8sWorkloadNode, K8sIngressNode, K8sGroupNode, K8sDaemonSetNode, K8sCronJobNode, K8sJobNode, K8sCompletedJobsNode, K8sPVCNode, K8sEdge } from "../canvas";
 import type { K8sPodData } from "../canvas/K8sPod";
 import type { K8sNodeData } from "../canvas/K8sNode";
 import type { K8sServiceData } from "../canvas/K8sService";
@@ -27,7 +27,7 @@ import { useK8sStream, type WsTopologyMessage } from "../../hooks/useK8sStream";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
 import { DeleteConfirmationModal } from "../modals/DeleteConfirmationModal";
 
-import type { K8sDaemonSetData, K8sCronJobData, K8sJobData } from "../../store/types/topologyTypes";
+import type { K8sDaemonSetData, K8sCronJobData, K8sJobData, K8sPVCData } from "../../store/types/topologyTypes";
 
 const nodeTypes = {
   k8sPod: K8sPodNode,
@@ -40,6 +40,7 @@ const nodeTypes = {
   k8sCronJob: K8sCronJobNode,
   k8sJob: K8sJobNode,
   k8sCompletedJobs: K8sCompletedJobsNode,
+  k8sPVC: K8sPVCNode,
   k8sWorkload: K8sWorkloadNode,
   k8sIngress: K8sIngressNode,
   k8sGroup: K8sGroupNode,
@@ -73,6 +74,8 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
   const setLayoutDirection = useUIStore((s) => s.setLayoutDirection);
   const showCompletedJobs = useUIStore((s) => s.showCompletedJobs);
   const setShowCompletedJobs = useUIStore((s) => s.setShowCompletedJobs);
+  const showStorage = useUIStore((s) => s.showStorage);
+  const setShowStorage = useUIStore((s) => s.setShowStorage);
 
   const completedJobsCount = (jobs || []).filter(
     (j) => (j.succeeded ?? 0) >= (j.completions ?? 1) || (j.active === 0 && (j.failed ?? 0) === 0)
@@ -114,6 +117,8 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         target = { type: "cronjob", data: node.data as K8sCronJobData };
       } else if (node.type === "k8sJob") {
         target = { type: "job", data: node.data as K8sJobData };
+      } else if (node.type === "k8sPVC") {
+        target = { type: "pvc", data: node.data as K8sPVCData };
       }
       setSelectedNode(target);
       onSelectTarget(target);
@@ -128,14 +133,6 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
 
   const handleAutoLayout = () => {
     applyDagreLayout();
-    setTimeout(() => {
-      fitView({ duration: 400, padding: 0.11, maxZoom: 0.92 });
-    }, 50);
-  };
-
-  const handleToggleDirection = () => {
-    const nextDir = layoutDirection === "TB" ? "LR" : "TB";
-    setLayoutDirection(nextDir);
     setTimeout(() => {
       fitView({ duration: 400, padding: 0.11, maxZoom: 0.92 });
     }, 50);
@@ -205,14 +202,43 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
 
       {/* Top Right Canvas Actions Capsule (Layout Direction Toggle + Auto Layout + Recenter View) */}
       <div className="absolute top-20 right-6 z-40 flex flex-col gap-1.5 rounded-2xl bg-surface border border-neutral-800 p-2">
-        <button
-          onClick={handleToggleDirection}
-          className="flex items-center gap-2 rounded-md bg-background border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:border-blue-500/50 hover:bg-neutral-800 hover:text-blue-400 transition-colors font-heading cursor-pointer"
-          title={`Switch layout to ${layoutDirection === "TB" ? "Horizontal (LR)" : "Vertical (TB)"}`}
-        >
-          <span className="text-blue-400 font-bold">{layoutDirection === "TB" ? "↕" : "↔"}</span>
-          <span>{layoutDirection === "TB" ? "Vertical" : "Horizontal"}</span>
-        </button>
+        {/* Layout Direction Segmented Pill */}
+        <div className="flex items-center rounded-lg bg-background border border-neutral-800 p-0.5 text-xs font-medium select-none">
+          <button
+            onClick={() => {
+              if (layoutDirection !== "TB") {
+                setLayoutDirection("TB");
+                setTimeout(() => fitView({ duration: 400, padding: 0.11, maxZoom: 0.92 }), 50);
+              }
+            }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+              layoutDirection === "TB"
+                ? "bg-blue-600/20 text-blue-400 border border-blue-500/30 font-semibold shadow-xs"
+                : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50 border border-transparent"
+            }`}
+            title="Switch to Vertical Layout (Top-to-Bottom)"
+          >
+            <span className="font-bold">↕</span>
+            <span>Vertical</span>
+          </button>
+          <button
+            onClick={() => {
+              if (layoutDirection !== "LR") {
+                setLayoutDirection("LR");
+                setTimeout(() => fitView({ duration: 400, padding: 0.11, maxZoom: 0.92 }), 50);
+              }
+            }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+              layoutDirection === "LR"
+                ? "bg-blue-600/20 text-blue-400 border border-blue-500/30 font-semibold shadow-xs"
+                : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50 border border-transparent"
+            }`}
+            title="Switch to Horizontal Layout (Left-to-Right)"
+          >
+            <span className="font-bold">↔</span>
+            <span>Horizontal</span>
+          </button>
+        </div>
 
         <button
           onClick={handleAutoLayout}
@@ -230,6 +256,19 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         >
           <Icon path={mdiCrosshairsGps} size={0.65} className="text-blue-400" />
           <span>Recenter View</span>
+        </button>
+
+        <button
+          onClick={() => setShowStorage(!showStorage)}
+          className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors font-heading cursor-pointer ${
+            showStorage
+              ? "border-cyan-500/50 bg-cyan-950/20 text-cyan-400"
+              : "bg-background border-neutral-800 text-neutral-400 hover:border-neutral-700 hover:text-neutral-200"
+          }`}
+          title={showStorage ? "Hide Storage (PVC) Nodes" : "Show Storage (PVC) Nodes"}
+        >
+          <span className={showStorage ? "text-cyan-400 font-bold" : "text-neutral-500"}>💾</span>
+          <span>{showStorage ? "Storage Visible" : "Storage Hidden"}</span>
         </button>
 
         {completedJobsCount > 0 && (

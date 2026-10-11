@@ -1,6 +1,7 @@
 import { Handle, Position } from "@xyflow/react";
 import { MdViewInAr as Icon } from "react-icons/md";
 import { useUIStore } from "../../store/useUIStore";
+import type { PodVolumeInfo } from "../../store/types/topologyTypes";
 
 export interface K8sPodData extends Record<string, unknown> {
   name: string;
@@ -24,6 +25,7 @@ export interface K8sPodData extends Record<string, unknown> {
   isControlPlane?: boolean;
   containers?: unknown[];
   containerStatuses?: unknown[];
+  volumes?: PodVolumeInfo[];
 }
 
 export function K8sPodNode({ data }: { data: K8sPodData }) {
@@ -117,6 +119,11 @@ export function K8sPodNode({ data }: { data: K8sPodData }) {
         {(data.isControlPlane || data.isStaticPod) && !isTerminating && (
           <span className="text-[8.5px] font-mono font-bold text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 px-1 rounded uppercase tracking-wider" title="Control Plane / Static Pod (Kubelet Managed)">
             CP
+          </span>
+        )}
+        {data.volumes && data.volumes.length > 0 && !isTerminating && (
+          <span className="text-[8.5px] font-mono font-bold text-cyan-300 bg-cyan-500/10 border border-cyan-500/20 px-1 rounded uppercase tracking-wider" title={`Mounted Storage: ${data.volumes.map(v => v.pvcName || v.name).join(', ')}`}>
+            PVC
           </span>
         )}
         {restarts > 0 && !isTerminating && (
