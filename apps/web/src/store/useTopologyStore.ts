@@ -46,6 +46,8 @@ import {
   type K8sConfigMapData,
   type K8sSecretData,
   type ChaosFaultEvent,
+  type K8sHPAData,
+  type K8sNetworkPolicyData,
 } from "./types/topologyTypes";
 import {
   extractServices,
@@ -87,6 +89,8 @@ export interface TopologyState {
   pvs: K8sPVData[];
   configMaps: K8sConfigMapData[];
   secrets: K8sSecretData[];
+  hpas: K8sHPAData[];
+  networkPolicies: K8sNetworkPolicyData[];
   incidents: K8sIncidentEvent[];
   activeChaosFaults: Record<string, ChaosFaultEvent>;
   selectedNode: SelectedTarget;
@@ -175,6 +179,8 @@ export const useTopologyStore = create<TopologyState>()(
       pvs: [],
       configMaps: [],
       secrets: [],
+      hpas: [],
+      networkPolicies: [],
       incidents: [],
       activeChaosFaults: {},
       selectedNode: null,
@@ -369,7 +375,7 @@ export const useTopologyStore = create<TopologyState>()(
       applyDagreLayout: (direction) => {
         const { layoutDirection, showCompletedPods, showCompletedJobs, showStorage, showSystemNamespaces, selectedNamespaces } = useUIStore.getState();
         const targetDir = direction || layoutDirection || "TB";
-        const { rawNodes, nodes, edges, deployments, replicaSets, daemonSets, cronJobs, jobs, pvcs } = get();
+        const { rawNodes, nodes, edges, deployments, replicaSets, daemonSets, cronJobs, jobs, pvcs, hpas, networkPolicies } = get();
         const baseNodes = rawNodes && rawNodes.length > 0 ? rawNodes : nodes;
         if (baseNodes.length === 0 && (!daemonSets || daemonSets.length === 0) && (!cronJobs || cronJobs.length === 0) && (!jobs || jobs.length === 0) && (!pvcs || pvcs.length === 0)) return;
 
@@ -383,7 +389,9 @@ export const useTopologyStore = create<TopologyState>()(
           daemonSets,
           cronJobs,
           jobs,
-          showCompletedJobs
+          showCompletedJobs,
+          hpas,
+          networkPolicies
         );
 
         const visiblePVCs = filterPVCsForDisplay(pvcs, showStorage, showSystemNamespaces, selectedNamespaces);

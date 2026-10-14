@@ -17,6 +17,7 @@ import { handleJobWsEvent } from "../helpers/wsEventHandlers";
 import { handlePVCWsEvent, handlePVWsEvent } from "../helpers/storageHelpers";
 import { handleConfigMapWsEvent, handleSecretWsEvent } from "../helpers/configHelpers";
 import { handleChaosWsEvent } from "../helpers/chaosHelpers";
+import { handlePolicyHpaWsEvent } from "../helpers/policyHpaHelpers";
 import { handleSnapshotSync } from "./topologySnapshotHandler";
 
 export function handleWsMessage(
@@ -476,5 +477,7 @@ export function handleWsMessage(
       eventType === "EVENT_CHAOS_FAULT_CLEARED"
     );
     set({ activeChaosFaults: updatedFaults });
+  } else if (eventType.startsWith("EVENT_HPA_") || eventType.startsWith("EVENT_NETWORKPOLICY_")) {
+    handlePolicyHpaWsEvent(state, set, eventType, payloadData);
   }
 }

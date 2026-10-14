@@ -42,6 +42,11 @@ const (
 	EventConfigMapDeleted = "EVENT_CONFIGMAP_DELETED"
 	EventSecretMutated    = "EVENT_SECRET_MUTATED"
 	EventSecretDeleted    = "EVENT_SECRET_DELETED"
+
+	EventHPAMutated           = "EVENT_HPA_MUTATED"
+	EventHPADeleted           = "EVENT_HPA_DELETED"
+	EventNetworkPolicyMutated = "EVENT_NETWORKPOLICY_MUTATED"
+	EventNetworkPolicyDeleted = "EVENT_NETWORKPOLICY_DELETED"
 )
 
 // K8sIncidentEvent encapsulates authentic Kubernetes v1.Event telemetry
@@ -83,6 +88,10 @@ type PodStatusDelta struct {
 	OwnerKind      string            `json:"ownerKind,omitempty"`
 	IsStaticPod    bool                 `json:"isStaticPod,omitempty"`
 	IsControlPlane bool                 `json:"isControlPlane,omitempty"`
+	ExitCode          *int32               `json:"exitCode,omitempty"`
+	TerminationReason string               `json:"terminationReason,omitempty"`
+	LivenessProbe     *ProbeSpecInfo       `json:"livenessProbe,omitempty"`
+	ReadinessProbe    *ProbeSpecInfo       `json:"readinessProbe,omitempty"`
 	Volumes        []PodVolumeMountInfo `json:"volumes,omitempty"`
 	ConfigMaps     []PodConfigRef       `json:"configMaps,omitempty"`
 	Secrets        []PodSecretRef       `json:"secrets,omitempty"`
@@ -91,12 +100,15 @@ type PodStatusDelta struct {
 
 // DeploymentStatusDelta encapsulates Deployment state updates
 type DeploymentStatusDelta struct {
-	Name          string            `json:"name"`
-	Namespace     string            `json:"namespace"`
-	Replicas      int32             `json:"replicas"`
-	ReadyReplicas int32             `json:"readyReplicas"`
-	Selector      map[string]string `json:"selector"`
-	Labels        map[string]string `json:"labels"`
+	Name            string            `json:"name"`
+	Namespace       string            `json:"namespace"`
+	Replicas        int32             `json:"replicas"`
+	ReadyReplicas   int32             `json:"readyReplicas"`
+	Selector        map[string]string `json:"selector"`
+	Labels          map[string]string `json:"labels"`
+	MaxSurge        string            `json:"maxSurge,omitempty"`
+	MaxUnavailable  string            `json:"maxUnavailable,omitempty"`
+	MinReadySeconds int32             `json:"minReadySeconds,omitempty"`
 }
 
 // ReplicaSetStatusDelta encapsulates ReplicaSet state updates
@@ -362,4 +374,40 @@ type SecretStatusDelta struct {
 	MountedByWorkloads []string          `json:"mountedByWorkloads,omitempty"`
 	CreatedAt          time.Time         `json:"createdAt"`
 	Age                string            `json:"age"`
+}
+
+// HPAStatusDelta encapsulates HorizontalPodAutoscaler state updates
+type HPAStatusDelta struct {
+	Name            string     `json:"name"`
+	Namespace       string     `json:"namespace"`
+	TargetRefKind   string     `json:"targetRefKind"`
+	TargetRefName   string     `json:"targetRefName"`
+	MinReplicas     int32      `json:"minReplicas"`
+	MaxReplicas     int32      `json:"maxReplicas"`
+	CurrentReplicas int32      `json:"currentReplicas"`
+	DesiredReplicas int32      `json:"desiredReplicas"`
+	CurrentCPUUtil  *int32     `json:"currentCpuUtil,omitempty"`
+	TargetCPUUtil   *int32     `json:"targetCpuUtil,omitempty"`
+	LastScaleTime   *time.Time `json:"lastScaleTime,omitempty"`
+}
+
+// NetworkPolicyStatusDelta encapsulates NetworkPolicy telemetry and ingress isolation rules
+type NetworkPolicyStatusDelta struct {
+	Name         string            `json:"name"`
+	Namespace    string            `json:"namespace"`
+	PodSelector  map[string]string `json:"podSelector"`
+	PolicyTypes  []string          `json:"policyTypes"`
+	IngressRules []string          `json:"ingressRules"`
+	TargetPods   []string          `json:"targetPods,omitempty"`
+}
+
+// ProbeSpecInfo encapsulates HTTP/TCP container health probe settings
+type ProbeSpecInfo struct {
+	Type                string `json:"type"` // "http" | "tcp" | "exec"
+	Path                string `json:"path,omitempty"`
+	Port                int32  `json:"port,omitempty"`
+	InitialDelaySeconds int32  `json:"initialDelaySeconds"`
+	PeriodSeconds       int32  `json:"periodSeconds"`
+	TimeoutSeconds      int32  `json:"timeoutSeconds"`
+	FailureThreshold    int32  `json:"failureThreshold"`
 }

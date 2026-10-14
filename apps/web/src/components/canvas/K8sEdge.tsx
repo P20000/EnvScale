@@ -103,6 +103,10 @@ export function K8sEdge({
   if (isPeerDependency) {
     // Scale arc drop proportionally when zooming out to prevent flattening at smaller scales
     const zoomScale = zoom > 0 ? Math.max(1, Math.min(1.8, 1 / Math.sqrt(zoom))) : 1;
+    const rawLane = (edgeData as { laneIndex?: number })?.laneIndex;
+    const laneIndex = typeof rawLane === "number"
+      ? rawLane
+      : (source.includes("canary") ? 1 : 0);
 
     if (isTB) {
       // TB Layout: Peer cards sit horizontally along X at same tier Y.
@@ -111,29 +115,35 @@ export function K8sEdge({
       const effSourceY = sourcePosition === Position.Top ? sourceY + 76 : sourceY;
       const bottomBaseY = Math.max(effSourceY, effTargetY);
       const dx = Math.abs(targetX - sourceX);
-      const staggerOffset = Math.abs((sourceX * 13) % 20) * 0.4;
-      const baseArcDrop = Math.max(45, Math.min(65, 35 + dx * 0.05)) + staggerOffset;
+      const baseArcDrop = laneIndex === 0
+        ? 45 + Math.min(20, dx * 0.05)
+        : 85 + (laneIndex - 1) * 40 + Math.min(20, dx * 0.05);
       const arcDrop = baseArcDrop * zoomScale;
       const arcBottomY = bottomBaseY + arcDrop;
 
       edgePath = `M ${sourceX} ${effSourceY} C ${sourceX} ${arcBottomY}, ${targetX} ${arcBottomY}, ${targetX} ${effTargetY}`;
-      labelX = (sourceX + targetX) / 2;
+      labelX = (sourceX + targetX) / 2 + (laneIndex % 2 === 0 ? -24 : 24);
       labelY = arcBottomY;
     } else {
       // LR Layout: Peer cards sit vertically along Y at same tier X.
       // Route the curve outward to the right in X within the dedicated channel between Col 3 and Col 4.
-      const effTargetX = targetPosition === Position.Left ? targetX + 270 : targetX;
-      const effSourceX = sourcePosition === Position.Left ? sourceX + 270 : sourceX;
+      const effTargetX = targetPosition === Position.Right ? targetX : (targetPosition === Position.Left ? targetX + 295 : targetX + 147.5);
+      const effSourceX = sourcePosition === Position.Right ? sourceX : (sourcePosition === Position.Left ? sourceX + 295 : sourceX + 147.5);
       const rightBaseX = Math.max(effSourceX, effTargetX);
       const dy = Math.abs(targetY - sourceY);
-      const staggerOffset = Math.abs((sourceY * 17) % 25) * 0.4;
-      const baseArcDrop = Math.max(45, Math.min(65, 35 + dy * 0.05)) + staggerOffset;
+
+      // Parallel lane separation: Lane 0 runs at +48px, Lane 1 runs at +98px
+      const baseArcDrop = laneIndex === 0
+        ? 48 + Math.min(20, dy * 0.04)
+        : 98 + (laneIndex - 1) * 45 + Math.min(20, dy * 0.04);
       const arcDrop = baseArcDrop * zoomScale;
       const arcRightX = rightBaseX + arcDrop;
 
       edgePath = `M ${effSourceX} ${sourceY} C ${arcRightX} ${sourceY}, ${arcRightX} ${targetY}, ${effTargetX} ${targetY}`;
       labelX = arcRightX;
-      labelY = (sourceY + targetY) / 2;
+      // Stagger label Y to ensure overlapping badges are separated in both X and Y
+      const midY = (sourceY + targetY) / 2;
+      labelY = laneIndex === 0 ? midY - 14 : midY + 14;
     }
   } else {
     const [bezierPath, bX, bY] = getBezierPath({

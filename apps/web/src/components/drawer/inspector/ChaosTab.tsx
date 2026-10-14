@@ -55,7 +55,7 @@ export function ChaosTab({ target, chaosActionMsg, triggerChaos, clearChaos }: C
         <div className="space-y-2 rounded-xl border border-rose-600/50 bg-rose-950/30 p-3">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-semibold text-rose-300 uppercase tracking-wider flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-rose-500 animate-ping" />
+              <span className="h-2 w-2 rounded-full bg-rose-500" />
               Active Faults Injected ({relevantFaults.length})
             </span>
           </div>

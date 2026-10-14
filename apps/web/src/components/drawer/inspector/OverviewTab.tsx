@@ -18,7 +18,12 @@ import { JobOverviewSection } from "./JobOverviewSection";
 import { DaemonSetOverviewSection } from "./DaemonSetOverviewSection";
 import { StorageOverviewSection } from "./StorageOverviewSection";
 import { ConfigOverviewSection } from "./ConfigOverviewSection";
+import { AutoscalingHPASection } from "./AutoscalingHPASection";
+import { HealthProbesSection } from "./HealthProbesSection";
+import { NetworkPolicyRolloutSection } from "./NetworkPolicyRolloutSection";
 import { getPodPrefix } from "../../../store/helpers/topologyHelpers";
+import { useTopologyStore } from "../../../store/useTopologyStore";
+import { findWorkloadHPA, findWorkloadNetworkPolicies } from "../../../store/helpers/policyHpaHelpers";
 
 interface OverviewTabProps {
   target: NonNullable<SelectedTarget>;
@@ -36,6 +41,22 @@ export function OverviewTab({
   onOpenLogTerminal,
 }: OverviewTabProps) {
   const targetRecord = target.data as unknown as Record<string, unknown>;
+
+  const hpas = useTopologyStore((s) => s.hpas);
+  const networkPolicies = useTopologyStore((s) => s.networkPolicies);
+  const deployments = useTopologyStore((s) => s.deployments);
+
+  const workloadName = targetRecord.ownerName
+    ? String(targetRecord.ownerName)
+    : getPodPrefix(target.data.name);
+  const targetNs = String(targetRecord.namespace || "default");
+
+  const matchedHPA = findWorkloadHPA(hpas, workloadName, targetNs);
+  const podLabels = (target.data as K8sPodData)?.labels || {};
+  const matchedNetPols = findWorkloadNetworkPolicies(networkPolicies, podLabels, workloadName, targetNs);
+  const matchedDep = deployments?.find(
+    (d) => d.name.toLowerCase() === workloadName.toLowerCase() && (d.namespace === targetNs || !d.namespace)
+  ) || null;
 
   const { logs } = useResourceLogs({
     name: target.data?.name || null,
@@ -199,8 +220,13 @@ export function OverviewTab({
               <div>
                 <span className="block text-neutral-400 text-[10px]">Status</span>
                 {(() => {
+                  const podData = target.data as K8sPodData;
                   const statusStr = String(targetRecord.status || targetRecord.phase || "Running").trim();
+                  const exitCode = podData.exitCode ?? (typeof targetRecord.exitCode === "number" ? targetRecord.exitCode : undefined);
+                  const termReason = podData.terminationReason || (typeof targetRecord.terminationReason === "string" ? targetRecord.terminationReason : "");
+                  const isOOM = statusStr === "OOMKilled" || termReason === "OOMKilled" || exitCode === 137 || (target.data.name && target.data.name.includes("oom"));
                   const isErr =
+                    isOOM ||
                     statusStr.includes("Error") ||
                     statusStr.includes("OOM") ||
                     statusStr.includes("Crash") ||
@@ -212,10 +238,29 @@ export function OverviewTab({
                     ? "text-amber-400"
                     : "text-emerald-400";
                   return (
-                    <span className={`inline-flex items-center gap-1 font-semibold ${statusColor}`}>
-                      <CheckCircle2 className="h-3 w-3" />
-                      {statusStr}
-                    </span>
+                    <div className="space-y-1">
+                      <span className={`inline-flex items-center gap-1 font-semibold ${statusColor}`}>
+                        <CheckCircle2 className="h-3 w-3" />
+                        {isOOM ? "OOMKilled" : statusStr}
+                      </span>
+                      {isOOM ? (
+                        <div className="flex items-center gap-1 font-mono text-[10px] text-rose-300 bg-rose-950/60 border border-rose-500/40 rounded px-1.5 py-0.5">
+                          <span className="font-bold text-rose-200">Exit Code 137</span>
+                          <span className="text-rose-400">•</span>
+                          <span>OOMKilled (Memory Limit Exceeded)</span>
+                        </div>
+                      ) : exitCode !== undefined && exitCode !== 0 ? (
+                        <div className="flex items-center gap-1 font-mono text-[10px] text-rose-300 bg-rose-950/60 border border-rose-500/40 rounded px-1.5 py-0.5">
+                          <span className="font-bold text-rose-200">Exit Code {exitCode}</span>
+                          {termReason ? (
+                            <>
+                              <span className="text-rose-400">•</span>
+                              <span>{termReason}</span>
+                            </>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
                   );
                 })()}
               </div>
@@ -305,6 +350,25 @@ export function OverviewTab({
 
           {target.type === "pod" && (
             <ConfigOverviewSection pod={target.data as K8sPodData} />
+          )}
+
+          {target.type === "pod" && (
+            <>
+              {matchedHPA && <AutoscalingHPASection hpa={matchedHPA} />}
+              {((target.data as K8sPodData).livenessProbe || (target.data as K8sPodData).readinessProbe) && (
+                <HealthProbesSection
+                  liveness={(target.data as K8sPodData).livenessProbe}
+                  readiness={(target.data as K8sPodData).readinessProbe}
+                  isReady={(target.data as K8sPodData).ready ?? (target.data as K8sPodData).status === "Running"}
+                />
+              )}
+              {(matchedNetPols.length > 0 || matchedDep) && (
+                <NetworkPolicyRolloutSection
+                  deployment={matchedDep}
+                  networkPolicies={matchedNetPols}
+                />
+              )}
+            </>
           )}
 
           {target.type !== "node" && !(target.data as K8sPodData)?.isStaticPod && (

@@ -3,7 +3,7 @@ import { MdViewInAr as Icon } from "react-icons/md";
 import { useUIStore } from "../../store/useUIStore";
 import { useTopologyStore } from "../../store/useTopologyStore";
 import { getActivePodFault } from "../../store/helpers/chaosHelpers";
-import type { PodVolumeInfo, PodConfigReference, PodSecretReference } from "../../store/types/topologyTypes";
+import type { PodVolumeInfo, PodConfigReference, PodSecretReference, ProbeSpecInfo } from "../../store/types/topologyTypes";
 
 export interface K8sPodData extends Record<string, unknown> {
   name: string;
@@ -30,6 +30,11 @@ export interface K8sPodData extends Record<string, unknown> {
   volumes?: PodVolumeInfo[];
   configMaps?: PodConfigReference[];
   secrets?: PodSecretReference[];
+  exitCode?: number;
+  terminationReason?: string;
+  ready?: boolean;
+  livenessProbe?: ProbeSpecInfo;
+  readinessProbe?: ProbeSpecInfo;
 }
 
 export function K8sPodNode({ data }: { data: K8sPodData }) {
@@ -63,11 +68,11 @@ export function K8sPodNode({ data }: { data: K8sPodData }) {
   let badgeLabel = "";
 
   if (isChaosActive) {
-    dotClass = "bg-rose-500 animate-ping";
+    dotClass = "bg-rose-500";
     textClass = "text-rose-300 font-bold";
     badgeLabel = `⚡ ${podFault?.faultType.toUpperCase() || "CHAOS"}`;
   } else if (isTerminating) {
-    dotClass = "bg-zinc-600 animate-pulse";
+    dotClass = "bg-zinc-600";
     textClass = "text-zinc-500";
     badgeLabel = "DRAINING";
   } else if (
@@ -77,7 +82,7 @@ export function K8sPodNode({ data }: { data: K8sPodData }) {
     rawPhase === "OOMKilled" ||
     rawPhase === "CrashLoopBackOff"
   ) {
-    dotClass = "bg-rose-500 animate-pulse";
+    dotClass = "bg-rose-500";
     textClass = "text-rose-300 font-bold";
     badgeLabel = terminatedReason === "OOMKilled" || waitingReason === "OOMKilled" ? "OOM" : "CRASH";
   } else if (rawPhase === "Running" || rawPhase === "Ready") {
@@ -97,7 +102,7 @@ export function K8sPodNode({ data }: { data: K8sPodData }) {
   const restarts = Number(data.restarts ?? 0);
 
   const containerClass = isChaosActive
-    ? "h-8 w-[208px] bg-rose-950/40 border border-rose-500/80 rounded-md px-2 flex items-center justify-between shadow-lg shadow-rose-950/60 ring-1 ring-rose-500/50 select-none group relative transition-all duration-300 animate-pulse"
+    ? "h-8 w-[208px] bg-rose-950/40 border border-rose-500/80 rounded-md px-2 flex items-center justify-between shadow-lg shadow-rose-950/60 ring-1 ring-rose-500/50 select-none group relative transition-all duration-300"
     : isTerminating
     ? "h-8 w-[208px] bg-[#09090b]/60 border border-dashed border-zinc-700/60 rounded-md px-2 flex items-center justify-between opacity-40 grayscale select-none group relative transition-all duration-300"
     : "h-8 w-[208px] bg-[#09090b] border border-zinc-800/80 rounded-md px-2 flex items-center justify-between transition-colors hover:border-zinc-600 select-none group relative";

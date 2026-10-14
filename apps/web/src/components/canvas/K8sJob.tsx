@@ -30,7 +30,7 @@ export const K8sJobNode: React.FC<NodeProps> = ({ data }) => {
     </div>
   ) : isRunning ? (
     <div className="h-5 px-2 py-0.5 rounded-md inline-flex items-center gap-1 font-mono text-[10px] font-medium border bg-amber-950/40 text-amber-300 border-amber-800/50 shrink-0">
-      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+      <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
       <span>RUNNING</span>
     </div>
   ) : (

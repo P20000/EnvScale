@@ -226,6 +226,8 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
 
   // Cross-workload peer dependencies (e.g. backend -> redis database)
   const depEdges: Edge[] = [];
+  const depTargetCount = new Map<string, number>();
+
   groups.forEach((srcGrp) => {
     const srcData = srcGrp.data as Record<string, unknown> | undefined;
     const srcName = String(srcData?.name || "").toLowerCase();
@@ -262,11 +264,15 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
       const isBackendApi = srcName.includes("backend") || srcName.includes("api");
       if ((hasEnvRef || (isBackendApi && isTargetDb)) && isTargetDb) {
         const edgeLabel = refLabel || "tcp://6379 • REDIS_HOST";
+        const laneIndex = depTargetCount.get(targetGrp.id) || 0;
+        depTargetCount.set(targetGrp.id, laneIndex + 1);
+
         depEdges.push({
           id: `e-dep-${srcGrp.id}-${targetGrp.id}`,
           source: srcGrp.id,
           target: targetGrp.id,
-          targetHandle: "bottom-target",
+          sourceHandle: "source-right",
+          targetHandle: "target-right",
           type: "k8sEdge",
           animated: true,
           label: edgeLabel,
@@ -275,6 +281,7 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
             strokeColor: "#38bdf8",
             healthStatus: "healthy",
             isCrossWorkload: true,
+            laneIndex,
           },
           style: {
             stroke: "#38bdf8",

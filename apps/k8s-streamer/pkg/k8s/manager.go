@@ -141,6 +141,13 @@ func (cm *ClusterManager) GetClusterSnapshot(clusterID string) (
 ) {
 	cm.mu.RLock()
 	im, ok := cm.clusters[clusterID]
+	if !ok && len(cm.clusters) == 1 {
+		for _, v := range cm.clusters {
+			im = v
+			ok = true
+			break
+		}
+	}
 	cm.mu.RUnlock()
 
 	if !ok {
@@ -150,12 +157,47 @@ func (cm *ClusterManager) GetClusterSnapshot(clusterID string) (
 	return pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, cronJobs, jobs, pvcs, pvs, configMaps, secrets, nil
 }
 
+// GetHPASnapshot retrieves all cached HPAs for a cluster
+func (cm *ClusterManager) GetHPASnapshot(clusterID string) []types.HPAStatusDelta {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	if im, ok := cm.clusters[clusterID]; ok {
+		return im.GetHPASnapshot()
+	}
+	if len(cm.clusters) == 1 {
+		for _, v := range cm.clusters {
+			return v.GetHPASnapshot()
+		}
+	}
+	return nil
+}
+
+// GetNetworkPolicySnapshot retrieves all cached NetworkPolicies for a cluster
+func (cm *ClusterManager) GetNetworkPolicySnapshot(clusterID string) []types.NetworkPolicyStatusDelta {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	if im, ok := cm.clusters[clusterID]; ok {
+		return im.GetNetworkPolicySnapshot()
+	}
+	if len(cm.clusters) == 1 {
+		for _, v := range cm.clusters {
+			return v.GetNetworkPolicySnapshot()
+		}
+	}
+	return nil
+}
+
 // GetCluster returns the InformerManager associated with the given clusterID.
 func (cm *ClusterManager) GetCluster(clusterID string) (*InformerManager, bool) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
 	im, ok := cm.clusters[clusterID]
+	if !ok && len(cm.clusters) == 1 {
+		for _, v := range cm.clusters {
+			return v, true
+		}
+	}
 	return im, ok
 }
 

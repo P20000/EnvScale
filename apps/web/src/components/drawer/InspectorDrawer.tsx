@@ -181,7 +181,7 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
               : target.type === "pvc"
               ? "bg-cyan-400"
               : target.type === "job"
-              ? ((target.data as K8sJobData).status === "Completed" ? "bg-emerald-500" : (target.data as K8sJobData).status === "Failed" ? "bg-rose-500" : "bg-blue-500 animate-pulse")
+              ? ((target.data as K8sJobData).status === "Completed" ? "bg-emerald-500" : (target.data as K8sJobData).status === "Failed" ? "bg-rose-500" : "bg-blue-500")
               : target.type === "cronjob"
               ? "bg-cyan-400"
               : "bg-emerald-500"

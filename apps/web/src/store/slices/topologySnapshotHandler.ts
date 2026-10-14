@@ -4,7 +4,17 @@ import type { K8sNodeData } from "../../components/canvas/K8sNode";
 import type { K8sServiceData } from "../../components/canvas/K8sService";
 import type { K8sIngressData } from "../../components/canvas/K8sIngress";
 import type { K8sReplicaSetData, K8sDeploymentData } from "../helpers/rolloutHelpers";
-import type { K8sDaemonSetData, K8sCronJobData, K8sJobData, K8sPVCData, K8sPVData, K8sConfigMapData, K8sSecretData } from "../types/topologyTypes";
+import type {
+  K8sDaemonSetData,
+  K8sCronJobData,
+  K8sJobData,
+  K8sPVCData,
+  K8sPVData,
+  K8sConfigMapData,
+  K8sSecretData,
+  K8sHPAData,
+  K8sNetworkPolicyData,
+} from "../types/topologyTypes";
 import type { TopologyState } from "../useTopologyStore";
 import { extractServices, extractPods, calculateClusterCapacity } from "../helpers/topologyHelpers";
 import { useUIStore } from "../useUIStore";
@@ -109,6 +119,8 @@ export function handleSnapshotSync(
   const snapshotPVs = Array.isArray(payloadData.pvs) ? (payloadData.pvs as K8sPVData[]) : [];
   const snapshotConfigMaps = Array.isArray(payloadData.configMaps) ? (payloadData.configMaps as K8sConfigMapData[]) : [];
   const snapshotSecrets = Array.isArray(payloadData.secrets) ? (payloadData.secrets as K8sSecretData[]) : [];
+  const snapshotHPAs = Array.isArray(payloadData.hpas) ? (payloadData.hpas as K8sHPAData[]) : [];
+  const snapshotNetPols = Array.isArray(payloadData.networkPolicies) ? (payloadData.networkPolicies as K8sNetworkPolicyData[]) : [];
 
   let updatedNamespaces = useUIStore.getState().selectedNamespaces;
   if (updatedNamespaces.length === 0) {
@@ -143,6 +155,8 @@ export function handleSnapshotSync(
     pvs: snapshotPVs,
     configMaps: snapshotConfigMaps,
     secrets: snapshotSecrets,
+    hpas: snapshotHPAs,
+    networkPolicies: snapshotNetPols,
   });
   state.applyDagreLayout();
 }

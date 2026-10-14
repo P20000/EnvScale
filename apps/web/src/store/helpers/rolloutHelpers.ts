@@ -19,6 +19,9 @@ export interface K8sDeploymentData {
   readyReplicas: number;
   selector?: Record<string, string>;
   labels?: Record<string, string>;
+  maxSurge?: string;
+  maxUnavailable?: string;
+  minReadySeconds?: number;
   createdAt?: string;
 }
 

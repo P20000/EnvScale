@@ -150,24 +150,28 @@ func SetupRoutes(
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
+		hpas := clusterManager.GetHPASnapshot(clusterID)
+		networkPolicies := clusterManager.GetNetworkPolicySnapshot(clusterID)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"pods":         pods,
-			"nodes":        nodes,
-			"services":     services,
-			"deployments":  deployments,
-			"replicaSets":  replicaSets,
-			"statefulSets": statefulSets,
-			"daemonSets":   daemonSets,
-			"ingresses":    ingresses,
-			"incidents":    incidents,
-			"cronJobs":     cronJobs,
-			"jobs":         jobs,
-			"pvcs":         pvcs,
-			"pvs":          pvs,
-			"configMaps":   configMaps,
-			"secrets":      secrets,
+			"pods":            pods,
+			"nodes":           nodes,
+			"services":        services,
+			"deployments":     deployments,
+			"replicaSets":     replicaSets,
+			"statefulSets":    statefulSets,
+			"daemonSets":      daemonSets,
+			"ingresses":       ingresses,
+			"incidents":       incidents,
+			"cronJobs":        cronJobs,
+			"jobs":            jobs,
+			"pvcs":            pvcs,
+			"pvs":             pvs,
+			"configMaps":      configMaps,
+			"secrets":         secrets,
+			"hpas":            hpas,
+			"networkPolicies": networkPolicies,
 		})
 	}))
 

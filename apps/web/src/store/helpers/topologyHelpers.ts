@@ -3,9 +3,10 @@ import type { K8sPodData } from "../../components/canvas/K8sPod";
 import type { K8sNodeData } from "../../components/canvas/K8sNode";
 import type { K8sServiceData } from "../../components/canvas/K8sService";
 import type { K8sIngressData } from "../../components/canvas/K8sIngress";
-import type { K8sDaemonSetData, K8sCronJobData, K8sJobData, K8sPVCData } from "../types/topologyTypes";
+import type { K8sDaemonSetData, K8sCronJobData, K8sJobData, K8sPVCData, K8sHPAData, K8sNetworkPolicyData } from "../types/topologyTypes";
 import type { SelectedTarget } from "../../components/drawer/InspectorDrawer";
 import { calculateRolloutInfo, type K8sDeploymentData, type K8sReplicaSetData } from "./rolloutHelpers";
+import { findWorkloadHPA, findWorkloadNetworkPolicies, calculateWorkloadCpuUsage } from "./policyHpaHelpers";
 export {
   type EdgeHealthStatus,
   isPodReady,
@@ -95,7 +96,9 @@ export const aggregateNodesWithWorkloads = (
   daemonSets: K8sDaemonSetData[] = [],
   cronJobs: K8sCronJobData[] = [],
   jobs: K8sJobData[] = [],
-  showCompletedJobs: boolean = false
+  showCompletedJobs: boolean = false,
+  hpas: K8sHPAData[] = [],
+  networkPolicies: K8sNetworkPolicyData[] = []
 ): Node[] => {
   const appNodes = nodes.filter((n) => {
     const d = n.data as Record<string, unknown> | undefined;
@@ -238,11 +241,18 @@ export const aggregateNodesWithWorkloads = (
       return timeB - timeA;
     });
 
-    const activeRunningPods = sortedGroupPods.filter((p) => {
+    const readyPods = sortedGroupPods.filter((p) => {
       const pData = p.data as K8sPodData;
       const ph = String(pData?.phase || pData?.status || "").toLowerCase();
       const isTerminating = Boolean(pData?.isTerminating || ph === "terminating");
-      return !isTerminating && (ph === "running" || ph === "ready" || ph.includes("crash") || ph.includes("oom"));
+      const isFailing =
+        ph.includes("crash") ||
+        ph.includes("oom") ||
+        ph.includes("error") ||
+        ph.includes("fail") ||
+        ph.includes("imagepull") ||
+        ph.includes("createcontainer");
+      return !isTerminating && !isFailing && (ph === "running" || ph === "ready") && pData?.ready !== false;
     });
 
     const firstPodData = groupPods[0]?.data as K8sPodData | undefined;
@@ -252,6 +262,19 @@ export const aggregateNodesWithWorkloads = (
 
     const isStateful = prefix.toLowerCase().includes("db") || prefix.toLowerCase().includes("redis") || prefix.toLowerCase().includes("stateful");
     const workloadType = isStateful ? "StatefulSet" : "Deployment";
+
+    const matchedHPA = findWorkloadHPA(hpas, prefix, ns);
+    const podLabels = firstPodData?.labels || {};
+    const matchedNetPols = findWorkloadNetworkPolicies(networkPolicies, podLabels, prefix, ns);
+    const hasNetworkPolicy = matchedNetPols.length > 0;
+
+    const hasProbeWarning = groupPods.some((p) => {
+      const pd = p.data as K8sPodData;
+      const ph = String(pd?.phase || pd?.status || "").toLowerCase();
+      return (ph === "running" || ph === "ready") && pd?.ready === false;
+    });
+
+    const cpuUsagePct = calculateWorkloadCpuUsage(groupPods, readyPods.length, matchedHPA);
 
     processedNodes.push({
       id: groupId,
@@ -264,7 +287,12 @@ export const aggregateNodesWithWorkloads = (
         rolloutInfo,
         pods: podsData,
         replicas: groupPods.length,
-        readyReplicas: activeRunningPods.length,
+        readyReplicas: readyPods.length,
+        hpa: matchedHPA,
+        hasNetworkPolicy,
+        networkPolicies: matchedNetPols,
+        hasProbeWarning,
+        cpuUsagePct,
       },
     });
   });

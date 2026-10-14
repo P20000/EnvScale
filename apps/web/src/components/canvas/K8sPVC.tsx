@@ -14,7 +14,7 @@ export function K8sPVCNode({ data }: { data: K8sPVCData }) {
   const phaseClass = isBound
     ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/30"
     : isPending
-    ? "text-amber-400 bg-amber-500/10 border-amber-500/30 animate-pulse"
+    ? "text-amber-400 bg-amber-500/10 border-amber-500/30"
     : "text-rose-400 bg-rose-500/10 border-rose-500/30";
 
   const capacityLabel = data.capacity || data.requestedSize || "Dynamic";

@@ -188,3 +188,36 @@ export interface ChaosFaultEvent {
   timestamp: string;
 }
 
+export interface ProbeSpecInfo {
+  type: "http" | "tcp" | "exec" | string;
+  path?: string;
+  port?: number;
+  initialDelaySeconds: number;
+  periodSeconds: number;
+  timeoutSeconds: number;
+  failureThreshold: number;
+}
+
+export interface K8sHPAData extends Record<string, unknown> {
+  name: string;
+  namespace: string;
+  targetRefKind: string;
+  targetRefName: string;
+  minReplicas: number;
+  maxReplicas: number;
+  currentReplicas: number;
+  desiredReplicas: number;
+  currentCpuUtil?: number;
+  targetCpuUtil?: number;
+  lastScaleTime?: string;
+}
+
+export interface K8sNetworkPolicyData extends Record<string, unknown> {
+  name: string;
+  namespace: string;
+  podSelector: Record<string, string>;
+  policyTypes: string[];
+  ingressRules: string[];
+  targetPods?: string[];
+}
+

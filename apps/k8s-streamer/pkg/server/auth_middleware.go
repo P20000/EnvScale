@@ -20,12 +20,11 @@ func writeAuthError(w http.ResponseWriter, status int, message string) {
 	})
 }
 
-// RequireAuth wraps an HTTP handler to ensure a valid JWT access token is present,
-// or that anonymous dev mode is explicitly enabled via ALLOW_ANONYMOUS_WS=true.
+// RequireAuth wraps an HTTP handler to ensure a valid JWT access token is present.
 func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, err := websocket.AuthenticateHandshake(r)
-		if err != nil {
+		claims, err := websocket.AuthenticateRequest(r)
+		if err != nil || claims == nil {
 			writeAuthError(w, http.StatusUnauthorized, fmt.Sprintf("Authentication required: %v", err))
 			return
 		}
@@ -37,8 +36,8 @@ func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 // that the client's token grants access to that specific cluster.
 func RequireClusterAuth(getClusterID func(r *http.Request) string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		claims, err := websocket.AuthenticateHandshake(r)
-		if err != nil {
+		claims, err := websocket.AuthenticateRequest(r)
+		if err != nil || claims == nil {
 			writeAuthError(w, http.StatusUnauthorized, fmt.Sprintf("Authentication required: %v", err))
 			return
 		}
