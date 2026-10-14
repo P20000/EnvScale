@@ -10,6 +10,16 @@ import {
   syncSelectedNode,
   sanitizeManifestSnapshot,
 } from "../helpers/topologyHelpers";
+import { STREAMER_BASE_URL } from "../../config/api";
+
+const getAuthHeaders = (): Record<string, string> => {
+  const token = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token && token !== "null") {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  return headers;
+};
 
 export function handleUndoAction(
   get: () => TopologyState,
@@ -20,13 +30,12 @@ export function handleUndoAction(
   const [action, ...remainingUndo] = stack;
 
   if (action.type === "DELETE_RESOURCE") {
-    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
     const clusterId = get().activeCluster;
     if (!clusterId) return;
 
-    fetch(`${API_BASE_URL}/api/v1/resource/apply`, {
+    fetch(`${STREAMER_BASE_URL}/api/v1/resource/apply`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders(),
       credentials: "include",
       body: JSON.stringify({
         clusterId,
@@ -93,13 +102,12 @@ export function handleRedoAction(
   const [action, ...remainingRedo] = stack;
 
   if (action.type === "DELETE_RESOURCE") {
-    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
     const clusterId = get().activeCluster;
     if (!clusterId) return;
 
-    fetch(`${API_BASE_URL}/api/v1/resource/delete`, {
+    fetch(`${STREAMER_BASE_URL}/api/v1/resource/delete`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders(),
       credentials: "include",
       body: JSON.stringify({
         clusterId,
@@ -161,12 +169,11 @@ export function handleRemoveTarget(
     const ns = String(resData.namespace || "default");
 
     if (!options?.skipApi) {
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
       const clusterId = get().activeCluster;
       if (clusterId) {
-        fetch(`${API_BASE_URL}/api/v1/resource/delete`, {
+        fetch(`${STREAMER_BASE_URL}/api/v1/resource/delete`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: getAuthHeaders(),
           credentials: "include",
           body: JSON.stringify({
             clusterId,

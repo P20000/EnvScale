@@ -4,6 +4,7 @@ import {
   listIncidents,
   listIncidentsForUser,
   resolveIncident,
+  triggerIncidentFromAlert,
 } from "../services/incident.service.js";
 
 export const list = async (request: Request, response: Response) => {
@@ -28,4 +29,13 @@ export const resolve = async (request: Request, response: Response) => {
       request.body.resolution
     )
   );
+};
+
+export const triggerInternal = async (request: Request, response: Response) => {
+  const incident = await triggerIncidentFromAlert(request.body);
+  if (!incident) {
+    response.status(404).json({ error: "Alert policy not found or invalid" });
+    return;
+  }
+  response.status(201).json(incident);
 };

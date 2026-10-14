@@ -90,7 +90,7 @@ func (h *Hub) Run() {
 			if room, ok := h.rooms[client.ClusterID]; ok {
 				if _, ok := room[client]; ok {
 					delete(room, client)
-					close(client.send)
+					client.Close()
 					// Prune empty rooms to avoid memory leaks
 					if len(room) == 0 {
 						delete(h.rooms, client.ClusterID)
@@ -111,7 +111,7 @@ func (h *Hub) Run() {
 }
 
 // routeToRoom delivers a payload to all clients subscribed to the given clusterID room.
-// Stale clients (full send buffers) are evicted immediately to prevent goroutine leaks.
+// Stale clients (full send buffers or closed) are evicted immediately to prevent goroutine leaks.
 func (h *Hub) routeToRoom(clusterID string, payload []byte) {
 	h.mu.RLock()
 	room, ok := h.rooms[clusterID]
@@ -126,13 +126,10 @@ func (h *Hub) routeToRoom(clusterID string, payload []byte) {
 	}
 	h.mu.RUnlock()
 
-	// Deliver to each client outside the lock — non-blocking send to stay sub-200ms
+	// Deliver to each client outside the lock — non-blocking thread-safe send to stay sub-200ms
 	var stale []*Client
 	for _, client := range targets {
-		select {
-		case client.send <- payload:
-		default:
-			// Client send buffer full — mark as stale
+		if !client.Send(payload) {
 			stale = append(stale, client)
 		}
 	}
@@ -144,7 +141,7 @@ func (h *Hub) routeToRoom(clusterID string, payload []byte) {
 			if room, ok := h.rooms[clusterID]; ok {
 				if _, exists := room[client]; exists {
 					delete(room, client)
-					close(client.send)
+					client.Close()
 					log.Printf("[WebSocket Hub] Evicted stale client %s from room '%s'", client.ID, clusterID)
 				}
 				if len(room) == 0 {
@@ -155,6 +152,7 @@ func (h *Hub) routeToRoom(clusterID string, payload []byte) {
 		h.mu.Unlock()
 	}
 }
+
 
 // BroadcastEvent serializes a structured event envelope and routes it to all clients
 // subscribed to the given clusterID room. Target delivery latency: < 200ms.

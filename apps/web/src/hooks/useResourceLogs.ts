@@ -3,6 +3,8 @@ import type { PodLogLine, LogLevel, LogStreamStatus } from "../types/logs";
 import { parseLogPayload } from "../utils/logParser";
 import { useTopologyStore } from "../store/useTopologyStore";
 import { useUIStore } from "../store/useUIStore";
+import { getStreamerToken } from "../config/api";
+
 
 interface UseResourceLogsOptions {
   name: string | null;
@@ -53,67 +55,80 @@ export function useResourceLogs({
         : useUIStore.getState().selectedNamespaces[0] || "default";
 
     const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || "ws://localhost:8080";
-    const url = `${WS_BASE_URL}/api/v1/stream/logs?clusterId=${encodeURIComponent(
-      targetCluster
-    )}&namespace=${encodeURIComponent(targetNs)}&kind=${encodeURIComponent(
-      kind
-    )}&name=${encodeURIComponent(name)}&tailLines=100`;
+    let isDisposed = false;
+    let ws: WebSocket | null = null;
 
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
+    void (async () => {
+      const token = await getStreamerToken();
+      if (isDisposed) return;
 
-    ws.onopen = () => {
-      setRawStatus("streaming");
-    };
+      let url = `${WS_BASE_URL}/api/v1/stream/logs?clusterId=${encodeURIComponent(
+        targetCluster
+      )}&namespace=${encodeURIComponent(targetNs)}&kind=${encodeURIComponent(
+        kind
+      )}&name=${encodeURIComponent(name)}&tailLines=100`;
 
-    ws.onmessage = (evt) => {
-      try {
-        const data = JSON.parse(evt.data);
-        if (data && data.message) {
-          const fallbackLvl = (data.level as LogLevel) || "INFO";
-          const parsed = parseLogPayload(data.message, fallbackLvl);
-
-          const newLogLine: PodLogLine = {
-            id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            timestamp: data.timestamp || parsed.timestamp || new Date().toISOString(),
-            level: parsed.level || fallbackLvl,
-            message: parsed.message || data.message,
-            podName: data.source || name,
-            namespace: targetNs,
-            container: "main",
-            stream: "stdout",
-            source: data.source || name,
-            parsed,
-          };
-
-          if (parsed.level === "ERROR" || parsed.level === "FATAL") {
-            const src = data.source || name || "workload";
-            useTopologyStore
-              .getState()
-              .addNotification(
-                `Error Log Detected in ${src}`,
-                parsed.message,
-                "CRITICAL"
-              );
-          }
-
-          setLogs((prev) => [...prev.slice(-(maxLogs - 1)), newLogLine]);
-        }
-      } catch {
-        // Ignored
+      if (token) {
+        url += `&token=${encodeURIComponent(token)}`;
       }
-    };
 
-    ws.onerror = () => {
-      setRawStatus("error");
-    };
+      ws = new WebSocket(url);
+      wsRef.current = ws;
 
-    ws.onclose = () => {
-      setRawStatus("offline");
-    };
+      ws.onopen = () => {
+        setRawStatus("streaming");
+      };
+
+      ws.onmessage = (evt) => {
+        try {
+          const data = JSON.parse(evt.data);
+          if (data && data.message) {
+            const fallbackLvl = (data.level as LogLevel) || "INFO";
+            const parsed = parseLogPayload(data.message, fallbackLvl);
+
+            const newLogLine: PodLogLine = {
+              id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              timestamp: data.timestamp || parsed.timestamp || new Date().toISOString(),
+              level: parsed.level || fallbackLvl,
+              message: parsed.message || data.message,
+              podName: data.source || name,
+              namespace: targetNs,
+              container: "main",
+              stream: "stdout",
+              source: data.source || name,
+              parsed,
+            };
+
+            if (parsed.level === "ERROR" || parsed.level === "FATAL") {
+              const src = data.source || name || "workload";
+              useTopologyStore
+                .getState()
+                .addNotification(
+                  `Error Log Detected in ${src}`,
+                  parsed.message,
+                  "CRITICAL"
+                );
+            }
+
+            setLogs((prev) => [...prev.slice(-(maxLogs - 1)), newLogLine]);
+          }
+        } catch {
+          // Ignored
+        }
+      };
+
+      ws.onerror = () => {
+        setRawStatus("error");
+      };
+
+      ws.onclose = () => {
+        setRawStatus("offline");
+      };
+    })();
 
     return () => {
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+      isDisposed = true;
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
         ws.close();
       }
     };

@@ -51,6 +51,24 @@ export const requireAuth = async (request: Request, response: Response, next: Ne
       response.status(401).json({ error: "Invalid access token" });
       return;
     }
+
+    // Recognize internal system service tokens (e.g. k8s-streamer -> api-server)
+    if (payload.sub === "k8s-streamer" || payload.sub === "api-server") {
+      request.user = {
+        id: payload.sub,
+        name: "System Service",
+        email: `${payload.sub}@envscale.internal`,
+        role: "ADMIN",
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        passwordHash: "",
+        avatar: null,
+      } as any;
+      next();
+      return;
+    }
+
     const user = await getUserById(payload.sub);
     if (!user) {
       response.status(401).json({ error: "User is inactive or unavailable" });

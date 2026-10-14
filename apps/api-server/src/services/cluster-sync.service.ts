@@ -2,6 +2,8 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { clusters } from "../db/schema.js";
 import { decryptKubeconfig } from "../utils/crypto.js";
+import { createServiceToken } from "./auth.service.js";
+import { syncAllAlertPoliciesToStreamer } from "./alert-policy.service.js";
 
 const getStreamerUrl = () => process.env.K8S_STREAMER_URL || "http://localhost:8080";
 
@@ -59,9 +61,13 @@ export const syncClusterWithStreamer = async (
   const timeoutId = setTimeout(() => controller.abort(), 6000);
 
   try {
+    const serviceToken = createServiceToken();
     const res = await fetch(`${streamerUrl}/api/v1/clusters/register`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceToken}`,
+      },
       body: JSON.stringify({
         clusterId: cluster.id,
         kubeconfig: rawKubeconfig,
@@ -181,6 +187,7 @@ export const hydrateClustersOnStartup = async (): Promise<void> => {
     const results = await reconcileAllClusters();
     const connected = results.filter((r) => r.success).length;
     console.log(`[ClusterSync] Startup hydration complete: ${connected}/${results.length} clusters active in streaming gateway.`);
+    void syncAllAlertPoliciesToStreamer();
   } catch (err) {
     console.error("[ClusterSync] Startup cluster hydration encountered an error:", err);
   }

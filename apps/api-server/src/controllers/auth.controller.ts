@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import {
   findUserByEmail,
   getUserById,
+  getUserAccessibleClusterIds,
   issueTokens,
   createAccessToken,
   registerUser,
@@ -107,6 +108,7 @@ export const getStreamerToken = async (request: Request, response: Response) => 
     response.status(401).json({ error: "Authentication required" });
     return;
   }
-  const token = createAccessToken(request.user);
-  response.json({ token });
+  const allowedClusterIds = await getUserAccessibleClusterIds(request.user.id, request.user.role);
+  const token = createAccessToken(request.user, { allowedClusterIds });
+  response.json({ token, allowedClusterIds });
 };
