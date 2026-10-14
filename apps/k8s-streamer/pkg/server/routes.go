@@ -83,7 +83,7 @@ func SetupRoutes(
 
 	setupRollbackRoutes(mux, clusterManager, hub)
 
-	mux.HandleFunc("/api/v1/clusters/register", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v1/clusters/register", RequireAdmin(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -129,9 +129,11 @@ func SetupRoutes(
 			"status":    "registered",
 			"clusterId": req.ClusterID,
 		})
-	})
+	}))
 
-	mux.HandleFunc("/api/v1/clusters/snapshot", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v1/clusters/snapshot", RequireClusterAuth(func(r *http.Request) string {
+		return r.URL.Query().Get("clusterId")
+	}, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -167,44 +169,50 @@ func SetupRoutes(
 			"configMaps":   configMaps,
 			"secrets":      secrets,
 		})
-	})
+	}))
 
 	mux.HandleFunc("/api/v1/clusters", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"clusters": clusterManager.ListClusters(),
-				"total":    clusterManager.ActiveClusterCount(),
-			})
+			RequireAuth(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"clusters": clusterManager.ListClusters(),
+					"total":    clusterManager.ActiveClusterCount(),
+				})
+			})(w, r)
 			return
 		}
 
 		if r.Method == http.MethodDelete {
-			clusterID := r.URL.Query().Get("clusterId")
-			if clusterID == "" {
-				http.Error(w, "clusterId query parameter required", http.StatusBadRequest)
-				return
-			}
+			RequireClusterAuth(func(r *http.Request) string {
+				return r.URL.Query().Get("clusterId")
+			}, func(w http.ResponseWriter, r *http.Request) {
+				clusterID := r.URL.Query().Get("clusterId")
+				if clusterID == "" {
+					http.Error(w, "clusterId query parameter required", http.StatusBadRequest)
+					return
+				}
 
-			if err := clusterManager.UnregisterCluster(clusterID); err != nil {
-				http.Error(w, err.Error(), http.StatusNotFound)
-				return
-			}
+				if err := clusterManager.UnregisterCluster(clusterID); err != nil {
+					http.Error(w, err.Error(), http.StatusNotFound)
+					return
+				}
 
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"status":    "unregistered",
-				"clusterId": clusterID,
-			})
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"status":    "unregistered",
+					"clusterId": clusterID,
+				})
+			})(w, r)
 			return
 		}
 
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	})
 
-	mux.HandleFunc("/api/v1/clusters/unregister-all", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v1/clusters/unregister-all", RequireAdmin(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost && r.Method != http.MethodDelete {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -216,9 +224,9 @@ func SetupRoutes(
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status": "all_unregistered",
 		})
-	})
+	}))
 
-	mux.HandleFunc("/api/v1/logs/stream", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v1/logs/stream", RequireAuth(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "Failed to read request body", http.StatusBadRequest)
@@ -232,6 +240,12 @@ func SetupRoutes(
 		}
 		if req.ClusterID == "" || req.Namespace == "" || req.PodName == "" {
 			http.Error(w, "clusterId, namespace, and podName are required", http.StatusBadRequest)
+			return
+		}
+
+		claims := ExtractClaims(r)
+		if authErr := websocket.CheckClusterAuthorization(claims, req.ClusterID); authErr != nil {
+			writeAuthError(w, http.StatusForbidden, fmt.Sprintf("Cluster authorization denied: %v", authErr))
 			return
 		}
 
@@ -282,9 +296,9 @@ func SetupRoutes(
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
-	})
+	}))
 
-	mux.HandleFunc("/api/v1/chaos/inject", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v1/chaos/inject", RequireAuth(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "Failed to read request body", http.StatusBadRequest)
@@ -300,6 +314,12 @@ func SetupRoutes(
 			}
 			if req.ClusterID == "" || req.Namespace == "" || req.Name == "" || req.FaultType == "" {
 				http.Error(w, "clusterId, namespace, name, and faultType are required", http.StatusBadRequest)
+				return
+			}
+
+			claims := ExtractClaims(r)
+			if authErr := websocket.CheckClusterAuthorization(claims, req.ClusterID); authErr != nil {
+				writeAuthError(w, http.StatusForbidden, fmt.Sprintf("Cluster authorization denied: %v", authErr))
 				return
 			}
 
@@ -348,15 +368,23 @@ func SetupRoutes(
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
-	})
+	}))
 
-	mux.HandleFunc("/api/v1/chaos/faults", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v1/chaos/faults", RequireAuth(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
 		clusterID := r.URL.Query().Get("clusterId")
+		if clusterID != "" {
+			claims := ExtractClaims(r)
+			if authErr := websocket.CheckClusterAuthorization(claims, clusterID); authErr != nil {
+				writeAuthError(w, http.StatusForbidden, fmt.Sprintf("Cluster authorization denied: %v", authErr))
+				return
+			}
+		}
+
 		faults := chaosInjector.ListFaults(clusterID)
 
 		w.Header().Set("Content-Type", "application/json")
@@ -365,72 +393,79 @@ func SetupRoutes(
 			"activeFaults": faults,
 			"total":        len(faults),
 		})
-	})
+	}))
 
 	mux.HandleFunc("/api/v1/evaluator/rules", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			rules := metricEvaluator.ListRules()
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"rules": rules,
-				"total": len(rules),
-			})
+			RequireAuth(func(w http.ResponseWriter, r *http.Request) {
+				rules := metricEvaluator.ListRules()
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"rules": rules,
+					"total": len(rules),
+				})
+			})(w, r)
 
 		case http.MethodPost:
-			body, err := io.ReadAll(r.Body)
-			if err != nil {
-				http.Error(w, "Failed to read request body", http.StatusBadRequest)
-				return
-			}
+			RequireAdmin(func(w http.ResponseWriter, r *http.Request) {
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					http.Error(w, "Failed to read request body", http.StatusBadRequest)
+					return
+				}
 
-			var rules []k8s.AlertRule
-			if err := json.Unmarshal(body, &rules); err == nil {
-				metricEvaluator.SetRules(rules)
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"status": "rules_synced",
-					"count":  len(rules),
-				})
-				return
-			}
+				var rules []k8s.AlertRule
+				if err := json.Unmarshal(body, &rules); err == nil {
+					metricEvaluator.SetRules(rules)
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusOK)
+					json.NewEncoder(w).Encode(map[string]interface{}{
+						"status": "rules_synced",
+						"count":  len(rules),
+					})
+					return
+				}
 
-			var singleRule k8s.AlertRule
-			if err := json.Unmarshal(body, &singleRule); err == nil && singleRule.RuleID != "" {
-				metricEvaluator.AddRule(singleRule)
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"status": "rule_added",
-					"ruleId": singleRule.RuleID,
-				})
-				return
-			}
+				var singleRule k8s.AlertRule
+				if err := json.Unmarshal(body, &singleRule); err == nil && singleRule.RuleID != "" {
+					metricEvaluator.AddRule(singleRule)
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusOK)
+					json.NewEncoder(w).Encode(map[string]interface{}{
+						"status": "rule_added",
+						"ruleId": singleRule.RuleID,
+					})
+					return
+				}
 
-			http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
+				http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
+			})(w, r)
 
 		case http.MethodDelete:
-			ruleID := r.URL.Query().Get("ruleId")
-			if ruleID == "" {
-				http.Error(w, "ruleId query parameter required", http.StatusBadRequest)
-				return
-			}
+			RequireAdmin(func(w http.ResponseWriter, r *http.Request) {
+				ruleID := r.URL.Query().Get("ruleId")
+				if ruleID == "" {
+					http.Error(w, "ruleId query parameter required", http.StatusBadRequest)
+					return
+				}
 
-			removed := metricEvaluator.RemoveRule(ruleID)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"status":  "deleted",
-				"ruleId":  ruleID,
-				"success": removed,
-			})
+				removed := metricEvaluator.RemoveRule(ruleID)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"status":  "deleted",
+					"ruleId":  ruleID,
+					"success": removed,
+				})
+			})(w, r)
 
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
+
 
 	registerResourceRoutes(mux, clusterManager)
 }

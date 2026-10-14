@@ -5,6 +5,7 @@ import { clusters } from "../db/schema.js";
 import { encryptKubeconfig } from "../utils/crypto.js";
 import { clusterConnectSchema, idSchema } from "../schemas/request.schemas.js";
 import { syncClusterWithStreamer } from "./cluster-sync.service.js";
+import { createServiceToken } from "./auth.service.js";
 
 export class ClusterConnectionError extends Error {
   constructor(message: string) {
@@ -42,9 +43,13 @@ const notifyStreamerGateway = async (endpoint: string, method: "POST" | "DELETE"
   const timeoutId = setTimeout(() => controller.abort(), 5000);
 
   try {
+    const serviceToken = createServiceToken();
     const res = await fetch(`${streamerUrl}${endpoint}`, {
       method,
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceToken}`,
+      },
       body: payload ? JSON.stringify(payload) : undefined,
       signal: controller.signal,
     });

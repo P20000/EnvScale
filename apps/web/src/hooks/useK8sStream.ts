@@ -190,7 +190,9 @@ export function useK8sStream(
             if (!isComponentMounted.current || wsRef.current !== socket) return;
 
             try {
-              const res = await fetch(`${streamerUrl}/api/v1/clusters/snapshot?clusterId=${encodeURIComponent(clusterId)}`);
+              const res = await fetch(`${streamerUrl}/api/v1/clusters/snapshot?clusterId=${encodeURIComponent(clusterId)}`, {
+                headers: token ? { Authorization: `Bearer ${token}` } : {},
+              });
               if (res.ok) {
                 snapshotAttemptsRef.current = 0;
                 const snapshot = await res.json();
@@ -304,8 +306,12 @@ export function useK8sStream(
         if (!isComponentMounted.current) return;
 
         try {
-          const parsed = JSON.parse(event.data);
-          if (parsed) {
+          const raw = JSON.parse(event.data);
+          if (!raw) return;
+          const rawEvents = Array.isArray(raw) ? raw : [raw];
+
+          for (const parsed of rawEvents) {
+            if (!parsed) continue;
             const eventType = String(parsed.event || parsed.type || "");
             const eventPayload = parsed.data !== undefined ? parsed.data : parsed.payload;
 

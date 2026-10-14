@@ -60,9 +60,15 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
       }
       const namespace = podData.namespace || "default";
 
+      const token = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token && token !== "null") {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
       const res = await fetch(`${STREAMER_BASE_URL}/api/v1/chaos/inject`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           clusterId: clusterId,
           namespace: namespace,
@@ -87,9 +93,15 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
   const clearChaos = async (faultId: string) => {
     try {
       setChaosActionMsg("Reverting injected chaos fault...");
+      const token = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token && token !== "null") {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
       const res = await fetch(`${STREAMER_BASE_URL}/api/v1/chaos/inject`, {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ faultId }),
       });
       if (res.ok) {

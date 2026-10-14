@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -23,13 +26,50 @@ const (
 	maxMessageSize = 512 * 1024 // 512 KB
 )
 
+// IsOriginAllowed checks if the incoming HTTP request origin is permitted by CORS configuration.
+func IsOriginAllowed(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true // Non-browser clients, cURL, and native apps
+	}
+
+	allowedEnv := os.Getenv("CORS_ORIGIN")
+	if allowedEnv == "" {
+		allowedEnv = os.Getenv("ALLOWED_ORIGINS")
+	}
+
+	if allowedEnv == "*" {
+		return true
+	}
+
+	var allowedList []string
+	if allowedEnv != "" {
+		for _, o := range strings.Split(allowedEnv, ",") {
+			if trimmed := strings.TrimSpace(o); trimmed != "" {
+				allowedList = append(allowedList, trimmed)
+			}
+		}
+	} else {
+		allowedList = []string{
+			"http://localhost:5173",
+			"http://localhost:3000",
+			"http://127.0.0.1:5173",
+			"http://127.0.0.1:3000",
+		}
+	}
+
+	for _, allowed := range allowedList {
+		if origin == allowed {
+			return true
+		}
+	}
+	return false
+}
+
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	// Allow all origins for dev/testing; production origin validation enforced in API server gateway
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
+	CheckOrigin:     IsOriginAllowed,
 }
 
 // Client is a middleman between the websocket connection and the hub.
@@ -45,6 +85,10 @@ type Client struct {
 
 	// Buffered channel of outbound messages.
 	send chan []byte
+
+	// Protection against race condition panics on closed channel sends
+	mu     sync.Mutex
+	closed bool
 }
 
 // NewClient initializes a Client instance subscribed to a specific cluster room
@@ -58,6 +102,31 @@ func NewClient(id string, clusterID string, hub *Hub, conn *websocket.Conn) *Cli
 	}
 }
 
+// Send attempts to enqueue a payload to the client's send buffer.
+// Returns false if the client is closed or buffer full, preventing closed-channel panics.
+func (c *Client) Send(payload []byte) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return false
+	}
+	select {
+	case c.send <- payload:
+		return true
+	default:
+		return false
+	}
+}
+
+// Close safely shuts down the outbound buffer without multiple close panic risks.
+func (c *Client) Close() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.closed {
+		c.closed = true
+		close(c.send)
+	}
+}
 
 // ReadPump pumps messages from the websocket connection to the hub.
 func (c *Client) ReadPump() {
@@ -130,8 +199,14 @@ func (c *Client) WritePump() {
 				w.Write([]byte{'['})
 				w.Write(message)
 				for i := 0; i < queued; i++ {
-					w.Write([]byte{','})
-					w.Write(<-c.send)
+					select {
+					case nextMsg, ok := <-c.send:
+						if ok && len(nextMsg) > 0 {
+							w.Write([]byte{','})
+							w.Write(nextMsg)
+						}
+					default:
+					}
 				}
 				w.Write([]byte{']'})
 
@@ -154,7 +229,8 @@ func (c *Client) WritePump() {
 //   - clientId  (optional) — unique client identifier; auto-generated if absent
 //   - clusterId (required) — Kubernetes cluster room to subscribe to
 func ServeWs(hub *Hub, id string, w http.ResponseWriter, r *http.Request) {
-	if err := AuthenticateHandshake(r); err != nil {
+	claims, err := AuthenticateHandshake(r)
+	if err != nil {
 		log.Printf("[WebSocket Auth] Rejected unauthenticated connection from %s: %v", r.RemoteAddr, err)
 		http.Error(w, fmt.Sprintf("Unauthorized: %v", err), http.StatusUnauthorized)
 		return
@@ -163,6 +239,12 @@ func ServeWs(hub *Hub, id string, w http.ResponseWriter, r *http.Request) {
 	clusterID := r.URL.Query().Get("clusterId")
 	if clusterID == "" {
 		http.Error(w, "clusterId query parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := CheckClusterAuthorization(claims, clusterID); err != nil {
+		log.Printf("[WebSocket Auth] Rejected unauthorized connection for cluster %s from %s: %v", clusterID, r.RemoteAddr, err)
+		http.Error(w, fmt.Sprintf("Forbidden: %v", err), http.StatusForbidden)
 		return
 	}
 
@@ -180,3 +262,4 @@ func ServeWs(hub *Hub, id string, w http.ResponseWriter, r *http.Request) {
 	go client.WritePump()
 	go client.ReadPump()
 }
+

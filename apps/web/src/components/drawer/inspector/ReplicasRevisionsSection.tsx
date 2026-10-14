@@ -58,6 +58,8 @@ export function ReplicasRevisionsSection({
         namespace,
         deploymentName: workloadName,
         replicaSetName: rev.name,
+        targetRevision: rev.revision ? String(rev.revision) : undefined,
+        targetHash: rev.hash,
       });
       if (res.success) {
         setFeedback({

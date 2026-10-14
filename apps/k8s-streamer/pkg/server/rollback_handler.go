@@ -26,6 +26,7 @@ type RollbackRequest struct {
 	DeploymentName string `json:"deploymentName"`
 	TargetRevision string `json:"targetRevision"`
 	TargetHash     string `json:"targetHash"`
+	ReplicaSetName string `json:"replicaSetName"`
 }
 
 // setupRollbackRoutes mounts the authenticated deployment rollback endpoint.
@@ -63,12 +64,17 @@ func setupRollbackRoutes(mux *http.ServeMux, clusterManager *k8s.ClusterManager,
 		}
 
 		var req RollbackRequest
-		if err := json.Unmarshal(body, &req); err != nil {
-			http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
-			return
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &req); err != nil {
+				http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
+				return
+			}
 		}
 
-		// Extract clusterId from URL path if not in body
+		// Extract clusterId from path value or URL path if not in body
+		if req.ClusterID == "" {
+			req.ClusterID = r.PathValue("clusterId")
+		}
 		if req.ClusterID == "" {
 			parts := strings.Split(r.URL.Path, "/")
 			for i, part := range parts {
@@ -81,6 +87,16 @@ func setupRollbackRoutes(mux *http.ServeMux, clusterManager *k8s.ClusterManager,
 
 		if req.ClusterID == "" || req.Namespace == "" || req.DeploymentName == "" {
 			http.Error(w, "clusterId, namespace, and deploymentName are required", http.StatusBadRequest)
+			return
+		}
+
+		// Verify that caller has authorization to target cluster
+		if authErr := websocket.CheckClusterAuthorization(claims, req.ClusterID); authErr != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error": fmt.Sprintf("Cluster authorization denied: %v", authErr),
+			})
 			return
 		}
 
@@ -115,19 +131,26 @@ func setupRollbackRoutes(mux *http.ServeMux, clusterManager *k8s.ClusterManager,
 				continue
 			}
 
-			// Match by revision annotation or template hash
+			// Match by explicit ReplicaSet name, revision annotation, or template hash
 			rsRev := rs.Annotations["deployment.kubernetes.io/revision"]
 			rsHash := rs.Labels["pod-template-hash"]
-			if (req.TargetRevision != "" && rsRev == req.TargetRevision) ||
+			if (req.ReplicaSetName != "" && rs.Name == req.ReplicaSetName) ||
+				(req.TargetRevision != "" && rsRev == req.TargetRevision) ||
 				(req.TargetHash != "" && (rsHash == req.TargetHash || strings.HasSuffix(rs.Name, req.TargetHash))) {
 				targetPodTemplateSpec = &rs.Spec.Template
+				if req.TargetHash == "" {
+					req.TargetHash = rsHash
+				}
+				if req.TargetRevision == "" {
+					req.TargetRevision = rsRev
+				}
 				break
 			}
 		}
 
 		if targetPodTemplateSpec == nil {
-			http.Error(w, fmt.Sprintf("Target revision #%s (%s) not found for deployment %s",
-				req.TargetHash, req.TargetRevision, req.DeploymentName), http.StatusNotFound)
+			http.Error(w, fmt.Sprintf("Target revision (%s / #%s / %s) not found for deployment %s",
+				req.ReplicaSetName, req.TargetHash, req.TargetRevision, req.DeploymentName), http.StatusNotFound)
 			return
 		}
 
@@ -166,6 +189,7 @@ func setupRollbackRoutes(mux *http.ServeMux, clusterManager *k8s.ClusterManager,
 			"deploymentName": req.DeploymentName,
 			"targetHash":     req.TargetHash,
 			"targetRevision": req.TargetRevision,
+			"replicaSetName": req.ReplicaSetName,
 			"user":           userIdentifier,
 			"timestamp":      time.Now().UTC().Format(time.RFC3339),
 		})
@@ -182,6 +206,8 @@ func setupRollbackRoutes(mux *http.ServeMux, clusterManager *k8s.ClusterManager,
 		})
 	}
 
+	mux.HandleFunc("/api/v1/clusters/{clusterId}/rollout/rollback", handler)
 	mux.HandleFunc("/api/v1/clusters/rollout/rollback", handler)
 	mux.HandleFunc("/api/v1/rollout/rollback", handler)
 }
+

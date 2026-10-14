@@ -275,8 +275,17 @@ export async function apiMe() {
  */
 export async function apiDisconnectCluster(clusterId: string): Promise<boolean> {
   try {
+    let token = await getStreamerToken();
+    if (!token) {
+      const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+      if (rawAuth && rawAuth !== "null") token = rawAuth;
+    }
+    const streamerHeaders: Record<string, string> = {};
+    if (token) streamerHeaders["Authorization"] = `Bearer ${token}`;
+
     await fetch(`${STREAMER_BASE_URL}/api/v1/clusters?clusterId=${encodeURIComponent(clusterId)}`, {
       method: "DELETE",
+      headers: streamerHeaders,
     });
 
     const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
@@ -327,7 +336,9 @@ export interface RollbackParams {
   clusterId: string;
   namespace: string;
   deploymentName: string;
-  replicaSetName: string;
+  replicaSetName?: string;
+  targetRevision?: string;
+  targetHash?: string;
 }
 
 export interface RollbackResponse {

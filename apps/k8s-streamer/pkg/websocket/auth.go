@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -87,19 +88,88 @@ func AuthenticateRequest(r *http.Request) (jwt.MapClaims, error) {
 
 // AuthenticateHandshake validates the JWT token passed via URL query parameter ('token') or Authorization header.
 // Enforces strict HMAC algorithm signature validation to prevent algorithm confusion attacks.
-func AuthenticateHandshake(r *http.Request) error {
+// Returns the validated MapClaims on success.
+func AuthenticateHandshake(r *http.Request) (jwt.MapClaims, error) {
 	secret := os.Getenv("JWT_ACCESS_SECRET")
 	allowAnonymous := os.Getenv("ALLOW_ANONYMOUS_WS") == "true"
 
 	if secret == "" && allowAnonymous {
+		return nil, nil
+	}
+
+	claims, err := AuthenticateRequest(r)
+	if err != nil && allowAnonymous && (errors.Is(err, ErrMissingToken) || errors.Is(err, ErrMissingSecret)) {
+		return nil, nil // Permitted in local dev mode when ALLOW_ANONYMOUS_WS=true
+	}
+
+	return claims, err
+}
+
+// CheckClusterAuthorization verifies whether the provided claims permit access to the specified clusterID.
+// Evaluates server roles, explicit allowedClusterIds claims, and local dev fallback permissions.
+func CheckClusterAuthorization(claims jwt.MapClaims, clusterID string) error {
+	allowAnonymous := os.Getenv("ALLOW_ANONYMOUS_WS") == "true"
+	if claims == nil {
+		if allowAnonymous {
+			return nil
+		}
+		return ErrMissingToken
+	}
+
+	// Service-to-service or super-admin role bypass
+	if sub, ok := claims["sub"].(string); ok && sub == "api-server" {
+		return nil
+	}
+	if role, ok := claims["role"].(string); ok && (role == "SUPER_ADMIN" || role == "ADMIN") {
 		return nil
 	}
 
-	_, err := AuthenticateRequest(r)
-	if err != nil && allowAnonymous && (errors.Is(err, ErrMissingToken) || errors.Is(err, ErrMissingSecret)) {
-		return nil // Permitted in local dev mode when ALLOW_ANONYMOUS_WS=true
+	// Check allowedClusterIds array if present in claims
+	if rawClusters, exists := claims["allowedClusterIds"]; exists && rawClusters != nil {
+		switch clusterList := rawClusters.(type) {
+		case []interface{}:
+			for _, item := range clusterList {
+				if str, ok := item.(string); ok {
+					if str == "*" || str == clusterID {
+						return nil
+					}
+				}
+			}
+			return fmt.Errorf("user %v is not authorized to access cluster %s", claims["sub"], clusterID)
+		case []string:
+			for _, str := range clusterList {
+				if str == "*" || str == clusterID {
+					return nil
+				}
+			}
+			return fmt.Errorf("user %v is not authorized to access cluster %s", claims["sub"], clusterID)
+		}
 	}
 
-	return err
+	// If no allowedClusterIds claim was embedded, allow if local dev anonymous fallback is enabled
+	if allowAnonymous {
+		return nil
+	}
+
+	return nil
 }
+
+// CreateServiceToken generates a short-lived administrative service token
+// signed with JWT_ACCESS_SECRET for internal inter-service communication (e.g. streamer -> api-server).
+func CreateServiceToken() (string, error) {
+	secret := os.Getenv("JWT_ACCESS_SECRET")
+	if secret == "" {
+		return "", ErrMissingSecret
+	}
+	claims := jwt.MapClaims{
+		"sub":               "k8s-streamer",
+		"role":              "ADMIN",
+		"allowedClusterIds": []string{"*"},
+		"exp":               time.Now().Add(15 * time.Minute).Unix(),
+		"iat":               time.Now().Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(secret))
+}
+
 
