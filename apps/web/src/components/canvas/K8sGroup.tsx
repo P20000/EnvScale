@@ -64,7 +64,7 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
     const isReady = !isTerminating && !isFailing && (ph === "running" || ph === "ready") && p.ready !== false;
     return {
       name: p.name,
-      phase: p.phase || p.status || "Running",
+      phase: String(p.phase || p.status || "Running"),
       isReady,
       isTerminating,
       restarts: Number(p.restarts || p.restartCount || 0),

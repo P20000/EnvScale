@@ -9,9 +9,11 @@ export interface K8sPodData extends Record<string, unknown> {
   name: string;
   namespace: string;
   nodeName?: string;
+  phase?: string;
   status: "Running" | "CrashLoopBackOff" | "Pending" | "ContainerCreating" | "Terminating" | "Terminated" | "Failed" | "Unknown" | "Succeeded" | "Completed" | "OOMKilled";
   isTerminating?: boolean;
   restarts: number;
+  restartCount?: number;
   ip?: string;
   podIp?: string;
   createdAt?: string;
