@@ -63,6 +63,7 @@ type activeFault struct {
 	FaultType      FaultType `json:"faultType"`
 	Target         string    `json:"target"`    // "pod" | "deployment"
 	Name           string    `json:"name"`
+	WorkloadName   string    `json:"workloadName,omitempty"`
 	Namespace      string    `json:"namespace"`
 	ClusterID      string    `json:"clusterId"`
 	InjectedAt     time.Time `json:"injectedAt"`
@@ -126,7 +127,7 @@ func NewInjector(provider ClientsetProvider, hub HubBroadcaster, optionalChecker
 // InjectFault executes the requested fault type against the target resource
 // in the given cluster. Returns a faultID that can be used to clear it later.
 func (inj *Injector) InjectFault(ctx context.Context, clusterID, namespace, name string, faultType FaultType, force bool) (string, error) {
-	pdbName, pdbBreached, err := inj.checkWorkloadPDBSafety(ctx, clusterID, namespace, name, faultType, force)
+	pdbName, pdbBreached, workloadName, err := inj.checkWorkloadPDBSafety(ctx, clusterID, namespace, name, faultType, force)
 	if err != nil {
 		return "", err
 	}
@@ -184,6 +185,7 @@ func (inj *Injector) InjectFault(ctx context.Context, clusterID, namespace, name
 		FaultType:     faultType,
 		Target:        target,
 		Name:          name,
+		WorkloadName:  workloadName,
 		Namespace:     namespace,
 		ClusterID:     clusterID,
 		InjectedAt:    time.Now().UTC(),

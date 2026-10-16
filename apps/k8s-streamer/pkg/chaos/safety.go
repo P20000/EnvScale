@@ -27,10 +27,28 @@ type PDBChecker interface {
 	CheckPDBSafety(clusterID, namespace, workloadName string, labels map[string]string) (*types.PDBStatusDelta, bool)
 }
 
+// countActiveDisruptions returns the number of active in-flight faults affecting the target workload.
+func (inj *Injector) countActiveDisruptions(clusterID, namespace, workloadName, targetName string) int32 {
+	inj.mu.RLock()
+	defer inj.mu.RUnlock()
+
+	var count int32
+	for _, f := range inj.activeFaults {
+		if f.ClusterID == clusterID && f.Namespace == namespace {
+			if (workloadName != "" && f.WorkloadName == workloadName) ||
+				f.Name == workloadName ||
+				f.Name == targetName {
+				count++
+			}
+		}
+	}
+	return count
+}
+
 // checkWorkloadPDBSafety validates whether the target workload has enough disruption budget
-func (inj *Injector) checkWorkloadPDBSafety(ctx context.Context, clusterID, namespace, targetName string, faultType FaultType, force bool) (string, bool, error) {
+func (inj *Injector) checkWorkloadPDBSafety(ctx context.Context, clusterID, namespace, targetName string, faultType FaultType, force bool) (string, bool, string, error) {
 	if inj.pdbChecker == nil {
-		return "", false, nil
+		return "", false, targetName, nil
 	}
 
 	var targetLabels map[string]string
@@ -58,22 +76,26 @@ func (inj *Injector) checkWorkloadPDBSafety(ctx context.Context, clusterID, name
 
 	pdbDelta, found := inj.pdbChecker.CheckPDBSafety(clusterID, namespace, workloadName, targetLabels)
 	if !found || pdbDelta == nil {
-		return "", false, nil
+		return "", false, workloadName, nil
 	}
 
 	pdbName := pdbDelta.Name
 	var pdbBreached bool
 
-	if pdbDelta.DisruptionsAllowed <= 0 {
+	// Calculate effective allowed disruptions by accounting for active in-flight faults
+	activeInflight := inj.countActiveDisruptions(clusterID, namespace, workloadName, targetName)
+	effectiveAllowed := pdbDelta.DisruptionsAllowed - activeInflight
+
+	if effectiveAllowed <= 0 {
 		if !force {
-			return pdbName, false, &ErrPDBViolation{
+			return pdbName, false, workloadName, &ErrPDBViolation{
 				PDBName:            pdbDelta.Name,
-				DisruptionsAllowed: pdbDelta.DisruptionsAllowed,
+				DisruptionsAllowed: effectiveAllowed,
 				Workload:           targetName,
 				Namespace:          namespace,
 				Message: fmt.Sprintf(
-					"cannot inject chaos: workload %s/%s has 0 allowed disruptions under PDB %s",
-					namespace, targetName, pdbDelta.Name,
+					"cannot inject chaos: workload %s/%s has %d allowed disruptions under PDB %s (active in-flight disruptions: %d)",
+					namespace, targetName, effectiveAllowed, pdbDelta.Name, activeInflight,
 				),
 			}
 		}
@@ -81,5 +103,5 @@ func (inj *Injector) checkWorkloadPDBSafety(ctx context.Context, clusterID, name
 		pdbBreached = true
 	}
 
-	return pdbName, pdbBreached, nil
+	return pdbName, pdbBreached, workloadName, nil
 }
