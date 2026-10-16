@@ -52,6 +52,8 @@ export const WS_EVENTS = {
   SECRET_DELETED: 'EVENT_SECRET_DELETED',
   CHAOS_FAULT_INJECTED: 'EVENT_CHAOS_FAULT_INJECTED',
   CHAOS_FAULT_CLEARED: 'EVENT_CHAOS_FAULT_CLEARED',
+  PDB_MUTATED: 'EVENT_PDB_MUTATED',
+  PDB_DELETED: 'EVENT_PDB_DELETED',
 } as const;
 
 export type WSEventType = typeof WS_EVENTS[keyof typeof WS_EVENTS];
@@ -210,5 +212,21 @@ export interface ChaosFaultEvent {
   status: 'injected' | 'cleared' | 'failed' | string;
   message?: string;
   timestamp: string;
+  pdbBreached?: boolean;
+  pdbName?: string;
+}
+
+// PodDisruptionBudget State Payload for Topology Engine
+export interface PDBTopologyData {
+  name: string;
+  namespace: string;
+  minAvailable?: string | number;
+  maxUnavailable?: string | number;
+  currentHealthy: number;
+  desiredHealthy: number;
+  expectedPods: number;
+  disruptionsAllowed: number;
+  matchLabels: Record<string, string>;
+  createdAt?: string;
 }
 

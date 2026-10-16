@@ -45,7 +45,11 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
   const [chaosActionMsg, setChaosActionMsg] = useState<string | null>(null);
   const [isEmbeddedLogOpen, setIsEmbeddedLogOpen] = useState(true);
 
-  const triggerChaos = async (faultType: "crash" | "oom-pressure" | "scale-down", actionLabel: string) => {
+  const triggerChaos = async (
+    faultType: "crash" | "oom-pressure" | "scale-down",
+    actionLabel: string,
+    force: boolean = false
+  ) => {
     if (!target) return;
     const podData = target.data as K8sPodData;
     const targetWorkloadName = podData.labels?.app || podData.ownerName || target.data.name;
@@ -74,19 +78,28 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
           namespace: namespace,
           name: nameToInject,
           faultType: faultType,
+          force,
         }),
       });
 
       if (res.ok) {
-        setChaosActionMsg(`[CHAOS FAULT INJECTED]: ${actionLabel} applied live to cluster.`);
+        setChaosActionMsg(
+          force
+            ? `[CHAOS FORCED]: ${actionLabel} applied live (PDB guardrail bypassed).`
+            : `[CHAOS FAULT INJECTED]: ${actionLabel} applied live to cluster.`
+        );
+      } else if (res.status === 409) {
+        const errJson = await res.json().catch(() => null);
+        const msg = errJson?.message || "Disruptions budget exhausted (0 allowed).";
+        setChaosActionMsg(`[PDB SAFETY BLOCKED]: ${msg} Enable 'Force' toggle to bypass.`);
       } else {
         const errText = await res.text();
         setChaosActionMsg(`[CHAOS FAILED]: ${errText || "Cluster rejected injection request"}`);
       }
-      setTimeout(() => setChaosActionMsg(null), 5000);
+      setTimeout(() => setChaosActionMsg(null), 6000);
     } catch (err: unknown) {
       setChaosActionMsg(`[CHAOS ERROR]: ${err instanceof Error ? err.message : String(err)}`);
-      setTimeout(() => setChaosActionMsg(null), 5000);
+      setTimeout(() => setChaosActionMsg(null), 6000);
     }
   };
 

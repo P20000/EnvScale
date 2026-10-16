@@ -186,6 +186,8 @@ export interface ChaosFaultEvent {
   status: "injected" | "cleared" | "failed" | string;
   message?: string;
   timestamp: string;
+  pdbBreached?: boolean;
+  pdbName?: string;
 }
 
 export interface ProbeSpecInfo {
@@ -219,5 +221,18 @@ export interface K8sNetworkPolicyData extends Record<string, unknown> {
   policyTypes: string[];
   ingressRules: string[];
   targetPods?: string[];
+}
+
+export interface K8sPDBData extends Record<string, unknown> {
+  name: string;
+  namespace: string;
+  minAvailable?: string | number;
+  maxUnavailable?: string | number;
+  currentHealthy: number;
+  desiredHealthy: number;
+  expectedPods: number;
+  disruptionsAllowed: number;
+  matchLabels: Record<string, string>;
+  createdAt?: string;
 }
 

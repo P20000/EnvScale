@@ -313,6 +313,7 @@ func (im *InformerManager) Start(stopCh <-chan struct{}) {
 	im.setupStorageInformers()
 	im.setupConfigInformers()
 	im.setupPolicyHPAInformers()
+	im.setupPDBInformers()
 
 	im.factory.Start(stopCh)
 	go im.startMetricsPulse(stopCh)

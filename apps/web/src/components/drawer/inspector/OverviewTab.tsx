@@ -21,9 +21,10 @@ import { ConfigOverviewSection } from "./ConfigOverviewSection";
 import { AutoscalingHPASection } from "./AutoscalingHPASection";
 import { HealthProbesSection } from "./HealthProbesSection";
 import { NetworkPolicyRolloutSection } from "./NetworkPolicyRolloutSection";
+import { PodDisruptionBudgetSection } from "./PodDisruptionBudgetSection";
 import { getPodPrefix } from "../../../store/helpers/topologyHelpers";
 import { useTopologyStore } from "../../../store/useTopologyStore";
-import { findWorkloadHPA, findWorkloadNetworkPolicies } from "../../../store/helpers/policyHpaHelpers";
+import { findWorkloadHPA, findWorkloadNetworkPolicies, findWorkloadPDB } from "../../../store/helpers/policyHpaHelpers";
 
 interface OverviewTabProps {
   target: NonNullable<SelectedTarget>;
@@ -44,6 +45,7 @@ export function OverviewTab({
 
   const hpas = useTopologyStore((s) => s.hpas);
   const networkPolicies = useTopologyStore((s) => s.networkPolicies);
+  const pdbs = useTopologyStore((s) => s.pdbs);
   const deployments = useTopologyStore((s) => s.deployments);
 
   const workloadName = targetRecord.ownerName
@@ -54,6 +56,7 @@ export function OverviewTab({
   const matchedHPA = findWorkloadHPA(hpas, workloadName, targetNs);
   const podLabels = (target.data as K8sPodData)?.labels || {};
   const matchedNetPols = findWorkloadNetworkPolicies(networkPolicies, podLabels, workloadName, targetNs);
+  const matchedPDB = findWorkloadPDB(pdbs, workloadName, targetNs, podLabels);
   const matchedDep = deployments?.find(
     (d) => d.name.toLowerCase() === workloadName.toLowerCase() && (d.namespace === targetNs || !d.namespace)
   ) || null;
@@ -368,6 +371,7 @@ export function OverviewTab({
                   networkPolicies={matchedNetPols}
                 />
               )}
+              {matchedPDB && <PodDisruptionBudgetSection pdb={matchedPDB} />}
             </>
           )}
 

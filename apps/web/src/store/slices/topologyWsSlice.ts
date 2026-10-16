@@ -477,7 +477,11 @@ export function handleWsMessage(
       eventType === "EVENT_CHAOS_FAULT_CLEARED"
     );
     set({ activeChaosFaults: updatedFaults });
-  } else if (eventType.startsWith("EVENT_HPA_") || eventType.startsWith("EVENT_NETWORKPOLICY_")) {
+  } else if (
+    eventType.startsWith("EVENT_HPA_") ||
+    eventType.startsWith("EVENT_NETWORKPOLICY_") ||
+    eventType.startsWith("EVENT_PDB_")
+  ) {
     handlePolicyHpaWsEvent(state, set, eventType, payloadData);
   }
 }

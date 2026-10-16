@@ -14,6 +14,7 @@ import type {
   K8sSecretData,
   K8sHPAData,
   K8sNetworkPolicyData,
+  K8sPDBData,
 } from "../types/topologyTypes";
 import type { TopologyState } from "../useTopologyStore";
 import { extractServices, extractPods, calculateClusterCapacity } from "../helpers/topologyHelpers";
@@ -121,6 +122,7 @@ export function handleSnapshotSync(
   const snapshotSecrets = Array.isArray(payloadData.secrets) ? (payloadData.secrets as K8sSecretData[]) : [];
   const snapshotHPAs = Array.isArray(payloadData.hpas) ? (payloadData.hpas as K8sHPAData[]) : [];
   const snapshotNetPols = Array.isArray(payloadData.networkPolicies) ? (payloadData.networkPolicies as K8sNetworkPolicyData[]) : [];
+  const snapshotPDBs = Array.isArray(payloadData.pdbs) ? (payloadData.pdbs as K8sPDBData[]) : [];
 
   let updatedNamespaces = useUIStore.getState().selectedNamespaces;
   if (updatedNamespaces.length === 0) {
@@ -157,6 +159,7 @@ export function handleSnapshotSync(
     secrets: snapshotSecrets,
     hpas: snapshotHPAs,
     networkPolicies: snapshotNetPols,
+    pdbs: snapshotPDBs,
   });
   state.applyDagreLayout();
 }

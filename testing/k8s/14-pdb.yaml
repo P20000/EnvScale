@@ -1,0 +1,27 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: todo-backend-pdb
+  namespace: testing-todo
+  labels:
+    app: todo-backend
+    tier: api
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: todo-backend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: redis-db-pdb
+  namespace: testing-todo
+  labels:
+    app: redis-db
+    tier: database
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: redis-db

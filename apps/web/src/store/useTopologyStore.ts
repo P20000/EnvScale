@@ -35,19 +35,9 @@ import {
 } from "./slices/topologyCrudSlice";
 import { handleAddToken, handleAddNotification } from "./slices/topologyNotifSlice";
 import {
-  type ApiToken,
-  type NotificationItem,
-  type K8sIncidentEvent,
-  type HistoryAction,
-  type DeleteModalState,
-  type Cluster,
-  type K8sPVCData,
-  type K8sPVData,
-  type K8sConfigMapData,
-  type K8sSecretData,
-  type ChaosFaultEvent,
-  type K8sHPAData,
-  type K8sNetworkPolicyData,
+  type ApiToken, type NotificationItem, type K8sIncidentEvent, type HistoryAction, type DeleteModalState,
+  type Cluster, type K8sPVCData, type K8sPVData, type K8sConfigMapData, type K8sSecretData, type ChaosFaultEvent,
+  type K8sHPAData, type K8sNetworkPolicyData, type K8sPDBData,
 } from "./types/topologyTypes";
 import {
   extractServices,
@@ -91,6 +81,7 @@ export interface TopologyState {
   secrets: K8sSecretData[];
   hpas: K8sHPAData[];
   networkPolicies: K8sNetworkPolicyData[];
+  pdbs: K8sPDBData[];
   incidents: K8sIncidentEvent[];
   activeChaosFaults: Record<string, ChaosFaultEvent>;
   selectedNode: SelectedTarget;
@@ -181,6 +172,7 @@ export const useTopologyStore = create<TopologyState>()(
       secrets: [],
       hpas: [],
       networkPolicies: [],
+      pdbs: [],
       incidents: [],
       activeChaosFaults: {},
       selectedNode: null,
@@ -375,7 +367,7 @@ export const useTopologyStore = create<TopologyState>()(
       applyDagreLayout: (direction) => {
         const { layoutDirection, showCompletedPods, showCompletedJobs, showStorage, showSystemNamespaces, selectedNamespaces } = useUIStore.getState();
         const targetDir = direction || layoutDirection || "TB";
-        const { rawNodes, nodes, edges, deployments, replicaSets, daemonSets, cronJobs, jobs, pvcs, hpas, networkPolicies } = get();
+        const { rawNodes, nodes, edges, deployments, replicaSets, daemonSets, cronJobs, jobs, pvcs, hpas, networkPolicies, pdbs } = get();
         const baseNodes = rawNodes && rawNodes.length > 0 ? rawNodes : nodes;
         if (baseNodes.length === 0 && (!daemonSets || daemonSets.length === 0) && (!cronJobs || cronJobs.length === 0) && (!jobs || jobs.length === 0) && (!pvcs || pvcs.length === 0)) return;
 
@@ -391,7 +383,8 @@ export const useTopologyStore = create<TopologyState>()(
           jobs,
           showCompletedJobs,
           hpas,
-          networkPolicies
+          networkPolicies,
+          pdbs
         );
 
         const visiblePVCs = filterPVCsForDisplay(pvcs, showStorage, showSystemNamespaces, selectedNamespaces);
@@ -460,7 +453,9 @@ export const useTopologyStore = create<TopologyState>()(
           cronJobs: [],
           jobs: [],
           pvcs: [],
-          pvs: [],
+          hpas: [],
+          networkPolicies: [],
+          pdbs: [],
           incidents: [],
           activeChaosFaults: {},
           selectedNode: null,

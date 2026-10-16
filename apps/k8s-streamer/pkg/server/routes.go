@@ -28,17 +28,6 @@ type LogStreamRequest struct {
 	TailLines int64  `json:"tailLines"`
 }
 
-type ChaosInjectRequest struct {
-	ClusterID string `json:"clusterId"`
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
-	FaultType string `json:"faultType"`
-}
-
-type ChaosClearRequest struct {
-	FaultID string `json:"faultId"`
-}
-
 func SetupRoutes(
 	mux *http.ServeMux,
 	hub *websocket.Hub,
@@ -152,6 +141,7 @@ func SetupRoutes(
 		}
 		hpas := clusterManager.GetHPASnapshot(clusterID)
 		networkPolicies := clusterManager.GetNetworkPolicySnapshot(clusterID)
+		pdbs := clusterManager.GetPDBSnapshot(clusterID)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -172,6 +162,7 @@ func SetupRoutes(
 			"secrets":         secrets,
 			"hpas":            hpas,
 			"networkPolicies": networkPolicies,
+			"pdbs":            pdbs,
 		})
 	}))
 
@@ -302,102 +293,7 @@ func SetupRoutes(
 		}
 	}))
 
-	mux.HandleFunc("/api/v1/chaos/inject", RequireAuth(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, "Failed to read request body", http.StatusBadRequest)
-			return
-		}
-
-		switch r.Method {
-		case http.MethodPost:
-			var req ChaosInjectRequest
-			if err := json.Unmarshal(body, &req); err != nil {
-				http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
-				return
-			}
-			if req.ClusterID == "" || req.Namespace == "" || req.Name == "" || req.FaultType == "" {
-				http.Error(w, "clusterId, namespace, name, and faultType are required", http.StatusBadRequest)
-				return
-			}
-
-			claims := ExtractClaims(r)
-			if authErr := websocket.CheckClusterAuthorization(claims, req.ClusterID); authErr != nil {
-				writeAuthError(w, http.StatusForbidden, fmt.Sprintf("Cluster authorization denied: %v", authErr))
-				return
-			}
-
-			faultID, err := chaosInjector.InjectFault(
-				r.Context(),
-				req.ClusterID,
-				req.Namespace,
-				req.Name,
-				chaos.FaultType(req.FaultType),
-			)
-			if err != nil {
-				http.Error(w, fmt.Sprintf("Fault injection failed: %v", err), http.StatusInternalServerError)
-				return
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"status":    "injected",
-				"faultId":   faultID,
-				"faultType": req.FaultType,
-				"target":    req.Name,
-				"namespace": req.Namespace,
-				"clusterId": req.ClusterID,
-			})
-
-		case http.MethodDelete:
-			var req ChaosClearRequest
-			if err := json.Unmarshal(body, &req); err != nil || req.FaultID == "" {
-				http.Error(w, "faultId is required in request body", http.StatusBadRequest)
-				return
-			}
-
-			if err := chaosInjector.ClearFault(r.Context(), req.FaultID); err != nil {
-				http.Error(w, fmt.Sprintf("Failed to clear fault: %v", err), http.StatusInternalServerError)
-				return
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"status":  "cleared",
-				"faultId": req.FaultID,
-			})
-
-		default:
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	}))
-
-	mux.HandleFunc("/api/v1/chaos/faults", RequireAuth(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		clusterID := r.URL.Query().Get("clusterId")
-		if clusterID != "" {
-			claims := ExtractClaims(r)
-			if authErr := websocket.CheckClusterAuthorization(claims, clusterID); authErr != nil {
-				writeAuthError(w, http.StatusForbidden, fmt.Sprintf("Cluster authorization denied: %v", authErr))
-				return
-			}
-		}
-
-		faults := chaosInjector.ListFaults(clusterID)
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"activeFaults": faults,
-			"total":        len(faults),
-		})
-	}))
+	registerChaosRoutes(mux, chaosInjector, clusterManager)
 
 	mux.HandleFunc("/api/v1/evaluator/rules", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {

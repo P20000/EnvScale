@@ -187,6 +187,41 @@ func (cm *ClusterManager) GetNetworkPolicySnapshot(clusterID string) []types.Net
 	return nil
 }
 
+// GetPDBSnapshot retrieves all cached PodDisruptionBudgets for a cluster
+func (cm *ClusterManager) GetPDBSnapshot(clusterID string) []types.PDBStatusDelta {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	if im, ok := cm.clusters[clusterID]; ok {
+		return im.GetPDBSnapshot()
+	}
+	if len(cm.clusters) == 1 {
+		for _, v := range cm.clusters {
+			return v.GetPDBSnapshot()
+		}
+	}
+	return nil
+}
+
+// CheckPDBSafety checks if a workload is protected by a PDB and whether disruptions are allowed
+func (cm *ClusterManager) CheckPDBSafety(clusterID, namespace, workloadName string, labels map[string]string) (*types.PDBStatusDelta, bool) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	im, ok := cm.clusters[clusterID]
+	if !ok && len(cm.clusters) == 1 {
+		for _, v := range cm.clusters {
+			im = v
+			ok = true
+			break
+		}
+	}
+	if !ok || im == nil {
+		return nil, false
+	}
+
+	return im.CheckWorkloadPDB(namespace, workloadName, labels)
+}
+
 // GetCluster returns the InformerManager associated with the given clusterID.
 func (cm *ClusterManager) GetCluster(clusterID string) (*InformerManager, bool) {
 	cm.mu.RLock()

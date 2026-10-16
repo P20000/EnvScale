@@ -3,18 +3,11 @@ import type { K8sPodData } from "../../components/canvas/K8sPod";
 import type { K8sNodeData } from "../../components/canvas/K8sNode";
 import type { K8sServiceData } from "../../components/canvas/K8sService";
 import type { K8sIngressData } from "../../components/canvas/K8sIngress";
-import type { K8sDaemonSetData, K8sCronJobData, K8sJobData, K8sPVCData, K8sHPAData, K8sNetworkPolicyData } from "../types/topologyTypes";
+import type { K8sDaemonSetData, K8sCronJobData, K8sJobData, K8sPVCData, K8sHPAData, K8sNetworkPolicyData, K8sPDBData } from "../types/topologyTypes";
 import type { SelectedTarget } from "../../components/drawer/InspectorDrawer";
 import { calculateRolloutInfo, type K8sDeploymentData, type K8sReplicaSetData } from "./rolloutHelpers";
-import { findWorkloadHPA, findWorkloadNetworkPolicies, calculateWorkloadCpuUsage } from "./policyHpaHelpers";
-export {
-  type EdgeHealthStatus,
-  isPodReady,
-  extractPodList,
-  calculateEdgeHealth,
-  getEdgeHealth,
-  generateDynamicEdges,
-} from "./edgeHelpers";
+import { findWorkloadHPA, findWorkloadNetworkPolicies, findWorkloadPDB, calculateWorkloadCpuUsage } from "./policyHpaHelpers";
+export { type EdgeHealthStatus, isPodReady, extractPodList, calculateEdgeHealth, getEdgeHealth, generateDynamicEdges } from "./edgeHelpers";
 
 export const SYSTEM_NAMESPACES = new Set(["kube-system", "kube-public", "kube-node-lease", "ingress-nginx"]);
 
@@ -98,7 +91,8 @@ export const aggregateNodesWithWorkloads = (
   jobs: K8sJobData[] = [],
   showCompletedJobs: boolean = false,
   hpas: K8sHPAData[] = [],
-  networkPolicies: K8sNetworkPolicyData[] = []
+  networkPolicies: K8sNetworkPolicyData[] = [],
+  pdbs: K8sPDBData[] = []
 ): Node[] => {
   const appNodes = nodes.filter((n) => {
     const d = n.data as Record<string, unknown> | undefined;
@@ -267,6 +261,7 @@ export const aggregateNodesWithWorkloads = (
     const podLabels = firstPodData?.labels || {};
     const matchedNetPols = findWorkloadNetworkPolicies(networkPolicies, podLabels, prefix, ns);
     const hasNetworkPolicy = matchedNetPols.length > 0;
+    const matchedPDB = findWorkloadPDB(pdbs, prefix, ns, podLabels);
 
     const hasProbeWarning = groupPods.some((p) => {
       const pd = p.data as K8sPodData;
@@ -291,6 +286,7 @@ export const aggregateNodesWithWorkloads = (
         hpa: matchedHPA,
         hasNetworkPolicy,
         networkPolicies: matchedNetPols,
+        pdb: matchedPDB,
         hasProbeWarning,
         cpuUsagePct,
       },

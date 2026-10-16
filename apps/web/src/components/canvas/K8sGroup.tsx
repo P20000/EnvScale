@@ -4,7 +4,8 @@ import { useTopologyStore } from "../../store/useTopologyStore";
 import type { RolloutInfo } from "../../store/helpers/rolloutHelpers";
 import type { K8sPodData } from "./K8sPod";
 import { getActiveWorkloadFault, getActivePodFault } from "../../store/helpers/chaosHelpers";
-import type { K8sHPAData, K8sNetworkPolicyData } from "../../store/types/topologyTypes";
+import type { K8sHPAData, K8sNetworkPolicyData, K8sPDBData } from "../../store/types/topologyTypes";
+import { LifeBuoy } from "lucide-react";
 import {
   MdLayers as DeploymentIcon,
   MdStorage as StatefulSetIcon,
@@ -36,6 +37,7 @@ export interface K8sGroupData extends Record<string, unknown> {
   hpa?: K8sHPAData | null;
   hasNetworkPolicy?: boolean;
   networkPolicies?: K8sNetworkPolicyData[];
+  pdb?: K8sPDBData | null;
   hasProbeWarning?: boolean;
   cpuUsagePct?: number;
 }
@@ -121,6 +123,7 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
     : "bg-gradient-to-r from-cyan-600 via-cyan-400 to-teal-300 shadow-[0_0_8px_rgba(34,211,238,0.45)]";
 
   const hpa = data.hpa;
+  const pdb = data.pdb;
   const hasNetPol = Boolean(data.hasNetworkPolicy || (data.networkPolicies && data.networkPolicies.length > 0));
   const netPolNames = (data.networkPolicies || []).map((n) => n.name).join(", ") || "Active Policy";
 
@@ -362,6 +365,27 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
               title={`NetworkPolicy Enforced: Strict Ingress (${netPolNames})`}
             >
               <ShieldIcon className="text-[13px]" />
+            </span>
+          )}
+
+          {/* PodDisruptionBudget Lifebuoy Pill */}
+          {pdb && (
+            <span
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded border transition-all ${
+                pdb.disruptionsAllowed > 0
+                  ? "border-teal-500/30 bg-teal-500/10 text-teal-300"
+                  : "border-rose-500/50 bg-rose-500/20 text-rose-300 animate-pulse ring-1 ring-rose-500/40"
+              }`}
+              title={
+                pdb.disruptionsAllowed > 0
+                  ? `PDB Protected (${pdb.name}): ${pdb.disruptionsAllowed} disruption(s) allowed [Min: ${pdb.minAvailable || "N/A"}, MaxUnavail: ${pdb.maxUnavailable || "N/A"}]`
+                  : `PDB Exhausted (${pdb.name}): 0 disruptions allowed! Voluntary pod evictions blocked.`
+              }
+            >
+              <LifeBuoy className={`w-3 h-3 ${pdb.disruptionsAllowed > 0 ? "text-teal-400" : "text-rose-400 animate-spin"}`} />
+              <span className="text-[8.5px] font-mono font-bold tracking-tight">
+                {pdb.disruptionsAllowed > 0 ? `PDB: ${pdb.disruptionsAllowed}` : "PDB: 0!"}
+              </span>
             </span>
           )}
 

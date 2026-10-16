@@ -1,9 +1,9 @@
 import type { TopologyState } from "../useTopologyStore";
-import type { K8sHPAData, K8sNetworkPolicyData } from "../types/topologyTypes";
+import type { K8sHPAData, K8sNetworkPolicyData, K8sPDBData } from "../types/topologyTypes";
 import type { K8sPodData } from "../../components/canvas/K8sPod";
 
 /**
- * Reducer for HPA and NetworkPolicy WebSocket events
+ * Reducer for HPA, NetworkPolicy, and PDB WebSocket events
  */
 export function handlePolicyHpaWsEvent(
   state: TopologyState,
@@ -13,6 +13,7 @@ export function handlePolicyHpaWsEvent(
 ): void {
   const currentHPAs = [...(state.hpas || [])];
   const currentNetPols = [...(state.networkPolicies || [])];
+  const currentPDBs = [...(state.pdbs || [])];
 
   if (eventType === "EVENT_HPA_MUTATED" || eventType === "EVENT_HPA_ADDED") {
     const name = String(payload.name || "");
@@ -79,7 +80,78 @@ export function handlePolicyHpaWsEvent(
     const filtered = currentNetPols.filter((n) => !(n.name === name && n.namespace === namespace));
     set({ networkPolicies: filtered });
     state.applyDagreLayout();
+  } else if (eventType === "EVENT_PDB_MUTATED" || eventType === "EVENT_PDB_ADDED") {
+    const name = String(payload.name || "");
+    const namespace = String(payload.namespace || "default");
+    if (!name) return;
+
+    const existingIdx = currentPDBs.findIndex((p) => p.name === name && p.namespace === namespace);
+    const pdbData: K8sPDBData = {
+      name,
+      namespace,
+      minAvailable: payload.minAvailable !== undefined ? (payload.minAvailable as string | number) : undefined,
+      maxUnavailable: payload.maxUnavailable !== undefined ? (payload.maxUnavailable as string | number) : undefined,
+      currentHealthy: Number(payload.currentHealthy ?? 0),
+      desiredHealthy: Number(payload.desiredHealthy ?? 0),
+      expectedPods: Number(payload.expectedPods ?? 0),
+      disruptionsAllowed: Number(payload.disruptionsAllowed ?? 0),
+      matchLabels: (payload.matchLabels as Record<string, string>) || {},
+      createdAt: payload.createdAt ? String(payload.createdAt) : undefined,
+      ...payload,
+    };
+
+    if (existingIdx >= 0) {
+      currentPDBs[existingIdx] = { ...currentPDBs[existingIdx], ...pdbData };
+    } else {
+      currentPDBs.push(pdbData);
+    }
+
+    set({ pdbs: currentPDBs });
+    state.applyDagreLayout();
+  } else if (eventType === "EVENT_PDB_DELETED") {
+    const name = String(payload.name || "");
+    const namespace = String(payload.namespace || "default");
+    const filtered = currentPDBs.filter((p) => !(p.name === name && p.namespace === namespace));
+    set({ pdbs: filtered });
+    state.applyDagreLayout();
   }
+}
+
+/**
+ * Matches a PodDisruptionBudget targeting a workload or its pods
+ */
+export function findWorkloadPDB(
+  pdbs: K8sPDBData[] = [],
+  workloadName: string = "",
+  namespace?: string,
+  podLabels: Record<string, string> = {}
+): K8sPDBData | null {
+  if (!pdbs || pdbs.length === 0 || !workloadName) return null;
+  const workloadLower = workloadName.toLowerCase();
+
+  return (
+    pdbs.find((pdb) => {
+      if (namespace && pdb.namespace && pdb.namespace !== namespace) {
+        return false;
+      }
+
+      // 1. Selector matchLabels check
+      if (pdb.matchLabels && Object.keys(pdb.matchLabels).length > 0 && Object.keys(podLabels).length > 0) {
+        const matchesAll = Object.entries(pdb.matchLabels).every(([k, v]) => podLabels[k] === v);
+        if (matchesAll) return true;
+      }
+
+      // Check if matchLabels['app'] === workloadName
+      if (pdb.matchLabels?.app && pdb.matchLabels.app.toLowerCase() === workloadLower) {
+        return true;
+      }
+
+      // 2. Name-based heuristic (e.g. todo-backend-pdb -> todo-backend)
+      const pdbLower = pdb.name.toLowerCase();
+      const cleanPdb = pdbLower.replace(/-pdb$/, "").replace(/-disruption-budget$/, "");
+      return cleanPdb === workloadLower || pdbLower.includes(workloadLower) || workloadLower.includes(cleanPdb);
+    }) || null
+  );
 }
 
 /**

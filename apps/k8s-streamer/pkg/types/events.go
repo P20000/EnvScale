@@ -47,6 +47,9 @@ const (
 	EventHPADeleted           = "EVENT_HPA_DELETED"
 	EventNetworkPolicyMutated = "EVENT_NETWORKPOLICY_MUTATED"
 	EventNetworkPolicyDeleted = "EVENT_NETWORKPOLICY_DELETED"
+
+	EventPDBMutated = "EVENT_PDB_MUTATED"
+	EventPDBDeleted = "EVENT_PDB_DELETED"
 )
 
 // K8sIncidentEvent encapsulates authentic Kubernetes v1.Event telemetry
@@ -262,15 +265,17 @@ type PodAnomalyEvent struct {
 // clears a fault on a Kubernetes workload. The frontend topology canvas uses this
 // to visually highlight affected pods/deployments with a "chaos" badge overlay.
 type ChaosFaultEvent struct {
-	FaultID    string `json:"faultId"`    // Unique ID for this fault injection (used to track/cancel)
-	FaultType  string `json:"faultType"`  // "crash", "oom-pressure", "scale-down"
-	Target     string `json:"target"`     // "pod" | "deployment"
-	Name       string `json:"name"`       // Pod or Deployment name
-	Namespace  string `json:"namespace"`
-	ClusterID  string `json:"clusterId"`
-	Status     string `json:"status"`     // "injected" | "cleared" | "failed"
-	Message    string `json:"message"`    // Human-readable description
-	Timestamp  string `json:"timestamp"`
+	FaultID     string `json:"faultId"`    // Unique ID for this fault injection (used to track/cancel)
+	FaultType   string `json:"faultType"`  // "crash", "oom-pressure", "scale-down"
+	Target      string `json:"target"`     // "pod" | "deployment"
+	Name        string `json:"name"`       // Pod or Deployment name
+	Namespace   string `json:"namespace"`
+	ClusterID   string `json:"clusterId"`
+	Status      string `json:"status"`     // "injected" | "cleared" | "failed"
+	Message     string `json:"message"`    // Human-readable description
+	Timestamp   string `json:"timestamp"`
+	PDBBreached bool   `json:"pdbBreached,omitempty"`
+	PDBName     string `json:"pdbName,omitempty"`
 }
 
 // AlertTriggeredEvent is broadcast when the background Metric Evaluator detects
@@ -410,4 +415,18 @@ type ProbeSpecInfo struct {
 	PeriodSeconds       int32  `json:"periodSeconds"`
 	TimeoutSeconds      int32  `json:"timeoutSeconds"`
 	FailureThreshold    int32  `json:"failureThreshold"`
+}
+
+// PDBStatusDelta encapsulates PodDisruptionBudget availability constraints
+type PDBStatusDelta struct {
+	Name               string            `json:"name"`
+	Namespace          string            `json:"namespace"`
+	MinAvailable       string            `json:"minAvailable,omitempty"`
+	MaxUnavailable     string            `json:"maxUnavailable,omitempty"`
+	CurrentHealthy     int32             `json:"currentHealthy"`
+	DesiredHealthy     int32             `json:"desiredHealthy"`
+	ExpectedPods       int32             `json:"expectedPods"`
+	DisruptionsAllowed int32             `json:"disruptionsAllowed"`
+	MatchLabels        map[string]string `json:"matchLabels"`
+	CreatedAt          time.Time         `json:"createdAt"`
 }
