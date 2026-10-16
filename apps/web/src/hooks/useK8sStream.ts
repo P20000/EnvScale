@@ -70,8 +70,10 @@ export function useK8sStream(
   const connectRef = useRef<() => void>(() => {});
   const onMessageReceivedRef = useRef(onMessageReceived);
 
+  const clusters = useTopologyStore((state) => state.clusters);
   const activeCluster = useTopologyStore((state) => state.activeCluster);
-  const targetClusterId = clusterId || activeCluster;
+  const resolvedCluster = clusters.find((c) => c.id === activeCluster || c.name === activeCluster);
+  const targetClusterId = clusterId || resolvedCluster?.id || activeCluster;
 
   const wsUrl = useMemo(() => {
     const rawUrl = urlOverride || import.meta.env.VITE_WS_URL || DEFAULT_WS_URL;
@@ -190,8 +192,19 @@ export function useK8sStream(
             if (!isComponentMounted.current || wsRef.current !== socket) return;
 
             try {
-              const res = await fetch(`${streamerUrl}/api/v1/clusters/snapshot?clusterId=${encodeURIComponent(clusterId)}`, {
-                headers: token ? { Authorization: `Bearer ${token}` } : {},
+              let currentToken: string | null = token;
+              if (!currentToken) {
+                currentToken = await getStreamerToken();
+              }
+              const headers: Record<string, string> = {
+                "Content-Type": "application/json",
+              };
+              if (currentToken) {
+                headers["Authorization"] = `Bearer ${currentToken}`;
+              }
+              const snapshotUrl = `${streamerUrl}/api/v1/clusters/snapshot?clusterId=${encodeURIComponent(targetClusterId)}${currentToken ? `&token=${encodeURIComponent(currentToken)}` : ""}`;
+              const res = await fetch(snapshotUrl, {
+                headers,
               });
               if (res.ok) {
                 snapshotAttemptsRef.current = 0;

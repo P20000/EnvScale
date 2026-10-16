@@ -186,5 +186,53 @@ export interface ChaosFaultEvent {
   status: "injected" | "cleared" | "failed" | string;
   message?: string;
   timestamp: string;
+  pdbBreached?: boolean;
+  pdbName?: string;
+}
+
+export interface ProbeSpecInfo {
+  type: "http" | "tcp" | "exec" | string;
+  path?: string;
+  port?: number;
+  initialDelaySeconds: number;
+  periodSeconds: number;
+  timeoutSeconds: number;
+  failureThreshold: number;
+}
+
+export interface K8sHPAData extends Record<string, unknown> {
+  name: string;
+  namespace: string;
+  targetRefKind: string;
+  targetRefName: string;
+  minReplicas: number;
+  maxReplicas: number;
+  currentReplicas: number;
+  desiredReplicas: number;
+  currentCpuUtil?: number;
+  targetCpuUtil?: number;
+  lastScaleTime?: string;
+}
+
+export interface K8sNetworkPolicyData extends Record<string, unknown> {
+  name: string;
+  namespace: string;
+  podSelector: Record<string, string>;
+  policyTypes: string[];
+  ingressRules: string[];
+  targetPods?: string[];
+}
+
+export interface K8sPDBData extends Record<string, unknown> {
+  name: string;
+  namespace: string;
+  minAvailable?: string | number;
+  maxUnavailable?: string | number;
+  currentHealthy: number;
+  desiredHealthy: number;
+  expectedPods: number;
+  disruptionsAllowed: number;
+  matchLabels: Record<string, string>;
+  createdAt?: string;
 }
 

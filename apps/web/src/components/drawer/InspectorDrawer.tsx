@@ -6,11 +6,12 @@ import type { K8sServiceData } from "../canvas/K8sService";
 import type { K8sIngressData } from "../canvas/K8sIngress";
 import type { K8sDaemonSetData, K8sCronJobData, K8sJobData, K8sPVCData } from "../../store/types/topologyTypes";
 import { useTopologyStore } from "../../store/useTopologyStore";
+import { useAuthStore } from "../../store/useAuthStore";
 import { OverviewTab } from "./inspector/OverviewTab";
 import { LogsTab } from "./inspector/LogsTab";
 import { MetricsTab } from "./inspector/MetricsTab";
 import { ChaosTab } from "./inspector/ChaosTab";
-import { STREAMER_BASE_URL } from "../../config/api";
+import { STREAMER_BASE_URL, getStreamerToken } from "../../config/api";
 
 export type SelectedTarget =
   | { type: "pod"; data: K8sPodData }
@@ -45,7 +46,11 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
   const [chaosActionMsg, setChaosActionMsg] = useState<string | null>(null);
   const [isEmbeddedLogOpen, setIsEmbeddedLogOpen] = useState(true);
 
-  const triggerChaos = async (faultType: "crash" | "oom-pressure" | "scale-down", actionLabel: string) => {
+  const triggerChaos = async (
+    faultType: "crash" | "oom-pressure" | "scale-down",
+    actionLabel: string,
+    force: boolean = false
+  ) => {
     if (!target) return;
     const podData = target.data as K8sPodData;
     const targetWorkloadName = podData.labels?.app || podData.ownerName || target.data.name;
@@ -60,7 +65,10 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
       }
       const namespace = podData.namespace || "default";
 
-      const token = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+      let token = useAuthStore.getState().token || localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+      if (!token || token === "null") {
+        token = await getStreamerToken();
+      }
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token && token !== "null") {
         headers["Authorization"] = `Bearer ${token}`;
@@ -74,26 +82,46 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
           namespace: namespace,
           name: nameToInject,
           faultType: faultType,
+          force,
         }),
       });
 
       if (res.ok) {
-        setChaosActionMsg(`[CHAOS FAULT INJECTED]: ${actionLabel} applied live to cluster.`);
+        setChaosActionMsg(
+          force
+            ? `[CHAOS FORCED]: ${actionLabel} applied live (PDB guardrail bypassed).`
+            : `[CHAOS FAULT INJECTED]: ${actionLabel} applied live to cluster.`
+        );
+      } else if (res.status === 409) {
+        const errJson = await res.json().catch(() => null);
+        const msg = errJson?.message || "Disruptions budget exhausted (0 allowed).";
+        setChaosActionMsg(`[PDB SAFETY BLOCKED]: ${msg} Enable 'Force' toggle to bypass.`);
+      } else if (res.status === 401) {
+        if (!useAuthStore.getState().isAuthenticated) {
+          useAuthStore.getState().openAuthModal("Authentication required: Sign in or register to inject cluster faults.");
+          setChaosActionMsg("[AUTH REQUIRED]: Sign in via popup or bottom-left profile to run chaos.");
+        } else {
+          setChaosActionMsg("[AUTH EXPIRED]: Streamer access token expired. Refreshing token...");
+          await getStreamerToken();
+        }
       } else {
         const errText = await res.text();
         setChaosActionMsg(`[CHAOS FAILED]: ${errText || "Cluster rejected injection request"}`);
       }
-      setTimeout(() => setChaosActionMsg(null), 5000);
+      setTimeout(() => setChaosActionMsg(null), 6000);
     } catch (err: unknown) {
       setChaosActionMsg(`[CHAOS ERROR]: ${err instanceof Error ? err.message : String(err)}`);
-      setTimeout(() => setChaosActionMsg(null), 5000);
+      setTimeout(() => setChaosActionMsg(null), 6000);
     }
   };
 
   const clearChaos = async (faultId: string) => {
     try {
       setChaosActionMsg("Reverting injected chaos fault...");
-      const token = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+      let token = useAuthStore.getState().token || localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+      if (!token || token === "null") {
+        token = await getStreamerToken();
+      }
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token && token !== "null") {
         headers["Authorization"] = `Bearer ${token}`;
@@ -106,6 +134,14 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
       });
       if (res.ok) {
         setChaosActionMsg("[CHAOS HEALED]: Cluster fault reversed successfully.");
+      } else if (res.status === 401) {
+        if (!useAuthStore.getState().isAuthenticated) {
+          useAuthStore.getState().openAuthModal("Authentication required: Sign in or register to revert cluster faults.");
+          setChaosActionMsg("[AUTH REQUIRED]: Sign in to reverse chaos fault.");
+        } else {
+          setChaosActionMsg("[AUTH EXPIRED]: Streamer access token expired. Refreshing token...");
+          await getStreamerToken();
+        }
       } else {
         const errText = await res.text();
         setChaosActionMsg(`[CLEAR FAILED]: ${errText || "Could not reverse fault"}`);
@@ -181,7 +217,7 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
               : target.type === "pvc"
               ? "bg-cyan-400"
               : target.type === "job"
-              ? ((target.data as K8sJobData).status === "Completed" ? "bg-emerald-500" : (target.data as K8sJobData).status === "Failed" ? "bg-rose-500" : "bg-blue-500 animate-pulse")
+              ? ((target.data as K8sJobData).status === "Completed" ? "bg-emerald-500" : (target.data as K8sJobData).status === "Failed" ? "bg-rose-500" : "bg-blue-500")
               : target.type === "cronjob"
               ? "bg-cyan-400"
               : "bg-emerald-500"

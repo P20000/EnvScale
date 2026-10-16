@@ -63,21 +63,26 @@ type activeFault struct {
 	FaultType      FaultType `json:"faultType"`
 	Target         string    `json:"target"`    // "pod" | "deployment"
 	Name           string    `json:"name"`
+	WorkloadName   string    `json:"workloadName,omitempty"`
 	Namespace      string    `json:"namespace"`
 	ClusterID      string    `json:"clusterId"`
 	InjectedAt     time.Time `json:"injectedAt"`
 	OriginalValue  string    `json:"originalValue,omitempty"` // stores original replica count or memory limit
+	PDBBreached    bool      `json:"pdbBreached,omitempty"`
+	PDBName        string    `json:"pdbName,omitempty"`
 }
 
 // ActiveFaultInfo is the public representation of an active fault (returned by ListFaults).
 type ActiveFaultInfo struct {
-	FaultID    string    `json:"faultId"`
-	FaultType  string    `json:"faultType"`
-	Target     string    `json:"target"`
-	Name       string    `json:"name"`
-	Namespace  string    `json:"namespace"`
-	ClusterID  string    `json:"clusterId"`
-	InjectedAt time.Time `json:"injectedAt"`
+	FaultID     string    `json:"faultId"`
+	FaultType   string    `json:"faultType"`
+	Target      string    `json:"target"`
+	Name        string    `json:"name"`
+	Namespace   string    `json:"namespace"`
+	ClusterID   string    `json:"clusterId"`
+	InjectedAt  time.Time `json:"injectedAt"`
+	PDBBreached bool      `json:"pdbBreached,omitempty"`
+	PDBName     string    `json:"pdbName,omitempty"`
 }
 
 // HubBroadcaster is the interface the Injector uses to emit chaos events
@@ -95,25 +100,38 @@ type ClientsetProvider interface {
 // Injector is the chaos fault injection engine. Create one via NewInjector
 // and call InjectFault / ClearFault via the REST endpoints in main.go.
 type Injector struct {
-	provider    ClientsetProvider
-	hub         HubBroadcaster
+	provider     ClientsetProvider
+	hub          HubBroadcaster
+	pdbChecker   PDBChecker
 	activeFaults map[string]*activeFault // keyed by faultId
 	mu           sync.RWMutex
 }
 
 // NewInjector creates a new Injector. provider resolves Kubernetes clientsets
 // per cluster, hub receives chaos WebSocket events.
-func NewInjector(provider ClientsetProvider, hub HubBroadcaster) *Injector {
+func NewInjector(provider ClientsetProvider, hub HubBroadcaster, optionalChecker ...PDBChecker) *Injector {
+	var checker PDBChecker
+	if len(optionalChecker) > 0 {
+		checker = optionalChecker[0]
+	} else if pc, ok := provider.(PDBChecker); ok {
+		checker = pc
+	}
 	return &Injector{
 		provider:     provider,
 		hub:          hub,
+		pdbChecker:   checker,
 		activeFaults: make(map[string]*activeFault),
 	}
 }
 
 // InjectFault executes the requested fault type against the target resource
 // in the given cluster. Returns a faultID that can be used to clear it later.
-func (inj *Injector) InjectFault(ctx context.Context, clusterID, namespace, name string, faultType FaultType) (string, error) {
+func (inj *Injector) InjectFault(ctx context.Context, clusterID, namespace, name string, faultType FaultType, force bool) (string, error) {
+	pdbName, pdbBreached, workloadName, err := inj.checkWorkloadPDBSafety(ctx, clusterID, namespace, name, faultType, force)
+	if err != nil {
+		return "", err
+	}
+
 	clientset, err := inj.provider.GetClientset(clusterID)
 	if err != nil {
 		return "", fmt.Errorf("cluster %q not registered: %w", clusterID, err)
@@ -129,7 +147,7 @@ func (inj *Injector) InjectFault(ctx context.Context, clusterID, namespace, name
 		target = "pod"
 		if err := inj.injectCrash(ctx, clientset, namespace, name); err != nil {
 			inj.emitFaultEvent(clusterID, faultID, string(faultType), target, name, namespace, "failed",
-				fmt.Sprintf("Failed to inject crash: %v", err))
+				fmt.Sprintf("Failed to inject crash: %v", err), pdbBreached, pdbName)
 			return "", err
 		}
 		log.Printf("[Chaos] Crash injected — deleted pod %s/%s on cluster %s", namespace, name, clusterID)
@@ -139,7 +157,7 @@ func (inj *Injector) InjectFault(ctx context.Context, clusterID, namespace, name
 		original, err := inj.injectOOMPressure(ctx, clientset, namespace, name)
 		if err != nil {
 			inj.emitFaultEvent(clusterID, faultID, string(faultType), target, name, namespace, "failed",
-				fmt.Sprintf("Failed to inject OOM pressure: %v", err))
+				fmt.Sprintf("Failed to inject OOM pressure: %v", err), pdbBreached, pdbName)
 			return "", err
 		}
 		originalValue = original
@@ -150,7 +168,7 @@ func (inj *Injector) InjectFault(ctx context.Context, clusterID, namespace, name
 		depName, original, err := inj.injectScaleDown(ctx, clientset, namespace, name)
 		if err != nil {
 			inj.emitFaultEvent(clusterID, faultID, string(faultType), target, name, namespace, "failed",
-				fmt.Sprintf("Failed to inject scale-down: %v", err))
+				fmt.Sprintf("Failed to inject scale-down: %v", err), pdbBreached, pdbName)
 			return "", err
 		}
 		name = depName
@@ -167,10 +185,13 @@ func (inj *Injector) InjectFault(ctx context.Context, clusterID, namespace, name
 		FaultType:     faultType,
 		Target:        target,
 		Name:          name,
+		WorkloadName:  workloadName,
 		Namespace:     namespace,
 		ClusterID:     clusterID,
 		InjectedAt:    time.Now().UTC(),
 		OriginalValue: originalValue,
+		PDBBreached:   pdbBreached,
+		PDBName:       pdbName,
 	}
 	inj.mu.Lock()
 	inj.activeFaults[faultID] = fault
@@ -190,7 +211,7 @@ func (inj *Injector) InjectFault(ctx context.Context, clusterID, namespace, name
 	}
 
 	inj.emitFaultEvent(clusterID, faultID, string(faultType), target, name, namespace, "injected",
-		fmt.Sprintf("Fault '%s' injected on %s %s/%s", faultType, target, namespace, name))
+		fmt.Sprintf("Fault '%s' injected on %s %s/%s", faultType, target, namespace, name), pdbBreached, pdbName)
 
 	return faultID, nil
 }
@@ -233,7 +254,7 @@ func (inj *Injector) ClearFault(ctx context.Context, faultID string) error {
 	}
 
 	inj.emitFaultEvent(fault.ClusterID, faultID, string(fault.FaultType), fault.Target, fault.Name, fault.Namespace, "cleared",
-		fmt.Sprintf("Fault '%s' cleared on %s %s/%s", fault.FaultType, fault.Target, fault.Namespace, fault.Name))
+		fmt.Sprintf("Fault '%s' cleared on %s %s/%s", fault.FaultType, fault.Target, fault.Namespace, fault.Name), false, "")
 
 	return nil
 }
@@ -250,13 +271,15 @@ func (inj *Injector) ListFaults(clusterID string) []ActiveFaultInfo {
 			continue
 		}
 		result = append(result, ActiveFaultInfo{
-			FaultID:    f.FaultID,
-			FaultType:  string(f.FaultType),
-			Target:     f.Target,
-			Name:       f.Name,
-			Namespace:  f.Namespace,
-			ClusterID:  f.ClusterID,
-			InjectedAt: f.InjectedAt,
+			FaultID:     f.FaultID,
+			FaultType:   string(f.FaultType),
+			Target:      f.Target,
+			Name:        f.Name,
+			Namespace:   f.Namespace,
+			ClusterID:   f.ClusterID,
+			InjectedAt:  f.InjectedAt,
+			PDBBreached: f.PDBBreached,
+			PDBName:     f.PDBName,
 		})
 	}
 	return result
@@ -441,21 +464,23 @@ func (inj *Injector) clearScaleDown(ctx context.Context, clientset kubernetes.In
 
 // emitFaultEvent broadcasts a ChaosFaultEvent to all WebSocket clients watching
 // the target cluster. Called after each successful inject or clear operation.
-func (inj *Injector) emitFaultEvent(clusterID, faultID, faultType, target, name, namespace, status, message string) {
+func (inj *Injector) emitFaultEvent(clusterID, faultID, faultType, target, name, namespace, status, message string, pdbBreached bool, pdbName string) {
 	eventType := envtypes.EventChaosFaultInjected
 	if status == "cleared" {
 		eventType = envtypes.EventChaosFaultCleared
 	}
 
 	inj.hub.BroadcastEvent(eventType, clusterID, envtypes.ChaosFaultEvent{
-		FaultID:   faultID,
-		FaultType: faultType,
-		Target:    target,
-		Name:      name,
-		Namespace: namespace,
-		ClusterID: clusterID,
-		Status:    status,
-		Message:   message,
-		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		FaultID:     faultID,
+		FaultType:   faultType,
+		Target:      target,
+		Name:        name,
+		Namespace:   namespace,
+		ClusterID:   clusterID,
+		Status:      status,
+		Message:     message,
+		Timestamp:   time.Now().UTC().Format(time.RFC3339Nano),
+		PDBBreached: pdbBreached,
+		PDBName:     pdbName,
 	})
 }

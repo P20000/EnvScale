@@ -31,26 +31,26 @@ export function ConfigOverviewSection({ pod }: ConfigOverviewSectionProps) {
     <div className="space-y-3">
       {/* 1. Missing Reference Diagnostic Banner (CreateContainerConfigError Protection) */}
       {missingAudits.length > 0 && (
-        <div className="rounded-xl border border-rose-500/50 bg-rose-950/30 p-3 space-y-1.5 text-rose-200 shadow-md shadow-rose-950/20">
+        <div className="rounded-xl border border-rose-500/50 bg-rose-950/30 p-3 space-y-2 text-rose-200 shadow-md shadow-rose-950/20">
           <div className="flex items-center gap-2 font-bold text-xs tracking-tight">
-            <WarningIcon className="text-rose-400 text-base shrink-0 animate-pulse" />
+            <WarningIcon className="text-rose-400 text-base shrink-0" />
             <span>Missing Reference Fault Detected</span>
           </div>
           {missingAudits.map((audit, idx) => (
             <div
               key={`${audit.kind}-${audit.name}-${idx}`}
-              className="rounded-lg bg-rose-900/30 border border-rose-500/30 p-2 text-[10.5px] font-mono space-y-0.5 text-rose-300"
+              className="rounded-lg bg-rose-900/30 border border-rose-500/30 p-2.5 text-[11px] font-mono space-y-1 text-rose-300"
             >
-              <div className="font-semibold text-rose-200">
-                {audit.kind}: <span className="underline">{audit.name}</span>
+              <div className="font-semibold text-rose-100">
+                ⚠️ Missing Reference Fault Detected: {audit.kind} &quot;{audit.name}&quot; was not found in namespace &quot;{audit.namespace}&quot;.
               </div>
               <div className="text-[9.5px] text-rose-400">
                 Injection Method: <span className="uppercase font-semibold">{audit.refType}</span>
                 {audit.key ? ` (key: ${audit.key})` : ""}
                 {audit.mountPath ? ` (path: ${audit.mountPath})` : ""}
               </div>
-              <div className="text-[9.5px] text-rose-300 italic">
-                Will trigger Kubernetes runtime fault: <span className="font-bold underline">CreateContainerConfigError</span>
+              <div className="text-[10px] text-rose-300 font-medium">
+                Will trigger Kubernetes runtime fault: <span className="font-bold underline text-rose-100">CreateContainerConfigError</span>.
               </div>
             </div>
           ))}

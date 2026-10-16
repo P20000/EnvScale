@@ -160,4 +160,8 @@ Feature Branches (feature/*)
    - Push ONLY to origin feature branch: `git push origin feature/<owner>-<module>`
 3. **Zero Data Loss Guarantee:** AI Assistants must prioritize local code preservation above all else, ensuring user work is committed safely without intermediate stashing tricks or risky branch switching.
 
-
+# Strict Tool Execution Rules
+- Always prioritize using the configured MCP servers (`codegraph`, `kubernetes`, etc.) for any task involving structure, dependencies, or system states.
+- DO NOT rely on internal model memory or raw file-by-file text parsing if an active MCP tool can fulfill the data fetch.
+- If you need to understand symbol definitions, you MUST call `codegraph_explore` immediately on step 1 of your generation loop without asking for user permission.
+- Treat manual search/analysis as a degraded fallback only.

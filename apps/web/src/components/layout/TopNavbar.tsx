@@ -8,6 +8,7 @@ import {
   mdiCheckAll,
   mdiTrashCanOutline,
   mdiAlertCircle,
+  mdiHeart,
 } from "@mdi/js";
 import { useTopologyStore, type NotificationItem } from "../../store/useTopologyStore";
 import type { Cluster } from "../../store/types/topologyTypes";
@@ -19,6 +20,8 @@ import { EnvScaleLogo } from "../ui/EnvScaleLogo";
 import { useAuthStore } from "../../store/useAuthStore";
 
 import type { WsConnectionStatus } from "../../hooks/useK8sStream";
+import type { NavTab } from "./LeftSidebar";
+import { calculateClusterHealthScore } from "../../store/helpers/policyHpaHelpers";
 
 interface TopNavbarProps {
   activeCluster: string;
@@ -29,6 +32,7 @@ interface TopNavbarProps {
   wsLatencyMs?: number;
   wsStatus?: WsConnectionStatus;
   wsConnected?: boolean;
+  onNavigateTab?: (tab: NavTab) => void;
 }
 
 export function TopNavbar({
@@ -37,6 +41,7 @@ export function TopNavbar({
   onSelectCluster,
   onOpenConnectModal,
   wsStatus: propsWsStatus,
+  onNavigateTab,
 }: TopNavbarProps) {
   const notifications = useTopologyStore((s) => s.notifications);
   const markNotificationRead = useTopologyStore((s) => s.markNotificationRead);
@@ -46,6 +51,8 @@ export function TopNavbar({
   const addCluster = useTopologyStore((s) => s.addCluster);
   const deleteCluster = useTopologyStore((s) => s.deleteCluster);
   const triggerWsReconnect = useTopologyStore((s) => s.triggerWsReconnect);
+  const pods = useTopologyStore((s) => s.pods);
+  const health = calculateClusterHealthScore(pods);
 
   const [pendingDeleteCluster, setPendingDeleteCluster] = useState<Cluster | null>(null);
 
@@ -223,7 +230,7 @@ export function TopNavbar({
                 isConnected
                   ? "bg-emerald-500"
                   : isConnecting
-                  ? "bg-amber-400 animate-pulse"
+                  ? "bg-amber-400"
                   : "bg-rose-500"
               }`}
             />
@@ -241,6 +248,45 @@ export function TopNavbar({
 
           {/* Dedicated Namespace Filter Pill Capsule */}
           <NamespaceFilterPill />
+
+          {/* Dynamic Cluster Health Score Pill */}
+          <button
+            type="button"
+            onClick={() => onNavigateTab?.("leaderboard")}
+            title={`Cluster Health Score: ${health.score}/100 (Grade ${health.grade}) • ${health.failingCount} failing pods • Click to view Cluster Health Leaderboard`}
+            className="flex items-center gap-1.5 bg-[#18181b] hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 h-9 px-3.5 rounded-full text-xs font-mono font-bold transition-all cursor-pointer shadow-sm group select-none shrink-0"
+          >
+            <Icon
+              path={mdiHeart}
+              size={0.65}
+              className={`transition-transform duration-200 group-hover:scale-115 shrink-0 ${
+                health.score >= 90
+                  ? "text-emerald-400 drop-shadow-[0_0_6px_rgba(52,211,153,0.5)]"
+                  : health.score >= 75
+                  ? "text-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.5)]"
+                  : "text-rose-500 drop-shadow-[0_0_6px_rgba(244,63,94,0.5)]"
+              }`}
+            />
+            <span className={`tracking-wide ${
+              health.score >= 90
+                ? "text-emerald-400"
+                : health.score >= 75
+                ? "text-amber-400"
+                : "text-rose-400"
+            }`}>
+              {health.score}/100
+            </span>
+            <span className="text-zinc-600 font-normal">•</span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+              health.grade === "A"
+                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                : health.grade === "B"
+                ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                : "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+            }`}>
+              Grade {health.grade}
+            </span>
+          </button>
         </div>
 
         {/* Right Group: Action Controls */}

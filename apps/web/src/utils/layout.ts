@@ -17,7 +17,7 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
   // Helper to determine node dimensions
   const getNodeDimensions = (node: Node) => {
     if (node.type === "k8sGroup") {
-      return { width: 270, height: 76 };
+      return { width: 295, height: 76 };
     }
     if (node.type === "k8sPVC") {
       return { width: 200, height: 70 };
@@ -144,10 +144,6 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
     });
   }
 
-  if (routedDagNodes.length > 0) {
-    dagre.layout(dagreGraph);
-  }
-
   // Calculate bounding box and Tier levels from routed layout
   let minRoutedX = 40;
   let maxRoutedX = 300;
@@ -155,6 +151,66 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
   let maxRoutedY = 350;
 
   if (routedDagNodes.length > 0) {
+    dagre.layout(dagreGraph);
+
+    // Guaranteed Adjacency in LR Mode:
+    // Sort Column 3 routed workloads so that:
+    // 1. Frontend compute workloads sit at the top.
+    // 2. Backend/API compute workloads sit in the middle.
+    // 3. Database / Storage targets (e.g. redis-db) sit adjacent to and below the backend services consuming them.
+    // This guarantees that dashed dependency edges never pass behind or intersect frontend workloads.
+    if (isLR && routedWorkloadIds.size > 0) {
+      const isDataResource = (id: string, name?: string) => {
+        const s = `${id} ${name || ""}`.toLowerCase();
+        return (
+          s.includes("redis") ||
+          s.includes("db") ||
+          s.includes("database") ||
+          s.includes("postgres") ||
+          s.includes("mysql") ||
+          s.includes("mongo")
+        );
+      };
+
+      const routedWorkloads = routedDagNodes.filter((n) => n.type === "k8sGroup");
+      const sortedRoutedWorkloads = [...routedWorkloads].sort((a, b) => {
+        const aIsDb = isDataResource(a.id, (a.data as { name?: string })?.name);
+        const bIsDb = isDataResource(b.id, (b.data as { name?: string })?.name);
+        if (aIsDb !== bIsDb) return aIsDb ? 1 : -1;
+
+        const aName = `${a.id} ${(a.data as { name?: string })?.name || ""}`.toLowerCase();
+        const bName = `${b.id} ${(b.data as { name?: string })?.name || ""}`.toLowerCase();
+        const aIsFe = aName.includes("frontend") || aName.includes("ui") || aName.includes("web");
+        const bIsFe = bName.includes("frontend") || bName.includes("ui") || bName.includes("web");
+        if (aIsFe !== bIsFe) return aIsFe ? -1 : 1;
+
+        return a.id.localeCompare(b.id);
+      });
+
+      let curWorkloadY = Math.max(minRoutedY, 40);
+      sortedRoutedWorkloads.forEach((w) => {
+        const gNode = dagreGraph.node(w.id);
+        if (gNode) {
+          const dims = getNodeDimensions(w);
+          gNode.y = curWorkloadY + dims.height / 2;
+          curWorkloadY += dims.height + 25;
+        }
+      });
+
+      // Align Tier 1 services with their target workloads for clean, horizontal routing
+      tier1.forEach((svc) => {
+        const targetNodes = routedDagEdges
+          .filter((e) => e.source === svc.id)
+          .map((e) => dagreGraph.node(e.target))
+          .filter(Boolean);
+        if (targetNodes.length > 0) {
+          const avgY = targetNodes.reduce((sum, n) => sum + n.y, 0) / targetNodes.length;
+          const gSvc = dagreGraph.node(svc.id);
+          if (gSvc) gSvc.y = avgY;
+        }
+      });
+    }
+
     let minX = Infinity;
     let maxX = -Infinity;
     let minY = Infinity;
@@ -186,17 +242,27 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
   let totalDagMaxX: number;
 
   if (isLR) {
-    // Horizontal (LR) mode: Stack unrouted workloads vertically into a dedicated Column 4
-    // 170px clearance gives Column 3 lateral peer dependency curves (e.g. backend -> redis) a dedicated, collision-free channel
-    const unroutedColX = maxRoutedX + 170;
-    let currentUnroutedY = Math.max(minRoutedY, 40);
+    // Horizontal (LR) mode: Wrap unrouted background workloads into a balanced 2-column grid.
+    // 220px clearance gives Column 3 lateral peer dependency curves (e.g. backend -> redis) a dedicated, collision-free channel
+    const unroutedBaseX = maxRoutedX + 220;
+    const CARD_WIDTH = 295;
+    const COL_GAP = 30;
+    const ROW_GAP = 20;
+
+    // Track vertical accumulation for each column to keep the grid perfectly balanced
+    const columnY = [Math.max(minRoutedY, 40), Math.max(minRoutedY, 40)];
 
     unroutedWorkloads.forEach((u) => {
       const dims = getNodeDimensions(u);
       if (u.type === "k8sGroup") {
         u.style = { ...u.style, width: dims.width, height: dims.height };
       }
-      customPosMap.set(u.id, { x: unroutedColX, y: currentUnroutedY });
+
+      // Pick column with lowest current height
+      const colIndex = columnY[0] <= columnY[1] ? 0 : 1;
+      const x = unroutedBaseX + colIndex * (CARD_WIDTH + COL_GAP);
+      const y = columnY[colIndex];
+      customPosMap.set(u.id, { x, y });
 
       // If unrouted workload has an attached PVC, drop it directly below
       const attachedPVCEdge = realDagEdges.find((e) => e.source === u.id);
@@ -204,18 +270,21 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
         const pvcNode = tier3.find((p) => p.id === attachedPVCEdge.target);
         if (pvcNode) {
           const pDims = getNodeDimensions(pvcNode);
-          const pvcY = currentUnroutedY + dims.height + 35;
-          const pvcX = unroutedColX + (dims.width - pDims.width) / 2;
+          const pvcY = y + dims.height + 35;
+          const pvcX = x + (dims.width - pDims.width) / 2;
           customPosMap.set(pvcNode.id, { x: pvcX, y: pvcY });
-          currentUnroutedY = pvcY + pDims.height + 25;
+          columnY[colIndex] = pvcY + pDims.height + ROW_GAP;
           return;
         }
       }
 
-      currentUnroutedY += dims.height + 25;
+      columnY[colIndex] = y + dims.height + ROW_GAP;
     });
 
-    totalDagMaxX = unroutedWorkloads.length > 0 ? unroutedColX + 270 : maxRoutedX;
+    const activeCols = unroutedWorkloads.length > 1 ? 2 : (unroutedWorkloads.length === 1 ? 1 : 0);
+    totalDagMaxX = activeCols > 0
+      ? unroutedBaseX + activeCols * CARD_WIDTH + (activeCols - 1) * COL_GAP
+      : maxRoutedX;
   } else {
     // Vertical (TB) mode: Place unrouted standalone workloads in a dedicated lower tier (Tier 3) directly below Tier 2
     // This prevents stretching the canvas into a 2,800px-wide ribbon and creates a compact, screen-fitting vertical hierarchy
@@ -369,7 +438,11 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
 
     // 2. Cross-workload peer dependencies (e.g. backend -> redis database)
     if (edge.id.startsWith("e-dep-") || edge.data?.isCrossWorkload) {
-      return edge;
+      return {
+        ...edge,
+        sourceHandle: isLR ? "source-right" : "source-bottom",
+        targetHandle: isLR ? "target-right" : "target-bottom",
+      };
     }
 
     // 3. Architecture DAG connections (Ingress -> Service, Service -> Workload)

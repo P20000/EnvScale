@@ -202,6 +202,14 @@
   border-color: #3b82f6 !important;
 }
 
+/* Disable pulse / breathing animations to enforce static presentation */
+@layer utilities {
+  .animate-pulse,
+  .animate-ping {
+    animation: none !important;
+  }
+}
+
 /* Flat Structural Card Utilities */
 .flat-capsule {
   background: #141417;

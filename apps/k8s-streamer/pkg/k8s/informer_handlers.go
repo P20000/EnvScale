@@ -33,16 +33,30 @@ func (im *InformerManager) extractPodDelta(pod *corev1.Pod) types.PodStatusDelta
 		totalRestarts += cs.RestartCount
 	}
 
+	var exitCode *int32
+	var termReason string
 	isTerminating := pod.DeletionTimestamp != nil && !pod.DeletionTimestamp.IsZero()
 	phase := string(pod.Status.Phase)
 	if isTerminating {
 		phase = "Terminating"
 	} else {
 		for _, cs := range pod.Status.ContainerStatuses {
-			if cs.State.Terminated != nil && cs.State.Terminated.Reason != "" {
-				phase = cs.State.Terminated.Reason
-			} else if cs.LastTerminationState.Terminated != nil && cs.LastTerminationState.Terminated.Reason == "OOMKilled" {
-				phase = "OOMKilled"
+			if cs.State.Terminated != nil {
+				if cs.State.Terminated.Reason != "" {
+					phase = cs.State.Terminated.Reason
+					termReason = cs.State.Terminated.Reason
+				}
+				ec := cs.State.Terminated.ExitCode
+				exitCode = &ec
+			} else if cs.LastTerminationState.Terminated != nil {
+				if cs.LastTerminationState.Terminated.Reason == "OOMKilled" {
+					phase = "OOMKilled"
+				} else if cs.State.Waiting != nil && cs.State.Waiting.Reason != "" {
+					phase = cs.State.Waiting.Reason
+				}
+				termReason = cs.LastTerminationState.Terminated.Reason
+				ec := cs.LastTerminationState.Terminated.ExitCode
+				exitCode = &ec
 			} else if cs.State.Waiting != nil && cs.State.Waiting.Reason != "" {
 				phase = cs.State.Waiting.Reason
 			}
@@ -82,25 +96,30 @@ func (im *InformerManager) extractPodDelta(pod *corev1.Pod) types.PodStatusDelta
 	}
 
 	cms, secs := ExtractPodConfigReferences(pod)
+	liv, read := ExtractPodProbes(pod)
 
 	return types.PodStatusDelta{
-		Name:           pod.Name,
-		Namespace:      pod.Namespace,
-		NodeName:       pod.Spec.NodeName,
-		PodIP:          pod.Status.PodIP,
-		Phase:          phase,
-		IsTerminating:  isTerminating,
-		RestartCount:   totalRestarts,
-		Labels:         pod.Labels,
-		OwnerUID:       ownerUID,
-		OwnerName:      ownerName,
-		OwnerKind:      ownerKind,
-		IsStaticPod:    isStaticPod,
-		IsControlPlane: isControlPlane,
-		Volumes:        ExtractPodVolumeClaims(pod),
-		ConfigMaps:     cms,
-		Secrets:        secs,
-		CreatedAt:      pod.CreationTimestamp.Time.UTC(),
+		Name:              pod.Name,
+		Namespace:         pod.Namespace,
+		NodeName:          pod.Spec.NodeName,
+		PodIP:             pod.Status.PodIP,
+		Phase:             phase,
+		ExitCode:          exitCode,
+		TerminationReason: termReason,
+		IsTerminating:     isTerminating,
+		RestartCount:      totalRestarts,
+		Labels:            pod.Labels,
+		OwnerUID:          ownerUID,
+		OwnerName:         ownerName,
+		OwnerKind:         ownerKind,
+		IsStaticPod:       isStaticPod,
+		IsControlPlane:    isControlPlane,
+		LivenessProbe:     liv,
+		ReadinessProbe:    read,
+		Volumes:           ExtractPodVolumeClaims(pod),
+		ConfigMaps:        cms,
+		Secrets:           secs,
+		CreatedAt:         pod.CreationTimestamp.Time.UTC(),
 	}
 }
 
@@ -186,14 +205,28 @@ func (im *InformerManager) emitServiceDelta(svc *corev1.Service) {
 }
 
 func (im *InformerManager) extractDeploymentDelta(dep *appsv1.Deployment) types.DeploymentStatusDelta {
-	return types.DeploymentStatusDelta{
-		Name:          dep.Name,
-		Namespace:     dep.Namespace,
-		Replicas:      *dep.Spec.Replicas,
-		ReadyReplicas: dep.Status.ReadyReplicas,
-		Selector:      dep.Spec.Selector.MatchLabels,
-		Labels:        dep.Labels,
+	var replicas int32 = 1
+	if dep.Spec.Replicas != nil {
+		replicas = *dep.Spec.Replicas
 	}
+	delta := types.DeploymentStatusDelta{
+		Name:            dep.Name,
+		Namespace:       dep.Namespace,
+		Replicas:        replicas,
+		ReadyReplicas:   dep.Status.ReadyReplicas,
+		Selector:        dep.Spec.Selector.MatchLabels,
+		Labels:          dep.Labels,
+		MinReadySeconds: dep.Spec.MinReadySeconds,
+	}
+	if dep.Spec.Strategy.RollingUpdate != nil {
+		if dep.Spec.Strategy.RollingUpdate.MaxSurge != nil {
+			delta.MaxSurge = dep.Spec.Strategy.RollingUpdate.MaxSurge.String()
+		}
+		if dep.Spec.Strategy.RollingUpdate.MaxUnavailable != nil {
+			delta.MaxUnavailable = dep.Spec.Strategy.RollingUpdate.MaxUnavailable.String()
+		}
+	}
+	return delta
 }
 
 func (im *InformerManager) emitDeploymentDelta(dep *appsv1.Deployment) {
@@ -464,4 +497,3 @@ func (im *InformerManager) emitCronJobDeleted(cj *batchv1.CronJob) {
 	delta := im.extractCronJobDelta(cj)
 	im.hub.BroadcastEvent(types.EventCronJobDeleted, im.clusterID, delta)
 }
-

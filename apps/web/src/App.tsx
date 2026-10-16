@@ -131,6 +131,12 @@ function AppContent() {
         activeIncidentsCount={activeIncidentsCount}
         wsLatencyMs={wsLatencyMs}
         wsStatus={wsStatus}
+        onNavigateTab={(tab) => {
+          setActiveTab(tab);
+          if (tab !== "topology") {
+            clearSelectedNode();
+          }
+        }}
       />
 
       {/* Region 2: Left Floating Sidebar Capsule */}
