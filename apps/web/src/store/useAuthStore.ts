@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { authClient } from "../lib/auth-client";
 import { useTopologyStore } from "./useTopologyStore";
+import { getStreamerToken } from "../config/api";
 
 export interface AuthUser {
   id?: string;
@@ -154,8 +155,12 @@ export const useAuthStore = create<AuthState>((set) => {
             name: u.name,
             image: u.image || undefined,
           };
+          const streamerToken = await getStreamerToken();
+          if (streamerToken) {
+            localStorage.setItem("envscale_auth_token", streamerToken);
+          }
           set({
-            token: null,
+            token: streamerToken || null,
             user,
             isAuthenticated: true,
             isLoading: false,

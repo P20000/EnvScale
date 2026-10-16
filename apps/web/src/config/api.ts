@@ -324,6 +324,9 @@ export const getStreamerToken = async (): Promise<string | null> => {
     
     if (res.ok) {
       const data = await res.json();
+      if (data.token) {
+        localStorage.setItem("envscale_auth_token", data.token);
+      }
       return data.token || null;
     }
   } catch (error) {

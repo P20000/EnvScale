@@ -11,7 +11,7 @@ import { OverviewTab } from "./inspector/OverviewTab";
 import { LogsTab } from "./inspector/LogsTab";
 import { MetricsTab } from "./inspector/MetricsTab";
 import { ChaosTab } from "./inspector/ChaosTab";
-import { STREAMER_BASE_URL } from "../../config/api";
+import { STREAMER_BASE_URL, getStreamerToken } from "../../config/api";
 
 export type SelectedTarget =
   | { type: "pod"; data: K8sPodData }
@@ -65,7 +65,10 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
       }
       const namespace = podData.namespace || "default";
 
-      const token = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+      let token = useAuthStore.getState().token || localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+      if (!token || token === "null") {
+        token = await getStreamerToken();
+      }
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token && token !== "null") {
         headers["Authorization"] = `Bearer ${token}`;
@@ -94,8 +97,13 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
         const msg = errJson?.message || "Disruptions budget exhausted (0 allowed).";
         setChaosActionMsg(`[PDB SAFETY BLOCKED]: ${msg} Enable 'Force' toggle to bypass.`);
       } else if (res.status === 401) {
-        useAuthStore.getState().openAuthModal("Authentication required: Sign in or register to inject cluster faults.");
-        setChaosActionMsg("[AUTH REQUIRED]: Sign in via popup or bottom-left profile to run chaos.");
+        if (!useAuthStore.getState().isAuthenticated) {
+          useAuthStore.getState().openAuthModal("Authentication required: Sign in or register to inject cluster faults.");
+          setChaosActionMsg("[AUTH REQUIRED]: Sign in via popup or bottom-left profile to run chaos.");
+        } else {
+          setChaosActionMsg("[AUTH EXPIRED]: Streamer access token expired. Refreshing token...");
+          await getStreamerToken();
+        }
       } else {
         const errText = await res.text();
         setChaosActionMsg(`[CHAOS FAILED]: ${errText || "Cluster rejected injection request"}`);
@@ -110,7 +118,10 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
   const clearChaos = async (faultId: string) => {
     try {
       setChaosActionMsg("Reverting injected chaos fault...");
-      const token = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+      let token = useAuthStore.getState().token || localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+      if (!token || token === "null") {
+        token = await getStreamerToken();
+      }
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token && token !== "null") {
         headers["Authorization"] = `Bearer ${token}`;
@@ -124,8 +135,13 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
       if (res.ok) {
         setChaosActionMsg("[CHAOS HEALED]: Cluster fault reversed successfully.");
       } else if (res.status === 401) {
-        useAuthStore.getState().openAuthModal("Authentication required: Sign in or register to revert cluster faults.");
-        setChaosActionMsg("[AUTH REQUIRED]: Sign in to reverse chaos fault.");
+        if (!useAuthStore.getState().isAuthenticated) {
+          useAuthStore.getState().openAuthModal("Authentication required: Sign in or register to revert cluster faults.");
+          setChaosActionMsg("[AUTH REQUIRED]: Sign in to reverse chaos fault.");
+        } else {
+          setChaosActionMsg("[AUTH EXPIRED]: Streamer access token expired. Refreshing token...");
+          await getStreamerToken();
+        }
       } else {
         const errText = await res.text();
         setChaosActionMsg(`[CLEAR FAILED]: ${errText || "Could not reverse fault"}`);
