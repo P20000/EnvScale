@@ -23,9 +23,18 @@ func writeAuthError(w http.ResponseWriter, status int, message string) {
 // RequireAuth wraps an HTTP handler to ensure a valid JWT access token is present.
 func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		claims, err := websocket.AuthenticateRequest(r)
-		if err != nil || claims == nil {
+		allowAnonymous := os.Getenv("ALLOW_ANONYMOUS_WS") == "true"
+		claims, err := websocket.AuthenticateHandshake(r)
+		if err != nil {
+			if allowAnonymous {
+				next(w, r)
+				return
+			}
 			writeAuthError(w, http.StatusUnauthorized, fmt.Sprintf("Authentication required: %v", err))
+			return
+		}
+		if claims == nil && !allowAnonymous {
+			writeAuthError(w, http.StatusUnauthorized, "Authentication required: missing token")
 			return
 		}
 		next(w, r)
@@ -36,9 +45,18 @@ func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 // that the client's token grants access to that specific cluster.
 func RequireClusterAuth(getClusterID func(r *http.Request) string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		claims, err := websocket.AuthenticateRequest(r)
-		if err != nil || claims == nil {
+		allowAnonymous := os.Getenv("ALLOW_ANONYMOUS_WS") == "true"
+		claims, err := websocket.AuthenticateHandshake(r)
+		if err != nil {
+			if allowAnonymous {
+				next(w, r)
+				return
+			}
 			writeAuthError(w, http.StatusUnauthorized, fmt.Sprintf("Authentication required: %v", err))
+			return
+		}
+		if claims == nil && !allowAnonymous {
+			writeAuthError(w, http.StatusUnauthorized, "Authentication required: missing token")
 			return
 		}
 

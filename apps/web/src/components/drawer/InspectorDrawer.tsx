@@ -6,6 +6,7 @@ import type { K8sServiceData } from "../canvas/K8sService";
 import type { K8sIngressData } from "../canvas/K8sIngress";
 import type { K8sDaemonSetData, K8sCronJobData, K8sJobData, K8sPVCData } from "../../store/types/topologyTypes";
 import { useTopologyStore } from "../../store/useTopologyStore";
+import { useAuthStore } from "../../store/useAuthStore";
 import { OverviewTab } from "./inspector/OverviewTab";
 import { LogsTab } from "./inspector/LogsTab";
 import { MetricsTab } from "./inspector/MetricsTab";
@@ -92,6 +93,9 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
         const errJson = await res.json().catch(() => null);
         const msg = errJson?.message || "Disruptions budget exhausted (0 allowed).";
         setChaosActionMsg(`[PDB SAFETY BLOCKED]: ${msg} Enable 'Force' toggle to bypass.`);
+      } else if (res.status === 401) {
+        useAuthStore.getState().openAuthModal("Authentication required: Sign in or register to inject cluster faults.");
+        setChaosActionMsg("[AUTH REQUIRED]: Sign in via popup or bottom-left profile to run chaos.");
       } else {
         const errText = await res.text();
         setChaosActionMsg(`[CHAOS FAILED]: ${errText || "Cluster rejected injection request"}`);
@@ -119,6 +123,9 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
       });
       if (res.ok) {
         setChaosActionMsg("[CHAOS HEALED]: Cluster fault reversed successfully.");
+      } else if (res.status === 401) {
+        useAuthStore.getState().openAuthModal("Authentication required: Sign in or register to revert cluster faults.");
+        setChaosActionMsg("[AUTH REQUIRED]: Sign in to reverse chaos fault.");
       } else {
         const errText = await res.text();
         setChaosActionMsg(`[CLEAR FAILED]: ${errText || "Could not reverse fault"}`);
