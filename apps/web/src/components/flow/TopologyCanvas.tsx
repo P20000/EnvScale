@@ -6,7 +6,6 @@ import {
   MarkerType,
   useReactFlow,
   type Node,
-  type OnNodeDrag,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Icon } from "../ui/Icon";
@@ -26,6 +25,7 @@ import { useUIStore } from "../../store/useUIStore";
 import type { SelectedTarget } from "../drawer/InspectorDrawer";
 import { useK8sStream, type WsTopologyMessage } from "../../hooks/useK8sStream";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
+import { useClusterLayoutPersistence } from "../../hooks/useClusterLayoutPersistence";
 import { DeleteConfirmationModal } from "../modals/DeleteConfirmationModal";
 
 import type { K8sDaemonSetData, K8sCronJobData, K8sJobData, K8sPVCData } from "../../store/types/topologyTypes";
@@ -68,9 +68,6 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
   const setSelectedNode = useTopologyStore((s) => s.setSelectedNode);
   const setWsStatus = useTopologyStore((s) => s.setWsStatus);
   const jobs = useTopologyStore((s) => s.jobs);
-  const userNodePositions = useTopologyStore((s) => s.userNodePositions);
-  const setUserNodePositions = useTopologyStore((s) => s.setUserNodePositions);
-  const clearUserNodePositions = useTopologyStore((s) => s.clearUserNodePositions);
   const deleteModal = useUIStore((s) => s.deleteModal);
   const closeDeleteModal = useUIStore((s) => s.closeDeleteModal);
 
@@ -146,34 +143,17 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
     onSelectTarget(null);
   }, [setSelectedNode, onSelectTarget]);
 
-  const handleNodeDragStop: OnNodeDrag = useCallback(
-    (_event, node, draggedNodes) => {
-      const targets = draggedNodes && draggedNodes.length > 0 ? draggedNodes : [node];
-      const updates: Record<string, { x: number; y: number }> = {};
-      targets.forEach((n) => {
-        if (n && n.id && n.position) {
-          updates[n.id] = {
-            x: Math.round(n.position.x),
-            y: Math.round(n.position.y),
-          };
-        }
-      });
-      setUserNodePositions(updates);
-      // Re-trigger layout calculation to align dynamic edge handles to dragged positions
-      applyDagreLayout();
+  const {
+    handleNodeDragStop,
+    handleAutoLayoutReset,
+    hasCustomPositions,
+  } = useClusterLayoutPersistence({
+    onLayoutReset: () => {
+      setTimeout(() => {
+        fitView({ duration: 400, padding: 0.11, maxZoom: 0.92 });
+      }, 50);
     },
-    [setUserNodePositions, applyDagreLayout]
-  );
-
-  const handleAutoLayout = () => {
-    clearUserNodePositions();
-    applyDagreLayout(undefined, { resetUserPositions: true });
-    setTimeout(() => {
-      fitView({ duration: 400, padding: 0.11, maxZoom: 0.92 });
-    }, 50);
-  };
-
-  const hasCustomPositions = Object.keys(userNodePositions || {}).length > 0;
+  });
 
   const handleRecenterView = () => {
     fitView({ duration: 400, padding: 0.11, maxZoom: 0.92 });
@@ -279,7 +259,7 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         </div>
 
         <button
-          onClick={handleAutoLayout}
+          onClick={handleAutoLayoutReset}
           className="flex items-center justify-between gap-2 rounded-md bg-background border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:border-blue-500/50 hover:bg-neutral-800 hover:text-blue-400 transition-colors font-heading cursor-pointer"
           title={hasCustomPositions ? "Reset to Auto Layout (Dagre Engine)" : "Auto Layout Topology Graph (Dagre Engine)"}
         >

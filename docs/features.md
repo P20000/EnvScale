@@ -171,7 +171,7 @@
 
 - **[NEH-01]** React + Vite + Tailwind CSS + shadcn/ui Application Shell & Token System.
 - **[NEH-02]** Custom React Flow Node Components (`K8sGroup`, `K8sNode`, `K8sPod`, `K8sService`).
-- **[NEH-03]** Dagre Auto-Layout Canvas Graph Engine with Nested Hybrid Topology (ArgoCD-style), Persistent User Drag Positioning, and Dynamic Edge Routing.
+- **[NEH-03]** Dagre Auto-Layout Canvas Graph Engine with Nested Hybrid Topology (ArgoCD-style), Persistent User Drag Positioning (Hybrid Local Cache & PostgreSQL Backend Persistence), and Dynamic Edge Routing.
 - **[NEH-04]** Real-Time Streaming Zustand Store (`useTopologyStore`).
 - **[NEH-05]** `useK8sStream` Real-Time WebSocket Hook.
 - **[NEH-06]** Pod Log Terminal Inspector Drawer Component.

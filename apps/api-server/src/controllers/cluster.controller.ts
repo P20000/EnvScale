@@ -5,6 +5,9 @@ import {
   connectCluster,
   deleteCluster,
   listClusters,
+  getClusterLayout,
+  saveClusterLayout,
+  resetClusterLayout,
 } from "../services/cluster.service.js";
 
 import { ensureDefaultWorkspace } from "../services/workspace.service.js";
@@ -55,6 +58,52 @@ export const remove = async (request: Request, response: Response) => {
   try {
     await deleteCluster(workspaceId, clusterId);
     response.status(204).send();
+  } catch (error: unknown) {
+    if (error instanceof ClusterNotFoundError) {
+      response.status(404).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
+};
+
+export const getLayout = async (request: Request, response: Response) => {
+  const clusterId = request.params.clusterId as string;
+  const userId = request.user?.id;
+  try {
+    const layout = await getClusterLayout(clusterId, userId);
+    response.json(layout);
+  } catch (error: unknown) {
+    if (error instanceof ClusterNotFoundError) {
+      response.status(404).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
+};
+
+export const saveLayout = async (request: Request, response: Response) => {
+  const clusterId = request.params.clusterId as string;
+  const userId = request.user?.id;
+  const { positions } = request.body as { positions: Record<string, { x: number; y: number }> };
+  try {
+    const result = await saveClusterLayout(clusterId, positions, userId);
+    response.json(result);
+  } catch (error: unknown) {
+    if (error instanceof ClusterNotFoundError) {
+      response.status(404).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
+};
+
+export const resetLayout = async (request: Request, response: Response) => {
+  const clusterId = request.params.clusterId as string;
+  const userId = request.user?.id;
+  try {
+    const result = await resetClusterLayout(clusterId, userId);
+    response.json(result);
   } catch (error: unknown) {
     if (error instanceof ClusterNotFoundError) {
       response.status(404).json({ error: error.message });

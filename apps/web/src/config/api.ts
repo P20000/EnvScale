@@ -386,3 +386,75 @@ export async function apiRollbackDeployment(params: RollbackParams): Promise<Rol
   }
 }
 
+/**
+ * Retrieve saved canvas layout positions for a cluster
+ * Endpoint: GET /api/v1/clusters/:clusterId/layout
+ */
+export async function apiGetClusterLayout(clusterId: string): Promise<Record<string, { x: number; y: number }>> {
+  try {
+    const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+    const headers: Record<string, string> = {};
+    if (rawAuth && rawAuth !== "null") headers["Authorization"] = `Bearer ${rawAuth}`;
+
+    const res = await fetch(`${API_BASE_URL}/api/v1/clusters/${encodeURIComponent(clusterId)}/layout`, {
+      headers,
+      credentials: "include",
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return (data?.positions || {}) as Record<string, { x: number; y: number }>;
+    }
+  } catch (err) {
+    console.warn(`Failed to fetch layout for cluster ${clusterId}:`, err);
+  }
+  return {};
+}
+
+/**
+ * Persist custom canvas layout positions for a cluster
+ * Endpoint: PUT /api/v1/clusters/:clusterId/layout
+ */
+export async function apiSaveClusterLayout(
+  clusterId: string,
+  positions: Record<string, { x: number; y: number }>
+): Promise<boolean> {
+  try {
+    const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (rawAuth && rawAuth !== "null") headers["Authorization"] = `Bearer ${rawAuth}`;
+
+    const res = await fetch(`${API_BASE_URL}/api/v1/clusters/${encodeURIComponent(clusterId)}/layout`, {
+      method: "PUT",
+      headers,
+      credentials: "include",
+      body: JSON.stringify({ positions }),
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn(`Failed to save layout for cluster ${clusterId}:`, err);
+    return false;
+  }
+}
+
+/**
+ * Reset custom canvas layout positions for a cluster (reverts to autolayout)
+ * Endpoint: DELETE /api/v1/clusters/:clusterId/layout
+ */
+export async function apiResetClusterLayout(clusterId: string): Promise<boolean> {
+  try {
+    const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+    const headers: Record<string, string> = {};
+    if (rawAuth && rawAuth !== "null") headers["Authorization"] = `Bearer ${rawAuth}`;
+
+    const res = await fetch(`${API_BASE_URL}/api/v1/clusters/${encodeURIComponent(clusterId)}/layout`, {
+      method: "DELETE",
+      headers,
+      credentials: "include",
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn(`Failed to reset layout for cluster ${clusterId}:`, err);
+    return false;
+  }
+}
+
