@@ -82,20 +82,49 @@ The main application screen follows a 3-region floating layout:
 
 ## 3. Color Tokens & Theme System
 
-All styles are configured via CSS variables and Tailwind CSS tokens in `apps/web/src/index.css`.
+All styles are configured via CSS variables and Tailwind CSS tokens in `apps/web/src/index.css` and `apps/web/tailwind.config.js`.
 
+### 3.1. Core Surface & Background Tokens
+| Token Name | Hex / Value | Tailwind Equivalent | Purpose / Component Usage |
+| :--- | :--- | :--- | :--- |
+| `--canvas-bg` | `#09090b` | `bg-neutral-950` / `bg-[#09090b]` | Deep matte canvas backdrop |
+| `--grid-dot` | `#27272a` | `color-neutral-800` / `fill-[#27272a]` | Background engineering dot grid |
+| `--surface-card` | `#141417` | `bg-neutral-900` / `bg-[#141417]` | Floating cards, drawers, dialog panels |
+| `--surface-panel` | `#1f1f23` | `bg-[#1f1f23]` | Elevated popovers, nested sub-panels |
+| `--surface-group` | `#18181b` | `bg-zinc-900` / `bg-[#18181b]` | Workload/Namespace container parent group |
+| `--surface-capsule` | `rgba(23, 23, 23, 0.85)` | `bg-neutral-900/85` | Frosted header navbar & sidebar capsule |
+| `--border-subtle` | `#27272a` | `border-neutral-800` / `border-[#27272a]` | Structural dividers, card borders |
+| `--border-default` | `#262626` | `border-neutral-800` | Base input & card outline |
+| `--border-muted` | `#3f3f46` | `border-zinc-700` | Edge lines, secondary boundaries |
+
+### 3.2. Text & Foreground Hierarchy
 | Token Name | Hex Code | Tailwind Equivalent | Purpose / Component Usage |
 | :--- | :--- | :--- | :--- |
-| `--canvas-bg` | `#09090b` | `bg-neutral-950` | Main canvas background |
-| `--grid-dot` | `#27272a` | `color-neutral-800` | Background grid dot pattern |
-| `--surface-capsule` | `rgba(23, 23, 23, 0.85)` | `bg-neutral-900/85` | Navbar & Sidebar capsule background |
-| `--surface-card` | `#141417` | `bg-neutral-900` | Node card & Drawer background |
-| `--border-subtle` | `#27272a` | `border-neutral-800` | Standard component border |
-| `--status-running` | `#10b981` | `text-emerald-500` | Healthy Pod / Connected WS indicator |
-| `--status-warning` | `#f59e0b` | `text-amber-500` | Pending Pod / High CPU warning |
-| `--status-error` | `#ef4444` | `text-red-500` | CrashLoopBackOff / Failed Pod alert |
-| `--status-inactive` | `#6b7280` | `text-neutral-500` | Terminated / Unknown status |
-| `--accent-primary` | `#3b82f6` | `bg-blue-500` | Primary action buttons & selected states |
+| `--text-primary` | `#f4f4f5` | `text-neutral-100` / `text-zinc-100` | Headings, active values, high-contrast text |
+| `--text-secondary` | `#a1a1aa` | `text-neutral-400` / `text-zinc-400` | Subtitles, labels, descriptions |
+| `--text-muted` | `#71717a` | `text-zinc-500` | Placeholders, inactive timestamps |
+| `--text-inverted` | `#ffffff` | `text-white` | Badges, high-emphasis action text |
+
+### 3.3. Workload Health & Status Lifecycle
+| Token Name | Hex Code | Tailwind Equivalent | Purpose / Component Usage |
+| :--- | :--- | :--- | :--- |
+| `--status-running` | `#10b981` | `text-emerald-500` / `bg-emerald-500` | Healthy Pods, Running state, WS connected |
+| `--status-warning` | `#f59e0b` | `text-amber-500` / `bg-amber-500` | Pending, Degraded health, high CPU (>80%) |
+| `--status-error` | `#ef4444` | `text-red-500` / `bg-red-500` | CrashLoopBackOff, Failed Pod, Incident alert |
+| `--status-inactive` | `#6b7280` | `text-neutral-500` / `bg-neutral-500` | Terminated, Unknown, Completed jobs |
+| `--status-idle` | `#52525b` / `#475569` | `text-zinc-600` / `text-slate-600` | Idle/Draining nodes, unrouted edges |
+
+### 3.4. Kubernetes Resource Badges & Topology Flow Colors
+| Resource / Flow Type | Hex Code | Purpose / Component Usage |
+| :--- | :--- | :--- |
+| **Ingress / Route Edge** | `#8b5cf6` | Ingress controllers, external routing paths (Purple) |
+| **Service (ClusterIP/LB)**| `#38bdf8` | Services, Ingress-to-Service linkages (Sky Blue) |
+| **Storage (PV / PVC Bound)**| `#06b6d4` | Bound Persistent Volumes & Storage claims (Cyan) |
+| **Storage (Unbound / Pending)**| `#f59e0b` | Unbound / Pending storage volumes (Amber) |
+| **CronJob / Active Batch**| `#fbbf24` / `#f59e0b`| Animated border beam & M3 progress indicator |
+| **Primary Accent / Selection**| `#3b82f6` | Active node selection border, primary buttons (Blue) |
+| **Selection Focus Ring** | `#60a5fa` | Handle connection active highlight (Light Blue) |
+| **Standard Edge Stroke** | `#3f3f46` | Passive graph connection edges (Zinc 700) |
 
 ---
 
