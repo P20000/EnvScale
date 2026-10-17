@@ -187,7 +187,7 @@ export default function ConnectClusterWizard({
 
   if (!isAuthenticated) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
         <div className="w-full max-w-md rounded-3xl border border-zinc-800 bg-[#141417] p-6 text-white shadow-2xl">
           <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
             <div className="flex items-center gap-2.5">

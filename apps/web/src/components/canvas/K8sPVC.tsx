@@ -24,7 +24,7 @@ export function K8sPVCNode({ data }: { data: K8sPVCData }) {
 
   return (
     <div
-      className="group relative flex flex-col gap-1.5 p-2.5 rounded-xl border border-cyan-500/30 bg-zinc-950/90 hover:border-cyan-400/60 shadow-lg shadow-cyan-950/20 backdrop-blur-md transition-all duration-200 cursor-pointer min-w-[170px] max-w-[210px]"
+      className="group relative flex flex-col gap-1.5 p-2.5 rounded-xl border border-cyan-500/30 bg-[#141417] hover:border-cyan-400/60 shadow-lg shadow-cyan-950/20 transition-all duration-200 cursor-pointer min-w-[170px] max-w-[210px]"
       title={`PersistentVolumeClaim: ${data.name} (${phase})`}
     >
       {/* 4-Cardinal Dynamic Handles */}

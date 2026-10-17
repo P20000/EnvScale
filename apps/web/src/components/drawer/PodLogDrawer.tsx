@@ -136,7 +136,7 @@ export function PodLogDrawer({
   if (!isOpen || !podName) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/60 animate-in fade-in duration-200">
       <aside className="relative flex h-full w-full max-w-3xl flex-col bg-[#0b0c10] text-neutral-100 border-l border-neutral-800/80 shadow-2xl animate-in slide-in-from-right duration-300">
         {/* Region 1: Drawer Header */}
         <div className="flex flex-col gap-3 border-b border-neutral-800/80 bg-[#121318] p-4 shrink-0">

@@ -10,18 +10,26 @@ import {
   mdiAccountGroup,
 } from "@mdi/js";
 import { useTopologyStore } from "../../store/useTopologyStore";
+import { useAuthStore } from "../../store/useAuthStore";
 
 export function LeaderboardView() {
   const [tab, setTab] = useState<"members" | "clusters">("clusters");
   const clusters = useTopologyStore((s) => s.clusters);
+  const currentUser = useAuthStore((s) => s.user);
 
-  // Existing Members Leaderboard
-  const membersLeaderboard = [
-    { rank: 1, name: "Pranav (Core System)", score: 985, streak: "14 Days", status: "Optimal", badge: "Gold" },
-    { rank: 2, name: "Vinit (Backend CRUD)", score: 940, streak: "9 Days", status: "Optimal", badge: "Silver" },
-    { rank: 3, name: "Neha (Frontend UI)", score: 915, streak: "7 Days", status: "Optimal", badge: "Bronze" },
-    { rank: 4, name: "Ishika (Docs & QA)", score: 890, streak: "5 Days", status: "Warning", badge: "Participant" },
-  ];
+  // Authenticated Member: Show only the active account owner until teammates are invited
+  const membersLeaderboard = currentUser
+    ? [
+        {
+          rank: 1,
+          name: currentUser.name || (currentUser.email ? currentUser.email.split("@")[0] : "Account Owner"),
+          score: 985,
+          streak: "Active",
+          status: "Optimal",
+          badge: "Gold",
+        },
+      ]
+    : [];
 
   // Dynamic Clusters Leaderboard derived from store clusters
   const clusterMetrics = clusters.map((cluster, index) => {
@@ -227,33 +235,47 @@ export function LeaderboardView() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-800">
-                {membersLeaderboard.map((user) => (
-                  <tr key={user.rank} className="hover:bg-neutral-900 transition-colors">
-                    <td className="p-4 font-mono font-bold text-neutral-200 flex items-center gap-2">
-                      <span className="w-5 text-center">{user.rank}</span>
-                      <span className="text-xs font-semibold text-amber-400 font-mono">[{user.badge}]</span>
-                    </td>
-                    <td className="p-4 font-medium text-neutral-100">{user.name}</td>
-                    <td className="p-4 font-mono font-bold text-blue-400">
-                      <div className="flex items-center gap-1">
-                        <Icon path={mdiStar} size={0.65} className="text-amber-400" />
-                        <span>{user.score} pts</span>
+                {membersLeaderboard.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="p-8 text-center text-neutral-400">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <Icon path={mdiAccountGroup} size={1.4} className="text-neutral-600" />
+                        <p className="font-semibold text-neutral-300">No Team Members</p>
+                        <p className="text-[11px] text-neutral-500 max-w-sm">
+                          You are currently the sole account administrator. No additional team members have been added yet.
+                        </p>
                       </div>
-                    </td>
-                    <td className="p-4 font-mono text-neutral-300">
-                      <div className="flex items-center gap-1.5 text-emerald-400">
-                        <Icon path={mdiFire} size={0.65} />
-                        <span>{user.streak}</span>
-                      </div>
-                    </td>
-                    <td className="p-4">
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-400 border border-emerald-500/20">
-                        <Icon path={mdiShieldCheck} size={0.55} />
-                        {user.status}
-                      </span>
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  membersLeaderboard.map((user) => (
+                    <tr key={user.rank} className="hover:bg-neutral-900 transition-colors">
+                      <td className="p-4 font-mono font-bold text-neutral-200 flex items-center gap-2">
+                        <span className="w-5 text-center">{user.rank}</span>
+                        <span className="text-xs font-semibold text-amber-400 font-mono">[{user.badge}]</span>
+                      </td>
+                      <td className="p-4 font-medium text-neutral-100">{user.name}</td>
+                      <td className="p-4 font-mono font-bold text-blue-400">
+                        <div className="flex items-center gap-1">
+                          <Icon path={mdiStar} size={0.65} className="text-amber-400" />
+                          <span>{user.score} pts</span>
+                        </div>
+                      </td>
+                      <td className="p-4 font-mono text-neutral-300">
+                        <div className="flex items-center gap-1.5 text-emerald-400">
+                          <Icon path={mdiFire} size={0.65} />
+                          <span>{user.streak}</span>
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-400 border border-emerald-500/20">
+                          <Icon path={mdiShieldCheck} size={0.55} />
+                          {user.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

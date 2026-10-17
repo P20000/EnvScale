@@ -60,7 +60,7 @@ export const DeleteConfirmationModal = memo(
     };
 
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
         <div className="relative w-full max-w-md rounded-2xl border border-neutral-800 bg-[#141417] p-6 text-white shadow-2xl animate-in fade-in zoom-in-95 duration-200">
           <button
             onClick={onClose}

@@ -412,7 +412,7 @@ export function TopNavbar({
       {pendingDeleteCluster && (
         <>
           <div
-            className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm"
+            className="fixed inset-0 z-[80] bg-black/75"
             onClick={() => setPendingDeleteCluster(null)}
           />
           <div className="fixed z-[90] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] rounded-2xl border border-zinc-700 bg-[#18181c] p-6 shadow-2xl">

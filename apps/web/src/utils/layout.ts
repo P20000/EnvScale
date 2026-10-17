@@ -17,7 +17,7 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
   // Helper to determine node dimensions
   const getNodeDimensions = (node: Node) => {
     if (node.type === "k8sGroup") {
-      return { width: 295, height: 76 };
+      return { width: 295, height: 90 };
     }
     if (node.type === "k8sPVC") {
       return { width: 200, height: 70 };

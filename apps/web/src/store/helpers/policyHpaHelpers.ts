@@ -164,12 +164,28 @@ export function findWorkloadHPA(
 ): K8sHPAData | null {
   if (!hpas || hpas.length === 0 || !workloadName) return null;
   const targetLower = workloadName.toLowerCase();
+  const cleanTarget = targetLower
+    .replace(/-(?:[a-f0-9]{8,10}|\d{8,10})-[a-z0-9]{4,6}$/i, "")
+    .replace(/-(?:[a-f0-9]{8,10}|\d{8,10})$/i, "")
+    .replace(/-\d+$/i, "")
+    .replace(/-[a-z0-9]{4,6}$/i, "");
 
   return (
     hpas.find((h) => {
-      const matchName = h.targetRefName?.toLowerCase() === targetLower || h.name.toLowerCase().includes(targetLower);
       const matchNs = !namespace || !h.namespace || h.namespace === namespace;
-      return matchName && matchNs;
+      if (!matchNs) return false;
+
+      const targetRefLower = (h.targetRefName || "").toLowerCase();
+      const hpaNameLower = (h.name || "").toLowerCase();
+
+      return (
+        targetRefLower === targetLower ||
+        targetRefLower === cleanTarget ||
+        targetLower.startsWith(targetRefLower) ||
+        cleanTarget.startsWith(targetRefLower) ||
+        hpaNameLower.includes(targetLower) ||
+        hpaNameLower.includes(cleanTarget)
+      );
     }) || null
   );
 }
