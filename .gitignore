@@ -37,3 +37,4 @@ apps/k8s-streamer/bin/
 bin/
 *-bin
 .codegraph/
+.playwright-mcp/

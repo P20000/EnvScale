@@ -30,8 +30,6 @@ export const getPodPrefix = (name: string, podData?: K8sPodData) => {
     .replace(/-[a-z0-9]{4,6}$/i, "");
 };
 
-
-
 export const syncSelectedNode = (nodes: Node[], currentSelected: SelectedTarget): SelectedTarget => {
   if (!currentSelected || !currentSelected.data) return null;
   const targetName = currentSelected.data.name;
@@ -47,7 +45,17 @@ export const syncSelectedNode = (nodes: Node[], currentSelected: SelectedTarget)
   );
   if (matched && matched.data) {
     if (matched.type === "k8sPod") {
-      return { type: "pod", data: matched.data as K8sPodData };
+      const existingOwner = (currentSelected.data as Record<string, unknown>)?.ownerName;
+      const normalizedOwner = existingOwner
+        ? getPodPrefix(String(existingOwner))
+        : getPodPrefix(String((matched.data as Record<string, unknown>).name || ""), matched.data as K8sPodData);
+      return {
+        type: "pod",
+        data: {
+          ...(matched.data as K8sPodData),
+          ownerName: normalizedOwner,
+        },
+      };
     } else if (matched.type === "k8sWorker") {
       return { type: "node", data: matched.data as K8sNodeData };
     } else if (matched.type === "k8sService") {

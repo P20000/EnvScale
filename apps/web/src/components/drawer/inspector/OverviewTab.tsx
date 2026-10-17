@@ -48,13 +48,18 @@ export function OverviewTab({
   const pdbs = useTopologyStore((s) => s.pdbs);
   const deployments = useTopologyStore((s) => s.deployments);
 
-  const workloadName = targetRecord.ownerName
-    ? String(targetRecord.ownerName)
-    : getPodPrefix(target.data.name);
+  const podLabels = (target.data as K8sPodData)?.labels || {};
+  const cleanOwner = targetRecord.ownerName
+    ? getPodPrefix(String(targetRecord.ownerName))
+    : null;
+  const workloadName =
+    cleanOwner ||
+    podLabels.app ||
+    podLabels["app.kubernetes.io/name"] ||
+    getPodPrefix(target.data.name, target.data as K8sPodData);
   const targetNs = String(targetRecord.namespace || "default");
 
   const matchedHPA = findWorkloadHPA(hpas, workloadName, targetNs);
-  const podLabels = (target.data as K8sPodData)?.labels || {};
   const matchedNetPols = findWorkloadNetworkPolicies(networkPolicies, podLabels, workloadName, targetNs);
   const matchedPDB = findWorkloadPDB(pdbs, workloadName, targetNs, podLabels);
   const matchedDep = deployments?.find(
