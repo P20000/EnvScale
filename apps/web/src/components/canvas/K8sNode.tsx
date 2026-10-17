@@ -58,7 +58,7 @@ export function K8sWorkerNode({ data }: { data: K8sNodeData }) {
             isHealthy
               ? "bg-[#6DD6A8] text-[#111318]"
               : isError
-              ? "bg-[#d91818] text-[#111318]"
+              ? "bg-[#fc3f3f] text-[#111318]"
               : "bg-[#F4C26B] text-[#111318]"
           }`}
         >

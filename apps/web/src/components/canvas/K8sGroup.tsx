@@ -262,7 +262,7 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
           ) : (
             <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-md shrink-0 inline-flex items-center leading-none ${
               hasErrors
-                ? "text-[#111318] bg-[#d91818]"
+                ? "text-[#111318] bg-[#fc3f3f]"
                 : isHealthy
                 ? "text-[#111318] bg-[#6DD6A8]"
                 : isScaling
@@ -357,7 +357,7 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
       {/* Row 3: Dedicated Full-Width Pod Strip */}
       <div className="flex items-center gap-1 pt-1.5 border-t border-[#30343B]/40 min-h-[16px]">
         {isChaosActive && workloadFault?.faultType === "scale-down" && summaries.length === 0 ? (
-          <span className="text-[8px] font-mono text-[#d91818] font-semibold flex items-center gap-1">
+          <span className="text-[8px] font-mono text-[#fc3f3f] font-semibold flex items-center gap-1">
             <ChaosIcon className="text-[10px]" />
             0/0 Outage
           </span>
@@ -373,9 +373,9 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
                 const isPending = pod.isTerminating || ph.includes("pending") || (!pod.isReady && !isErr);
 
                 const colorClass = isChaosImpacted
-                  ? "bg-[#d91818] ring-2 ring-[#d91818]/80"
+                  ? "bg-[#fc3f3f] ring-2 ring-[#fc3f3f]/80"
                   : isErr
-                  ? "bg-[#d91818]"
+                  ? "bg-[#fc3f3f]"
                   : isPending
                   ? "bg-[#F4C26B]"
                   : "bg-[#6DD6A8]";

@@ -23,7 +23,7 @@ export const K8sJobNode: React.FC<NodeProps> = ({ data }) => {
   };
 
   const statusBadge = isFailed ? (
-    <div className="h-5 px-2 rounded-md inline-flex items-center gap-1.5 font-mono text-[10px] font-bold leading-none bg-[#d91818] text-[#111318] shrink-0">
+    <div className="h-5 px-2 rounded-md inline-flex items-center gap-1.5 font-mono text-[10px] font-bold leading-none bg-[#fc3f3f] text-[#111318] shrink-0">
       <MdErrorOutline className="w-3 h-3 text-[#111318]" />
       <span>FAILED</span>
     </div>

@@ -68,7 +68,7 @@ export function K8sPVCNode({ data }: { data: K8sPVCData }) {
             ? "text-[#6DD6A8] bg-[#6DD6A8]/15"
             : isPending
             ? "text-[#F4C26B] bg-[#F4C26B]/15"
-            : "text-[#111318] bg-[#d91818] font-bold"
+            : "text-[#111318] bg-[#fc3f3f] font-bold"
         }`}>
           {phase}
         </span>
