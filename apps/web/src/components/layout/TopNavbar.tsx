@@ -131,13 +131,13 @@ export function TopNavbar({
         />
       )}
 
-      <header className="fixed top-0 left-0 w-full h-14 bg-[#141417] border-b border-zinc-800 flex items-center justify-between px-4 select-none shrink-0 z-[60]">
+      <header className="fixed top-0 left-0 w-full h-14 bg-[#191B20] border-b border-[#30343B] flex items-center justify-between px-4 select-none shrink-0 z-[60]">
         
         {/* Absolute Background Layer (Clips only the mandala to the header bounds) */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none select-none z-0">
           <div className="absolute left-[30px] top-[28px] -translate-x-1/2 -translate-y-1/2 w-60 h-60 opacity-25">
             <div className="w-full h-full animate-mandala-spin">
-              <svg viewBox="0 0 926.02 965.4" className="w-full h-full text-blue-500">
+              <svg viewBox="0 0 926.02 965.4" className="w-full h-full text-[#A8C7FA]">
                 <path d="M934.76,524.77a80,80,0,0,1,0-49.54l24.32-74.86A80.14,80.14,0,0,0,930,310.76l-63.67-46.27a80.08,80.08,0,0,1-29.12-40.08l-24.33-74.86a80.14,80.14,0,0,0-76.23-55.38h-78.7a80.16,80.16,0,0,1-47.11-15.3L547.11,32.6a80.18,80.18,0,0,0-94.22,0L389.2,78.87a80.16,80.16,0,0,1-47.11,15.3h-78.7a80.14,80.14,0,0,0-76.23,55.38l-24.33,74.86a80.08,80.08,0,0,1-29.12,40.08L70,310.76a80.14,80.14,0,0,0-29.12,89.61l24.32,74.86a80,80,0,0,1,0,49.54L40.92,599.63A80.14,80.14,0,0,0,70,689.24l63.67,46.27a80.08,80.08,0,0,1,29.12,40.08l24.33,74.86a80.14,80.14,0,0,0,76.23,55.38h78.7a80.16,80.16,0,0,1,47.11,15.3l63.69,46.27a80.18,80.18,0,0,0,94.22,0l63.69-46.27a80.16,80.16,0,0,1,47.11-15.3h78.7a80.14,80.14,0,0,0,76.23-55.38l24.33-74.86a80.08,80.08,0,0,1,29.12-40.08L930,689.24a80.14,80.14,0,0,0,29.12-89.61Zm-241.07-108a37.22,37.22,0,1,1,10.63-51.55A37.23,37.23,0,0,1,693.69,416.72Zm50.63,94.14A37.22,37.22,0,1,1,708.87,472,37.22,37.22,0,0,1,744.32,510.86Zm-158-240.06a37.22,37.22,0,1,1-47.95,21.71A37.22,37.22,0,0,1,586.31,270.8ZM500,101.09a60.74,60.74,0,1,1-60.73,60.72A60.72,60.72,0,0,1,500,101.09ZM435.38,263.82a37.22,37.22,0,1,1-26,45.74A37.24,37.24,0,0,1,435.38,263.82ZM265.52,177.27a60.73,60.73,0,1,1-13.43,84.84A60.74,60.74,0,0,1,265.52,177.27Zm64.75,314.44a37.22,37.22,0,1,1-35.46-38.9A37.22,37.22,0,0,1,330.27,491.71ZM197.13,662.27a60.74,60.74,0,1,1,39-76.54A60.74,60.74,0,0,1,197.13,662.27Zm39-248a60.73,60.73,0,1,1-39-76.54A60.74,60.74,0,0,1,236.13,414.27Zm114.22,395a60.73,60.73,0,1,1-13.43-84.83A60.74,60.74,0,0,1,350.35,809.29ZM347.47,644.6a37.22,37.22,0,1,1,10.62-51.55A37.21,37.21,0,0,1,347.47,644.6Zm19.85-251.22a37.22,37.22,0,1,1-5.83-52.32A37.22,37.22,0,0,1,367.32,393.38Zm46.59,335a37.23,37.23,0,1,1,47.95-21.72A37.23,37.23,0,0,1,413.91,728.34ZM500,898.91a60.74,60.74,0,1,1,60.73-60.72A60.72,60.72,0,0,1,500,898.91Zm64.84-163.59a37.22,37.22,0,1,1,26-45.76A37.22,37.22,0,0,1,564.84,735.32ZM632.9,605.75a37.22,37.22,0,1,1,5.83,52.31A37.22,37.22,0,0,1,632.9,605.75Zm101.58,217a60.73,60.73,0,1,1,13.43-84.84A60.74,60.74,0,0,1,734.48,822.73Zm13.43-560.62a60.73,60.73,0,1,1-13.43-84.84A60.74,60.74,0,0,1,747.91,262.11ZM879.39,623.28a60.73,60.73,0,1,1-39-76.54A60.74,60.74,0,0,1,879.39,623.28Zm-39-170a60.74,60.74,0,1,1,39-76.54A60.74,60.74,0,0,1,840.4,453.26Z" transform="translate(-36.99 -17.3)" fill="currentColor" />
               </svg>
             </div>
@@ -146,29 +146,29 @@ export function TopNavbar({
 
         {/* Left Group: Foreground Brand Elements */}
         <div className="relative z-10 flex items-center gap-3 h-full">
-          <EnvScaleLogo className="w-7 h-7 text-blue-500 shrink-0 select-none" />
-          <span className="text-sm font-mono font-black tracking-widest text-white uppercase">
+          <EnvScaleLogo className="w-7 h-7 text-[#A8C7FA] shrink-0 select-none" />
+          <span className="text-sm font-mono font-black tracking-widest text-[#E6E1E5] uppercase">
             ENVSCALE
           </span>
         </div>
 
         {/* Center Group: Navigation Pill Controls */}
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-3 z-10">
-          <div className="flex items-center gap-4 bg-[#18181b] border border-zinc-800 h-9 px-3.5 rounded-full" ref={dropdownRef}>
+          <div className="flex items-center gap-4 bg-[#1E2127] border border-[#30343B] h-9 px-3.5 rounded-full" ref={dropdownRef}>
 
           {/* Cluster Selector */}
           <button
             onClick={toggleDropdown}
-            className="flex items-center gap-2 text-xs font-mono font-bold tracking-wider text-zinc-100 hover:text-white transition-colors"
+            className="flex items-center gap-2 text-xs font-mono font-bold tracking-wider text-[#E6E1E5] hover:text-white transition-colors"
           >
             <span>{clusters.find(c => c.id === activeCluster)?.name || "Select Cluster"}</span>
-            <Icon path={mdiChevronDown} size={0.65} className="text-zinc-400" />
+            <Icon path={mdiChevronDown} size={0.65} className="text-[#C4C7C5]" />
           </button>
 
           {/* Dropdown Menu */}
           {dropdownOpen && (
-            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-3 w-64 rounded-xl border border-zinc-700 bg-[#18181c] p-2 z-[70] shadow-2xl">
-              <div className="px-2 py-1.5 text-[10px] font-bold tracking-wider text-zinc-400 uppercase font-heading">
+            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-3 w-64 rounded-xl border border-[#424750] bg-[#23262D] p-2 z-[70] shadow-2xl">
+              <div className="px-2 py-1.5 text-[10px] font-bold tracking-wider text-[#92959D] uppercase font-heading">
                 Active Kubernetes Clusters
               </div>
               <div className="space-y-1">
@@ -181,21 +181,21 @@ export function TopNavbar({
                     }}
                     className={`group w-full flex items-center justify-between rounded-md px-2.5 py-1.5 text-xs font-mono cursor-pointer transition-colors ${
                       activeCluster === cluster.id
-                        ? "bg-blue-500/10 text-blue-400 font-semibold"
-                        : "text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+                        ? "bg-[#284568] text-[#D3E3FD] font-semibold"
+                        : "text-[#C4C7C5] hover:bg-[#30343B] hover:text-[#E6E1E5]"
                     }`}
                   >
                     <span className="flex items-center gap-2 truncate">
-                      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${activeCluster === cluster.id ? "bg-emerald-500" : "bg-zinc-600"}`} />
+                      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${activeCluster === cluster.id ? "bg-[#6DD6A8]" : "bg-[#777D87]"}`} />
                       <span className="truncate">{cluster.name}</span>
                     </span>
                     <div className="flex items-center gap-1 shrink-0">
-                      {activeCluster === cluster.id && <Icon path={mdiCheck} size={0.65} className="text-blue-400" />}
+                      {activeCluster === cluster.id && <Icon path={mdiCheck} size={0.65} className="text-[#A8C7FA]" />}
                       <button
                         type="button"
                         onClick={(e) => handleDeleteClusterClick(e, cluster)}
                         title={`Delete cluster ${cluster.name}`}
-                        className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-red-400 p-1 rounded transition-all"
+                        className="opacity-0 group-hover:opacity-100 text-[#92959D] hover:text-[#F2B8B5] p-1 rounded transition-all"
                       >
                         <Icon path={mdiTrashCanOutline} size={0.6} />
                       </button>
@@ -203,7 +203,7 @@ export function TopNavbar({
                   </div>
                 ))}
               </div>
-              <div className="my-1 h-px bg-zinc-800" />
+              <div className="my-1 h-px bg-[#30343B]" />
               <button
                 onClick={() => {
                   setDropdownOpen(false);
@@ -221,17 +221,17 @@ export function TopNavbar({
             </div>
           )}
 
-          <div className="h-4 w-px bg-zinc-800" />
+          <div className="h-4 w-px bg-[#30343B]" />
 
           {/* Live WebSocket Status Indicator */}
-          <div className="flex items-center gap-2 text-xs font-mono font-bold tracking-wider text-zinc-100">
+          <div className="flex items-center gap-2 text-xs font-mono font-bold tracking-wider text-[#E6E1E5]">
             <span
               className={`h-1.5 w-1.5 rounded-full shrink-0 ${
                 isConnected
-                  ? "bg-emerald-500"
+                  ? "bg-[#6DD6A8]"
                   : isConnecting
-                  ? "bg-amber-400"
-                  : "bg-rose-500"
+                  ? "bg-[#F4C26B]"
+                  : "bg-[#F2B8B5]"
               }`}
             />
             <span>
@@ -254,35 +254,35 @@ export function TopNavbar({
             type="button"
             onClick={() => onNavigateTab?.("leaderboard")}
             title={`Cluster Health Score: ${health.score}/100 (Grade ${health.grade}) • ${health.failingCount} failing pods • Click to view Cluster Health Leaderboard`}
-            className="flex items-center gap-1.5 bg-[#18181b] hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 h-9 px-3.5 rounded-full text-xs font-mono font-bold transition-all cursor-pointer shadow-sm group select-none shrink-0"
+            className="flex items-center gap-1.5 bg-[#1E2127] hover:bg-[#23262D] border border-[#30343B] hover:border-[#424750] h-9 px-3.5 rounded-full text-xs font-mono font-bold transition-all cursor-pointer shadow-sm group select-none shrink-0"
           >
             <Icon
               path={mdiHeart}
               size={0.65}
               className={`transition-transform duration-200 group-hover:scale-115 shrink-0 ${
                 health.score >= 90
-                  ? "text-emerald-400 drop-shadow-[0_0_6px_rgba(52,211,153,0.5)]"
+                  ? "text-[#6DD6A8]"
                   : health.score >= 75
-                  ? "text-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.5)]"
-                  : "text-rose-500 drop-shadow-[0_0_6px_rgba(244,63,94,0.5)]"
+                  ? "text-[#F4C26B]"
+                  : "text-[#F2B8B5]"
               }`}
             />
             <span className={`tracking-wide ${
               health.score >= 90
-                ? "text-emerald-400"
+                ? "text-[#6DD6A8]"
                 : health.score >= 75
-                ? "text-amber-400"
-                : "text-rose-400"
+                ? "text-[#F4C26B]"
+                : "text-[#F2B8B5]"
             }`}>
               {health.score}/100
             </span>
-            <span className="text-zinc-600 font-normal">•</span>
+            <span className="text-[#5C616B] font-normal">•</span>
             <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
               health.grade === "A"
-                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                ? "bg-[#6DD6A8]/10 text-[#6DD6A8] border border-[#6DD6A8]/20"
                 : health.grade === "B"
-                ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                : "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                ? "bg-[#F4C26B]/10 text-[#F4C26B] border border-[#F4C26B]/20"
+                : "bg-[#410E0B] text-[#F2B8B5] border border-[#F2B8B5]/30"
             }`}>
               Grade {health.grade}
             </span>
@@ -296,11 +296,11 @@ export function TopNavbar({
             <button
               onClick={toggleNotif}
               title="Notifications"
-              className="relative h-8 w-8 rounded-full border border-zinc-800 bg-[#18181b] flex items-center justify-center text-zinc-400 hover:text-zinc-200 hover:border-zinc-700 transition-colors"
+              className="relative h-8 w-8 rounded-full border border-[#30343B] bg-[#1E2127] flex items-center justify-center text-[#C4C7C5] hover:text-[#E6E1E5] hover:border-[#424750] transition-colors"
             >
               <Icon path={mdiBell} size={0.7} />
               {unreadCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-[#410E0B] border border-[#F2B8B5]/30 text-[10px] font-bold text-[#F2B8B5]">
                   {unreadCount}
                 </span>
               )}

@@ -30,11 +30,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     if (!this.state.hasError) return this.props.children;
 
     return (
-      <main className="flex min-h-screen w-screen items-center justify-center bg-[#09090b] px-6 text-neutral-100">
+      <main className="flex min-h-screen w-screen items-center justify-center bg-[#111318] px-6 text-[#E6E1E5]">
         <section
           role="alert"
           aria-labelledby="application-error-title"
-          className="flex w-full max-w-md flex-col items-center gap-5 rounded-2xl border border-neutral-800 bg-[#141417] p-8 text-center shadow-2xl"
+          className="flex w-full max-w-md flex-col items-center gap-5 rounded-2xl border border-[#30343B] bg-[#191B20] p-8 text-center shadow-2xl"
         >
           <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-400">
                 <CircleAlert className="h-7 w-7" />

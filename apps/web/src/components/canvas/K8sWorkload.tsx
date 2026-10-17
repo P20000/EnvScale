@@ -28,12 +28,12 @@ export function K8sWorkloadNode({ data }: { data: K8sWorkloadData }) {
   const isStandalone = rollout?.isStandaloneReplicaSet;
 
   return (
-    <div className={`h-11 w-[260px] border bg-[#141417] flex items-center justify-between px-3 rounded-md select-none group hover:border-zinc-700 transition-colors relative ${
+    <div className={`h-11 w-[260px] border bg-[#191B20] flex items-center justify-between px-3 rounded-md select-none group hover:border-[#424750] transition-colors relative ${
       isRolling
-        ? 'border-amber-500/60 bg-amber-950/20'
+        ? 'border-[#F4C26B]/60 bg-[#23262D]'
         : isStandalone
-        ? 'border-purple-500/50'
-        : 'border-zinc-800'
+        ? 'border-[#D0BCFF]/50'
+        : 'border-[#30343B]'
     }`}>
       {/* 4-Cardinal Dynamic Handles */}
       <Handle type="target" position={Position.Left} id="target-left" isConnectable={false} className="!opacity-0 !w-0 !h-0 pointer-events-none" />
@@ -70,19 +70,19 @@ export function K8sWorkloadNode({ data }: { data: K8sWorkloadData }) {
       </div>
 
       {isRolling ? (
-        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 flex items-center gap-1">
+        <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 flex items-center gap-1">
           <SyncIcon size={12} className="animate-spin" />
           RS-{rollout.oldRevision?.hash || "old"}➔{rollout.newRevision?.hash || "new"}
         </span>
       ) : isStandalone ? (
-        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded border border-purple-500/30 bg-purple-500/10 text-purple-300">
+        <span className="text-[9px] font-mono px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-300">
           Standalone RS
         </span>
       ) : (
-        <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+        <span className={`text-[10px] font-mono px-2 py-0.5 rounded-md font-semibold ${
           isHealthy 
-            ? 'text-emerald-400 border-emerald-500/10 bg-emerald-500/5' 
-            : 'text-amber-400 border-amber-500/10 bg-amber-500/5'
+            ? 'text-[#6DD6A8] bg-[#6DD6A8]/15' 
+            : 'text-[#F4C26B] bg-[#F4C26B]/15'
         }`}>
           {ready}/{total}
         </span>

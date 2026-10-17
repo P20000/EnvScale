@@ -206,38 +206,38 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
   };
 
   return (
-    <aside className="fixed right-0 top-0 bottom-0 z-50 w-[420px] bg-[#141417] border-l border-neutral-800 shadow-2xl flex flex-col animate-in slide-in-from-right duration-250">
-      <div className="flex items-center justify-between p-4 border-b border-neutral-800 bg-neutral-900/50">
+    <aside className="fixed right-0 top-0 bottom-0 z-50 w-[420px] bg-[#191B20] border-l border-[#30343B] shadow-2xl flex flex-col animate-in slide-in-from-right duration-250">
+      <div className="flex items-center justify-between p-4 border-b border-[#30343B] bg-[#23262D]">
         <div className="flex items-center gap-2.5 min-w-0">
           <span className={`flex h-2.5 w-2.5 rounded-full shrink-0 ${
             target.type === "ingress"
-              ? "bg-violet-400"
+              ? "bg-[#D0BCFF]"
               : target.type === "daemonset"
-              ? "bg-purple-400"
+              ? "bg-[#D0BCFF]"
               : target.type === "pvc"
-              ? "bg-cyan-400"
+              ? "bg-[#80DEEA]"
               : target.type === "job"
-              ? ((target.data as K8sJobData).status === "Completed" ? "bg-emerald-500" : (target.data as K8sJobData).status === "Failed" ? "bg-rose-500" : "bg-blue-500")
+              ? ((target.data as K8sJobData).status === "Completed" ? "bg-[#6DD6A8]" : (target.data as K8sJobData).status === "Failed" ? "bg-[#F2B8B5]" : "bg-[#8ACBFA]")
               : target.type === "cronjob"
-              ? "bg-cyan-400"
-              : "bg-emerald-500"
+              ? "bg-[#F4C26B]"
+              : "bg-[#6DD6A8]"
           }`} />
           <div className="min-w-0">
-            <h3 className="text-sm font-bold text-neutral-100 truncate">{target.data.name}</h3>
-            <p className="text-[11px] font-mono text-neutral-400 capitalize flex items-center gap-1.5 flex-wrap">
+            <h3 className="text-sm font-bold text-[#E6E1E5] truncate">{target.data.name}</h3>
+            <p className="text-[11px] font-mono text-[#C4C7C5] capitalize flex items-center gap-1.5 flex-wrap">
               Type: {target.type}
               {target.type === "pvc" && (
-                <span className="rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.2 text-[10px] font-mono text-cyan-300">
+                <span className="rounded border border-[#80DEEA]/30 bg-[#80DEEA]/10 px-1.5 py-0.2 text-[10px] font-mono text-[#80DEEA]">
                   PERSISTENT VOLUME CLAIM
                 </span>
               )}
               {target.type === "ingress" && (
-                <span className="rounded border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.2 text-[10px] font-mono text-violet-300">
+                <span className="rounded border border-[#D0BCFF]/30 bg-[#D0BCFF]/10 px-1.5 py-0.2 text-[10px] font-mono text-[#D0BCFF]">
                   INGRESS ROUTER
                 </span>
               )}
               {target.type === "job" && (
-                <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.2 text-[10px] font-mono text-amber-300">
+                <span className="rounded border border-[#F4C26B]/30 bg-[#F4C26B]/10 px-1.5 py-0.2 text-[10px] font-mono text-[#F4C26B]">
                   BATCH JOB
                 </span>
               )}

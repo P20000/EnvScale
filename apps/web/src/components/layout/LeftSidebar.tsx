@@ -93,16 +93,16 @@ export function LeftSidebar({
   };
 
   return (
-    <aside className="fixed left-0 top-0 h-screen w-14 z-40 flex flex-col items-center py-4 bg-[#0d0d10] border-r border-neutral-800 select-none">
+    <aside className="fixed left-0 top-0 h-screen w-14 z-40 flex flex-col items-center py-4 bg-[#191B20] border-r border-[#30343B] select-none">
       {/* Brand Emblem Logo Header */}
-      <div className="group relative flex h-10 w-10 items-center justify-center rounded-md bg-blue-500/10 border border-blue-500/20 text-blue-400 cursor-pointer hover:bg-blue-500/20 transition-all shrink-0">
-        <EnvScaleLogo className="h-5 w-5 text-blue-400" />
-        <div className="absolute left-full ml-3 hidden rounded-md bg-[#18181c] px-3 py-1.5 text-xs font-bold text-neutral-100 border border-neutral-700 whitespace-nowrap group-hover:block z-[70] shadow-xl pointer-events-none font-heading">
+      <div className="group relative flex h-10 w-10 items-center justify-center rounded-md bg-[#284568] border border-[#A8C7FA]/30 text-[#A8C7FA] cursor-pointer hover:bg-[#284568]/80 transition-all shrink-0">
+        <EnvScaleLogo className="h-5 w-5 text-[#A8C7FA]" />
+        <div className="absolute left-full ml-3 hidden rounded-md bg-[#23262D] px-3 py-1.5 text-xs font-bold text-[#E6E1E5] border border-[#424750] whitespace-nowrap group-hover:block z-[70] shadow-xl pointer-events-none font-heading">
           EnvScale Platform
         </div>
       </div>
 
-      <div className="w-6 h-px bg-neutral-800 my-3 shrink-0" />
+      <div className="w-6 h-px bg-[#30343B] my-3 shrink-0" />
 
       {/* Main Navigation Items (Top Group) */}
       <div className="flex flex-col items-center gap-3">
@@ -116,21 +116,21 @@ export function LeftSidebar({
               title={item.label}
               className={`group relative flex h-10 w-10 items-center justify-center rounded-md transition-all duration-200 ${
                 isActive
-                  ? "bg-blue-500 text-white shadow-lg shadow-blue-500/20"
-                  : "text-neutral-400 hover:bg-neutral-800/80 hover:text-neutral-200"
+                  ? "bg-[#284568] text-[#D3E3FD] shadow-lg shadow-black/30 border border-[#A8C7FA]/40"
+                  : "text-[#C4C7C5] hover:bg-[#30343B] hover:text-[#E6E1E5]"
               }`}
             >
               <Icon path={item.iconPath} size={0.83} />
 
               {/* Incident Badge */}
               {item.badge && !isActive && (
-                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm">
+                <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-[#410E0B] border border-[#F2B8B5]/40 text-[10px] font-bold text-[#F2B8B5] shadow-sm">
                   {item.badge}
                 </span>
               )}
 
               {/* Tooltip on hover */}
-              <div className="absolute left-full ml-3 hidden rounded-md bg-[#18181c] px-3 py-1.5 text-xs font-medium text-neutral-100 border border-neutral-700 whitespace-nowrap group-hover:block z-[70] shadow-xl pointer-events-none font-heading">
+              <div className="absolute left-full ml-3 hidden rounded-md bg-[#23262D] px-3 py-1.5 text-xs font-medium text-[#E6E1E5] border border-[#424750] whitespace-nowrap group-hover:block z-[70] shadow-xl pointer-events-none font-heading">
                 {item.label}
               </div>
             </button>
@@ -191,50 +191,50 @@ export function LeftSidebar({
 
             {/* Status Indicator Dot */}
             <span
-              className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-[#0d0d10] ${
-                loggedInEmail ? "bg-emerald-500" : "bg-neutral-500"
+              className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-[#191B20] ${
+                loggedInEmail ? "bg-[#6DD6A8]" : "bg-[#9AA0AA]"
               }`}
             />
 
             {/* Tooltip on hover */}
-            <div className="absolute left-full ml-3 hidden rounded-md bg-[#18181c] px-3 py-1.5 text-xs font-medium text-neutral-100 border border-neutral-700 whitespace-nowrap group-hover:block z-[70] shadow-xl pointer-events-none font-heading">
+            <div className="absolute left-full ml-3 hidden rounded-md bg-[#23262D] px-3 py-1.5 text-xs font-medium text-[#E6E1E5] border border-[#424750] whitespace-nowrap group-hover:block z-[70] shadow-xl pointer-events-none font-heading">
               {loggedInEmail ? loggedInEmail : "Profile & Account"}
             </div>
           </button>
 
           {/* User Profile Flyout Menu */}
           {userMenuOpen && (
-            <div className="absolute left-full bottom-0 ml-3 w-60 rounded-xl border border-neutral-700 bg-[#18181c] p-2.5 z-[70] shadow-2xl space-y-2 animate-in fade-in zoom-in-95 duration-150">
+            <div className="absolute left-full bottom-0 ml-3 w-60 rounded-xl border border-[#424750] bg-[#23262D] p-2.5 z-[70] shadow-2xl space-y-2 animate-in fade-in zoom-in-95 duration-150">
               <div className="flex items-center gap-2.5 px-1 py-1">
                 {userAvatarUrl && !avatarFailed ? (
                   <img
                     src={userAvatarUrl}
                     alt="User avatar"
-                    className="h-9 w-9 rounded-full object-cover border border-blue-500/40 shrink-0 shadow-sm"
+                    className="h-9 w-9 rounded-full object-cover border border-[#A8C7FA]/40 shrink-0 shadow-sm"
                   />
                 ) : (
-                  <div className="h-9 w-9 rounded-full bg-blue-500/20 text-blue-400 font-bold flex items-center justify-center border border-blue-500/30 shrink-0">
+                  <div className="h-9 w-9 rounded-full bg-[#284568] text-[#D3E3FD] font-bold flex items-center justify-center border border-[#A8C7FA]/30 shrink-0">
                     {loggedInEmail ? loggedInEmail.charAt(0).toUpperCase() : "?"}
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
                   {loggedInEmail ? (
                     <>
-                      <div className="text-xs font-bold text-neutral-100 font-heading truncate">
+                      <div className="text-xs font-bold text-[#E6E1E5] font-heading truncate">
                         {userName || "Authenticated User"}
                       </div>
-                      <div className="text-[11px] text-blue-400 font-mono truncate">{loggedInEmail}</div>
+                      <div className="text-[11px] text-[#A8C7FA] font-mono truncate">{loggedInEmail}</div>
                     </>
                   ) : (
                     <>
-                      <div className="text-xs font-bold text-neutral-100 font-heading">Guest Account</div>
-                      <div className="text-[10px] text-neutral-400">Sign in to authenticate telemetry</div>
+                      <div className="text-xs font-bold text-[#E6E1E5] font-heading">Guest Account</div>
+                      <div className="text-[10px] text-[#92959D]">Sign in to authenticate telemetry</div>
                     </>
                   )}
                 </div>
               </div>
 
-              <div className="h-px bg-neutral-800 my-1" />
+              <div className="h-px bg-[#30343B] my-1" />
 
               {isAuthenticated ? (
                 <button
@@ -242,9 +242,9 @@ export function LeftSidebar({
                     setUserMenuOpen(false);
                     await logout();
                   }}
-                  className="w-full flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs text-red-400 hover:bg-neutral-800 hover:text-red-300 transition-colors"
+                  className="w-full flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs text-[#F2B8B5] hover:bg-[#410E0B]/50 hover:text-[#F2B8B5] transition-colors"
                 >
-                  <Icon path={mdiLock} size={0.65} className="text-red-400" />
+                  <Icon path={mdiLock} size={0.65} className="text-[#F2B8B5]" />
                   <span>Sign Out</span>
                 </button>
               ) : (
@@ -257,7 +257,7 @@ export function LeftSidebar({
                       openAuthModal();
                     }
                   }}
-                  className="w-full flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs text-blue-400 hover:bg-blue-500/10 font-medium transition-colors"
+                  className="w-full flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs text-[#A8C7FA] hover:bg-[#284568]/40 font-medium transition-colors"
                 >
                   <Icon path={mdiLock} size={0.65} className="text-blue-400" />
                   <span>Sign In / Register</span>

@@ -77,7 +77,7 @@ export const generateStorageEdges = (nodes: Node[]): Edge[] => {
           seenPVC.add(vol.pvcName);
           const pvcData = targetPVC.data as K8sPVCData;
           const isBound = pvcData.phase === "Bound";
-          const strokeColor = isBound ? "#06b6d4" : "#f59e0b";
+          const strokeColor = isBound ? "#80DEEA" : "#F4C26B";
           const mountLabel = vol.mountPath ? `📁 ${vol.mountPath}` : undefined;
 
           edges.push({
@@ -119,7 +119,7 @@ export const generateStorageEdges = (nodes: Node[]): Edge[] => {
       if (targetPVC) {
         const pvcData = targetPVC.data as K8sPVCData;
         const isBound = pvcData.phase === "Bound";
-        const strokeColor = isBound ? "#06b6d4" : "#f59e0b";
+        const strokeColor = isBound ? "#80DEEA" : "#F4C26B";
         const mountLabel = vol.mountPath ? `📁 ${vol.mountPath}` : undefined;
 
         edges.push({

@@ -85,13 +85,13 @@ export const calculateEdgeHealth = (
   });
 
   if (healthyCount === 0 && failingCount === 0 && drainingCount > 0) {
-    return { healthStatus: "idle", strokeColor: "#52525b", isDraining: true };
+    return { healthStatus: "idle", strokeColor: "#777D87", isDraining: true };
   }
-  if (failingCount > 0 && healthyCount > 0) return { healthStatus: "degraded", strokeColor: "#f59e0b" };
-  if (failingCount > 0 && healthyCount === 0) return { healthStatus: "broken", strokeColor: "#ef4444" };
-  if (healthyCount > 0) return { healthStatus: "healthy", strokeColor: "#10b981" };
+  if (failingCount > 0 && healthyCount > 0) return { healthStatus: "degraded", strokeColor: "#F4C26B" };
+  if (failingCount > 0 && healthyCount === 0) return { healthStatus: "broken", strokeColor: "#F2B8B5" };
+  if (healthyCount > 0) return { healthStatus: "healthy", strokeColor: "#6DD6A8" };
 
-  return { healthStatus: "idle", strokeColor: "#475569" };
+  return { healthStatus: "idle", strokeColor: "#515660" };
 };
 
 export const getEdgeHealth = calculateEdgeHealth;
@@ -128,7 +128,7 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
         const formattedPaths = svcRules.map((r) => `${r.path || "/"}${r.servicePort ? `:${r.servicePort}` : ""}`);
         const labelText = Array.from(new Set(formattedPaths)).join(" • ");
         const targetSvc = services.find((s) => s.id === svcId);
-        let strokeColor = "#8b5cf6";
+        let strokeColor = "#D0BCFF";
         if (targetSvc) {
           const rawSelector = (targetSvc.data as K8sServiceData)?.selector;
           const selectorEntries = Object.entries(rawSelector || {}).filter(([k, v]) => Boolean(k) && typeof v === "string" && v.trim().length > 0);
@@ -139,8 +139,8 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
               return selectorEntries.every(([k, v]) => labels[k] === v);
             });
             const health = calculateEdgeHealth(targetSvc, matched);
-            if (health.healthStatus === "broken") strokeColor = "#ef4444";
-            else if (health.healthStatus === "degraded") strokeColor = "#f59e0b";
+            if (health.healthStatus === "broken") strokeColor = "#F2B8B5";
+            else if (health.healthStatus === "degraded") strokeColor = "#F4C26B";
           }
         }
 
@@ -278,13 +278,13 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
           label: edgeLabel,
           data: {
             label: edgeLabel,
-            strokeColor: "#38bdf8",
+            strokeColor: "#8ACBFA",
             healthStatus: "healthy",
             isCrossWorkload: true,
             laneIndex,
           },
           style: {
-            stroke: "#38bdf8",
+            stroke: "#8ACBFA",
             strokeWidth: 1.5,
             strokeDasharray: "4 4",
           },

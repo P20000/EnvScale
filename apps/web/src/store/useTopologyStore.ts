@@ -374,10 +374,10 @@ export const useTopologyStore = create<TopologyState>()(
               ...connection,
               type: "smoothstep",
               animated: true,
-              style: { stroke: "#3f3f46", strokeWidth: 2 },
+              style: { stroke: "#515660", strokeWidth: 2 },
               markerEnd: {
                 type: MarkerType.ArrowClosed,
-                color: "#3f3f46",
+                color: "#515660",
               },
             },
             get().edges

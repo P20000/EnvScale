@@ -173,7 +173,7 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
   }, [nodes.length, fitView]);
 
   return (
-    <div className="h-screen w-screen bg-[#09090b] relative">
+    <div className="h-screen w-screen bg-[#111318] relative">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -193,14 +193,14 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         proOptions={{ hideAttribution: true }}
         defaultEdgeOptions={{
           type: "argo",
-          style: { stroke: "#3f3f46", strokeWidth: 2 },
+          style: { stroke: "#515660", strokeWidth: 2 },
           markerEnd: {
             type: MarkerType.ArrowClosed,
-            color: "#3f3f46",
+            color: "#515660",
           },
         }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#27272a" />
+        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#2B2F36" />
       </ReactFlow>
 
       {/* Empty State Overlay when no active cluster nodes are present */}

@@ -28,22 +28,19 @@ export const getLayoutedElements = (
     if (node.type === "k8sPVC") {
       return { width: 200, height: 70 };
     }
-    if (node.type === "k8sIngress") {
-      return { width: 240, height: 52 };
-    }
-    if (node.type === "k8sService") {
-      return { width: 220, height: 46 };
+    if (node.type === "k8sIngress" || node.type === "k8sService") {
+      return { width: 260, height: 56 };
     }
     if (node.type === "k8sDaemonSet" || node.type === "k8sCronJob" || node.type === "k8sJob") {
-      return { width: 260, height: 58 };
+      return { width: 260, height: 56 };
     }
     if (node.type === "k8sCompletedJobs") {
-      return { width: 260, height: 48 };
+      return { width: 260, height: 56 };
     }
     if (node.type === "k8sWorker") {
-      return { width: 240, height: 44 };
+      return { width: 260, height: 56 };
     }
-    return { width: 240, height: 44 };
+    return { width: 260, height: 56 };
   };
 
   // Classify nodes: Architecture DAG nodes vs Side-Rail Dock nodes

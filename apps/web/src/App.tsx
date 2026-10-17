@@ -115,7 +115,7 @@ function AppContent() {
     : "none";
 
   return (
-    <div className="relative min-h-screen w-screen overflow-hidden bg-[#09090b] font-sans text-neutral-100 select-none">
+    <div className="relative min-h-screen w-screen overflow-hidden bg-[#111318] font-sans text-[#E6E1E5] select-none">
       {/* Region 1: Top Floating Navbar Capsule */}
       <TopNavbar
         activeCluster={activeCluster}
@@ -152,7 +152,7 @@ function AppContent() {
       />
 
       {/* Region 3: Center Canvas & Auxiliary Views */}
-      <main className="relative h-screen w-screen overflow-hidden bg-[#09090b]">
+      <main className="relative h-screen w-screen overflow-hidden bg-[#111318]">
         {activeTab === "topology" && (
           <TopologyCanvas
             onSelectTarget={(target) => setSelectedNode(target)}
