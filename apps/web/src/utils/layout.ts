@@ -1,7 +1,13 @@
 import dagre from '@dagrejs/dagre';
 import { type Node, type Edge, Position } from '@xyflow/react';
+import { calculateLayoutedEdges } from './layoutEdgeHelpers';
 
-export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB' | 'LR' = 'TB') => {
+export const getLayoutedElements = (
+  nodes: Node[],
+  edges: Edge[],
+  direction: 'TB' | 'LR' = 'TB',
+  userPositions?: Record<string, { x: number; y: number }>
+) => {
   const dagreGraph = new dagre.graphlib.Graph();
   dagreGraph.setDefaultEdgeLabel(() => ({}));
 
@@ -361,6 +367,27 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
       };
     }
 
+    // 1. If actively being dragged by user, preserve its live cursor position
+    if (node.dragging && node.position) {
+      return {
+        ...node,
+        targetPosition: targetPos,
+        sourcePosition: sourcePos,
+        position: node.position,
+      };
+    }
+
+    // 2. If node was previously dragged and remembered, preserve user's exact coordinates
+    if (userPositions && userPositions[node.id]) {
+      return {
+        ...node,
+        targetPosition: targetPos,
+        sourcePosition: sourcePos,
+        position: userPositions[node.id],
+      };
+    }
+
+    // 3. Fallback to Side-Rail Dock layout if dock node
     if (dockPosMap.has(node.id)) {
       return {
         ...node,
@@ -370,6 +397,7 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
       };
     }
 
+    // 4. Fallback to unrouted custom position if present
     if (customPosMap.has(node.id)) {
       return {
         ...node,
@@ -379,6 +407,7 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
       };
     }
 
+    // 5. Default Dagre computed position
     const nodeWithPosition = dagreGraph.node(node.id);
     const dims = getNodeDimensions(node);
     const w = nodeWithPosition?.width ?? dims.width;
@@ -395,96 +424,7 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction: 'TB
     };
   });
 
-  const nodePosMap = new Map<string, { x: number; y: number; width: number; height: number }>();
-  layoutedNodes.forEach((n) => {
-    const dims = getNodeDimensions(n);
-    nodePosMap.set(n.id, {
-      x: n.position.x,
-      y: n.position.y,
-      width: dims.width,
-      height: dims.height,
-    });
-  });
-
-  const layoutedEdges = edges.map((edge) => {
-    const src = nodePosMap.get(edge.source);
-    const tgt = nodePosMap.get(edge.target);
-    if (!src || !tgt) return edge;
-
-    const scx = src.x + src.width / 2;
-    const scy = src.y + src.height / 2;
-    const tcx = tgt.x + tgt.width / 2;
-    const tcy = tgt.y + tgt.height / 2;
-
-    const dx = tcx - scx;
-    const dy = tcy - scy;
-
-    // 1. Attached Storage Volumes (Workload -> PVC)
-    if (edge.id.startsWith("e-storage-")) {
-      // If the PVC is stacked vertically below the workload
-      if (dy > 40 && Math.abs(dx) < 120) {
-        return {
-          ...edge,
-          sourceHandle: "source-bottom",
-          targetHandle: "target-top",
-        };
-      }
-      return {
-        ...edge,
-        sourceHandle: "source-right",
-        targetHandle: "target-left",
-      };
-    }
-
-    // 2. Cross-workload peer dependencies (e.g. backend -> redis database)
-    if (edge.id.startsWith("e-dep-") || edge.data?.isCrossWorkload) {
-      return {
-        ...edge,
-        sourceHandle: isLR ? "source-right" : "source-bottom",
-        targetHandle: isLR ? "target-right" : "target-bottom",
-      };
-    }
-
-    // 3. Architecture DAG connections (Ingress -> Service, Service -> Workload)
-    if (isLR) {
-      // If target is directly below source (vertical drop branch)
-      if (dy > 60 && Math.abs(dx) < 80) {
-        return {
-          ...edge,
-          sourceHandle: "source-bottom",
-          targetHandle: "target-top",
-        };
-      }
-      // If target is directly above source
-      if (dy < -60 && Math.abs(dx) < 80) {
-        return {
-          ...edge,
-          sourceHandle: "source-top",
-          targetHandle: "target-bottom",
-        };
-      }
-      // Standard horizontal left-to-right flow
-      return {
-        ...edge,
-        sourceHandle: "source-right",
-        targetHandle: "target-left",
-      };
-    } else {
-      // Vertical (TB) flow:
-      if (Math.abs(dx) > 80 && Math.abs(dy) < 60) {
-        return {
-          ...edge,
-          sourceHandle: dx > 0 ? "source-right" : "source-left",
-          targetHandle: dx > 0 ? "target-left" : "target-right",
-        };
-      }
-      return {
-        ...edge,
-        sourceHandle: "source-bottom",
-        targetHandle: "target-top",
-      };
-    }
-  });
+  const layoutedEdges = calculateLayoutedEdges(layoutedNodes, edges, isLR, getNodeDimensions);
 
   return { nodes: layoutedNodes, edges: layoutedEdges };
 };

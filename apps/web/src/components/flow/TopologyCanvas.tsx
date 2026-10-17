@@ -6,6 +6,7 @@ import {
   MarkerType,
   useReactFlow,
   type Node,
+  type OnNodeDrag,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Icon } from "../ui/Icon";
@@ -67,6 +68,9 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
   const setSelectedNode = useTopologyStore((s) => s.setSelectedNode);
   const setWsStatus = useTopologyStore((s) => s.setWsStatus);
   const jobs = useTopologyStore((s) => s.jobs);
+  const userNodePositions = useTopologyStore((s) => s.userNodePositions);
+  const setUserNodePositions = useTopologyStore((s) => s.setUserNodePositions);
+  const clearUserNodePositions = useTopologyStore((s) => s.clearUserNodePositions);
   const deleteModal = useUIStore((s) => s.deleteModal);
   const closeDeleteModal = useUIStore((s) => s.closeDeleteModal);
 
@@ -142,12 +146,34 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
     onSelectTarget(null);
   }, [setSelectedNode, onSelectTarget]);
 
+  const handleNodeDragStop: OnNodeDrag = useCallback(
+    (_event, node, draggedNodes) => {
+      const targets = draggedNodes && draggedNodes.length > 0 ? draggedNodes : [node];
+      const updates: Record<string, { x: number; y: number }> = {};
+      targets.forEach((n) => {
+        if (n && n.id && n.position) {
+          updates[n.id] = {
+            x: Math.round(n.position.x),
+            y: Math.round(n.position.y),
+          };
+        }
+      });
+      setUserNodePositions(updates);
+      // Re-trigger layout calculation to align dynamic edge handles to dragged positions
+      applyDagreLayout();
+    },
+    [setUserNodePositions, applyDagreLayout]
+  );
+
   const handleAutoLayout = () => {
-    applyDagreLayout();
+    clearUserNodePositions();
+    applyDagreLayout(undefined, { resetUserPositions: true });
     setTimeout(() => {
       fitView({ duration: 400, padding: 0.11, maxZoom: 0.92 });
     }, 50);
   };
+
+  const hasCustomPositions = Object.keys(userNodePositions || {}).length > 0;
 
   const handleRecenterView = () => {
     fitView({ duration: 400, padding: 0.11, maxZoom: 0.92 });
@@ -177,6 +203,7 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeClick={handleNodeClick}
+        onNodeDragStop={handleNodeDragStop}
         onPaneClick={handlePaneClick}
         deleteKeyCode={["Delete", "Backspace"]}
         fitView
@@ -253,11 +280,18 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
 
         <button
           onClick={handleAutoLayout}
-          className="flex items-center gap-2 rounded-md bg-background border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:border-blue-500/50 hover:bg-neutral-800 hover:text-blue-400 transition-colors font-heading cursor-pointer"
-          title="Auto Layout Topology Graph (Dagre Engine)"
+          className="flex items-center justify-between gap-2 rounded-md bg-background border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:border-blue-500/50 hover:bg-neutral-800 hover:text-blue-400 transition-colors font-heading cursor-pointer"
+          title={hasCustomPositions ? "Reset to Auto Layout (Dagre Engine)" : "Auto Layout Topology Graph (Dagre Engine)"}
         >
-          <Icon path={mdiViewGrid} size={0.65} className="text-blue-400" />
-          <span>Auto Layout</span>
+          <div className="flex items-center gap-2">
+            <Icon path={mdiViewGrid} size={0.65} className="text-blue-400" />
+            <span>Auto Layout</span>
+          </div>
+          {hasCustomPositions && (
+            <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
+              Reset
+            </span>
+          )}
         </button>
 
         <button

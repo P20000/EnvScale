@@ -62,9 +62,25 @@ flowchart TD
     F --> G[Run Dagre Layout Passes]
     G --> H[Align Attached Storage Tier 3 directly below Workload]
     D --> I[Vertical Dock Sorting by System Tier]
-    H --> J[Compose Final Coordinates & Edge Anchors]
+    H --> J{User Drag Overrides?}
     I --> J
+    J -->|Yes: Node ID in userNodePositions| K[Apply Persisted Custom Coordinates]
+    J -->|No: Unmoved or New Node| L[Apply Dagre / Dock Auto Coordinates]
+    K --> M[calculateLayoutedEdges: Dynamic Handle Recalculation]
+    L --> M
+    M --> N[Commit Layout to Zustand Store & LocalStorage]
 ```
+
+#### 2.1.1 Persistent User Drag Positioning & Non-Destructive Live Streaming
+- **Source Files:** [`apps/web/src/utils/layout.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/utils/layout.ts), [`apps/web/src/utils/layoutEdgeHelpers.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/utils/layoutEdgeHelpers.ts), [`apps/web/src/store/slices/topologyLayoutSlice.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/store/slices/topologyLayoutSlice.ts), [`apps/web/src/store/useTopologyStore.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/store/useTopologyStore.ts)
+- **Problem Formulation:** When WebSocket streaming deltas (`EVENT_POD_MUTATED`, `EVENT_BATCH_COMPLETE`) arrive at sub-second frequencies, graph layout functions triggered by state listeners recalculate tree hierarchies from scratch. Without coordinate memoization, this causes active mouse drags and custom arrangement geometries to snap back to default coordinates.
+- **Algorithmic Solution:**
+  1. **Active Drag Immature Lock:** When React Flow emits `onNodesChange` with `node.dragging = true`, `getLayoutedElements` bypasses Dagre coordinates and strictly preserves the real-time cursor coordinate $(X_{\text{cursor}}, Y_{\text{cursor}})$.
+  2. **Persisted Position Registry (`userNodePositions`):** On `onNodeDragStop`, terminal coordinates are quantized and written to `userNodePositions: Record<string, { x: number; y: number }>`. This registry is synchronized to `localStorage` (`envscale-topology-storage-v2`) via Zustand's `persist` middleware, surviving hard browser reloads.
+  3. **Hybrid Coordinate Resolution:** During subsequent layout invocations:
+     $$P(n) = \begin{cases} P_{\text{live}}(n) & \text{if } n.\text{dragging} = \text{true} \\ P_{\text{user}}(n) & \text{if } n.\text{id} \in \text{userNodePositions} \\ P_{\text{dock}}(n) & \text{if } n \in \text{DockNodes} \\ P_{\text{dagre}}(n) & \text{otherwise} \end{cases}$$
+  4. **Dynamic Edge Handle Re-projection:** As node coordinates diverge from standard horizontal/vertical ranks, [`calculateLayoutedEdges`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/utils/layoutEdgeHelpers.ts#L3) computes directional vectors $\Delta X = X_t - X_s$ and $\Delta Y = Y_t - Y_s$ across bounding centers, dynamically reassigning source/target connection handles (`source-right`, `target-left`, `source-bottom`, `target-top`) to maintain clean orthogonal or smoothstep paths without visual intersection.
+  5. **Auto Layout Fallback:** An explicit reset signal triggered by the "Auto Layout" button purges `userNodePositions`, restoring pure hierarchical Sugiyama placement with automated viewport centering (`fitView`).
 
 ---
 

@@ -20,8 +20,8 @@ import type { K8sReplicaSetData, K8sDeploymentData } from "./helpers/rolloutHelp
 import type { K8sDaemonSetData, K8sCronJobData, K8sJobData } from "./types/topologyTypes";
 import type { WsConnectionStatus, WsTopologyMessage } from "../hooks/useK8sStream";
 import type { SelectedTarget } from "../components/drawer/InspectorDrawer";
-import { getLayoutedElements } from "../utils/layout";
 import { handleWsMessage } from "./slices/topologyWsSlice";
+import { handleApplyDagreLayout } from "./slices/topologyLayoutSlice";
 import {
   handleUndoAction,
   handleRedoAction,
@@ -48,16 +48,13 @@ import {
   aggregateNodesWithWorkloads,
   sanitizeManifestSnapshot,
 } from "./helpers/topologyHelpers";
-import { filterPVCsForDisplay, createPVCReactFlowNodes } from "./helpers/storageHelpers";
 
 export type { ApiToken, NotificationItem, K8sIncidentEvent, HistoryAction, DeleteModalState, ChaosFaultEvent };
 export { extractServices, extractPods, getPodPrefix, generateDynamicEdges, syncSelectedNode, aggregateNodesWithWorkloads, sanitizeManifestSnapshot };
 
 export const defaultInitialNodes: Node[] = [];
 export const defaultInitialEdges: Edge[] = [];
-const defaultClusters: Cluster[] = [];
-const defaultInitialTokens: ApiToken[] = [];
-const defaultInitialNotifications: NotificationItem[] = [];
+const defaultClusters: Cluster[] = [], defaultInitialTokens: ApiToken[] = [], defaultInitialNotifications: NotificationItem[] = [];
 
 export interface TopologyState {
   clusters: Cluster[];
@@ -124,7 +121,11 @@ export interface TopologyState {
   onNodesChange: OnNodesChange;
   onEdgesChange: OnEdgesChange;
   onConnect: OnConnect;
-  applyDagreLayout: (direction?: "TB" | "LR") => void;
+  userNodePositions: Record<string, { x: number; y: number }>;
+  setUserNodePosition: (nodeId: string, position: { x: number; y: number }) => void;
+  setUserNodePositions: (positions: Record<string, { x: number; y: number }>) => void;
+  clearUserNodePositions: () => void;
+  applyDagreLayout: (direction?: "TB" | "LR", options?: { resetUserPositions?: boolean }) => void;
 
   tokensCount: number;
   addToken: (name?: string, tokenStr?: string) => ApiToken;
@@ -158,6 +159,7 @@ export const useTopologyStore = create<TopologyState>()(
       rawNodes: defaultInitialNodes,
       nodes: defaultInitialNodes,
       edges: defaultInitialEdges,
+      userNodePositions: {},
       services: [],
       pods: [],
       ingresses: [],
@@ -236,7 +238,14 @@ export const useTopologyStore = create<TopologyState>()(
         });
       },
 
-      removeTarget: (targetId, options) => handleRemoveTarget(get, set, targetId, options),
+      removeTarget: (targetId, options) => {
+        if (get().userNodePositions[targetId]) {
+          const nextPos = { ...get().userNodePositions };
+          delete nextPos[targetId];
+          set({ userNodePositions: nextPos });
+        }
+        return handleRemoveTarget(get, set, targetId, options);
+      },
       removeNode: (nodeId) => get().removeTarget(nodeId),
 
       upsertService: (serviceData) => handleUpsertService(get, set, serviceData),
@@ -339,7 +348,19 @@ export const useTopologyStore = create<TopologyState>()(
           removedChanges.forEach((c) => get().removeTarget(c.id));
           return;
         }
-        set({ nodes: applyNodeChanges(changes, get().nodes) });
+        const nextNodes = applyNodeChanges(changes, get().nodes);
+        const posChanges = changes.filter((c) => c.type === "position" && c.position && c.dragging === false);
+        if (posChanges.length > 0) {
+          const newPos = { ...get().userNodePositions };
+          posChanges.forEach((c) => {
+            if (c.type === "position" && c.position) {
+              newPos[c.id] = { x: Math.round(c.position.x), y: Math.round(c.position.y) };
+            }
+          });
+          set({ nodes: nextNodes, userNodePositions: newPos });
+        } else {
+          set({ nodes: nextNodes });
+        }
       },
 
       onEdgesChange: (changes) => {
@@ -364,42 +385,27 @@ export const useTopologyStore = create<TopologyState>()(
         });
       },
 
-      applyDagreLayout: (direction) => {
-        const { layoutDirection, showCompletedPods, showCompletedJobs, showStorage, showSystemNamespaces, selectedNamespaces } = useUIStore.getState();
-        const targetDir = direction || layoutDirection || "TB";
-        const { rawNodes, nodes, edges, deployments, replicaSets, daemonSets, cronJobs, jobs, pvcs, hpas, networkPolicies, pdbs } = get();
-        const baseNodes = rawNodes && rawNodes.length > 0 ? rawNodes : nodes;
-        if (baseNodes.length === 0 && (!daemonSets || daemonSets.length === 0) && (!cronJobs || cronJobs.length === 0) && (!jobs || jobs.length === 0) && (!pvcs || pvcs.length === 0)) return;
-
-        const aggregatedNodes = aggregateNodesWithWorkloads(
-          baseNodes,
-          showCompletedPods,
-          showSystemNamespaces,
-          selectedNamespaces,
-          deployments,
-          replicaSets,
-          daemonSets,
-          cronJobs,
-          jobs,
-          showCompletedJobs,
-          hpas,
-          networkPolicies,
-          pdbs
-        );
-
-        const visiblePVCs = filterPVCsForDisplay(pvcs, showStorage, showSystemNamespaces, selectedNamespaces);
-        const pvcNodes = createPVCReactFlowNodes(visiblePVCs);
-        const allCanvasNodes = [...aggregatedNodes, ...pvcNodes];
-
-        const dynamicEdges = generateDynamicEdges(allCanvasNodes, edges);
-
-        const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
-          allCanvasNodes,
-          dynamicEdges,
-          targetDir
-        );
-        set({ nodes: layoutedNodes, edges: layoutedEdges });
+      setUserNodePosition: (nodeId, position) => {
+        set((state) => ({
+          userNodePositions: {
+            ...state.userNodePositions,
+            [nodeId]: { x: Math.round(position.x), y: Math.round(position.y) },
+          },
+        }));
       },
+
+      setUserNodePositions: (positions) => {
+        set((state) => ({
+          userNodePositions: {
+            ...state.userNodePositions,
+            ...positions,
+          },
+        }));
+      },
+
+      clearUserNodePositions: () => set({ userNodePositions: {} }),
+
+      applyDagreLayout: (direction, options) => handleApplyDagreLayout(get, set, direction, options),
 
       tokensCount: 0,
       addToken: (name = "Default Token", tokenStr) => handleAddToken(set, name, tokenStr),
@@ -444,6 +450,7 @@ export const useTopologyStore = create<TopologyState>()(
           rawNodes: [],
           nodes: [],
           edges: [],
+          userNodePositions: {},
           services: [],
           pods: [],
           ingresses: [],
@@ -475,6 +482,7 @@ export const useTopologyStore = create<TopologyState>()(
         activeCluster: state.activeCluster,
         tokens: state.tokens,
         notifications: state.notifications,
+        userNodePositions: state.userNodePositions,
       }),
       onRehydrateStorage: () => (state) => {
         if (!state) return;
