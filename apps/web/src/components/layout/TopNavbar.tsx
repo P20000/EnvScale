@@ -159,7 +159,10 @@ export function TopNavbar({
           {/* Cluster Selector */}
           <button
             onClick={toggleDropdown}
-            className="flex items-center gap-2 text-xs font-mono font-bold tracking-wider text-[#E6E1E5] hover:text-white transition-colors"
+            aria-haspopup="listbox"
+            aria-expanded={dropdownOpen}
+            aria-label="Select active cluster"
+            className="flex items-center gap-2 text-xs font-mono font-bold tracking-wider text-[#E6E1E5] hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-sm"
           >
             <span>{clusters.find(c => c.id === activeCluster)?.name || "Select Cluster"}</span>
             <Icon path={mdiChevronDown} size={0.65} className="text-[#C4C7C5]" />
@@ -296,7 +299,9 @@ export function TopNavbar({
             <button
               onClick={toggleNotif}
               title="Notifications"
-              className="relative h-8 w-8 rounded-full border border-[#30343B] bg-[#1E2127] flex items-center justify-center text-[#C4C7C5] hover:text-[#E6E1E5] hover:border-[#424750] transition-colors"
+              aria-label="Notifications"
+              aria-expanded={notifMenuOpen}
+              className="relative h-8 w-8 rounded-full border border-[#30343B] bg-[#1E2127] flex items-center justify-center text-[#C4C7C5] hover:text-[#E6E1E5] hover:border-[#424750] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             >
               <Icon path={mdiBell} size={0.7} />
               {unreadCount > 0 && (

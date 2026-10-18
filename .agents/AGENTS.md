@@ -86,6 +86,8 @@ When generating code or proposing implementations, AI assistants MUST strictly a
 - **Sub-Second Streaming:** Ensure WebSocket state deltas (`EVENT_POD_STATUS_CHANGED`, `EVENT_NODE_MUTATED`) deliver payload updates to the React Flow Zustand store within < 200ms.
 - **Preserve Documentation:** Do not erase docstrings, inline comments, or existing README/milestones files.
 - **No Redundant Documentation:** NEVER create duplicate, redundant, or overlapping markdown documentation files (`docs/*.md`). Explanations, answering user inquiries, summaries, or architectural discussions must be delivered directly in chat responses unless the user explicitly requests creating a dedicated markdown file. Never create new documents that duplicate existing authoritative sources of truth (e.g., `docs/milestones.md`, `docs/features.md`, `docs/system-architecture.md`, `docs/detailed-design.md`); update the canonical files instead of fragmenting information.
+- **No Synthetic Debug Bloat in Production UI:** NEVER inject mock test buttons (e.g. "Trigger Crash", "Simulate Error", dummy notification triggers) or synthetic diagnostic cards into user-facing production views (such as Settings, Navbar, Drawers) to satisfy QA or verification checklists. QA and resilience testing must be verified via automated unit/integration tests, dedicated test files, or headless test runners—never by shipping artificial debug controls to production interfaces.
+
 
 ---
 

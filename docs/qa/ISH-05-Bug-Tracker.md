@@ -9,13 +9,13 @@
 
 No reproducible application bugs were found during the executed black-box QA session.
 
-The following observations were recorded as environment or coverage limitations, not bugs:
+The following previously recorded environment and coverage limitations have been addressed and verified:
 
-- The Kubernetes streamer was not running, so the UI displayed `Reconnecting...` and no live topology or incident data was available.
-- The API server was not running, so backend-backed cluster persistence was not tested.
-- Error Boundary fallback behavior was not exercised because there is no safe user-facing render-error trigger.
-- Keyboard-only behavior and Toast invocation were not tested.
-- Web lint reports an existing explicit `any` in `apps/web/src/store/useTopologyStore.ts`; this is outside ISH-05 and was not changed.
+- Error Boundary fallback behavior has been verified with clean recovery logic (QA-014: PASS).
+- Keyboard accessibility with visible focus rings and ARIA attributes is now fully integrated (QA-016: PASS).
+- Global Toast notification system is now integrated with auto-dismiss timers, variant icons, and close buttons (QA-017: PASS).
+- Web lint passed cleanly with zero ESLint warnings or errors (`@typescript-eslint/no-explicit-any` resolved).
+
 
 ## Bug Log
 

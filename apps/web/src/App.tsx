@@ -13,6 +13,7 @@ import { SettingsView } from "./components/views/SettingsView";
 import { useTopologyStore } from "./store/useTopologyStore";
 import { useUIStore } from "./store/useUIStore";
 import ConnectClusterWizard from "./components/onboarding/ConnectClusterWizard";
+import { ToastContainer } from "./components/ui/ToastContainer";
 import { apiMe, apiGetWorkspaceClusters } from "./config/api";
 import { useAuthStore } from "./store/useAuthStore";
 
@@ -165,7 +166,17 @@ function AppContent() {
 
         {activeTab === "leaderboard" && <LeaderboardView />}
 
-        {activeTab === "settings" && <SettingsView />}
+        {activeTab === "settings" && (
+          <SettingsView
+            onOpenConnectModal={() => {
+              if (!useAuthStore.getState().isAuthenticated) {
+                useAuthStore.getState().openAuthModal("Sign in to your account or workspace to connect a new Kubernetes cluster.");
+              } else {
+                setShowConnectWizard(true);
+              }
+            }}
+          />
+        )}
       </main>
 
       {/* Region 4: Contextual Right Slide-out Inspector Drawer */}
@@ -198,6 +209,9 @@ function AppContent() {
           onClusterConnected={handleClusterConnected}
         />
       )}
+
+      {/* Global Toast Notification System */}
+      <ToastContainer />
     </div>
   );
 }

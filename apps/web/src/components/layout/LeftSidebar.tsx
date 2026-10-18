@@ -114,7 +114,8 @@ export function LeftSidebar({
               key={item.id}
               onClick={() => onTabChange(item.id)}
               title={item.label}
-              className={`group relative flex h-10 w-10 items-center justify-center rounded-md transition-all duration-200 ${
+              aria-label={item.label}
+              className={`group relative flex h-10 w-10 items-center justify-center rounded-md transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#191B20] ${
                 isActive
                   ? "bg-blue-500 text-white shadow-lg shadow-blue-500/20"
                   : "text-[#C4C7C5] hover:bg-[#30343B] hover:text-[#E6E1E5]"
@@ -145,7 +146,8 @@ export function LeftSidebar({
           key={settingsNavItem.id}
           onClick={() => onTabChange(settingsNavItem.id)}
           title={settingsNavItem.label}
-          className={`group relative flex h-10 w-10 items-center justify-center rounded-md transition-all duration-200 ${
+          aria-label={settingsNavItem.label}
+          className={`group relative flex h-10 w-10 items-center justify-center rounded-md transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#191B20] ${
             activeTab === settingsNavItem.id
               ? "bg-blue-500 text-white shadow-lg shadow-blue-500/20"
               : "text-[#C4C7C5] hover:bg-[#30343B] hover:text-[#E6E1E5]"
@@ -164,7 +166,9 @@ export function LeftSidebar({
           <button
             onClick={() => setUserMenuOpen((prev) => !prev)}
             title={loggedInEmail ? `Profile (${loggedInEmail})` : "User Profile & Account"}
-            className="group relative flex h-10 w-10 items-center justify-center rounded-full transition-all duration-200 focus:outline-none"
+            aria-label="User Profile & Account Menu"
+            aria-expanded={userMenuOpen}
+            className="group relative flex h-10 w-10 items-center justify-center rounded-full transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#191B20]"
           >
             <div
               className={`h-9 w-9 rounded-full border-2 flex items-center justify-center overflow-hidden transition-all duration-200 shadow-md ${
