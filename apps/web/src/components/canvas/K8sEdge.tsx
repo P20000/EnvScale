@@ -73,11 +73,11 @@ export function K8sEdge({
   const isBlastRadiusHighlighted = isConnectedToSelected || isHovered;
 
   const defaultStroke = isDraining
-    ? "#52525b"
-    : edgeData.strokeColor || (style.stroke as string) || "#52525b";
+    ? "#777D87"
+    : edgeData.strokeColor || (style.stroke as string) || "#515660";
 
   const strokeColor = isBlastRadiusHighlighted
-    ? (isDraining ? "#71717a" : edgeData.strokeColor || "#38bdf8")
+    ? (isDraining ? "#92959D" : edgeData.strokeColor || "#8ACBFA")
     : defaultStroke;
   const labelText = (label as string) || edgeData.label || "";
 

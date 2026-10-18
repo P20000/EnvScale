@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import { KubeConfig, CoreV1Api } from "@kubernetes/client-node";
 import { db } from "../db/client.js";
 import { clusters } from "../db/schema.js";
@@ -144,4 +144,104 @@ export const deleteCluster = async (rawWorkspaceId: string, rawClusterId: string
   }
 
   void notifyStreamerGateway(`/api/v1/clusters?clusterId=${encodeURIComponent(clusterId)}`, "DELETE");
+};
+
+const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
+export const getClusterLayout = async (rawClusterId: string, userId?: string) => {
+  const condition = isUuid(rawClusterId)
+    ? or(eq(clusters.id, rawClusterId), eq(clusters.name, rawClusterId))
+    : eq(clusters.name, rawClusterId);
+
+  const rows = await db
+    .select({ id: clusters.id, metadata: clusters.metadata })
+    .from(clusters)
+    .where(condition!)
+    .limit(1);
+
+  if (rows.length === 0) {
+    return { positions: {} };
+  }
+
+  const meta = (rows[0].metadata as Record<string, unknown>) || {};
+  const userLayouts = (meta.userLayouts as Record<string, unknown>) || {};
+  const effectiveKey = userId || "default";
+  const positions = (userLayouts[effectiveKey] || meta.layout || {}) as Record<string, { x: number; y: number }>;
+
+  return { positions };
+};
+
+export const saveClusterLayout = async (
+  rawClusterId: string,
+  layout: Record<string, { x: number; y: number }>,
+  userId?: string
+) => {
+  const condition = isUuid(rawClusterId)
+    ? or(eq(clusters.id, rawClusterId), eq(clusters.name, rawClusterId))
+    : eq(clusters.name, rawClusterId);
+
+  const rows = await db
+    .select({ id: clusters.id, metadata: clusters.metadata })
+    .from(clusters)
+    .where(condition!)
+    .limit(1);
+
+  if (rows.length === 0) {
+    throw new ClusterNotFoundError(rawClusterId);
+  }
+
+  const targetId = rows[0].id;
+  const currentMeta = (rows[0].metadata as Record<string, unknown>) || {};
+  const userLayouts = ((currentMeta.userLayouts as Record<string, unknown>) || {}) as Record<string, unknown>;
+  const effectiveKey = userId || "default";
+
+  const updatedMetadata = {
+    ...currentMeta,
+    userLayouts: {
+      ...userLayouts,
+      [effectiveKey]: layout,
+    },
+    layout,
+  };
+
+  await db
+    .update(clusters)
+    .set({ metadata: updatedMetadata, updatedAt: new Date() })
+    .where(eq(clusters.id, targetId));
+
+  return { positions: layout };
+};
+
+export const resetClusterLayout = async (rawClusterId: string, userId?: string) => {
+  const condition = isUuid(rawClusterId)
+    ? or(eq(clusters.id, rawClusterId), eq(clusters.name, rawClusterId))
+    : eq(clusters.name, rawClusterId);
+
+  const rows = await db
+    .select({ id: clusters.id, metadata: clusters.metadata })
+    .from(clusters)
+    .where(condition!)
+    .limit(1);
+
+  if (rows.length === 0) {
+    return { positions: {} };
+  }
+
+  const targetId = rows[0].id;
+  const currentMeta = (rows[0].metadata as Record<string, unknown>) || {};
+  const userLayouts = { ...(((currentMeta.userLayouts as Record<string, unknown>) || {}) as Record<string, unknown>) };
+  if (userId && userLayouts[userId]) {
+    delete userLayouts[userId];
+  }
+  delete currentMeta.layout;
+
+  await db
+    .update(clusters)
+    .set({
+      metadata: { ...currentMeta, userLayouts },
+      updatedAt: new Date(),
+    })
+    .where(eq(clusters.id, targetId));
+
+  return { positions: {} };
 };

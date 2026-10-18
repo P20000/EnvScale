@@ -159,16 +159,16 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
   return (
     <div
       onClick={handleCardClick}
-      className={`group relative flex flex-col justify-between w-[295px] min-h-[90px] rounded-xl p-2.5 border transition-all duration-200 cursor-pointer select-none shadow-lg ${
+      className={`group relative flex flex-col justify-between w-[295px] min-h-[90px] rounded-xl p-2.5 border transition-all duration-200 cursor-pointer select-none ${
         isChaosActive
-          ? "bg-[#1f0a10] border-rose-500 shadow-xl shadow-rose-950/60 ring-1 ring-rose-500/50 hover:border-rose-400"
+          ? "bg-[#191B20] border-[#30343B] hover:bg-[#23262D] hover:border-[#424750]"
           : isRolling
-          ? "bg-[#1f1505] border-amber-500/60 shadow-amber-950/20 hover:border-amber-400"
+          ? "bg-[#191B20] border-[#30343B] hover:bg-[#23262D] hover:border-[#424750]"
           : isStandalone
-          ? "bg-[#180a24] border-purple-500/50 hover:border-purple-400"
+          ? "bg-[#191B20] border-[#30343B] hover:bg-[#23262D] hover:border-[#424750]"
           : hasErrors
-          ? "bg-[#1f0a10] border-rose-500/60 shadow-rose-950/20 hover:border-rose-400"
-          : "bg-[#141417] border-zinc-800 shadow-black/40 hover:border-zinc-700 hover:bg-[#18181c]"
+          ? "bg-[#191B20] border-[#30343B] hover:bg-[#23262D] hover:border-[#424750]"
+          : "bg-[#191B20] border-[#30343B] hover:border-[#424750] hover:bg-[#23262D]"
       }`}
     >
       {/* 4-Cardinal Dynamic Handles */}
@@ -210,19 +210,19 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
         <div className="flex items-center gap-1.5 min-w-0">
           <div className={`p-1 rounded-md shrink-0 border ${
             isStatefulSet
-              ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-400"
-              : "bg-blue-500/10 border-blue-500/20 text-blue-400"
+              ? "bg-[#D0BCFF]/10 border-[#D0BCFF]/20 text-[#D0BCFF]"
+              : "bg-[#8ACBFA]/10 border-[#8ACBFA]/20 text-[#8ACBFA]"
           }`}>
             {isStatefulSet ? <StatefulSetIcon className="text-xs" /> : <DeploymentIcon className="text-xs" />}
           </div>
           <div className="flex flex-col min-w-0">
             <span
-              className="text-[11px] font-mono font-bold text-zinc-100 truncate tracking-tight uppercase leading-none"
+              className="text-[11px] font-mono font-bold text-[#E6E1E5] truncate tracking-tight uppercase leading-none"
               title={data.name}
             >
               {data.name}
             </span>
-            <span className="text-[9px] font-mono text-zinc-500 truncate leading-tight mt-0.5">
+            <span className="text-[9px] font-mono text-[#92959D] truncate leading-tight mt-0.5">
               {isStatefulSet ? "StatefulSet" : "Deployment"} • {data.namespace || "default"}
             </span>
           </div>
@@ -232,7 +232,7 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
         <div className="flex items-center gap-1 shrink-0">
           {distinctConfigNames.length > 0 && (
             <span
-              className="text-[8.5px] font-mono px-1 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 flex items-center gap-0.5 shrink-0"
+              className="text-[8.5px] font-mono px-1 py-0.5 rounded border border-[#F4C26B]/30 bg-[#F4C26B]/10 text-[#F4C26B] flex items-center gap-0.5 shrink-0"
               title={`ConfigMaps (${distinctConfigNames.length}): ${distinctConfigNames.join(", ")}`}
             >
               <ConfigIcon className="text-[10px]" />
@@ -241,7 +241,7 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
           )}
           {distinctSecretNames.length > 0 && (
             <span
-              className="text-[8.5px] font-mono px-1 py-0.5 rounded border border-purple-500/30 bg-purple-500/10 text-purple-300 flex items-center gap-0.5 shrink-0"
+              className="text-[8.5px] font-mono px-1 py-0.5 rounded border border-[#D0BCFF]/30 bg-[#D0BCFF]/10 text-[#D0BCFF] flex items-center gap-0.5 shrink-0"
               title={`Secrets (${distinctSecretNames.length}): ${distinctSecretNames.join(", ")}`}
             >
               <SecretIcon className="text-[10px]" />
@@ -250,42 +250,39 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
           )}
 
           {isChaosActive ? (
-            <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border border-rose-500/50 bg-rose-600/20 text-rose-300 flex items-center gap-1 shrink-0">
-              <ChaosIcon className="text-[11px] text-rose-400" />
+            <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-md bg-[#410E0B] text-[#F2B8B5] flex items-center gap-1 shrink-0">
+              <ChaosIcon className="text-[11px] text-[#F2B8B5]" />
               CHAOS: {workloadFault?.faultType.toUpperCase()}
             </span>
           ) : isRolling ? (
-            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 flex items-center gap-1 shrink-0">
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-md bg-[#284568]/40 text-[#F4C26B] flex items-center gap-1 shrink-0">
               <SyncIcon className="animate-spin text-[10px]" />
               Rolling
             </span>
           ) : (
-            <span className={`text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded border shrink-0 flex items-center gap-1 ${
-              isHealthy
-                ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/30"
-              : hasErrors
-              ? "text-rose-400 bg-rose-500/10 border-rose-500/30"
-              : isScaling
-              ? "text-amber-400 bg-amber-500/10 border-amber-500/30"
-              : "text-zinc-400 bg-zinc-800 border-zinc-700"
-          }`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${
-              isHealthy ? "bg-emerald-400" : hasErrors ? "bg-rose-400" : "bg-amber-400"
-            }`} />
-            {readyReplicas}/{totalReplicas} Ready
-          </span>
-        )}
+            <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-md shrink-0 inline-flex items-center leading-none ${
+              hasErrors
+                ? "text-[#111318] bg-[#fc3f3f]"
+                : isHealthy
+                ? "text-[#111318] bg-[#6DD6A8]"
+                : isScaling
+                ? "text-[#111318] bg-[#F4C26B]"
+                : "text-[#92959D] bg-[#23262D]"
+            }`}>
+              {readyReplicas}/{totalReplicas} Ready
+            </span>
+          )}
         </div>
       </div>
 
       {/* Row 2: Chip Row (Policy, Governance & Telemetry Indicators) */}
-      <div className="flex items-center justify-between pt-1.5 border-t border-zinc-800/60 gap-1.5 font-mono text-[9px]">
+      <div className="flex items-center justify-between pt-1.5 border-t border-[#30343B]/60 gap-1.5 font-mono text-[9px]">
         {/* Left: Policy & Protection Badges */}
         <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
           {/* Health Probe Warning: Rendered ONLY if a pod is failing probe checks */}
           {hasProbeWarning && (
             <span
-              className="flex items-center gap-0.5 px-1 py-0.5 rounded bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[9px] shrink-0"
+              className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-rose-500/15 text-rose-300 text-[9px] shrink-0"
               title="Health Probe Warning: One or more pods failed liveness/readiness probe check"
             >
               <span className="text-[10px]">💓</span>
@@ -296,7 +293,7 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
           {/* HPA Indicator */}
           {hpa && (
             <span
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 transition-colors shrink-0"
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-cyan-500/15 text-cyan-300 transition-colors shrink-0"
               title={`HPA Active: ${hpa.currentReplicas}/${hpa.desiredReplicas} Replicas (CPU: ${hpa.currentCpuUtil ?? 0}% / ${hpa.targetCpuUtil ?? 50}% target)`}
             >
               <span className="text-[7.5px] font-extrabold uppercase px-1 py-[0.5px] rounded bg-cyan-500/25 text-cyan-300 tracking-wider">
@@ -321,10 +318,10 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
           {/* PodDisruptionBudget Lifebuoy Pill */}
           {pdb && (
             <span
-              className={`flex items-center gap-1 px-1.5 py-0.5 rounded border transition-all shrink-0 ${
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md transition-all shrink-0 ${
                 pdb.disruptionsAllowed > 0
-                  ? "border-teal-500/30 bg-teal-500/10 text-teal-300"
-                  : "border-rose-500/50 bg-rose-500/20 text-rose-300 animate-pulse ring-1 ring-rose-500/40"
+                  ? "bg-teal-500/15 text-teal-300"
+                  : "bg-rose-500/20 text-rose-300 animate-pulse"
               }`}
               title={
                 pdb.disruptionsAllowed > 0
@@ -342,12 +339,12 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
 
         {/* Right: Ambient CPU Load with integrated micro-meter */}
         <div
-          className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 shrink-0 ml-auto ${cpuColorClass}`}
+          className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded-md bg-[#23262D] shrink-0 ml-auto ${cpuColorClass}`}
           title={isWorkloadDead ? "No running containers (0% CPU)" : `Ambient CPU Load: ${cpuPct}%`}
         >
           <span className="font-mono text-[9px]">CPU {cpuPct}%</span>
           {!isWorkloadDead && (
-            <div className="w-6 h-1 bg-zinc-800 rounded-full overflow-hidden shrink-0">
+            <div className="w-6 h-1 bg-[#191B20] rounded-full overflow-hidden shrink-0">
               <div
                 className={`h-full rounded-full transition-all duration-300 ${cpuBarColor}`}
                 style={{ width: `${Math.min(cpuPct, 100)}%` }}
@@ -358,9 +355,9 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
       </div>
 
       {/* Row 3: Dedicated Full-Width Pod Strip */}
-      <div className="flex items-center gap-1 pt-1.5 border-t border-zinc-800/40 min-h-[16px]">
+      <div className="flex items-center gap-1 pt-1.5 border-t border-[#30343B]/40 min-h-[16px]">
         {isChaosActive && workloadFault?.faultType === "scale-down" && summaries.length === 0 ? (
-          <span className="text-[8px] font-mono text-rose-400 font-semibold flex items-center gap-1">
+          <span className="text-[8px] font-mono text-[#fc3f3f] font-semibold flex items-center gap-1">
             <ChaosIcon className="text-[10px]" />
             0/0 Outage
           </span>
@@ -376,12 +373,12 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
                 const isPending = pod.isTerminating || ph.includes("pending") || (!pod.isReady && !isErr);
 
                 const colorClass = isChaosImpacted
-                  ? "bg-rose-600 border-rose-300/90 shadow-xs shadow-rose-500/80 ring-2 ring-rose-400/80"
+                  ? "bg-[#fc3f3f] ring-2 ring-[#fc3f3f]/80"
                   : isErr
-                  ? "bg-rose-500 border-rose-400/80 shadow-xs shadow-rose-500/50"
+                  ? "bg-[#fc3f3f]"
                   : isPending
-                  ? "bg-amber-400 border-amber-300/80"
-                  : "bg-emerald-400 border-emerald-300/80 shadow-xs shadow-emerald-500/30";
+                  ? "bg-[#F4C26B]"
+                  : "bg-[#6DD6A8]";
 
                 const tooltip = isChaosImpacted
                   ? `⚡ CHAOS FAULT ACTIVE (${podFault?.faultType || workloadFault?.faultType}): ${pod.name} (${pod.phase})`
@@ -392,7 +389,7 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
                     key={pod.name || idx}
                     onClick={(e) => handlePodGlyphClick(e, pod.podData)}
                     title={tooltip}
-                    className={`h-2.5 w-2.5 rounded-xs border transition-transform duration-150 hover:scale-135 hover:z-20 cursor-pointer ${colorClass}`}
+                    className={`h-2.5 w-2.5 rounded-[3px] transition-transform duration-150 hover:scale-135 hover:z-20 cursor-pointer ${colorClass}`}
                   />
                 );
               })}

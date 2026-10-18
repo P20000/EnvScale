@@ -65,17 +65,17 @@ export function K8sPodNode({ data }: { data: K8sPodData }) {
     (rawRes.metadata as Record<string, unknown>)?.deletionTimestamp
   );
 
-  let dotClass = "bg-zinc-700";
-  let textClass = "text-zinc-500";
+  let dotClass = "bg-[#777D87]";
+  let textClass = "text-[#92959D]";
   let badgeLabel = "";
 
   if (isChaosActive) {
-    dotClass = "bg-rose-500";
-    textClass = "text-rose-300 font-bold";
+    dotClass = "bg-[#F2B8B5]";
+    textClass = "text-[#F2B8B5] font-bold";
     badgeLabel = `⚡ ${podFault?.faultType.toUpperCase() || "CHAOS"}`;
   } else if (isTerminating) {
-    dotClass = "bg-zinc-600";
-    textClass = "text-zinc-500";
+    dotClass = "bg-[#777D87]";
+    textClass = "text-[#92959D]";
     badgeLabel = "DRAINING";
   } else if (
     terminatedReason === "OOMKilled" ||
@@ -84,30 +84,30 @@ export function K8sPodNode({ data }: { data: K8sPodData }) {
     rawPhase === "OOMKilled" ||
     rawPhase === "CrashLoopBackOff"
   ) {
-    dotClass = "bg-rose-500";
-    textClass = "text-rose-300 font-bold";
+    dotClass = "bg-[#F2B8B5]";
+    textClass = "text-[#F2B8B5] font-bold";
     badgeLabel = terminatedReason === "OOMKilled" || waitingReason === "OOMKilled" ? "OOM" : "CRASH";
   } else if (rawPhase === "Running" || rawPhase === "Ready") {
-    dotClass = "bg-emerald-500";
-    textClass = "text-zinc-200";
+    dotClass = "bg-[#6DD6A8]";
+    textClass = "text-[#E6E1E5]";
   } else if (rawPhase === "Succeeded" || rawPhase === "Completed") {
-    dotClass = "bg-zinc-500";
-    textClass = "text-zinc-400";
+    dotClass = "bg-[#9AA0AA]";
+    textClass = "text-[#C4C7C5]";
   } else if (rawPhase === "Pending" || rawPhase === "ContainerCreating") {
-    dotClass = "bg-amber-400";
-    textClass = "text-amber-200/90";
+    dotClass = "bg-[#F4C26B]";
+    textClass = "text-[#F4C26B]";
   } else if (rawPhase === "Failed" || rawPhase === "Error") {
-    dotClass = "bg-rose-500";
-    textClass = "text-rose-300";
+    dotClass = "bg-[#F2B8B5]";
+    textClass = "text-[#F2B8B5]";
   }
 
   const restarts = Number(data.restarts ?? 0);
 
   const containerClass = isChaosActive
-    ? "h-8 w-[208px] bg-rose-950/40 border border-rose-500/80 rounded-md px-2 flex items-center justify-between shadow-lg shadow-rose-950/60 ring-1 ring-rose-500/50 select-none group relative transition-all duration-300"
+    ? "h-8 w-[208px] bg-[#410E0B] border border-[#F2B8B5]/80 rounded-md px-2 flex items-center justify-between ring-1 ring-[#F2B8B5]/50 select-none group relative transition-all duration-300"
     : isTerminating
-    ? "h-8 w-[208px] bg-[#09090b]/60 border border-dashed border-zinc-700/60 rounded-md px-2 flex items-center justify-between opacity-40 grayscale select-none group relative transition-all duration-300"
-    : "h-8 w-[208px] bg-[#09090b] border border-zinc-800/80 rounded-md px-2 flex items-center justify-between transition-colors hover:border-zinc-600 select-none group relative";
+    ? "h-8 w-[208px] bg-[#111318]/60 border border-dashed border-[#5C616B]/60 rounded-md px-2 flex items-center justify-between opacity-40 grayscale select-none group relative transition-all duration-300"
+    : "h-8 w-[208px] bg-[#111318] border border-[#30343B] rounded-md px-2 flex items-center justify-between transition-colors hover:border-[#424750] select-none group relative";
 
   return (
     <div

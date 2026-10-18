@@ -188,7 +188,7 @@ export default function ConnectClusterWizard({
   if (!isAuthenticated) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-        <div className="w-full max-w-md rounded-3xl border border-zinc-800 bg-[#141417] p-6 text-white shadow-2xl">
+        <div className="w-full max-w-md rounded-3xl border border-[#30343B] bg-[#191B20] p-6 text-[#E6E1E5] shadow-2xl">
           <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
             <div className="flex items-center gap-2.5">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400">
@@ -258,19 +258,19 @@ export default function ConnectClusterWizard({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
-      <div className="w-full max-w-lg rounded-3xl border border-zinc-800 bg-[#141417] shadow-none p-6 text-white">
+      <div className="w-full max-w-lg rounded-3xl border border-[#30343B] bg-[#191B20] shadow-none p-6 text-[#E6E1E5]">
         <div className="mb-6 flex items-start gap-4">
           <div>
             <p className="text-sm text-blue-400 font-mono">Step {step} of 3</p>
             <h2 className="mt-1 text-2xl font-semibold font-heading">Connect Cluster</h2>
-            <p className="mt-1 max-w-full break-words text-sm leading-5 text-neutral-400">
+            <p className="mt-1 max-w-full break-words text-sm leading-5 text-[#C4C7C5]">
               Connect your Kubernetes cluster to EnvScale.
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="ml-auto shrink-0 p-1 text-neutral-400 hover:text-white rounded-md transition-colors"
+            className="ml-auto shrink-0 p-1 text-[#92959D] hover:text-[#E6E1E5] rounded-md transition-colors"
             aria-label="Close"
           >
             <Icon path={mdiClose} size={0.8} />
@@ -292,13 +292,13 @@ export default function ConnectClusterWizard({
                   if (event.target.value.trim()) setClusterError("");
                 }}
                 placeholder="e.g. production-cluster"
-                className="w-full bg-[#09090b] border border-zinc-800 text-xs font-mono py-2 px-3 focus:border-zinc-600 focus:outline-none rounded-md text-white placeholder:text-neutral-500"
+                className="w-full bg-[#111318] border border-[#30343B] text-xs font-mono py-2 px-3 focus:border-blue-500 focus:outline-none rounded-md text-[#E6E1E5] placeholder:text-[#92959D]"
               />
-              {clusterError && <p className="mt-2 text-sm text-red-400">{clusterError}</p>}
+              {clusterError && <p className="mt-2 text-sm text-[#F2B8B5]">{clusterError}</p>}
             </div>
 
             <div>
-              <label htmlFor="cluster-environment" className="mb-2 block text-sm font-medium text-neutral-200">
+              <label htmlFor="cluster-environment" className="mb-2 block text-sm font-medium text-[#E6E1E5]">
                 Environment
               </label>
               <div className="relative">
@@ -306,7 +306,7 @@ export default function ConnectClusterWizard({
                   id="cluster-environment"
                   value={environment}
                   onChange={(e) => setEnvironment(e.target.value as "development" | "staging" | "production")}
-                  className="w-full appearance-none bg-[#09090b] border border-zinc-800 text-xs font-mono py-2 px-3 pr-8 focus:border-zinc-600 focus:outline-none rounded-md text-white cursor-pointer"
+                  className="w-full appearance-none bg-[#111318] border border-[#30343B] text-xs font-mono py-2 px-3 pr-8 focus:border-blue-500 focus:outline-none rounded-md text-[#E6E1E5] cursor-pointer"
                 >
                   <option value="development">Development (Minikube / Kind)</option>
                   <option value="staging">Staging</option>
@@ -315,7 +315,7 @@ export default function ConnectClusterWizard({
                 <Icon
                   path={mdiChevronDown}
                   size={0.6}
-                  className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500"
+                  className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[#92959D]"
                 />
               </div>
             </div>
@@ -325,7 +325,7 @@ export default function ConnectClusterWizard({
         {step === 2 && (
           <div className="space-y-4">
             <div>
-              <p className="mb-2 text-sm font-medium text-neutral-200">Kubeconfig File</p>
+              <p className="mb-2 text-sm font-medium text-[#E6E1E5]">Kubeconfig File</p>
               <div
                 onDragOver={(event) => {
                   event.preventDefault();
@@ -334,16 +334,16 @@ export default function ConnectClusterWizard({
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={handleDrop}
                 className={`rounded-xl border border-dashed p-8 text-center transition-colors ${
-                  isDragging ? "border-blue-500 bg-blue-500/10" : "border-zinc-800 bg-[#09090b]"
+                  isDragging ? "border-blue-500 bg-blue-500/10" : "border-[#30343B] bg-[#111318]"
                 }`}
               >
                 <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20">
                   <Icon path={mdiUpload} size={0.83} />
                 </div>
-                <p className="text-neutral-300 text-sm">Drag & drop your kubeconfig here</p>
-                <p className="my-1.5 text-xs text-neutral-500">or</p>
-                <p className="mb-3 text-xs text-neutral-500">YAML files only (.yaml, .yml)</p>
-                <label className="inline-flex cursor-pointer rounded-md bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 transition-colors">
+                <p className="text-[#E6E1E5] text-sm">Drag & drop your kubeconfig here</p>
+                <p className="my-1.5 text-xs text-[#92959D]">or</p>
+                <p className="mb-3 text-xs text-[#92959D]">YAML files only (.yaml, .yml)</p>
+                <label className="inline-flex cursor-pointer rounded-md bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 transition-colors font-semibold">
                   Browse File
                   <input type="file" accept=".yaml,.yml" className="hidden" onChange={handleFileChange} />
                 </label>
@@ -371,22 +371,22 @@ export default function ConnectClusterWizard({
 
         {step === 3 && (
           <div className="space-y-4">
-            <div className="rounded-xl border border-zinc-800 bg-[#09090b] p-3 text-zinc-300 font-mono text-xs">
-              <p className="mb-1 text-zinc-500">Cluster Name</p>
-              <p className="font-semibold text-zinc-200">{clusterName}</p>
+            <div className="rounded-xl border border-[#30343B] bg-[#111318] p-3 text-[#E6E1E5] font-mono text-xs">
+              <p className="mb-1 text-[#92959D]">Cluster Name</p>
+              <p className="font-semibold text-[#E6E1E5]">{clusterName}</p>
             </div>
 
-            <div className="rounded-xl border border-zinc-800 bg-[#09090b] p-3 text-zinc-300 font-mono text-xs">
-              <p className="mb-1 text-zinc-500">Environment</p>
-              <p className="font-semibold text-zinc-200 capitalize">{environment}</p>
+            <div className="rounded-xl border border-[#30343B] bg-[#111318] p-3 text-[#E6E1E5] font-mono text-xs">
+              <p className="mb-1 text-[#92959D]">Environment</p>
+              <p className="font-semibold text-[#E6E1E5] capitalize">{environment}</p>
             </div>
 
-            <div className="rounded-xl border border-zinc-800 bg-[#09090b] p-3 text-zinc-300 font-mono text-xs">
-              <p className="mb-1 text-zinc-500">Kubeconfig Payload</p>
+            <div className="rounded-xl border border-[#30343B] bg-[#111318] p-3 text-[#E6E1E5] font-mono text-xs">
+              <p className="mb-1 text-[#92959D]">Kubeconfig Payload</p>
               <div className="flex items-center justify-between">
-                <p className="font-semibold text-zinc-200">{kubeconfigFile?.name}</p>
+                <p className="font-semibold text-[#E6E1E5]">{kubeconfigFile?.name}</p>
               </div>
-              <div className="mt-3 flex items-center gap-2 rounded bg-emerald-500/10 px-3 py-2 text-emerald-400 border border-emerald-500/20">
+              <div className="mt-3 flex items-center gap-2 rounded bg-[#6DD6A8]/10 px-3 py-2 text-[#6DD6A8] border border-[#6DD6A8]/20">
                 <Icon path={mdiCheck} size={0.7} />
                 <span className="text-xs font-medium">Kubeconfig securely loaded in memory</span>
               </div>

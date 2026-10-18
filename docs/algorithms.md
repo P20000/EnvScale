@@ -62,9 +62,30 @@ flowchart TD
     F --> G[Run Dagre Layout Passes]
     G --> H[Align Attached Storage Tier 3 directly below Workload]
     D --> I[Vertical Dock Sorting by System Tier]
-    H --> J[Compose Final Coordinates & Edge Anchors]
+    H --> J{User Drag Overrides?}
     I --> J
+    J -->|Yes: Node ID in userNodePositions| K[Apply Persisted Custom Coordinates]
+    J -->|No: Unmoved or New Node| L[Apply Dagre / Dock Auto Coordinates]
+    K --> M[calculateLayoutedEdges: Dynamic Handle Recalculation]
+    L --> M
+    M --> N[Commit Layout to Zustand Store & LocalStorage]
 ```
+
+#### 2.1.1 Persistent User Drag Positioning & Non-Destructive Live Streaming (Hybrid Local & Backend Persistence)
+- **Source Files:** [`apps/web/src/utils/layout.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/utils/layout.ts), [`apps/web/src/utils/layoutEdgeHelpers.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/utils/layoutEdgeHelpers.ts), [`apps/web/src/store/helpers/layoutStorage.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/store/helpers/layoutStorage.ts), [`apps/web/src/hooks/useClusterLayoutPersistence.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/hooks/useClusterLayoutPersistence.ts), [`apps/web/src/store/slices/topologyLayoutSlice.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/store/slices/topologyLayoutSlice.ts), [`apps/web/src/config/api.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/config/api.ts), [`apps/api-server/src/services/cluster.service.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/services/cluster.service.ts)
+- **Problem Formulation:** When WebSocket streaming deltas (`EVENT_POD_MUTATED`, `EVENT_BATCH_COMPLETE`) arrive at sub-second frequencies, graph layout functions triggered by state listeners recalculate tree hierarchies from scratch. Without coordinate memoization, this causes active mouse drags and custom arrangement geometries to snap back to default coordinates. Furthermore, users expect custom arrangements to persist seamlessly across browser reloads, user logouts, and different devices.
+- **Algorithmic Solution:**
+  1. **Active Drag Immature Lock:** When React Flow emits `onNodesChange` with `node.dragging = true`, `getLayoutedElements` bypasses Dagre coordinates and strictly preserves the real-time cursor coordinate $(X_{\text{cursor}}, Y_{\text{cursor}})$.
+  2. **Scoped Browser Local Cache (`envscale-layout-user-${userId}-${clusterId}`):** On `onNodeDragStop`, terminal coordinates are quantized and written to `userNodePositions`. Simultaneously, [`saveLocalLayout`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/store/helpers/layoutStorage.ts) stores the coordinates in a dedicated local storage key scoped strictly by user and cluster ID. This cache is isolated from session tokens and is **not wiped** by `resetStore()` upon logout, ensuring immediate zero-latency rehydration when logging back in.
+  3. **Backend Database Persistence (PostgreSQL):** A debounced background sync (`apiSaveClusterLayout`) persists the user's custom layout to PostgreSQL via the REST API (`PUT /api/v1/clusters/:clusterId/layout`), storing coordinates within `clusters.metadata.userLayouts[userId]`. When logging in from another device or machine, [`apiGetClusterLayout`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/config/api.ts) rehydrates the custom arrangement automatically.
+  4. **Hybrid Coordinate Resolution:** During subsequent layout invocations:
+     $$P(n) = \begin{cases} P_{\text{live}}(n) & \text{if } n.\text{dragging} = \text{true} \\ P_{\text{user}}(n) & \text{if } n.\text{id} \in \text{userNodePositions} \\ P_{\text{dock}}(n) & \text{if } n \in \text{DockNodes} \\ P_{\text{dagre}}(n) & \text{otherwise} \end{cases}$$
+  5. **Dynamic Edge Handle Re-projection:** As node coordinates diverge from standard horizontal/vertical ranks, [`calculateLayoutedEdges`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/utils/layoutEdgeHelpers.ts#L3) computes directional vectors $\Delta X = X_t - X_s$ and $\Delta Y = Y_t - Y_s$ across bounding centers, dynamically reassigning source/target connection handles (`source-right`, `target-left`, `source-bottom`, `target-top`) to maintain clean orthogonal or smoothstep paths without visual intersection.
+  6. **Auto Layout Fallback & Multi-Tier Purge:** An explicit reset signal triggered by the "Auto Layout" button invokes `handleAutoLayoutReset`:
+     - Clears the in-memory `userNodePositions` Zustand store.
+     - Deletes the local scoped key via [`clearLocalLayout`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/store/helpers/layoutStorage.ts).
+     - Issues a REST request (`DELETE /api/v1/clusters/:clusterId/layout`) via [`apiResetClusterLayout`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/config/api.ts) to remove the user's entry from PostgreSQL.
+     - Re-executes hierarchical Sugiyama Dagre placement with automated viewport centering (`fitView`).
 
 ---
 

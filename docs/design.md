@@ -82,20 +82,66 @@ The main application screen follows a 3-region floating layout:
 
 ## 3. Color Tokens & Theme System
 
-All styles are configured via CSS variables and Tailwind CSS tokens in `apps/web/src/index.css`.
+All styles are configured via CSS variables and Tailwind CSS tokens in `apps/web/src/index.css` and `apps/web/tailwind.config.js`.
 
-| Token Name | Hex Code | Tailwind Equivalent | Purpose / Component Usage |
+### 3.1. Core Surface & Background Tokens
+## 3. Color Tokens & Theme System (Material Design 3 Dark Theme)
+
+All styles are configured via CSS variables and Tailwind CSS tokens in `apps/web/src/index.css` and `apps/web/tailwind.config.js`.
+
+### 3.1. Core Surfaces and Background
+| Token | Revised Value | Material 3 Role | Purpose / Usage |
 | :--- | :--- | :--- | :--- |
-| `--canvas-bg` | `#09090b` | `bg-neutral-950` | Main canvas background |
-| `--grid-dot` | `#27272a` | `color-neutral-800` | Background grid dot pattern |
-| `--surface-capsule` | `rgba(23, 23, 23, 0.85)` | `bg-neutral-900/85` | Navbar & Sidebar capsule background |
-| `--surface-card` | `#141417` | `bg-neutral-900` | Node card & Drawer background |
-| `--border-subtle` | `#27272a` | `border-neutral-800` | Standard component border |
-| `--status-running` | `#10b981` | `text-emerald-500` | Healthy Pod / Connected WS indicator |
-| `--status-warning` | `#f59e0b` | `text-amber-500` | Pending Pod / High CPU warning |
-| `--status-error` | `#ef4444` | `text-red-500` | CrashLoopBackOff / Failed Pod alert |
-| `--status-inactive` | `#6b7280` | `text-neutral-500` | Terminated / Unknown status |
-| `--accent-primary` | `#3b82f6` | `bg-blue-500` | Primary action buttons & selected states |
+| `--canvas-bg` | `#111318` | Background | Deep matte canvas backdrop |
+| `--grid-dot` | `#2B2F36` | Subtle engineering grid | Canvas dot grid pattern |
+| `--surface-card` | `#191B20` | Surface container low | Floating cards, drawers, node backgrounds |
+| `--surface-panel` | `#23262D` | Surface container high | Elevated popovers, nested sub-panels, tooltips |
+| `--surface-group` | `#1E2127` | Surface container | Namespace / Workload parent containers & capsules |
+| `--surface-capsule` | `rgba(30, 33, 39, 0.90)` | Translucent elevated surface | Frosted header navbar & sidebar capsule |
+| `--border-subtle` | `#30343B` | Subtle structural boundaries | Structural dividers, card borders |
+| `--border-default` | `#424750` | Default outlines | Base input & card outline |
+| `--border-muted` | `#5C616B` | Emphasized boundaries | Edge lines, secondary boundaries, guide crosshairs |
+
+### 3.2. Text and Foreground Hierarchy
+| Token | Revised Value | Material 3 Role | Purpose / Usage |
+| :--- | :--- | :--- | :--- |
+| `--text-primary` | `#E6E1E5` | On-surface | High-contrast headings and active values |
+| `--text-secondary` | `#C4C7C5` | On-surface variant | Subtitles, labels, descriptions |
+| `--text-muted` | `#92959D` | De-emphasized text | Placeholders, inactive timestamps, counts |
+| `--text-inverted` | `#111318` | Text on light-filled actions | Badges & high-emphasis filled action text |
+
+### 3.3. Workload Health and Status Lifecycle
+| Token | Revised Value | Usage |
+| :--- | :--- | :--- |
+| `--status-running` | `#6DD6A8` | Healthy pods, running workloads, active cluster state |
+| `--status-warning` | `#F4C26B` | Pending workloads, degraded health, CPU alert threshold |
+| `--status-error` | `#F2B8B5` | Failed pods, crash loops, incidents (paired with `#410E0B` container) |
+| `--status-inactive` | `#9AA0AA` | Terminated, completed, unknown states |
+| `--status-idle` | `#777D87` | Idle nodes, draining nodes, inactive edges |
+
+### 3.4. Kubernetes Resource Badges and Topology Flow Colors
+| Resource / Flow Type | Revised Value | Rationale & Usage |
+| :--- | :--- | :--- |
+| **Ingress / Route Edge** | `#D0BCFF` | Material 3 tonal purple for ingress routes & controllers |
+| **Service (ClusterIP / LB)** | `#8ACBFA` | Softer sky blue for services and ingress linkages |
+| **Storage (PV / PVC Bound)** | `#80DEEA` | Clear cyan identity for bound persistent volume claims |
+| **Storage (Unbound / Pending)** | `#F4C26B` | Consistent amber for unbound/pending storage semantics |
+| **CronJob / Active Batch** | `#F4C26B` | Consistent amber for scheduled work, border beam & progress |
+| **Primary Accent / Selection** | `#A8C7FA` | Material-style light blue accent for interactive elements |
+| **Selection Focus Ring** | `#D3E3FD` | High-visibility focus indication and handle highlighting |
+| **Standard Edge Stroke** | `#515660` | Visible but unobtrusive graph edges |
+
+### 3.5. Material 3 Tonal Action Colors
+| Token | Value | Usage |
+| :--- | :--- | :--- |
+| `--md-primary` | `#A8C7FA` | Primary interactive elements |
+| `--md-on-primary` | `#102F50` | Text/icons on primary buttons |
+| `--md-primary-container` | `#284568` | Selected node backgrounds |
+| `--md-on-primary-container` | `#D3E3FD` | Selected node foreground |
+| `--md-secondary` | `#C4C7C5` | Secondary actions |
+| `--md-surface-variant` | `#30343B` | Alternative surfaces |
+| `--md-outline` | `#8E939D` | Visible component outlines |
+| `--md-outline-variant` | `#424750` | Low-emphasis outlines |
 
 ---
 
@@ -105,7 +151,7 @@ Custom nodes in `apps/web/src/components/canvas/` must follow professional graph
 
 ### A. `K8sGroup` (Nested Hybrid Topology Parent Container)
 - Replaces standard independent nodes with a structured, parent container representing Kubernetes groupings (e.g., Namespaces, Workload Deployments).
-- **Aesthetic**: Solid structural surface (`bg-[#18181b] border-2 border-zinc-800/80`) with sharp, visible heading contrast (`text-zinc-100 font-mono tracking-widest`).
+- **Aesthetic**: Solid structural surface (`bg-[#191B20] border-2 border-[#30343B]`) with sharp, visible heading contrast (`text-[#E6E1E5] font-mono tracking-widest`).
 - **Handles**: Enforces absolute strict handle routing—only explicitly defined target (left) and source (right) anchors are allowed. No arbitrary edge routing.
 
 ### B. `K8sNode` (Kubernetes Worker Node)
@@ -114,29 +160,29 @@ Custom nodes in `apps/web/src/components/canvas/` must follow professional graph
 - Border turns subtle amber/red if node CPU/Memory capacity exceeds 85%.
 
 ### C. `K8sPod` (Kubernetes Pod Workload)
-- Compact rectangular card (`220px x 80px`) physically nesting *inside* its parent `K8sGroup`.
+- Compact rectangular card (`208px x 32px`) nesting inside its parent `K8sGroup`.
 - **Header**: Pod name (truncated with ellipsis), namespace badge (e.g., `default`, `kube-system`).
 - **Body**: Status indicator dot, status text (`Running`, `CrashLoopBackOff`), restart count badge (`Restarts: 3`).
 - **Handles**: Inherits connections from its parent group; strictly internal visual representation inside the topology.
 
 ### C. `K8sService` (Kubernetes Service / Ingress)
-- Pill-shaped node (`rounded-full`) representing Ingress / ClusterIP / LoadBalancer endpoints.
+- Pill-shaped node representing Ingress / ClusterIP / LoadBalancer endpoints.
 - Displays target port (e.g., `:8080`, `:443`) and routes traffic to matching Pod selectors.
 
 ### D. Graph Edge Styling
-- Edge type: `smoothstep` with radius `12`.
-- Base stroke color: `#3f3f46` (Neutral 700), width `2px`.
+- Edge type: `argo` or `smoothstep` with radius `8`.
+- Base stroke color: `#515660`, width `2px`.
 - Active traffic edge: Animated subtle stroke dash array (`stroke-dasharray: 5`, duration `1.5s`) for active request flows.
 
 ---
 
 ## 5. Typography, Modals, & Micro-Interactions
 
-- **Material Design 3 (M3) Nested Proportions**: Enforce strict harmonic border radiuses across all dialogs and modals. Inner element radii must equal Outer radius minus padding (e.g., Outer Dialog: `rounded-3xl`, Inner Tab/Content: `rounded-xl`, Input Field: `rounded-md`).
-- **Surface Reality**: Eliminate translucent/glassmorphism marketing templates in favor of flat, high-contrast, structurally precise structural layers.
+- **Material Design 3 (M3) Nested Proportions**: Enforce strict harmonic border radiuses across all dialogs and modals. Inner element radii must equal Outer radius minus padding.
+- **Surface Reality**: Flat, high-contrast, structurally precise structural layers.
 - **Font Family**: Inter, system-ui, sans-serif.
-- **Button Hover States**: `hover:bg-neutral-800 transition-all duration-200 ease-out active:scale-95`.
-- **Node Selection Highlight**: Selected node receives a crisp 2px primary border (`border-blue-500`) without glow effects.
+- **Button Hover States**: `hover:bg-[#23262D] transition-all duration-200 ease-out active:scale-95`.
+- **Node Selection Highlight**: Selected node receives a crisp 2px primary border (`border-[#A8C7FA]`) with double ring (`#284568` / `#D3E3FD`).
 - **Drawer Motion**: Smooth slide-in transition (`transition-transform duration-300 ease-in-out`).
 
 ---

@@ -25,6 +25,7 @@ import { useUIStore } from "../../store/useUIStore";
 import type { SelectedTarget } from "../drawer/InspectorDrawer";
 import { useK8sStream, type WsTopologyMessage } from "../../hooks/useK8sStream";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
+import { useClusterLayoutPersistence } from "../../hooks/useClusterLayoutPersistence";
 import { DeleteConfirmationModal } from "../modals/DeleteConfirmationModal";
 
 import type { K8sDaemonSetData, K8sCronJobData, K8sJobData, K8sPVCData } from "../../store/types/topologyTypes";
@@ -142,12 +143,17 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
     onSelectTarget(null);
   }, [setSelectedNode, onSelectTarget]);
 
-  const handleAutoLayout = () => {
-    applyDagreLayout();
-    setTimeout(() => {
-      fitView({ duration: 400, padding: 0.11, maxZoom: 0.92 });
-    }, 50);
-  };
+  const {
+    handleNodeDragStop,
+    handleAutoLayoutReset,
+    hasCustomPositions,
+  } = useClusterLayoutPersistence({
+    onLayoutReset: () => {
+      setTimeout(() => {
+        fitView({ duration: 400, padding: 0.11, maxZoom: 0.92 });
+      }, 50);
+    },
+  });
 
   const handleRecenterView = () => {
     fitView({ duration: 400, padding: 0.11, maxZoom: 0.92 });
@@ -167,7 +173,7 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
   }, [nodes.length, fitView]);
 
   return (
-    <div className="h-screen w-screen bg-[#09090b] relative">
+    <div className="h-screen w-screen bg-[#111318] relative">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -177,6 +183,7 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeClick={handleNodeClick}
+        onNodeDragStop={handleNodeDragStop}
         onPaneClick={handlePaneClick}
         deleteKeyCode={["Delete", "Backspace"]}
         fitView
@@ -186,14 +193,14 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         proOptions={{ hideAttribution: true }}
         defaultEdgeOptions={{
           type: "argo",
-          style: { stroke: "#3f3f46", strokeWidth: 2 },
+          style: { stroke: "#515660", strokeWidth: 2 },
           markerEnd: {
             type: MarkerType.ArrowClosed,
-            color: "#3f3f46",
+            color: "#515660",
           },
         }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#27272a" />
+        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#2B2F36" />
       </ReactFlow>
 
       {/* Empty State Overlay when no active cluster nodes are present */}
@@ -252,12 +259,19 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         </div>
 
         <button
-          onClick={handleAutoLayout}
-          className="flex items-center gap-2 rounded-md bg-background border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:border-blue-500/50 hover:bg-neutral-800 hover:text-blue-400 transition-colors font-heading cursor-pointer"
-          title="Auto Layout Topology Graph (Dagre Engine)"
+          onClick={handleAutoLayoutReset}
+          className="flex items-center justify-between gap-2 rounded-md bg-background border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:border-blue-500/50 hover:bg-neutral-800 hover:text-blue-400 transition-colors font-heading cursor-pointer"
+          title={hasCustomPositions ? "Reset to Auto Layout (Dagre Engine)" : "Auto Layout Topology Graph (Dagre Engine)"}
         >
-          <Icon path={mdiViewGrid} size={0.65} className="text-blue-400" />
-          <span>Auto Layout</span>
+          <div className="flex items-center gap-2">
+            <Icon path={mdiViewGrid} size={0.65} className="text-blue-400" />
+            <span>Auto Layout</span>
+          </div>
+          {hasCustomPositions && (
+            <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
+              Reset
+            </span>
+          )}
         </button>
 
         <button

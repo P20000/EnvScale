@@ -67,8 +67,8 @@ function TelemetryAreaChart({
 
   const areaPathString = `${linePathString} L 100 100 L 0 100 Z`;
 
-  const strokeHex = color === "blue" ? "#3b82f6" : "#10b981";
-  const areaFillHex = color === "blue" ? "rgba(59, 130, 246, 0.08)" : "rgba(16, 185, 129, 0.08)";
+  const strokeHex = color === "blue" ? "#3b82f6" : "#6DD6A8";
+  const areaFillHex = color === "blue" ? "rgba(59, 130, 246, 0.08)" : "rgba(109, 214, 168, 0.08)";
 
   // Format dynamic Y-axis tick values
   const formatTick = (val: number) => {
@@ -183,7 +183,7 @@ function TelemetryAreaChart({
           {/* Hover Vertex Highlight Circle */}
           {hoveredPoint && (
             <div
-              className="absolute h-2.5 w-2.5 rounded-full -translate-x-1/2 -translate-y-1/2 border border-[#09090b] pointer-events-none z-25 shadow-md transition-all duration-150"
+              className="absolute h-2.5 w-2.5 rounded-full -translate-x-1/2 -translate-y-1/2 border border-[#111318] pointer-events-none z-25 shadow-md transition-all duration-150"
               style={{
                 left: `${hoveredPoint.x}%`,
                 top: `${hoveredPoint.y}%`,
@@ -195,7 +195,7 @@ function TelemetryAreaChart({
           {/* Flat Hover-Crosshair Tracking Guide Line */}
           {hoveredPoint && (
             <div
-              className="absolute top-0 bottom-0 border-l border-dashed border-neutral-500 pointer-events-none z-20"
+              className="absolute top-0 bottom-0 border-l border-dashed border-[#5C616B] pointer-events-none z-20"
               style={{ left: `${hoveredPoint.x}%` }}
             />
           )}
@@ -203,7 +203,7 @@ function TelemetryAreaChart({
           {/* Hover Precision Tooltip Card */}
           {hoveredPoint && (
             <div
-              className="absolute z-30 rounded-md bg-[#18181c] border border-neutral-700 p-2 shadow-2xl pointer-events-none font-mono text-xs space-y-0.5"
+              className="absolute z-30 rounded-md bg-[#23262D] border border-[#424750] p-2 shadow-2xl pointer-events-none font-mono text-xs space-y-0.5"
               style={{
                 top: "0.5rem",
                 left: hoveredPoint.x > 70 ? "auto" : `calc(${hoveredPoint.x}% + 0.5rem)`,

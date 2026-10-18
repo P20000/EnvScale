@@ -16,7 +16,7 @@ export function ConnectSuccessScreen({
 }: ConnectSuccessScreenProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-zinc-800 bg-[#141417] shadow-none p-4 text-white sm:p-6">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-[#30343B] bg-[#191B20] shadow-none p-4 text-[#E6E1E5] sm:p-6">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
           <Icon path={mdiCheckCircle} size={1.2} />
         </div>

@@ -28,6 +28,15 @@ export interface UIState {
   deleteModal: DeleteModalState;
   openDeleteModal: (targetId: string, targetName: string, targetKind: string, namespace?: string) => void;
   closeDeleteModal: () => void;
+
+  logBufferLimit: number;
+  setLogBufferLimit: (limit: number) => void;
+
+  alertWebhookUrl: string;
+  setAlertWebhookUrl: (url: string) => void;
+
+  alertWebhookCriticalOnly: boolean;
+  setAlertWebhookCriticalOnly: (val: boolean) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -47,6 +56,9 @@ export const useUIStore = create<UIState>()(
         targetKind: "",
         namespace: "default",
       },
+      logBufferLimit: 500,
+      alertWebhookUrl: "",
+      alertWebhookCriticalOnly: false,
 
       setShowCompletedPods: (show) => {
         set({ showCompletedPods: show });
@@ -108,6 +120,9 @@ export const useUIStore = create<UIState>()(
           },
         });
       },
+      setLogBufferLimit: (limit) => set({ logBufferLimit: limit }),
+      setAlertWebhookUrl: (url) => set({ alertWebhookUrl: url }),
+      setAlertWebhookCriticalOnly: (val) => set({ alertWebhookCriticalOnly: val }),
     }),
     {
       name: "envscale-ui-storage",
@@ -117,6 +132,9 @@ export const useUIStore = create<UIState>()(
         showCompletedJobs: state.showCompletedJobs,
         showSystemNamespaces: state.showSystemNamespaces,
         layoutDirection: state.layoutDirection,
+        logBufferLimit: state.logBufferLimit,
+        alertWebhookUrl: state.alertWebhookUrl,
+        alertWebhookCriticalOnly: state.alertWebhookCriticalOnly,
       }),
     }
   )

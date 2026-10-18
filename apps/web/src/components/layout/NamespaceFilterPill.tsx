@@ -75,37 +75,24 @@ export function NamespaceFilterPill() {
       ? selectedNamespaces[0]
       : `${selectedNamespaces.length} Namespaces`;
 
-  const displayCount = selectedNamespaces.length === 0 
-    ? availableNamespaces.length 
-    : selectedNamespaces.includes("__NONE__") 
-      ? 0 
-      : selectedNamespaces.length;
-
   return (
     <div className="relative" ref={menuRef}>
       {/* Sleek Pill Capsule Button */}
       <button
         onClick={() => setIsOpen((prev) => !prev)}
-        className="flex items-center gap-2 bg-[#18181b] border border-zinc-800 hover:border-zinc-700 h-9 px-3.5 rounded-full text-xs font-mono font-bold tracking-wider text-zinc-200 hover:text-white transition-all shadow-sm"
+        className="flex items-center gap-2 bg-[#1E2127] border border-[#30343B] hover:border-[#424750] h-9 px-3.5 rounded-full text-xs font-mono font-bold tracking-wider text-[#E6E1E5] hover:text-white transition-all shadow-sm"
         title="Filter canvas by Kubernetes namespace"
       >
         <Icon path={mdiFilterVariant} size={0.65} className="text-blue-400" />
-        <span className="truncate max-w-[120px]">{labelText}</span>
-        <span className={`flex h-4 min-w-4 items-center justify-center rounded-full text-[10px] font-bold px-1 border ${
-          displayCount > 0
-            ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
-            : "bg-zinc-800 text-zinc-500 border-zinc-700"
-        }`}>
-          {displayCount}
-        </span>
-        <Icon path={mdiChevronDown} size={0.65} className="text-zinc-400" />
+        <span className="truncate max-w-[130px]">{labelText}</span>
+        <Icon path={mdiChevronDown} size={0.65} className="text-[#C4C7C5]" />
       </button>
 
       {/* Checkbox Dropdown Popover */}
       {isOpen && (
-        <div className="absolute top-full left-0 mt-2.5 w-64 rounded-xl border border-zinc-700 bg-[#18181c] p-2.5 z-[80] shadow-2xl space-y-2 select-none">
-          <div className="flex items-center justify-between px-1 pb-1.5 border-b border-zinc-800">
-            <div className="text-[10px] font-bold tracking-wider text-zinc-400 uppercase font-heading">
+        <div className="absolute top-full left-0 mt-2.5 w-64 rounded-xl border border-[#424750] bg-[#23262D] p-2.5 z-[80] shadow-2xl space-y-2 select-none">
+          <div className="flex items-center justify-between px-1 pb-1.5 border-b border-[#30343B]">
+            <div className="text-[10px] font-bold tracking-wider text-[#92959D] uppercase font-heading">
               Filter Namespaces
             </div>
             <div className="flex items-center gap-2">

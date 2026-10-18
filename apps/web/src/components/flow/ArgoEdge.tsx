@@ -27,7 +27,7 @@ export function ArgoEdge({
     <>
       <path
         id={id}
-        style={{ ...style, stroke: '#27272a', strokeWidth: 1.5, fill: 'none' }}
+        style={{ ...style, stroke: '#515660', strokeWidth: 1.5, fill: 'none' }}
         className="react-flow__edge-path"
         d={edgePath}
         markerEnd={markerEnd}

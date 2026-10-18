@@ -13,6 +13,7 @@ import { SettingsView } from "./components/views/SettingsView";
 import { useTopologyStore } from "./store/useTopologyStore";
 import { useUIStore } from "./store/useUIStore";
 import ConnectClusterWizard from "./components/onboarding/ConnectClusterWizard";
+import { ToastContainer } from "./components/ui/ToastContainer";
 import { apiMe, apiGetWorkspaceClusters } from "./config/api";
 import { useAuthStore } from "./store/useAuthStore";
 
@@ -115,7 +116,7 @@ function AppContent() {
     : "none";
 
   return (
-    <div className="relative min-h-screen w-screen overflow-hidden bg-[#09090b] font-sans text-neutral-100 select-none">
+    <div className="relative min-h-screen w-screen overflow-hidden bg-[#111318] font-sans text-[#E6E1E5] select-none">
       {/* Region 1: Top Floating Navbar Capsule */}
       <TopNavbar
         activeCluster={activeCluster}
@@ -152,7 +153,7 @@ function AppContent() {
       />
 
       {/* Region 3: Center Canvas & Auxiliary Views */}
-      <main className="relative h-screen w-screen overflow-hidden bg-[#09090b]">
+      <main className="relative h-screen w-screen overflow-hidden bg-[#111318]">
         {activeTab === "topology" && (
           <TopologyCanvas
             onSelectTarget={(target) => setSelectedNode(target)}
@@ -165,7 +166,17 @@ function AppContent() {
 
         {activeTab === "leaderboard" && <LeaderboardView />}
 
-        {activeTab === "settings" && <SettingsView />}
+        {activeTab === "settings" && (
+          <SettingsView
+            onOpenConnectModal={() => {
+              if (!useAuthStore.getState().isAuthenticated) {
+                useAuthStore.getState().openAuthModal("Sign in to your account or workspace to connect a new Kubernetes cluster.");
+              } else {
+                setShowConnectWizard(true);
+              }
+            }}
+          />
+        )}
       </main>
 
       {/* Region 4: Contextual Right Slide-out Inspector Drawer */}
@@ -198,6 +209,9 @@ function AppContent() {
           onClusterConnected={handleClusterConnected}
         />
       )}
+
+      {/* Global Toast Notification System */}
+      <ToastContainer />
     </div>
   );
 }
