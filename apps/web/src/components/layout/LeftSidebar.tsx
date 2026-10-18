@@ -95,8 +95,8 @@ export function LeftSidebar({
   return (
     <aside className="fixed left-0 top-0 h-screen w-14 z-40 flex flex-col items-center py-4 bg-[#191B20] border-r border-[#30343B] select-none">
       {/* Brand Emblem Logo Header */}
-      <div className="group relative flex h-10 w-10 items-center justify-center rounded-md bg-[#284568] border border-[#A8C7FA]/30 text-[#A8C7FA] cursor-pointer hover:bg-[#284568]/80 transition-all shrink-0">
-        <EnvScaleLogo className="h-5 w-5 text-[#A8C7FA]" />
+      <div className="group relative flex h-10 w-10 items-center justify-center rounded-md bg-blue-500 text-white cursor-pointer hover:bg-blue-600 transition-all shrink-0">
+        <EnvScaleLogo className="h-5 w-5 text-white" />
         <div className="absolute left-full ml-3 hidden rounded-md bg-[#23262D] px-3 py-1.5 text-xs font-bold text-[#E6E1E5] border border-[#424750] whitespace-nowrap group-hover:block z-[70] shadow-xl pointer-events-none font-heading">
           EnvScale Platform
         </div>
@@ -116,7 +116,7 @@ export function LeftSidebar({
               title={item.label}
               className={`group relative flex h-10 w-10 items-center justify-center rounded-md transition-all duration-200 ${
                 isActive
-                  ? "bg-[#284568] text-[#D3E3FD] shadow-lg shadow-black/30 border border-[#A8C7FA]/40"
+                  ? "bg-blue-500 text-white shadow-lg shadow-blue-500/20"
                   : "text-[#C4C7C5] hover:bg-[#30343B] hover:text-[#E6E1E5]"
               }`}
             >
@@ -148,13 +148,13 @@ export function LeftSidebar({
           className={`group relative flex h-10 w-10 items-center justify-center rounded-md transition-all duration-200 ${
             activeTab === settingsNavItem.id
               ? "bg-blue-500 text-white shadow-lg shadow-blue-500/20"
-              : "text-neutral-400 hover:bg-neutral-800/80 hover:text-neutral-200"
+              : "text-[#C4C7C5] hover:bg-[#30343B] hover:text-[#E6E1E5]"
           }`}
         >
           <Icon path={settingsNavItem.iconPath} size={0.83} />
 
           {/* Tooltip on hover */}
-          <div className="absolute left-full ml-3 hidden rounded-md bg-[#18181c] px-3 py-1.5 text-xs font-medium text-neutral-100 border border-neutral-700 whitespace-nowrap group-hover:block z-[70] shadow-xl pointer-events-none font-heading">
+          <div className="absolute left-full ml-3 hidden rounded-md bg-[#23262D] px-3 py-1.5 text-xs font-medium text-[#E6E1E5] border border-[#424750] whitespace-nowrap group-hover:block z-[70] shadow-xl pointer-events-none font-heading">
             {settingsNavItem.label}
           </div>
         </button>
@@ -170,7 +170,7 @@ export function LeftSidebar({
               className={`h-9 w-9 rounded-full border-2 flex items-center justify-center overflow-hidden transition-all duration-200 shadow-md ${
                 loggedInEmail
                   ? "border-blue-500/70 bg-gradient-to-tr from-blue-600 to-indigo-500 text-white group-hover:border-blue-400 group-hover:scale-105"
-                  : "border-neutral-700 bg-neutral-800 text-neutral-400 group-hover:border-neutral-500 group-hover:text-neutral-200 group-hover:scale-105"
+                  : "border-[#424750] bg-[#23262D] text-[#C4C7C5] group-hover:border-[#5C616B] group-hover:text-[#E6E1E5] group-hover:scale-105"
               }`}
             >
               {userAvatarUrl && !avatarFailed ? (
@@ -210,10 +210,10 @@ export function LeftSidebar({
                   <img
                     src={userAvatarUrl}
                     alt="User avatar"
-                    className="h-9 w-9 rounded-full object-cover border border-[#A8C7FA]/40 shrink-0 shadow-sm"
+                    className="h-9 w-9 rounded-full object-cover border border-blue-500/40 shrink-0 shadow-sm"
                   />
                 ) : (
-                  <div className="h-9 w-9 rounded-full bg-[#284568] text-[#D3E3FD] font-bold flex items-center justify-center border border-[#A8C7FA]/30 shrink-0">
+                  <div className="h-9 w-9 rounded-full bg-blue-500/20 text-blue-400 font-bold flex items-center justify-center shrink-0">
                     {loggedInEmail ? loggedInEmail.charAt(0).toUpperCase() : "?"}
                   </div>
                 )}
@@ -223,7 +223,7 @@ export function LeftSidebar({
                       <div className="text-xs font-bold text-[#E6E1E5] font-heading truncate">
                         {userName || "Authenticated User"}
                       </div>
-                      <div className="text-[11px] text-[#A8C7FA] font-mono truncate">{loggedInEmail}</div>
+                      <div className="text-[11px] text-blue-400 font-mono truncate">{loggedInEmail}</div>
                     </>
                   ) : (
                     <>
@@ -257,7 +257,7 @@ export function LeftSidebar({
                       openAuthModal();
                     }
                   }}
-                  className="w-full flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs text-[#A8C7FA] hover:bg-[#284568]/40 font-medium transition-colors"
+                  className="w-full flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs text-blue-400 hover:bg-blue-500/10 font-medium transition-colors"
                 >
                   <Icon path={mdiLock} size={0.65} className="text-blue-400" />
                   <span>Sign In / Register</span>

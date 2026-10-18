@@ -262,15 +262,15 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
         </button>
       </div>
 
-      <div className="flex border-b border-neutral-800 bg-neutral-950 px-2 text-xs font-medium">
+      <div className="flex border-b border-neutral-800 bg-neutral-950 p-1.5 gap-1 text-xs font-medium">
         {(target.type === "pvc" ? (["overview"] as const) : (["overview", "logs", "metrics", "chaos"] as const)).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`flex-1 py-2.5 border-b-2 text-center transition-colors capitalize ${
+            className={`flex-1 py-1.5 rounded-md text-center transition-colors capitalize ${
               activeTab === tab
-                ? "border-blue-500 text-blue-400 font-semibold"
-                : "border-transparent text-neutral-400 hover:text-neutral-200"
+                ? "bg-blue-500 text-white font-semibold shadow-sm shadow-blue-500/20"
+                : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900"
             }`}
           >
             {tab === "overview" && target.type === "pvc" ? "Storage Spec" : tab === "metrics" ? "Usage" : tab === "logs" ? "Live Logs" : tab}

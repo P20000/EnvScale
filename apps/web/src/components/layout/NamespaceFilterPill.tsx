@@ -75,12 +75,6 @@ export function NamespaceFilterPill() {
       ? selectedNamespaces[0]
       : `${selectedNamespaces.length} Namespaces`;
 
-  const displayCount = selectedNamespaces.length === 0 
-    ? availableNamespaces.length 
-    : selectedNamespaces.includes("__NONE__") 
-      ? 0 
-      : selectedNamespaces.length;
-
   return (
     <div className="relative" ref={menuRef}>
       {/* Sleek Pill Capsule Button */}
@@ -89,15 +83,8 @@ export function NamespaceFilterPill() {
         className="flex items-center gap-2 bg-[#1E2127] border border-[#30343B] hover:border-[#424750] h-9 px-3.5 rounded-full text-xs font-mono font-bold tracking-wider text-[#E6E1E5] hover:text-white transition-all shadow-sm"
         title="Filter canvas by Kubernetes namespace"
       >
-        <Icon path={mdiFilterVariant} size={0.65} className="text-[#A8C7FA]" />
-        <span className="truncate max-w-[120px]">{labelText}</span>
-        <span className={`flex h-4 min-w-4 items-center justify-center rounded-full text-[10px] font-bold px-1 border ${
-          displayCount > 0
-            ? "bg-[#284568] text-[#D3E3FD] border-[#A8C7FA]/40"
-            : "bg-[#23262D] text-[#92959D] border-[#30343B]"
-        }`}>
-          {displayCount}
-        </span>
+        <Icon path={mdiFilterVariant} size={0.65} className="text-blue-400" />
+        <span className="truncate max-w-[130px]">{labelText}</span>
         <Icon path={mdiChevronDown} size={0.65} className="text-[#C4C7C5]" />
       </button>
 
@@ -111,7 +98,7 @@ export function NamespaceFilterPill() {
             <div className="flex items-center gap-2">
               <button
                 onClick={handleSelectAll}
-                className="text-[10px] text-[#A8C7FA] hover:text-[#D3E3FD] font-semibold transition-colors"
+                className="text-[10px] text-blue-400 hover:text-blue-300 font-semibold transition-colors"
               >
                 All
               </button>

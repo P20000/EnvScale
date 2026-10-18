@@ -261,7 +261,7 @@ export default function ConnectClusterWizard({
       <div className="w-full max-w-lg rounded-3xl border border-[#30343B] bg-[#191B20] shadow-none p-6 text-[#E6E1E5]">
         <div className="mb-6 flex items-start gap-4">
           <div>
-            <p className="text-sm text-[#A8C7FA] font-mono">Step {step} of 3</p>
+            <p className="text-sm text-blue-400 font-mono">Step {step} of 3</p>
             <h2 className="mt-1 text-2xl font-semibold font-heading">Connect Cluster</h2>
             <p className="mt-1 max-w-full break-words text-sm leading-5 text-[#C4C7C5]">
               Connect your Kubernetes cluster to EnvScale.
@@ -292,7 +292,7 @@ export default function ConnectClusterWizard({
                   if (event.target.value.trim()) setClusterError("");
                 }}
                 placeholder="e.g. production-cluster"
-                className="w-full bg-[#111318] border border-[#30343B] text-xs font-mono py-2 px-3 focus:border-[#A8C7FA] focus:outline-none rounded-md text-[#E6E1E5] placeholder:text-[#92959D]"
+                className="w-full bg-[#111318] border border-[#30343B] text-xs font-mono py-2 px-3 focus:border-blue-500 focus:outline-none rounded-md text-[#E6E1E5] placeholder:text-[#92959D]"
               />
               {clusterError && <p className="mt-2 text-sm text-[#F2B8B5]">{clusterError}</p>}
             </div>
@@ -306,7 +306,7 @@ export default function ConnectClusterWizard({
                   id="cluster-environment"
                   value={environment}
                   onChange={(e) => setEnvironment(e.target.value as "development" | "staging" | "production")}
-                  className="w-full appearance-none bg-[#111318] border border-[#30343B] text-xs font-mono py-2 px-3 pr-8 focus:border-[#A8C7FA] focus:outline-none rounded-md text-[#E6E1E5] cursor-pointer"
+                  className="w-full appearance-none bg-[#111318] border border-[#30343B] text-xs font-mono py-2 px-3 pr-8 focus:border-blue-500 focus:outline-none rounded-md text-[#E6E1E5] cursor-pointer"
                 >
                   <option value="development">Development (Minikube / Kind)</option>
                   <option value="staging">Staging</option>
@@ -334,16 +334,16 @@ export default function ConnectClusterWizard({
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={handleDrop}
                 className={`rounded-xl border border-dashed p-8 text-center transition-colors ${
-                  isDragging ? "border-[#A8C7FA] bg-[#284568]/20" : "border-[#30343B] bg-[#111318]"
+                  isDragging ? "border-blue-500 bg-blue-500/10" : "border-[#30343B] bg-[#111318]"
                 }`}
               >
-                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-md bg-[#284568] text-[#D3E3FD] border border-[#A8C7FA]/30">
+                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20">
                   <Icon path={mdiUpload} size={0.83} />
                 </div>
                 <p className="text-[#E6E1E5] text-sm">Drag & drop your kubeconfig here</p>
                 <p className="my-1.5 text-xs text-[#92959D]">or</p>
                 <p className="mb-3 text-xs text-[#92959D]">YAML files only (.yaml, .yml)</p>
-                <label className="inline-flex cursor-pointer rounded-md bg-[#A8C7FA] px-4 py-2 text-sm font-medium text-[#102F50] hover:bg-[#D3E3FD] transition-colors font-semibold">
+                <label className="inline-flex cursor-pointer rounded-md bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 transition-colors font-semibold">
                   Browse File
                   <input type="file" accept=".yaml,.yml" className="hidden" onChange={handleFileChange} />
                 </label>

@@ -133,7 +133,7 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess, reason: propsReason
             }}
             className={`flex-1 py-1.5 rounded-md text-center transition-colors ${
               mode === "signin"
-                ? "bg-neutral-800 text-white font-semibold"
+                ? "bg-blue-500 text-white font-semibold shadow-sm shadow-blue-500/20"
                 : "text-neutral-400 hover:text-neutral-200"
             }`}
           >
@@ -147,7 +147,7 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess, reason: propsReason
             }}
             className={`flex-1 py-1.5 rounded-md text-center transition-colors ${
               mode === "register"
-                ? "bg-neutral-800 text-white font-semibold"
+                ? "bg-blue-500 text-white font-semibold shadow-sm shadow-blue-500/20"
                 : "text-neutral-400 hover:text-neutral-200"
             }`}
           >

@@ -67,8 +67,8 @@ function TelemetryAreaChart({
 
   const areaPathString = `${linePathString} L 100 100 L 0 100 Z`;
 
-  const strokeHex = color === "blue" ? "#A8C7FA" : "#6DD6A8";
-  const areaFillHex = color === "blue" ? "rgba(168, 199, 250, 0.08)" : "rgba(109, 214, 168, 0.08)";
+  const strokeHex = color === "blue" ? "#3b82f6" : "#6DD6A8";
+  const areaFillHex = color === "blue" ? "rgba(59, 130, 246, 0.08)" : "rgba(109, 214, 168, 0.08)";
 
   // Format dynamic Y-axis tick values
   const formatTick = (val: number) => {
