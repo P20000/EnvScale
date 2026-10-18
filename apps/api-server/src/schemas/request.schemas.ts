@@ -38,11 +38,11 @@ export const clusterConnectSchema = z.object({
 
 export const clusterParamsSchema = z.object({
   id: idSchema,
-  clusterId: idSchema,
+  clusterId: z.string().trim().min(1).max(255),
 });
 
 export const topLevelClusterParamsSchema = z.object({
-  clusterId: idSchema,
+  clusterId: z.string().trim().min(1).max(255),
 });
 
 export const clusterLayoutParamSchema = z.object({

@@ -14,7 +14,7 @@ import { useTopologyStore } from "./store/useTopologyStore";
 import { useUIStore } from "./store/useUIStore";
 import ConnectClusterWizard from "./components/onboarding/ConnectClusterWizard";
 import { ToastContainer } from "./components/ui/ToastContainer";
-import { apiMe, apiGetWorkspaceClusters } from "./config/api";
+import { apiMe, apiGetWorkspaceClusters, apiGetStreamerClusters } from "./config/api";
 import { useAuthStore } from "./store/useAuthStore";
 
 import { SYSTEM_NAMESPACES } from "./store/helpers/topologyHelpers";
@@ -45,17 +45,38 @@ function AppContent() {
   useEffect(() => {
     async function hydrateUserWorkspace() {
       const meData = await apiMe();
+      let clusterFound = false;
+      const store = useTopologyStore.getState();
+
       if (meData?.workspace?.id) {
         const dbClusters = await apiGetWorkspaceClusters(meData.workspace.id);
         if (Array.isArray(dbClusters) && dbClusters.length > 0) {
-          const store = useTopologyStore.getState();
           dbClusters.forEach((c: { id: string; name: string }) => {
             if (c.id && c.name) store.addCluster({ id: c.id, name: c.name });
           });
           if (!store.activeCluster && dbClusters[0]?.id) {
             store.setActiveCluster(dbClusters[0].id);
           }
+          clusterFound = true;
         }
+      }
+
+      if (!clusterFound || store.clusters.length === 0) {
+        const streamerClusters = await apiGetStreamerClusters();
+        if (Array.isArray(streamerClusters) && streamerClusters.length > 0) {
+          streamerClusters.forEach((c) => {
+            if (c.name) {
+              store.addCluster({ id: c.id || c.name, name: c.name, status: c.status });
+            }
+          });
+          if (!store.activeCluster && streamerClusters[0]) {
+            store.setActiveCluster(streamerClusters[0].id || streamerClusters[0].name);
+          }
+        }
+      }
+
+      if (!store.activeCluster && store.clusters.length > 0) {
+        store.setActiveCluster(store.clusters[0].id || store.clusters[0].name);
       }
     }
     hydrateUserWorkspace();

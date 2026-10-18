@@ -10,6 +10,10 @@ export interface ApiToken {
 export interface Cluster {
   id: string;
   name: string;
+  type?: string;
+  status?: string;
+  healthScore?: number;
+  workspaceId?: string;
 }
 
 export interface NotificationItem {

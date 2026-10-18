@@ -130,23 +130,26 @@ export const listClusters = async (rawWorkspaceId: string) => {
     .where(eq(clusters.workspaceId, workspaceId));
 };
 
+const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
 export const deleteCluster = async (rawWorkspaceId: string, rawClusterId: string) => {
   const workspaceId = idSchema.parse(rawWorkspaceId);
-  const clusterId = idSchema.parse(rawClusterId);
+  const condition = isUuid(rawClusterId)
+    ? and(eq(clusters.workspaceId, workspaceId), or(eq(clusters.id, rawClusterId), eq(clusters.name, rawClusterId)))
+    : and(eq(clusters.workspaceId, workspaceId), eq(clusters.name, rawClusterId));
 
   const deletedRows = await db
     .delete(clusters)
-    .where(and(eq(clusters.workspaceId, workspaceId), eq(clusters.id, clusterId)))
+    .where(condition!)
     .returning({ id: clusters.id });
 
   if (deletedRows.length === 0) {
-    throw new ClusterNotFoundError(clusterId);
+    throw new ClusterNotFoundError(rawClusterId);
   }
 
-  void notifyStreamerGateway(`/api/v1/clusters?clusterId=${encodeURIComponent(clusterId)}`, "DELETE");
+  const deletedId = deletedRows[0].id;
+  void notifyStreamerGateway(`/api/v1/clusters?clusterId=${encodeURIComponent(deletedId)}`, "DELETE");
 };
-
-const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
 export const getClusterLayout = async (rawClusterId: string, userId?: string) => {
   const condition = isUuid(rawClusterId)

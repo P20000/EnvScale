@@ -155,24 +155,18 @@ export function useK8sStream(
 
     try {
       const token = await getStreamerToken();
-      if (!token) {
-        console.warn("[EnvScale WS] No active JWT authentication session found. Gating streamer WebSocket.");
-        queueMicrotask(() => {
-          if (isComponentMounted.current) {
-            setStatus("DISCONNECTED");
-          }
-        });
-        return;
-      }
-
       let authenticatedWsUrl = wsUrl;
-      try {
-        const urlObj = new URL(wsUrl);
-        urlObj.searchParams.set("token", token);
-        authenticatedWsUrl = urlObj.toString();
-      } catch {
-        const hasQuery = wsUrl.includes("?");
-        authenticatedWsUrl = `${wsUrl}${hasQuery ? "&" : "?"}token=${encodeURIComponent(token)}`;
+      if (token) {
+        try {
+          const urlObj = new URL(wsUrl);
+          urlObj.searchParams.set("token", token);
+          authenticatedWsUrl = urlObj.toString();
+        } catch {
+          const hasQuery = wsUrl.includes("?");
+          authenticatedWsUrl = `${wsUrl}${hasQuery ? "&" : "?"}token=${encodeURIComponent(token)}`;
+        }
+      } else {
+        console.info("[EnvScale WS] No stored JWT token found; attempting direct connection (local dev / anonymous fallback).");
       }
 
       const socket = new WebSocket(authenticatedWsUrl);

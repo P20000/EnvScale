@@ -251,6 +251,28 @@ export async function apiGetWorkspaceClusters(workspaceId: string) {
   return [];
 }
 
+export async function apiGetStreamerClusters(): Promise<Array<{ id: string; name: string; status?: string }>> {
+  try {
+    const res = await fetch(`${STREAMER_BASE_URL}/api/v1/clusters`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.clusters && typeof data.clusters === "object") {
+        return Object.keys(data.clusters).map((id) => {
+          const clusterObj = (data.clusters as Record<string, { status?: string }>)[id];
+          return {
+            id,
+            name: id === "minikube" ? "Minikube Local" : (id.length > 20 ? `Cluster (${id.slice(0, 8)})` : id),
+            status: clusterObj?.status || "CONNECTED",
+          };
+        });
+      }
+    }
+  } catch {
+    // Streamer gateway offline or network unreachable
+  }
+  return [];
+}
+
 export async function apiMe() {
   try {
     const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
