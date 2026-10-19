@@ -174,7 +174,11 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess, reason: propsReason
                   return;
                 }
                 if (res?.error) {
-                  setError(res.error.message || "Google OAuth is not configured on the server.");
+                  setError(
+                    res.error.message?.includes("not configured")
+                      ? "Google OAuth credentials (GOOGLE_CLIENT_ID) are not configured on the server. Please sign in or register with Email & Password below."
+                      : res.error.message || "Google OAuth is not configured on the server."
+                  );
                 }
               } catch (err: unknown) {
                 setError((err as Error)?.message || "Google OAuth authentication failed.");

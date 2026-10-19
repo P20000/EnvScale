@@ -46,7 +46,11 @@ export const auth = betterAuth({
   trustedOrigins: [
     "http://localhost:5173",
     "http://localhost:3000",
-    ...(env.CORS_ORIGIN && env.CORS_ORIGIN !== "*" ? [env.CORS_ORIGIN] : []),
+    "https://envscale.duckdns.org",
+    "http://envscale.duckdns.org",
+    ...(env.CORS_ORIGIN && env.CORS_ORIGIN !== "*"
+      ? env.CORS_ORIGIN.split(",").map((o) => o.trim()).filter(Boolean)
+      : []),
   ],
   socialProviders: Object.keys(socialProviders).length > 0 ? socialProviders : undefined,
   emailAndPassword: {
