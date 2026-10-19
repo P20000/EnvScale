@@ -16,11 +16,14 @@ jobs:
 
       - name: Check Deployment Credentials
         id: check_creds
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
-          if [ -n "${{ secrets.SSH_PRIVATE_KEY }}" ] && [ -n "${{ secrets.EC2_HOST }}" ]; then
-            echo "has_creds=true" >> $GITHUB_OUTPUT
+          if [ -n "$SSH_PRIVATE_KEY" ] && [ -n "$EC2_HOST" ]; then
+            echo "has_creds=true" >> "$GITHUB_OUTPUT"
           else
-            echo "has_creds=false" >> $GITHUB_OUTPUT
+            echo "has_creds=false" >> "$GITHUB_OUTPUT"
             echo "::notice ::SSH_PRIVATE_KEY or EC2_HOST secret not configured in GitHub Repository Settings. Deployment step skipped."
           fi
 
@@ -29,9 +32,9 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.SSH_USER || 'ubuntu' }}
+          username: "ubuntu"
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /opt/envscale
-            git pull origin develop || true
+            git pull origin develop
             ./deployment/start_remote.sh
