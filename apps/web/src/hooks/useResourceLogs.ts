@@ -54,7 +54,11 @@ export function useResourceLogs({
         ? namespace
         : useUIStore.getState().selectedNamespaces[0] || "default";
 
-    const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || "ws://localhost:8080";
+    const WS_BASE_URL =
+      import.meta.env.VITE_WS_BASE_URL ||
+      (typeof window !== "undefined"
+        ? `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`
+        : "ws://localhost:8080");
     let isDisposed = false;
     let ws: WebSocket | null = null;
 

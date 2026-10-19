@@ -1,0 +1,37 @@
+name: EnvScale CD - Continuous Deployment
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to EC2 Integration Host
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Check Deployment Credentials
+        id: check_creds
+        run: |
+          if [ -n "${{ secrets.SSH_PRIVATE_KEY }}" ] && [ -n "${{ secrets.EC2_HOST }}" ]; then
+            echo "has_creds=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_creds=false" >> $GITHUB_OUTPUT
+            echo "::notice ::SSH_PRIVATE_KEY or EC2_HOST secret not configured in GitHub Repository Settings. Deployment step skipped."
+          fi
+
+      - name: Deploy via SSH
+        if: steps.check_creds.outputs.has_creds == 'true'
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.SSH_USER || 'ubuntu' }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /opt/envscale
+            git pull origin develop || true
+            ./deployment/start_remote.sh

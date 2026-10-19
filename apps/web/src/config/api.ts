@@ -5,10 +5,12 @@
  */
 
 export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+  import.meta.env.VITE_API_BASE_URL ||
+  (typeof window !== "undefined" && window.location.origin ? window.location.origin : "http://localhost:3000");
 
 export const STREAMER_BASE_URL =
-  import.meta.env.VITE_STREAMER_BASE_URL || "http://localhost:8080";
+  import.meta.env.VITE_STREAMER_BASE_URL ||
+  (typeof window !== "undefined" && window.location.origin ? window.location.origin : "http://localhost:8080");
 
 export function getAuthHeaders(contentType?: string): Record<string, string> {
   const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");

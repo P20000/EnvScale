@@ -143,7 +143,7 @@ function AppContent() {
     }
 
     return (
-      <div className="relative min-h-screen w-screen overflow-x-hidden bg-[#111318] font-sans text-[#E6E1E5]">
+      <div className="relative min-h-screen w-screen overflow-x-clip bg-slate-50 font-sans text-slate-800">
         <LandingPage onGetStarted={() => setLoggedOutView("auth-buffer")} />
         <ToastContainer />
       </div>

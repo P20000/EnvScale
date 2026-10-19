@@ -38,3 +38,12 @@ bin/
 *-bin
 .codegraph/
 .playwright-mcp/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+*.tfvars
+!*.tfvars.example
+

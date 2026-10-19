@@ -33,12 +33,25 @@ func IsOriginAllowed(r *http.Request) bool {
 		return true // Non-browser clients, cURL, and native apps
 	}
 
+	// Always allow DuckDNS domains for EnvScale deployments
+	if strings.HasSuffix(origin, ".duckdns.org") || strings.HasSuffix(origin, "duckdns.org") {
+		return true
+	}
+
+	// Dynamic host matching (supports reverse proxies like Caddy)
+	if reqHost := r.Host; reqHost != "" && (origin == "http://"+reqHost || origin == "https://"+reqHost) {
+		return true
+	}
+	if fwdHost := r.Header.Get("X-Forwarded-Host"); fwdHost != "" && (origin == "http://"+fwdHost || origin == "https://"+fwdHost) {
+		return true
+	}
+
 	allowedEnv := os.Getenv("CORS_ORIGIN")
 	if allowedEnv == "" {
 		allowedEnv = os.Getenv("ALLOWED_ORIGINS")
 	}
 
-	if allowedEnv == "*" {
+	if allowedEnv == "*" || strings.Contains(allowedEnv, "*") {
 		return true
 	}
 
@@ -55,6 +68,8 @@ func IsOriginAllowed(r *http.Request) bool {
 			"http://localhost:3000",
 			"http://127.0.0.1:5173",
 			"http://127.0.0.1:3000",
+			"https://envscale.duckdns.org",
+			"http://envscale.duckdns.org",
 		}
 	}
 

@@ -1,4 +1,4 @@
-import { LandingScrollHero } from "./LandingScrollHero";
+import { LandingVideoHero } from "./LandingVideoHero";
 import { ScrollStoryline } from "./ScrollStoryline";
 import { LandingScrollFooter } from "./LandingScrollFooter";
 
@@ -7,25 +7,15 @@ interface LandingPageProps {
 }
 
 export function LandingPage({ onGetStarted }: LandingPageProps) {
-  const handleScrollToStoryline = () => {
-    const el = document.getElementById("storyline");
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  };
-
   return (
-    <div className="min-h-screen w-full bg-[#111318] text-[#E6E1E5] font-sans antialiased overflow-x-hidden selection:bg-[#284568] selection:text-[#D3E3FD]">
-      {/* Very Beginning of Scroll: Hero with Prominent 'Get Started' Button & Zero Navigation Bar */}
-      <LandingScrollHero
-        onGetStarted={onGetStarted}
-        onScrollToStoryline={handleScrollToStoryline}
-      />
+    <div className="min-h-screen w-full bg-slate-50 text-slate-800 font-sans antialiased overflow-x-clip selection:bg-blue-600 selection:text-white">
+      {/* Brand Hero with Centered Logo & Mandala Art */}
+      <LandingVideoHero onGetStarted={onGetStarted} />
 
-      {/* Scroll-Driven Animation & Information Storyline */}
-      <ScrollStoryline onGetStarted={onGetStarted} />
+      {/* Light Mode Slideshow: Diagram Cards on Left, Courgette Info on Right */}
+      <ScrollStoryline />
 
-      {/* Quiet Technical Footer */}
+      {/* Technical Footer */}
       <LandingScrollFooter onGetStarted={onGetStarted} />
     </div>
   );

@@ -469,7 +469,9 @@ export const useAuthStore = create<AuthState>((set, get) => {
     },
 
     logoutAll: async () => {
-      const streamerUrl = import.meta.env.VITE_STREAMER_BASE_URL || "http://localhost:8080";
+      const streamerUrl =
+        import.meta.env.VITE_STREAMER_BASE_URL ||
+        (typeof window !== "undefined" && window.location.origin ? window.location.origin : "http://localhost:8080");
       fetch(`${streamerUrl}/api/v1/clusters/unregister-all`, { method: "POST" }).catch(() => {});
       ["envscale_auth_token", "envscale_access_token", "envscale_user", "envscale_saved_accounts", "envscale-topology-storage-v2"].forEach((k) => localStorage.removeItem(k));
       useTopologyStore.getState().resetStore();

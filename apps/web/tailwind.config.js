@@ -103,6 +103,7 @@ export default {
       fontFamily: {
         sans: ["'Plus Jakarta Sans'", "'Plus Jakarta Sans Variable'", "system-ui", "-apple-system", "sans-serif"],
         heading: ["'Google Sans'", "'Plus Jakarta Sans'", "sans-serif"],
+        courgette: ["'Courgette'", "cursive", "sans-serif"],
         mono: ["'Google Sans Code'", "'JetBrains Mono'", "ui-monospace", "SFMono-Regular", "Menlo", "Monaco", "Consolas", "monospace"],
       },
     },

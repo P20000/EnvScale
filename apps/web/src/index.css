@@ -1,4 +1,5 @@
 @import "@fontsource-variable/plus-jakarta-sans";
+@import url("https://fonts.googleapis.com/css2?family=Courgette&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -94,13 +95,17 @@
     color: #E6E1E5;
     font-family: "Plus Jakarta Sans", "Plus Jakarta Sans Variable", system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
     font-optical-sizing: auto;
-    overflow-x: hidden;
+    overflow-x: clip;
   }
 
   h1, h2, h3, h4, h5, h6, .font-heading {
     font-family: "Google Sans", "Plus Jakarta Sans", sans-serif;
     font-optical-sizing: auto;
     font-variation-settings: "GRAD" 0;
+  }
+
+  .font-courgette {
+    font-family: "Courgette", cursive, sans-serif !important;
   }
 
   code, pre, .font-mono, .terminal-text {
@@ -354,4 +359,49 @@
   }
 }
 
+/* Horizontal Revolution & Spin Animations for Mandala Graphics */
+@keyframes mandalaRevolutionH {
+  0% {
+    transform: perspective(1000px) rotateY(0deg);
+  }
+  50% {
+    transform: perspective(1000px) rotateY(180deg);
+  }
+  100% {
+    transform: perspective(1000px) rotateY(360deg);
+  }
+}
 
+@keyframes mandalaSlowSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-mandala-revolve-h {
+  animation: mandalaRevolutionH 18s ease-in-out infinite;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+.animate-mandala-spin-slow {
+  animation: mandalaSlowSpin 60s linear infinite;
+  will-change: transform;
+}
+
+/* Motion Graphics Topology Edge Flow */
+@keyframes topologyFlow {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.animate-topology-flow {
+  animation: topologyFlow 1.4s linear infinite;
+}

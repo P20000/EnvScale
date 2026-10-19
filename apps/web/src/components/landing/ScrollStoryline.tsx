@@ -1,147 +1,119 @@
-import { useState } from "react";
-import { Icon } from "../ui/Icon";
-import { mdiLayersOutline, mdiArrowRight, mdiCheck } from "@mdi/js";
+import { useEffect, useRef } from "react";
 import { SCROLL_STAGES } from "./landingStages";
-import { ScrollStageVisualizer } from "./ScrollStageVisualizer";
-import { ScrollStageIndicator } from "./ScrollStageIndicator";
-import type { ScrollStageId } from "./landingTypes";
+import { LandingStageCard } from "./LandingStageCard";
+import { LandingStageInfo } from "./LandingStageInfo";
+import { LandingMandala } from "./LandingMandala";
 
-interface ScrollStorylineProps {
-  onGetStarted: () => void;
-}
+export function ScrollStoryline() {
+  const stageRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-export function ScrollStoryline({ onGetStarted }: ScrollStorylineProps) {
-  const [activeStageIndex, setActiveStageIndex] = useState(0);
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("opacity-100", "translate-y-0");
+            entry.target.classList.remove("opacity-0", "translate-y-8");
+          }
+        });
+      },
+      {
+        threshold: 0.05,
+        rootMargin: "50px",
+      }
+    );
 
-  const activeStage = SCROLL_STAGES[activeStageIndex] || SCROLL_STAGES[0];
+    stageRefs.current.forEach((el) => {
+      if (el) observer.observe(el);
+    });
 
-  // Optional auto-cycle or scroll step sync
-  const handleSelectStage = (id: ScrollStageId) => {
-    const idx = SCROLL_STAGES.findIndex((s) => s.id === id);
-    if (idx !== -1) setActiveStageIndex(idx);
-  };
-
-  const handleNextStage = () => {
-    if (activeStageIndex < SCROLL_STAGES.length - 1) {
-      setActiveStageIndex((prev) => prev + 1);
-    } else {
-      onGetStarted();
-    }
-  };
-
-  const handlePrevStage = () => {
-    if (activeStageIndex > 0) {
-      setActiveStageIndex((prev) => prev - 1);
-    }
-  };
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <section
       id="storyline"
-      className="relative w-full border-t border-[#30343B] bg-[#191B20] py-16 sm:py-24 px-4 sm:px-6 select-none"
+      className="relative w-full bg-slate-50 py-24 sm:py-32 px-4 sm:px-6 lg:px-8 overflow-hidden select-none"
     >
-      <div className="mx-auto max-w-7xl space-y-10">
-        {/* Stage Navigation Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[#30343B] pb-6">
-          <div className="space-y-1">
-            <div className="inline-flex items-center gap-2 rounded-sm border border-[#30343B] bg-[#111318] px-2.5 py-1 text-xs font-mono text-[#A8C7FA]">
-              <Icon path={mdiLayersOutline} size={0.65} />
-              <span>INTERACTIVE SCROLL STORYLINE</span>
-            </div>
-            <h2 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-[#E6E1E5]">
-              How EnvScale Operates Under the Hood
-            </h2>
-          </div>
+      {/* Background Ambient Mandala Watermarks */}
+      <LandingMandala
+        size="2xl"
+        className="absolute top-40 -left-48 text-blue-500/[0.04] rotate-45"
+      />
+      <LandingMandala
+        size="xl"
+        className="absolute top-1/3 -right-40 text-blue-600/[0.04] -rotate-12"
+      />
+      <LandingMandala
+        size="lg"
+        className="absolute top-2/3 -left-32 text-blue-600/[0.03] rotate-180"
+      />
+      <LandingMandala
+        size="2xl"
+        className="absolute bottom-20 right-1/4 text-blue-500/[0.03] rotate-90"
+      />
 
-          <ScrollStageIndicator
-            stages={SCROLL_STAGES}
-            activeStageId={activeStage.id}
-            onSelectStage={handleSelectStage}
+      <div className="mx-auto max-w-7xl space-y-20 relative z-10">
+        {/* Full Showcase Video Container placed cleanly just above 'How It Works' */}
+        <div className="w-full max-w-5xl mx-auto rounded-2xl overflow-hidden border border-slate-200/80 bg-white shadow-2xl shadow-blue-950/5 relative group">
+          <video
+            src="/gemini_generated_video.mp4"
+            autoPlay
+            loop
+            muted
+            playsInline
+            className="w-full h-auto aspect-video object-cover"
           />
+          {/* Subtle light vignette over video edge */}
+          <div className="pointer-events-none absolute inset-0 bg-radial from-transparent via-white/5 to-slate-900/10" />
         </div>
 
-        {/* Dynamic Interactive Stage Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          {/* Left Column: Stage Narrative & Architectural Metrics */}
-          <div className="lg:col-span-6 space-y-6">
-            <div className="space-y-2">
-              <span className="font-mono text-xs font-semibold uppercase tracking-wider text-[#A8C7FA]">
-                {activeStage.tag}
-              </span>
-              <h3 className="font-heading text-xl sm:text-2xl font-bold text-[#E6E1E5]">
-                {activeStage.title}
-              </h3>
-              <p className="font-mono text-xs text-[#92959D]">
-                {activeStage.subtitle}
-              </p>
-            </div>
+        {/* Section Header with Fade */}
+        <div className="relative text-center max-w-3xl mx-auto space-y-3 transition-all duration-700 ease-out flex flex-col items-center">
+          <span className="font-mono text-xs font-bold uppercase tracking-wider text-blue-600">
+            HOW IT WORKS
+          </span>
+          <h2 className="font-heading text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-900">
+            How EnvScale Operates Under the Hood
+          </h2>
+          <p className="font-heading text-base sm:text-lg text-slate-600 leading-relaxed">
+            From catching sneaky crashes in real time to bank-grade credential security — see why modern teams trust EnvScale to watch over their cloud.
+          </p>
+        </div>
 
-            <p className="text-xs sm:text-sm text-[#C4C7C5] leading-relaxed">
-              {activeStage.description}
-            </p>
+        {/* 4 Architectural Stages (Alternating Card & Information on Desktop) with smooth scroll reveal */}
+        <div className="space-y-28">
+          {SCROLL_STAGES.map((stage, idx) => {
+            const isCardFirst = idx % 2 === 0;
 
-            {/* Architecture Details Checklist */}
-            <div className="space-y-2 rounded-lg border border-[#30343B] bg-[#111318] p-4 text-xs font-mono">
-              <div className="text-[10px] uppercase text-[#92959D] mb-1">
-                Architectural Guarantees
-              </div>
-              {activeStage.architectureDetails.map((detail, idx) => (
-                <div key={idx} className="flex items-start gap-2 text-[#C4C7C5]">
-                  <Icon path={mdiCheck} size={0.55} className="text-[#6DD6A8] shrink-0 mt-0.5" />
-                  <span>{detail}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Metrics Chips Grid */}
-            <div className="grid grid-cols-3 gap-2.5">
-              {activeStage.metrics.map((metric, idx) => (
-                <div key={idx} className="rounded-md border border-[#30343B] bg-[#111318] p-2.5 text-center">
-                  <div className="text-[10px] font-mono uppercase text-[#92959D]">
-                    {metric.label}
-                  </div>
-                  <div
-                    className="font-mono text-sm font-bold mt-0.5"
-                    style={{ color: metric.statusColor || "#E6E1E5" }}
-                  >
-                    {metric.value}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Stage Step Controller */}
-            <div className="flex items-center justify-between pt-2">
-              <button
-                onClick={handlePrevStage}
-                disabled={activeStageIndex === 0}
-                className="rounded-md border border-[#30343B] bg-[#111318] px-3.5 py-1.5 text-xs font-mono text-[#C4C7C5] hover:bg-[#23262D] transition-colors disabled:opacity-30 disabled:pointer-events-none"
+            return (
+              <div
+                key={stage.id}
+                ref={(el) => {
+                  stageRefs.current[idx] = el;
+                }}
+                className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-14 items-center transition-all duration-700 ease-out"
               >
-                &larr; Previous Stage
-              </button>
+                {/* Visual Diagram Card Column */}
+                <div
+                  className={`lg:col-span-6 w-full ${
+                    isCardFirst ? "lg:order-1" : "lg:order-2"
+                  }`}
+                >
+                  <LandingStageCard stage={stage} />
+                </div>
 
-              <div className="text-xs font-mono text-[#92959D]">
-                Stage {activeStage.stageNumber} of 0{SCROLL_STAGES.length}
+                {/* Information Column (Title, Courgette Subtitle & Narrative) */}
+                <div
+                  className={`lg:col-span-6 w-full ${
+                    isCardFirst ? "lg:order-2" : "lg:order-1"
+                  }`}
+                >
+                  <LandingStageInfo stage={stage} />
+                </div>
               </div>
-
-              <button
-                onClick={handleNextStage}
-                className="flex items-center gap-1.5 rounded-md bg-[#A8C7FA] px-3.5 py-1.5 text-xs font-bold text-[#102F50] hover:bg-[#D3E3FD] transition-colors"
-              >
-                <span>
-                  {activeStageIndex < SCROLL_STAGES.length - 1
-                    ? "Next Stage"
-                    : "Ready? Get Started"}
-                </span>
-                <Icon path={mdiArrowRight} size={0.6} />
-              </button>
-            </div>
-          </div>
-
-          {/* Right Column: Hardware-Accelerated Visualizer Frame */}
-          <div className="lg:col-span-6">
-            <ScrollStageVisualizer activeStageId={activeStage.id} />
-          </div>
+            );
+          })}
         </div>
       </div>
     </section>
