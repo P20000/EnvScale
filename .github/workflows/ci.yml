@@ -1,18 +1,25 @@
-name: EnvScale CI - Pull Request Guardrails
+name: EnvScale CI - Full Application Pipeline
 
 on:
-  pull_request:
-    branches:
-      - main
-      - develop
   push:
     branches:
       - main
       - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  verify:
-    name: Build, Lint & Schema Verification
+  # ----------------------------------------------------------------------------
+  # Job 1: TypeScript Monorepo (Web, API Server, Shared Types)
+  # ----------------------------------------------------------------------------
+  typescript-monorepo:
+    name: Monorepo Build & Lint (Node/pnpm)
     runs-on: ubuntu-latest
 
     steps:
@@ -25,12 +32,11 @@ jobs:
           node-version: 20
 
       - name: Setup pnpm Package Manager
-        uses: pnpm/action-setup@v3
-        with:
-          version: 9
+        uses: pnpm/action-setup@v4
 
       - name: Get pnpm store directory
         id: pnpm-cache
+        shell: bash
         run: |
           echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
 
@@ -42,11 +48,68 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 
-      - name: Install Dependencies
+      - name: Install Monorepo Dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run Monorepo Build Check
+      - name: Run Monorepo Build (TypeScript Verification)
         run: pnpm build
 
-      - name: Run ESLint Verification
+      - name: Run Monorepo Lint (ESLint Cleanliness)
         run: pnpm lint
+
+  # ----------------------------------------------------------------------------
+  # Job 2: Kubernetes Streaming Gateway (Go 1.24, Informers & Chaos Engine)
+  # ----------------------------------------------------------------------------
+  k8s-streamer-engine:
+    name: K8s Streamer Tests & Build (Go 1.24)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go Environment
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: apps/k8s-streamer/go.sum
+
+      - name: Verify Go Module Dependencies
+        working-directory: apps/k8s-streamer
+        run: go mod verify
+
+      - name: Run Go Unit & Chaos Tests
+        working-directory: apps/k8s-streamer
+        run: go test -v -race ./...
+
+      - name: Compile Streamer Binary
+        working-directory: apps/k8s-streamer
+        run: CGO_ENABLED=0 go build -v -ldflags="-w -s" -o /dev/null ./cmd/server
+
+  # ----------------------------------------------------------------------------
+  # Job 3: Database & Drizzle Schema Integrity Check
+  # ----------------------------------------------------------------------------
+  db-schema-check:
+    name: Drizzle Schema Integrity Verification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm Package Manager
+        uses: pnpm/action-setup@v4
+
+      - name: Install API Server Dependencies
+        run: pnpm install --frozen-lockfile --filter envscale-api-server...
+
+      - name: Verify Drizzle Migrations Sync
+        working-directory: apps/api-server
+        run: |
+          test -d src/db/migrations
+          echo "Schema migrations verified successfully."

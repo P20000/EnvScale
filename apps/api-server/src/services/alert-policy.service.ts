@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { alertPolicies, clusters } from "../db/schema.js";
+import { createServiceToken } from "./auth.service.js";
 
 const publicAlertPolicyFields = {
   id: alertPolicies.id,
@@ -68,6 +69,100 @@ export const listAlertPolicies = (workspaceId: string) =>
     .from(alertPolicies)
     .where(eq(alertPolicies.workspaceId, workspaceId));
 
+const syncRuleToStreamer = async (policy: {
+  id: string;
+  workspaceId: string;
+  clusterId: string;
+  name: string;
+  metric: string;
+  threshold: string;
+  operator: string;
+  duration: number;
+  severity?: string | null;
+  isEnabled?: boolean | null;
+}) => {
+  const streamerUrl = process.env.K8S_STREAMER_URL || "http://localhost:8080";
+  try {
+    const serviceToken = createServiceToken();
+    const payload = {
+      ruleId: policy.id,
+      workspaceId: policy.workspaceId,
+      clusterId: policy.clusterId,
+      metricType: policy.metric,
+      conditionOperator: policy.operator,
+      thresholdValue: parseFloat(policy.threshold) || 0,
+      durationSeconds: policy.duration,
+      severity: policy.severity ? policy.severity.toUpperCase() : "WARNING",
+      enabled: policy.isEnabled !== false,
+      name: policy.name,
+    };
+
+    await fetch(`${streamerUrl}/api/v1/evaluator/rules`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceToken}`,
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    console.warn("[AlertPolicyService] Failed to sync rule to streamer:", err instanceof Error ? err.message : err);
+  }
+};
+
+const deleteRuleFromStreamer = async (ruleId: string) => {
+  const streamerUrl = process.env.K8S_STREAMER_URL || "http://localhost:8080";
+  try {
+    const serviceToken = createServiceToken();
+    await fetch(`${streamerUrl}/api/v1/evaluator/rules?ruleId=${encodeURIComponent(ruleId)}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${serviceToken}`,
+      },
+    });
+  } catch (err) {
+    console.warn("[AlertPolicyService] Failed to delete rule from streamer:", err instanceof Error ? err.message : err);
+  }
+};
+
+export const syncAllAlertPoliciesToStreamer = async (): Promise<void> => {
+  const policies = await db
+    .select()
+    .from(alertPolicies)
+    .where(eq(alertPolicies.isEnabled, true));
+
+  if (policies.length === 0) return;
+
+  const streamerUrl = process.env.K8S_STREAMER_URL || "http://localhost:8080";
+  try {
+    const serviceToken = createServiceToken();
+    const rules = policies.map((policy) => ({
+      ruleId: policy.id,
+      workspaceId: policy.workspaceId,
+      clusterId: policy.clusterId,
+      metricType: policy.metric,
+      conditionOperator: policy.operator,
+      thresholdValue: parseFloat(policy.threshold) || 0,
+      durationSeconds: policy.duration,
+      severity: policy.severity ? policy.severity.toUpperCase() : "WARNING",
+      enabled: policy.isEnabled !== false,
+      name: policy.name,
+    }));
+
+    await fetch(`${streamerUrl}/api/v1/evaluator/rules`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceToken}`,
+      },
+      body: JSON.stringify(rules),
+    });
+    console.log(`[AlertPolicyService] Synced ${rules.length} active alert rules to streaming gateway.`);
+  } catch (err) {
+    console.warn("[AlertPolicyService] Failed to sync alert rules to streamer:", err instanceof Error ? err.message : err);
+  }
+};
+
 export const createAlertPolicy = async (
   workspaceId: string,
   createdBy: string,
@@ -79,6 +174,7 @@ export const createAlertPolicy = async (
     .insert(alertPolicies)
     .values({ workspaceId, createdBy, ...rest, threshold: threshold.toString() })
     .returning(publicAlertPolicyFields);
+  if (policy) void syncRuleToStreamer(policy);
   return policy;
 };
 
@@ -103,11 +199,14 @@ export const updateAlertPolicy = async (
     })
     .where(eq(alertPolicies.id, policyId))
     .returning(publicAlertPolicyFields);
+  if (policy) void syncRuleToStreamer(policy);
   return policy;
 };
 
-export const deleteAlertPolicy = (policyId: string) =>
-  db.delete(alertPolicies).where(eq(alertPolicies.id, policyId));
+export const deleteAlertPolicy = async (policyId: string) => {
+  await db.delete(alertPolicies).where(eq(alertPolicies.id, policyId));
+  void deleteRuleFromStreamer(policyId);
+};
 
 export const toggleAlertPolicy = async (policyId: string, isEnabled: boolean) => {
   const [policy] = await db
@@ -115,5 +214,6 @@ export const toggleAlertPolicy = async (policyId: string, isEnabled: boolean) =>
     .set({ isEnabled, updatedAt: new Date() })
     .where(eq(alertPolicies.id, policyId))
     .returning(publicAlertPolicyFields);
+  if (policy) void syncRuleToStreamer(policy);
   return policy;
 };

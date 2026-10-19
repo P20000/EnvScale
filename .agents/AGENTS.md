@@ -85,6 +85,9 @@ When generating code or proposing implementations, AI assistants MUST strictly a
 - **No Silent Error Swallowing:** Do NOT wrap code in silent `try/catch` blocks that return empty fallback arrays or fake data. Log real errors and surface actionable feedback via standard API responses or toast notifications.
 - **Sub-Second Streaming:** Ensure WebSocket state deltas (`EVENT_POD_STATUS_CHANGED`, `EVENT_NODE_MUTATED`) deliver payload updates to the React Flow Zustand store within < 200ms.
 - **Preserve Documentation:** Do not erase docstrings, inline comments, or existing README/milestones files.
+- **No Redundant Documentation:** NEVER create duplicate, redundant, or overlapping markdown documentation files (`docs/*.md`). Explanations, answering user inquiries, summaries, or architectural discussions must be delivered directly in chat responses unless the user explicitly requests creating a dedicated markdown file. Never create new documents that duplicate existing authoritative sources of truth (e.g., `docs/milestones.md`, `docs/features.md`, `docs/system-architecture.md`, `docs/detailed-design.md`); update the canonical files instead of fragmenting information.
+- **No Synthetic Debug Bloat in Production UI:** NEVER inject mock test buttons (e.g. "Trigger Crash", "Simulate Error", dummy notification triggers) or synthetic diagnostic cards into user-facing production views (such as Settings, Navbar, Drawers) to satisfy QA or verification checklists. QA and resilience testing must be verified via automated unit/integration tests, dedicated test files, or headless test runners—never by shipping artificial debug controls to production interfaces.
+
 
 ---
 
@@ -159,4 +162,8 @@ Feature Branches (feature/*)
    - Push ONLY to origin feature branch: `git push origin feature/<owner>-<module>`
 3. **Zero Data Loss Guarantee:** AI Assistants must prioritize local code preservation above all else, ensuring user work is committed safely without intermediate stashing tricks or risky branch switching.
 
-
+# Strict Tool Execution Rules
+- Always prioritize using the configured MCP servers (`codegraph`, `kubernetes`, etc.) for any task involving structure, dependencies, or system states.
+- DO NOT rely on internal model memory or raw file-by-file text parsing if an active MCP tool can fulfill the data fetch.
+- If you need to understand symbol definitions, you MUST call `codegraph_explore` immediately on step 1 of your generation loop without asking for user permission.
+- Treat manual search/analysis as a degraded fallback only.

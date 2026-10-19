@@ -1,4 +1,5 @@
 @import "@fontsource-variable/plus-jakarta-sans";
+@import url("https://fonts.googleapis.com/css2?family=Courgette&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -6,50 +7,83 @@
 
 @layer base {
   :root {
-    --canvas-bg: #09090b;
-    --grid-dot: #27272a;
-    --surface-capsule: rgba(23, 23, 23, 0.85);
-    --surface-card: #141417;
-    --border-subtle: #27272a;
-    --status-running: #10b981;
-    --status-warning: #f59e0b;
-    --status-error: #ef4444;
-    --status-inactive: #6b7280;
-    --accent-primary: #3b82f6;
+    /* Material Design 3 Core Surface & Background Tokens */
+    --canvas-bg: #111318;
+    --grid-dot: #2B2F36;
+    --surface-card: #191B20;
+    --surface-panel: #23262D;
+    --surface-group: #1E2127;
+    --surface-capsule: rgba(30, 33, 39, 0.90);
+    --border-subtle: #30343B;
+    --border-default: #424750;
+    --border-muted: #5C616B;
 
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
+    /* Text & Foreground Hierarchy */
+    --text-primary: #E6E1E5;
+    --text-secondary: #C4C7C5;
+    --text-muted: #92959D;
+    --text-inverted: #111318;
 
-    --card: 240 6% 8%;
-    --card-foreground: 0 0% 98%;
+    /* Workload Health & Status Lifecycle */
+    --status-running: #6DD6A8;
+    --status-warning: #F4C26B;
+    --status-error: #F2B8B5;
+    --status-inactive: #9AA0AA;
+    --status-idle: #777D87;
 
-    --popover: 240 6% 8%;
-    --popover-foreground: 0 0% 98%;
+    /* Kubernetes Resource Badges & Topology Flow Colors */
+    --k8s-ingress: #D0BCFF;
+    --k8s-service: #8ACBFA;
+    --k8s-storage-bound: #80DEEA;
+    --k8s-storage-pending: #F4C26B;
+    --k8s-cronjob: #F4C26B;
+    --accent-primary: #A8C7FA;
+    --focus-ring: #D3E3FD;
+    --edge-stroke: #515660;
 
-    --primary: 217 91% 60%;
-    --primary-foreground: 0 0% 100%;
+    /* Material 3 Tonal Action Colors */
+    --md-primary: #A8C7FA;
+    --md-on-primary: #102F50;
+    --md-primary-container: #284568;
+    --md-on-primary-container: #D3E3FD;
+    --md-secondary: #C4C7C5;
+    --md-surface-variant: #30343B;
+    --md-outline: #8E939D;
+    --md-outline-variant: #424750;
 
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
+    --background: 220 18% 8%;
+    --foreground: 300 7% 89%;
 
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
+    --card: 225 13% 11%;
+    --card-foreground: 300 7% 89%;
 
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
+    --popover: 220 13% 16%;
+    --popover-foreground: 300 7% 89%;
 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
+    --primary: 218 89% 82%;
+    --primary-foreground: 211 67% 19%;
 
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 217 91% 60%;
+    --secondary: 150 2% 77%;
+    --secondary-foreground: 220 18% 8%;
+
+    --muted: 223 10% 21%;
+    --muted-foreground: 227 5% 59%;
+
+    --accent: 214 44% 28%;
+    --accent-foreground: 218 89% 82%;
+
+    --destructive: 3 67% 83%;
+    --destructive-foreground: 4 71% 15%;
+
+    --border: 218 10% 29%;
+    --input: 218 10% 29%;
+    --ring: 218 89% 82%;
 
     --radius: 0.75rem;
   }
 
   * {
-    border-color: #262626;
+    border-color: #30343B;
   }
 
   html, body {
@@ -57,17 +91,21 @@
     padding: 0;
     min-width: 320px;
     min-height: 100vh;
-    background-color: #09090b;
-    color: #f4f4f5;
+    background-color: #111318;
+    color: #E6E1E5;
     font-family: "Plus Jakarta Sans", "Plus Jakarta Sans Variable", system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
     font-optical-sizing: auto;
-    overflow-x: hidden;
+    overflow-x: clip;
   }
 
   h1, h2, h3, h4, h5, h6, .font-heading {
     font-family: "Google Sans", "Plus Jakarta Sans", sans-serif;
     font-optical-sizing: auto;
     font-variation-settings: "GRAD" 0;
+  }
+
+  .font-courgette {
+    font-family: "Courgette", cursive, sans-serif !important;
   }
 
   code, pre, .font-mono, .terminal-text {
@@ -77,7 +115,7 @@
 
   #root {
     min-height: 100vh;
-    background-color: #09090b;
+    background-color: #111318;
   }
 }
 
@@ -86,21 +124,21 @@
    ========================================= */
 
 .react-flow {
-  background-color: #09090b !important;
+  background-color: #111318 !important;
 }
 
 .react-flow__background {
-  background-color: #09090b !important;
+  background-color: #111318 !important;
 }
 
 .react-flow__background pattern circle {
-  fill: #27272a !important;
+  fill: #2B2F36 !important;
 }
 
 /* Controls */
 .react-flow__controls {
-  background: #141417 !important;
-  border: 1px solid #27272a !important;
+  background: #191B20 !important;
+  border: 1px solid #30343B !important;
   border-radius: 0.5rem !important;
   overflow: hidden;
   margin-bottom: 24px !important;
@@ -111,9 +149,9 @@
   width: 32px !important;
   height: 32px !important;
   background: transparent !important;
-  border-bottom: 1px solid #27272a !important;
+  border-bottom: 1px solid #30343B !important;
   border-right: none !important;
-  color: #a1a1aa !important;
+  color: #C4C7C5 !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -125,8 +163,8 @@
 }
 
 .react-flow__controls-button:hover {
-  background: #27272a !important;
-  color: #f4f4f5 !important;
+  background: #23262D !important;
+  color: #E6E1E5 !important;
 }
 
 .react-flow__controls-button svg {
@@ -138,8 +176,8 @@
 
 /* React Flow MiniMap */
 .react-flow__minimap {
-  background: #141417 !important;
-  border: 1px solid #27272a !important;
+  background: #191B20 !important;
+  border: 1px solid #30343B !important;
   border-radius: 0.5rem !important;
   overflow: hidden;
   margin-bottom: 24px !important;
@@ -156,22 +194,23 @@
 .react-flow__handle {
   width: 8px !important;
   height: 8px !important;
-  background-color: #27272a !important;
-  border: 2px solid #52525b !important;
+  background-color: #2B2F36 !important;
+  border: 2px solid #5C616B !important;
   border-radius: 50% !important;
   transition: transform 0.15s ease, border-color 0.15s ease, background-color 0.15s ease !important;
 }
 
 .react-flow__handle:hover,
 .react-flow__handle-connecting {
-  background-color: #3b82f6 !important;
-  border-color: #60a5fa !important;
+  background-color: #A8C7FA !important;
+  border-color: #D3E3FD !important;
   transform: scale(1.3) !important;
 }
 
 /* Edges Styling */
 .react-flow__edge-path {
   stroke-width: 2px;
+  stroke: #515660;
   transition: stroke 0.2s ease, stroke-width 0.2s ease;
 }
 
@@ -199,18 +238,27 @@
 }
 
 .react-flow__node.selected > div {
-  border-color: #3b82f6 !important;
+  border-color: #A8C7FA !important;
+  box-shadow: 0 0 0 2px #284568, 0 0 0 4px #D3E3FD !important;
+}
+
+/* Disable pulse / breathing animations to enforce static presentation */
+@layer utilities {
+  .animate-pulse,
+  .animate-ping {
+    animation: none !important;
+  }
 }
 
 /* Flat Structural Card Utilities */
 .flat-capsule {
-  background: #141417;
-  border: 1px solid #27272a;
+  background: #1E2127;
+  border: 1px solid #30343B;
 }
 
 .flat-card {
-  background: #141417;
-  border: 1px solid #27272a;
+  background: #191B20;
+  border: 1px solid #30343B;
 }
 
 /* Scrollbar Customization */
@@ -220,16 +268,16 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #09090b;
+  background: #111318;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #27272a;
+  background: #30343B;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
+  background: #424750;
 }
 
 /* ==========================================================================
@@ -242,7 +290,7 @@
   left: 0;
   right: 0;
   height: 4px; /* Official M3 4dp track height */
-  background-color: rgba(245, 158, 11, 0.2); /* M3 Surface track container */
+  background-color: rgba(244, 194, 107, 0.2); /* M3 Surface track container */
   overflow: hidden;
   border-top-left-radius: 0.5rem;
   border-top-right-radius: 0.5rem;
@@ -254,7 +302,7 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  background-color: #f59e0b;
+  background-color: #F4C26B;
   border-radius: 9999px; /* M3 Fully Rounded Pill Caps */
   will-change: left, right;
 }
@@ -267,7 +315,7 @@
   width: 4px;
   height: 4px;
   border-radius: 9999px;
-  background-color: #f59e0b;
+  background-color: #F4C26B;
   z-index: 11;
 }
 
@@ -311,45 +359,20 @@
   }
 }
 
-/* ==========================================================================
-   CronJob Active Glowing Border Beam Loader
-   ========================================================================== */
-.cronjob-active-glow {
-  box-shadow: 0 0 16px -2px rgba(245, 158, 11, 0.25), inset 0 0 10px -4px rgba(245, 158, 11, 0.15);
+/* Horizontal Revolution & Spin Animations for Mandala Graphics */
+@keyframes mandalaRevolutionH {
+  0% {
+    transform: perspective(1000px) rotateY(0deg);
+  }
+  50% {
+    transform: perspective(1000px) rotateY(180deg);
+  }
+  100% {
+    transform: perspective(1000px) rotateY(360deg);
+  }
 }
 
-.cronjob-border-beam-container {
-  position: absolute;
-  inset: 0;
-  border-radius: 0.5rem;
-  padding: 1px;
-  pointer-events: none;
-  overflow: hidden;
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  z-index: 20;
-}
-
-.cronjob-border-beam-spin {
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0deg,
-    transparent 270deg,
-    rgba(245, 158, 11, 0.3) 310deg,
-    #fbbf24 345deg,
-    #f59e0b 360deg
-  );
-  animation: cronjobBeamRotate 2.5s linear infinite;
-}
-
-@keyframes cronjobBeamRotate {
+@keyframes mandalaSlowSpin {
   from {
     transform: rotate(0deg);
   }
@@ -358,3 +381,27 @@
   }
 }
 
+.animate-mandala-revolve-h {
+  animation: mandalaRevolutionH 18s ease-in-out infinite;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+.animate-mandala-spin-slow {
+  animation: mandalaSlowSpin 60s linear infinite;
+  will-change: transform;
+}
+
+/* Motion Graphics Topology Edge Flow */
+@keyframes topologyFlow {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.animate-topology-flow {
+  animation: topologyFlow 1.4s linear infinite;
+}

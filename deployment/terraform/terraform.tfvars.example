@@ -1,0 +1,9 @@
+aws_region        = "us-east-1"
+environment       = "demo"
+instance_type     = "t3a.large" # 2 vCPU, 8GB RAM (~$0.06/hr, burns credits slowly)
+volume_size_gb    = 30
+allowed_ssh_cidr  = "0.0.0.0/0"
+
+# If you have a free DuckDNS domain (e.g. envscale-demo.duckdns.org), uncomment & add here:
+# domain_or_duckdns = "envscale-demo.duckdns.org"
+# acme_email        = "your-email@example.com"

@@ -16,6 +16,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/EnvScale/k8s-streamer/pkg/k8s"
+	envws "github.com/EnvScale/k8s-streamer/pkg/websocket"
 )
 
 type StreamLogMessage struct {
@@ -27,7 +28,7 @@ type StreamLogMessage struct {
 }
 
 var logUpgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin: envws.IsOriginAllowed,
 }
 
 func HandleUniversalLogStream(
@@ -35,12 +36,31 @@ func HandleUniversalLogStream(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
+	claims, err := envws.AuthenticateHandshake(r)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Unauthorized: %v", err), http.StatusUnauthorized)
+		return
+	}
+
+	clusterID := r.URL.Query().Get("clusterId")
+	if clusterID == "" {
+		http.Error(w, "clusterId query parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := envws.CheckClusterAuthorization(claims, clusterID); err != nil {
+		http.Error(w, fmt.Sprintf("Forbidden: %v", err), http.StatusForbidden)
+		return
+	}
+
+
 	conn, err := logUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		http.Error(w, "Failed to upgrade to WebSocket", http.StatusBadRequest)
 		return
 	}
 	defer conn.Close()
+
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
@@ -69,15 +89,11 @@ func HandleUniversalLogStream(
 		}
 	}()
 
-	clusterID := r.URL.Query().Get("clusterId")
-	if clusterID == "" {
-		conn.WriteMessage(websocket.TextMessage, []byte("[ERROR] clusterId query parameter is required\n"))
-		return
-	}
 	namespace := r.URL.Query().Get("namespace")
 	if namespace == "" {
 		namespace = "default"
 	}
+
 	kind := strings.TrimSpace(r.URL.Query().Get("kind"))
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
 	tailLinesStr := r.URL.Query().Get("tailLines")
@@ -194,6 +210,9 @@ func streamPodLogs(
 			defer stream.Close()
 
 			scanner := bufio.NewScanner(stream)
+			// Expand buffer capacity from 64KB up to 1MB to handle large stack traces and JSON logs
+			scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+
 			for scanner.Scan() {
 				select {
 				case <-ctx.Done():
@@ -212,6 +231,20 @@ func streamPodLogs(
 					case <-ctx.Done():
 						return
 					}
+				}
+			}
+
+			// Surface any scanning error (e.g. token too long or stream disconnect)
+			if err := scanner.Err(); err != nil && ctx.Err() == nil {
+				select {
+				case logChan <- StreamLogMessage{
+					Timestamp: time.Now().UTC().Format(time.RFC3339),
+					Source:    fmt.Sprintf("%s/%s", podName, c),
+					Level:     "WARN",
+					Message:   fmt.Sprintf("Log stream ended with error: %v", err),
+					Kind:      "Pod",
+				}:
+				case <-ctx.Done():
 				}
 			}
 		}(cName)

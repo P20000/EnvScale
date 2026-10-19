@@ -42,6 +42,18 @@ export const WS_EVENTS = {
   LOG_LINE: 'EVENT_LOG_LINE',
   ALERT_TRIGGERED: 'EVENT_ALERT_TRIGGERED',
   HEARTBEAT: 'EVENT_HEARTBEAT',
+  PVC_MUTATED: 'EVENT_PVC_MUTATED',
+  PVC_DELETED: 'EVENT_PVC_DELETED',
+  PV_MUTATED: 'EVENT_PV_MUTATED',
+  PV_DELETED: 'EVENT_PV_DELETED',
+  CONFIGMAP_MUTATED: 'EVENT_CONFIGMAP_MUTATED',
+  CONFIGMAP_DELETED: 'EVENT_CONFIGMAP_DELETED',
+  SECRET_MUTATED: 'EVENT_SECRET_MUTATED',
+  SECRET_DELETED: 'EVENT_SECRET_DELETED',
+  CHAOS_FAULT_INJECTED: 'EVENT_CHAOS_FAULT_INJECTED',
+  CHAOS_FAULT_CLEARED: 'EVENT_CHAOS_FAULT_CLEARED',
+  PDB_MUTATED: 'EVENT_PDB_MUTATED',
+  PDB_DELETED: 'EVENT_PDB_DELETED',
 } as const;
 
 export type WSEventType = typeof WS_EVENTS[keyof typeof WS_EVENTS];
@@ -66,6 +78,9 @@ export interface PodTopologyData {
   cpuUsagePct?: number;
   memoryUsageMb?: number;
   labels: Record<string, string>;
+  volumes?: PodVolumeMountInfo[];
+  configMaps?: PodConfigReference[];
+  secrets?: PodSecretReference[];
   createdAt: string;
 }
 
@@ -98,3 +113,120 @@ export interface LogStreamPayload {
   stream: 'stdout' | 'stderr';
   timestamp: string;
 }
+
+// Pod Volume Mount Information
+export interface PodVolumeMountInfo {
+  name: string;
+  pvcName?: string;
+  mountPath?: string;
+  readOnly?: boolean;
+}
+
+// PVC State Payload for Topology Engine
+export type PVCStatusPhase = 'Bound' | 'Pending' | 'Lost';
+
+export interface PVCTopologyData {
+  name: string;
+  namespace: string;
+  phase: PVCStatusPhase;
+  volumeName: string;
+  storageClassName: string;
+  requestedSize: string;
+  capacity: string;
+  accessModes: string[];
+  volumeMode: string;
+  labels?: Record<string, string>;
+  mountedByPods?: string[];
+  createdAt: string;
+}
+
+// Physical PersistentVolume Data Payload
+export interface PVTopologyData {
+  name: string;
+  phase: 'Available' | 'Bound' | 'Released' | 'Failed';
+  capacity: string;
+  accessModes: string[];
+  reclaimPolicy: string;
+  storageClassName: string;
+  claimRefName?: string;
+  claimRefNs?: string;
+  volumeSourceType: string;
+  labels?: Record<string, string>;
+  createdAt: string;
+}
+
+// Pod Configuration Reference
+export interface PodConfigReference {
+  name: string;
+  type: 'volume' | 'env' | 'envFrom';
+  mountPath?: string;
+  key?: string;
+  optional?: boolean;
+}
+
+// Pod Secret Reference
+export interface PodSecretReference {
+  name: string;
+  type: 'volume' | 'env' | 'envFrom';
+  mountPath?: string;
+  key?: string;
+  optional?: boolean;
+}
+
+// ConfigMap State Payload for Topology Engine
+export interface ConfigMapTopologyData {
+  name: string;
+  namespace: string;
+  keys: string[];
+  binaryKeys?: string[];
+  dataCount: number;
+  immutable: boolean;
+  labels?: Record<string, string>;
+  mountedByWorkloads?: string[];
+  createdAt: string;
+  age: string;
+}
+
+// Secret State Payload for Topology Engine (strictly sanitized metadata)
+export interface SecretTopologyData {
+  name: string;
+  namespace: string;
+  type: string; // e.g. "Opaque", "kubernetes.io/tls"
+  keys: string[]; // Key names ONLY — zero raw data payload
+  dataCount: number;
+  immutable: boolean;
+  labels?: Record<string, string>;
+  mountedByWorkloads?: string[];
+  createdAt: string;
+  age: string;
+}
+
+// Chaos Fault Injected/Cleared Payload
+export interface ChaosFaultEvent {
+  faultId: string;
+  faultType: 'crash' | 'oom-pressure' | 'scale-down' | string;
+  target: string;
+  name: string;
+  namespace: string;
+  clusterId: string;
+  status: 'injected' | 'cleared' | 'failed' | string;
+  message?: string;
+  timestamp: string;
+  pdbBreached?: boolean;
+  pdbName?: string;
+}
+
+// PodDisruptionBudget State Payload for Topology Engine
+export interface PDBTopologyData {
+  name: string;
+  namespace: string;
+  minAvailable?: string | number;
+  maxUnavailable?: string | number;
+  currentHealthy: number;
+  desiredHealthy: number;
+  expectedPods: number;
+  disruptionsAllowed: number;
+  matchLabels: Record<string, string>;
+  createdAt?: string;
+}
+

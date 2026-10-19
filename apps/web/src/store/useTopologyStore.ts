@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
+import { useUIStore } from "./useUIStore";
 import {
   type Node,
   type Edge,
@@ -16,11 +17,11 @@ import type { K8sPodData } from "../components/canvas/K8sPod";
 import type { K8sServiceData } from "../components/canvas/K8sService";
 import type { K8sIngressData } from "../components/canvas/K8sIngress";
 import type { K8sReplicaSetData, K8sDeploymentData } from "./helpers/rolloutHelpers";
-import type { K8sDaemonSetData, K8sCronJobData } from "./types/topologyTypes";
+import type { K8sDaemonSetData, K8sCronJobData, K8sJobData } from "./types/topologyTypes";
 import type { WsConnectionStatus, WsTopologyMessage } from "../hooks/useK8sStream";
 import type { SelectedTarget } from "../components/drawer/InspectorDrawer";
-import { getLayoutedElements } from "../utils/layout";
 import { handleWsMessage } from "./slices/topologyWsSlice";
+import { handleApplyDagreLayout } from "./slices/topologyLayoutSlice";
 import {
   handleUndoAction,
   handleRedoAction,
@@ -34,12 +35,9 @@ import {
 } from "./slices/topologyCrudSlice";
 import { handleAddToken, handleAddNotification } from "./slices/topologyNotifSlice";
 import {
-  type ApiToken,
-  type NotificationItem,
-  type K8sIncidentEvent,
-  type HistoryAction,
-  type DeleteModalState,
-  type Cluster,
+  type ApiToken, type NotificationItem, type K8sIncidentEvent, type HistoryAction, type DeleteModalState,
+  type Cluster, type K8sPVCData, type K8sPVData, type K8sConfigMapData, type K8sSecretData, type ChaosFaultEvent,
+  type K8sHPAData, type K8sNetworkPolicyData, type K8sPDBData,
 } from "./types/topologyTypes";
 import {
   extractServices,
@@ -51,22 +49,12 @@ import {
   sanitizeManifestSnapshot,
 } from "./helpers/topologyHelpers";
 
-export type { ApiToken, NotificationItem, K8sIncidentEvent, HistoryAction, DeleteModalState };
-export {
-  extractServices,
-  extractPods,
-  getPodPrefix,
-  generateDynamicEdges,
-  syncSelectedNode,
-  aggregateNodesWithWorkloads,
-  sanitizeManifestSnapshot,
-};
+export type { ApiToken, NotificationItem, K8sIncidentEvent, HistoryAction, DeleteModalState, ChaosFaultEvent };
+export { extractServices, extractPods, getPodPrefix, generateDynamicEdges, syncSelectedNode, aggregateNodesWithWorkloads, sanitizeManifestSnapshot };
 
 export const defaultInitialNodes: Node[] = [];
 export const defaultInitialEdges: Edge[] = [];
-const defaultClusters: Cluster[] = [];
-const defaultInitialTokens: ApiToken[] = [];
-const defaultInitialNotifications: NotificationItem[] = [];
+const defaultClusters: Cluster[] = [], defaultInitialTokens: ApiToken[] = [], defaultInitialNotifications: NotificationItem[] = [];
 
 export interface TopologyState {
   clusters: Cluster[];
@@ -82,34 +70,25 @@ export interface TopologyState {
   replicaSets: K8sReplicaSetData[];
   deployments: K8sDeploymentData[];
   daemonSets: K8sDaemonSetData[];
-  cronJobs: K8sCronJobData[];
+  cronJobs: K8sCronJobData[]; jobs: K8sJobData[]; pvcs: K8sPVCData[];
+  pvs: K8sPVData[];
+  configMaps: K8sConfigMapData[];
+  secrets: K8sSecretData[];
+  hpas: K8sHPAData[];
+  networkPolicies: K8sNetworkPolicyData[];
+  pdbs: K8sPDBData[];
   incidents: K8sIncidentEvent[];
+  activeChaosFaults: Record<string, ChaosFaultEvent>;
   selectedNode: SelectedTarget;
   tokens: ApiToken[];
   notifications: NotificationItem[];
   wsStatus: WsConnectionStatus;
   wsLatencyMs: number;
 
-  showCompletedPods: boolean;
-  setShowCompletedPods: (show: boolean) => void;
-
-  showSystemNamespaces: boolean;
-  setShowSystemNamespaces: (show: boolean) => void;
-
-  selectedNamespaces: string[];
-  setSelectedNamespaces: (namespaces: string[] | ((prev: string[]) => string[])) => void;
-
-  layoutDirection: "TB" | "LR";
-  setLayoutDirection: (dir: "TB" | "LR") => void;
-
   undoStack: HistoryAction[];
   redoStack: HistoryAction[];
   undoAction: () => Promise<void>;
   redoAction: () => Promise<void>;
-
-  deleteModal: DeleteModalState;
-  openDeleteModal: (targetId: string, targetName: string, targetKind: string, namespace?: string) => void;
-  closeDeleteModal: () => void;
 
   setSelectedNode: (target: SelectedTarget) => void;
   clearSelectedNode: () => void;
@@ -126,6 +105,7 @@ export interface TopologyState {
   setIncidents: (incidents: K8sIncidentEvent[] | ((prev: K8sIncidentEvent[]) => K8sIncidentEvent[])) => void;
 
   setActiveCluster: (cluster: string) => void;
+  setClusters: (clusters: Cluster[]) => void;
   addCluster: (cluster: Cluster) => void;
   deleteCluster: (clusterId: string) => void;
   deleteNode: (nodeId: string) => void;
@@ -140,10 +120,11 @@ export interface TopologyState {
   onNodesChange: OnNodesChange;
   onEdgesChange: OnEdgesChange;
   onConnect: OnConnect;
-  applyDagreLayout: (direction?: "TB" | "LR") => void;
-
-  expandedWorkloads: Record<string, boolean>;
-  toggleWorkloadExpanded: (workloadName: string) => void;
+  userNodePositions: Record<string, { x: number; y: number }>;
+  setUserNodePosition: (nodeId: string, position: { x: number; y: number }) => void;
+  setUserNodePositions: (positions: Record<string, { x: number; y: number }>) => void;
+  clearUserNodePositions: () => void;
+  applyDagreLayout: (direction?: "TB" | "LR", options?: { resetUserPositions?: boolean }) => void;
 
   tokensCount: number;
   addToken: (name?: string, tokenStr?: string) => ApiToken;
@@ -177,6 +158,7 @@ export const useTopologyStore = create<TopologyState>()(
       rawNodes: defaultInitialNodes,
       nodes: defaultInitialNodes,
       edges: defaultInitialEdges,
+      userNodePositions: {},
       services: [],
       pods: [],
       ingresses: [],
@@ -184,76 +166,27 @@ export const useTopologyStore = create<TopologyState>()(
       deployments: [],
       daemonSets: [],
       cronJobs: [],
+      jobs: [],
+      pvcs: [],
+      pvs: [],
+      configMaps: [],
+      secrets: [],
+      hpas: [],
+      networkPolicies: [],
+      pdbs: [],
       incidents: [],
+      activeChaosFaults: {},
       selectedNode: null,
       tokens: defaultInitialTokens,
       notifications: defaultInitialNotifications,
       wsStatus: "DISCONNECTED",
       wsLatencyMs: 0,
       wsReconnectTick: 0,
-      showCompletedPods: false,
-      showSystemNamespaces: false,
-      selectedNamespaces: [],
-      layoutDirection: "TB",
-      expandedWorkloads: {},
       undoStack: [],
       redoStack: [],
-      deleteModal: {
-        isOpen: false,
-        targetId: "",
-        targetName: "",
-        targetKind: "",
-        namespace: "default",
-      },
-
-      setShowCompletedPods: (show) => {
-        set({ showCompletedPods: show });
-        get().applyDagreLayout();
-      },
-
-      setShowSystemNamespaces: (show) => {
-        set({ showSystemNamespaces: show });
-        get().applyDagreLayout();
-      },
-
-      setSelectedNamespaces: (namespaces) => {
-        const next = typeof namespaces === "function" ? namespaces(get().selectedNamespaces) : namespaces;
-        set({ selectedNamespaces: next });
-        get().applyDagreLayout();
-      },
-
-      openDeleteModal: (targetId, targetName, targetKind, namespace) => {
-        set({
-          deleteModal: {
-            isOpen: true,
-            targetId,
-            targetName,
-            targetKind,
-            namespace: namespace || "default",
-          },
-        });
-      },
-
-      closeDeleteModal: () => {
-        set({
-          deleteModal: {
-            isOpen: false,
-            targetId: "",
-            targetName: "",
-            targetKind: "",
-            namespace: "default",
-          },
-        });
-      },
 
       undoAction: async () => handleUndoAction(get, set),
       redoAction: async () => handleRedoAction(get, set),
-
-      toggleWorkloadExpanded: (workloadName) => {
-        const current = get().expandedWorkloads[workloadName];
-        set({ expandedWorkloads: { ...get().expandedWorkloads, [workloadName]: !current } });
-        get().applyDagreLayout();
-      },
 
       setSelectedNode: (target) => {
         if (!target) {
@@ -266,13 +199,22 @@ export const useTopologyStore = create<TopologyState>()(
       clearSelectedNode: () => set({ selectedNode: null }),
 
       setActiveCluster: (cluster) => set({ activeCluster: cluster }),
+      setClusters: (clusters) =>
+        set((state) => ({
+          clusters,
+          activeCluster: clusters.some((c) => c.id === state.activeCluster)
+            ? state.activeCluster
+            : clusters[0]?.id || "",
+        })),
 
       addCluster: (cluster) => {
         if (!cluster || !cluster.id || !cluster.name) return;
         const currentClusters = get().clusters;
-        const updatedClusters = currentClusters.some((c) => c.id === cluster.id)
-          ? currentClusters
-          : [...currentClusters, cluster];
+        
+        if (currentClusters.some((c) => c.id === cluster.id)) {
+          return;
+        }
+
         const newNotif: NotificationItem = {
           id: `notif-${Date.now()}`,
           title: "New Cluster Connected",
@@ -283,9 +225,9 @@ export const useTopologyStore = create<TopologyState>()(
           cluster: cluster.name,
         };
         set({
-          clusters: updatedClusters,
-          activeCluster: cluster.name,
-          notifications: [newNotif, ...get().notifications],
+          clusters: [...currentClusters, cluster],
+          activeCluster: cluster.id,
+          notifications: [newNotif, ...get().notifications].slice(0, 50),
         });
       },
 
@@ -302,7 +244,14 @@ export const useTopologyStore = create<TopologyState>()(
         });
       },
 
-      removeTarget: (targetId, options) => handleRemoveTarget(get, set, targetId, options),
+      removeTarget: (targetId, options) => {
+        if (get().userNodePositions[targetId]) {
+          const nextPos = { ...get().userNodePositions };
+          delete nextPos[targetId];
+          set({ userNodePositions: nextPos });
+        }
+        return handleRemoveTarget(get, set, targetId, options);
+      },
       removeNode: (nodeId) => get().removeTarget(nodeId),
 
       upsertService: (serviceData) => handleUpsertService(get, set, serviceData),
@@ -328,32 +277,38 @@ export const useTopologyStore = create<TopologyState>()(
       deleteCluster: (clusterId) => {
         const clusterToDelete = get().clusters.find((c) => c.id === clusterId);
         if (!clusterToDelete) return;
-        const clusterName = clusterToDelete.name;
 
         const updatedClusters = get().clusters.filter((c) => c.id !== clusterId);
-        const nextActive =
-          get().activeCluster === clusterName
-            ? updatedClusters[0]?.name || ""
-            : get().activeCluster;
+        const wasActive = get().activeCluster === clusterId;
+        const nextActive = wasActive
+          ? updatedClusters[0]?.id || ""
+          : get().activeCluster;
 
-        const remainingNodes = get().nodes.filter((node) => {
-          const name = (node.data as Record<string, unknown>)?.name;
-          return name !== clusterName;
-        });
-
-        const remainingNodeIds = new Set(remainingNodes.map((n) => n.id));
-        const remainingEdges = get().edges.filter(
-          (edge) => remainingNodeIds.has(edge.source) && remainingNodeIds.has(edge.target)
-        );
-
-        set({
-          clusters: updatedClusters,
-          activeCluster: nextActive,
-          nodes: remainingNodes,
-          services: extractServices(remainingNodes),
-          pods: extractPods(remainingNodes),
-          edges: remainingEdges,
-        });
+        if (wasActive) {
+          // Active cluster was deleted — clear all topology state so the canvas
+          // doesn't show stale nodes from the old cluster.
+          set({
+            clusters: updatedClusters,
+            activeCluster: nextActive,
+            rawNodes: [],
+            nodes: [],
+            edges: [],
+            services: [],
+            pods: [],
+            ingresses: [],
+            replicaSets: [],
+            deployments: [],
+            daemonSets: [],
+            cronJobs: [],
+            jobs: [],
+            incidents: [],
+            selectedNode: null,
+            wsReconnectTick: get().wsReconnectTick + 1,
+          });
+        } else {
+          // Non-active cluster deleted — just remove it from the list.
+          set({ clusters: updatedClusters });
+        }
       },
 
       deleteNode: (nodeId) => {
@@ -373,7 +328,7 @@ export const useTopologyStore = create<TopologyState>()(
           const resKind = targetNode.type?.replace("k8s", "") || "Resource";
           const ns = String(resData.namespace || "default");
 
-          get().openDeleteModal(nodeId, resName, resKind, ns);
+          useUIStore.getState().openDeleteModal(nodeId, resName, resKind, ns);
         } else {
           get().removeTarget(nodeId);
         }
@@ -399,7 +354,19 @@ export const useTopologyStore = create<TopologyState>()(
           removedChanges.forEach((c) => get().removeTarget(c.id));
           return;
         }
-        set({ nodes: applyNodeChanges(changes, get().nodes) });
+        const nextNodes = applyNodeChanges(changes, get().nodes);
+        const posChanges = changes.filter((c) => c.type === "position" && c.position && c.dragging === false);
+        if (posChanges.length > 0) {
+          const newPos = { ...get().userNodePositions };
+          posChanges.forEach((c) => {
+            if (c.type === "position" && c.position) {
+              newPos[c.id] = { x: Math.round(c.position.x), y: Math.round(c.position.y) };
+            }
+          });
+          set({ nodes: nextNodes, userNodePositions: newPos });
+        } else {
+          set({ nodes: nextNodes });
+        }
       },
 
       onEdgesChange: (changes) => {
@@ -413,10 +380,10 @@ export const useTopologyStore = create<TopologyState>()(
               ...connection,
               type: "smoothstep",
               animated: true,
-              style: { stroke: "#3f3f46", strokeWidth: 2 },
+              style: { stroke: "#515660", strokeWidth: 2 },
               markerEnd: {
                 type: MarkerType.ArrowClosed,
-                color: "#3f3f46",
+                color: "#515660",
               },
             },
             get().edges
@@ -424,37 +391,27 @@ export const useTopologyStore = create<TopologyState>()(
         });
       },
 
-      applyDagreLayout: (direction) => {
-        const targetDir = direction || get().layoutDirection || "TB";
-        const { rawNodes, nodes, edges, showCompletedPods, showSystemNamespaces, selectedNamespaces, deployments, replicaSets, daemonSets, cronJobs } = get();
-        const baseNodes = rawNodes && rawNodes.length > 0 ? rawNodes : nodes;
-        if (baseNodes.length === 0 && (!daemonSets || daemonSets.length === 0) && (!cronJobs || cronJobs.length === 0)) return;
-
-        const aggregatedNodes = aggregateNodesWithWorkloads(
-          baseNodes,
-          showCompletedPods,
-          showSystemNamespaces,
-          selectedNamespaces,
-          deployments,
-          replicaSets,
-          daemonSets,
-          cronJobs
-        );
-
-        const dynamicEdges = generateDynamicEdges(aggregatedNodes, edges);
-
-        const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
-          aggregatedNodes,
-          dynamicEdges,
-          targetDir
-        );
-        set({ nodes: layoutedNodes, edges: layoutedEdges });
+      setUserNodePosition: (nodeId, position) => {
+        set((state) => ({
+          userNodePositions: {
+            ...state.userNodePositions,
+            [nodeId]: { x: Math.round(position.x), y: Math.round(position.y) },
+          },
+        }));
       },
 
-      setLayoutDirection: (dir) => {
-        set({ layoutDirection: dir });
-        get().applyDagreLayout(dir);
+      setUserNodePositions: (positions) => {
+        set((state) => ({
+          userNodePositions: {
+            ...state.userNodePositions,
+            ...positions,
+          },
+        }));
       },
+
+      clearUserNodePositions: () => set({ userNodePositions: {} }),
+
+      applyDagreLayout: (direction, options) => handleApplyDagreLayout(get, set, direction, options),
 
       tokensCount: 0,
       addToken: (name = "Default Token", tokenStr) => handleAddToken(set, name, tokenStr),
@@ -499,20 +456,16 @@ export const useTopologyStore = create<TopologyState>()(
           rawNodes: [],
           nodes: [],
           edges: [],
+          userNodePositions: {},
           services: [],
           pods: [],
           ingresses: [],
           replicaSets: [],
           deployments: [],
           daemonSets: [],
-          incidents: [],
-          selectedNode: null,
-          selectedNamespaces: [],
-          notifications: [],
-          undoStack: [],
-          redoStack: [],
-          wsStatus: "DISCONNECTED",
-          wsLatencyMs: 0,
+          cronJobs: [], jobs: [], pvcs: [], hpas: [], networkPolicies: [], pdbs: [],
+          incidents: [], activeChaosFaults: {}, selectedNode: null, notifications: [],
+          undoStack: [], redoStack: [], wsStatus: "DISCONNECTED", wsLatencyMs: 0,
         });
       },
     }),
@@ -520,37 +473,15 @@ export const useTopologyStore = create<TopologyState>()(
       name: "envscale-topology-storage-v2",
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
-        clusters: state.clusters,
-        activeCluster: state.activeCluster,
         tokens: state.tokens,
-        showCompletedPods: state.showCompletedPods,
-        showSystemNamespaces: state.showSystemNamespaces,
-        layoutDirection: state.layoutDirection,
+        notifications: state.notifications,
+        userNodePositions: state.userNodePositions,
       }),
       onRehydrateStorage: () => (state) => {
-        if (state) {
-          let needsUpdate = false;
-          const parsedClusters: Cluster[] = [];
-          for (const c of (state.clusters || [])) {
-            if (typeof c === "string") {
-              if (c && c !== "mini-todo") parsedClusters.push({ id: `migrated-${Date.now()}`, name: c });
-              needsUpdate = true;
-            } else if (c && c.name && c.name !== "mini-todo") {
-              parsedClusters.push(c);
-            } else {
-              needsUpdate = true;
-            }
-          }
-          
-          const cleanedActive = state.activeCluster === "mini-todo" ? parsedClusters[0]?.name || "" : state.activeCluster;
-          if (state.activeCluster === "mini-todo") needsUpdate = true;
-
-          if (needsUpdate) {
-            useTopologyStore.setState({
-              clusters: parsedClusters,
-              activeCluster: cleanedActive,
-            });
-          }
+        if (!state) return;
+        const isAuth = Boolean(typeof window !== "undefined" && (localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token")));
+        if (!isAuth) {
+          useTopologyStore.setState({ clusters: [], activeCluster: "", nodes: [], edges: [], pods: [], services: [] });
         }
       },
     }

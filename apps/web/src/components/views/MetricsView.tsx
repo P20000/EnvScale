@@ -6,8 +6,10 @@ import {
   mdiMemory,
   mdiServer,
   mdiRefresh,
+  mdiLoading,
 } from "@mdi/js";
 import { useTopologyStore } from "../../store/useTopologyStore";
+import { useUIStore } from "../../store/useUIStore";
 import { SYSTEM_NAMESPACES } from "../../store/helpers/topologyHelpers";
 
 export interface TelemetryPoint {
@@ -65,8 +67,8 @@ function TelemetryAreaChart({
 
   const areaPathString = `${linePathString} L 100 100 L 0 100 Z`;
 
-  const strokeHex = color === "blue" ? "#3b82f6" : "#10b981";
-  const areaFillHex = color === "blue" ? "rgba(59, 130, 246, 0.08)" : "rgba(16, 185, 129, 0.08)";
+  const strokeHex = color === "blue" ? "#3b82f6" : "#6DD6A8";
+  const areaFillHex = color === "blue" ? "rgba(59, 130, 246, 0.08)" : "rgba(109, 214, 168, 0.08)";
 
   // Format dynamic Y-axis tick values
   const formatTick = (val: number) => {
@@ -181,7 +183,7 @@ function TelemetryAreaChart({
           {/* Hover Vertex Highlight Circle */}
           {hoveredPoint && (
             <div
-              className="absolute h-2.5 w-2.5 rounded-full -translate-x-1/2 -translate-y-1/2 border border-[#09090b] pointer-events-none z-25 shadow-md transition-all duration-150"
+              className="absolute h-2.5 w-2.5 rounded-full -translate-x-1/2 -translate-y-1/2 border border-[#111318] pointer-events-none z-25 shadow-md transition-all duration-150"
               style={{
                 left: `${hoveredPoint.x}%`,
                 top: `${hoveredPoint.y}%`,
@@ -193,7 +195,7 @@ function TelemetryAreaChart({
           {/* Flat Hover-Crosshair Tracking Guide Line */}
           {hoveredPoint && (
             <div
-              className="absolute top-0 bottom-0 border-l border-dashed border-neutral-500 pointer-events-none z-20"
+              className="absolute top-0 bottom-0 border-l border-dashed border-[#5C616B] pointer-events-none z-20"
               style={{ left: `${hoveredPoint.x}%` }}
             />
           )}
@@ -201,7 +203,7 @@ function TelemetryAreaChart({
           {/* Hover Precision Tooltip Card */}
           {hoveredPoint && (
             <div
-              className="absolute z-30 rounded-md bg-[#18181c] border border-neutral-700 p-2 shadow-2xl pointer-events-none font-mono text-xs space-y-0.5"
+              className="absolute z-30 rounded-md bg-[#23262D] border border-[#424750] p-2 shadow-2xl pointer-events-none font-mono text-xs space-y-0.5"
               style={{
                 top: "0.5rem",
                 left: hoveredPoint.x > 70 ? "auto" : `calc(${hoveredPoint.x}% + 0.5rem)`,
@@ -236,11 +238,17 @@ function TelemetryAreaChart({
 
 export function MetricsView() {
   const pods = useTopologyStore((s) => s.pods);
-  const selectedNamespaces = useTopologyStore((s) => s.selectedNamespaces);
-  const showSystemNamespaces = useTopologyStore((s) => s.showSystemNamespaces);
+  const selectedNamespaces = useUIStore((s) => s.selectedNamespaces);
+  const showSystemNamespaces = useUIStore((s) => s.showSystemNamespaces);
   const activeCluster = useTopologyStore((s) => s.activeCluster);
-  const clusterCpuCores = useTopologyStore((s) => s.clusterCpuCores) || 12;
-  const clusterMemoryGB = useTopologyStore((s) => s.clusterMemoryGB) || 14.8;
+  const clusters = useTopologyStore((s) => s.clusters);
+  const activeClusterName = useMemo(() => {
+    return clusters.find((c) => c.id === activeCluster)?.name || activeCluster;
+  }, [clusters, activeCluster]);
+  const clusterCpuCores = useTopologyStore((s) => s.clusterCpuCores);
+  const clusterMemoryGB = useTopologyStore((s) => s.clusterMemoryGB);
+  const cpuDetected = (clusterCpuCores ?? 0) > 0;
+  const memoryDetected = (clusterMemoryGB ?? 0) > 0;
 
   // Filter pods by active namespace selection
   const filteredPods = useMemo(() => {
@@ -280,17 +288,21 @@ export function MetricsView() {
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
-      const maxMcores = clusterCpuCores * 1000;
-      const maxMemoryMiB = clusterMemoryGB * 1024;
-      const cpuPct = Math.min(100, Math.max(0, (metricsRef.current.totalCpuMcores / maxMcores) * 100));
-      const memPct = Math.min(100, Math.max(0, (metricsRef.current.totalMemoryMiB / maxMemoryMiB) * 100));
+      const maxMcores = (clusterCpuCores || 0) * 1000;
+      const maxMemoryMiB = (clusterMemoryGB || 0) * 1024;
+      const cpuPct = cpuDetected && maxMcores > 0
+        ? Math.min(100, Math.max(0, (metricsRef.current.totalCpuMcores / maxMcores) * 100))
+        : 0;
+      const memPct = memoryDetected && maxMemoryMiB > 0
+        ? Math.min(100, Math.max(0, (metricsRef.current.totalMemoryMiB / maxMemoryMiB) * 100))
+        : 0;
 
       setCpuHistory((prev) => [...prev.slice(1), { timestamp: now, value: cpuPct }]);
       setMemoryHistory((prev) => [...prev.slice(1), { timestamp: now, value: memPct }]);
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [clusterCpuCores, clusterMemoryGB]);
+  }, [clusterCpuCores, clusterMemoryGB, cpuDetected, memoryDetected]);
 
   const podResourceMetrics = useMemo(() => {
     return filteredPods
@@ -327,15 +339,19 @@ export function MetricsView() {
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-surface border border-neutral-800 text-xs font-mono text-neutral-300">
             <Icon path={mdiServer} size={0.65} className="text-blue-400" />
-            <span>{activeCluster}</span>
+            <span>{activeClusterName}</span>
           </div>
           <button
             onClick={() => {
               const now = Date.now();
-              const maxMcores = clusterCpuCores * 1000;
-              const maxMemoryMiB = clusterMemoryGB * 1024;
-              const cpuPct = Math.min(100, Math.max(0, (totalCpuMcores / maxMcores) * 100));
-              const memPct = Math.min(100, Math.max(0, (totalMemoryMiB / maxMemoryMiB) * 100));
+              const maxMcores = (clusterCpuCores || 0) * 1000;
+              const maxMemoryMiB = (clusterMemoryGB || 0) * 1024;
+              const cpuPct = cpuDetected && maxMcores > 0
+                ? Math.min(100, Math.max(0, (totalCpuMcores / maxMcores) * 100))
+                : 0;
+              const memPct = memoryDetected && maxMemoryMiB > 0
+                ? Math.min(100, Math.max(0, (totalMemoryMiB / maxMemoryMiB) * 100))
+                : 0;
               setCpuHistory((prev) => [...prev.slice(1), { timestamp: now, value: cpuPct }]);
               setMemoryHistory((prev) => [...prev.slice(1), { timestamp: now, value: memPct }]);
             }}
@@ -362,12 +378,21 @@ export function MetricsView() {
               </div>
             </div>
             <div className="text-right font-mono flex items-center gap-2">
-              <div>
-                <div className="text-base text-neutral-100 font-semibold">{currentCpuCores} / {clusterCpuCores.toFixed(1)} Cores</div>
-                <div className="text-xs text-neutral-500">({currentCpuPct.toFixed(1)}% load)</div>
-              </div>
-              {currentCpuPct > 85 && (
-                <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" title="High CPU Load > 85%" />
+              {cpuDetected ? (
+                <>
+                  <div>
+                    <div className="text-base text-neutral-100 font-semibold">{currentCpuCores} / {clusterCpuCores.toFixed(1)} Cores</div>
+                    <div className="text-xs text-neutral-500">({currentCpuPct.toFixed(1)}% load)</div>
+                  </div>
+                  {currentCpuPct > 85 && (
+                    <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" title="High CPU Load > 85%" />
+                  )}
+                </>
+              ) : (
+                <div className="flex items-center gap-2 text-xs text-neutral-400">
+                  <Icon path={mdiLoading} size={0.6} className="animate-spin text-blue-400" />
+                  <span>Detecting…</span>
+                </div>
               )}
             </div>
           </div>
@@ -393,12 +418,21 @@ export function MetricsView() {
               </div>
             </div>
             <div className="text-right font-mono flex items-center gap-2">
-              <div>
-                <div className="text-base text-neutral-100 font-semibold">{currentMemoryGB} GB / {clusterMemoryGB.toFixed(1)} GB</div>
-                <div className="text-xs text-neutral-500">({currentMemoryPct.toFixed(1)}% pressure)</div>
-              </div>
-              {currentMemoryPct > 85 && (
-                <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" title="High RAM Pressure > 85%" />
+              {memoryDetected ? (
+                <>
+                  <div>
+                    <div className="text-base text-neutral-100 font-semibold">{currentMemoryGB} GB / {clusterMemoryGB.toFixed(1)} GB</div>
+                    <div className="text-xs text-neutral-500">({currentMemoryPct.toFixed(1)}% pressure)</div>
+                  </div>
+                  {currentMemoryPct > 85 && (
+                    <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" title="High RAM Pressure > 85%" />
+                  )}
+                </>
+              ) : (
+                <div className="flex items-center gap-2 text-xs text-neutral-400">
+                  <Icon path={mdiLoading} size={0.6} className="animate-spin text-emerald-400" />
+                  <span>Detecting…</span>
+                </div>
               )}
             </div>
           </div>

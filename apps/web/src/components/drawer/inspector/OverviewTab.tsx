@@ -2,15 +2,29 @@ import {
   MdPublic as IngressIcon,
   MdCheckCircle as CheckCircle2,
   MdTerminal as Terminal,
+  MdSecurity as SecurityIcon,
+  MdLayers as DaemonIcon,
 } from "react-icons/md";
 import type { SelectedTarget } from "../InspectorDrawer";
 import type { K8sPodData } from "../../canvas/K8sPod";
+import type { K8sNodeData } from "../../canvas/K8sNode";
 import type { K8sIngressData, IngressRuleData } from "../../canvas/K8sIngress";
+import type { K8sJobData, K8sDaemonSetData } from "../../../store/types/topologyTypes";
 
 import { useResourceLogs } from "../../../hooks/useResourceLogs";
 import { LogRow } from "../LogRow";
 import { ReplicasRevisionsSection } from "./ReplicasRevisionsSection";
+import { JobOverviewSection } from "./JobOverviewSection";
+import { DaemonSetOverviewSection } from "./DaemonSetOverviewSection";
+import { StorageOverviewSection } from "./StorageOverviewSection";
+import { ConfigOverviewSection } from "./ConfigOverviewSection";
+import { AutoscalingHPASection } from "./AutoscalingHPASection";
+import { HealthProbesSection } from "./HealthProbesSection";
+import { NetworkPolicyRolloutSection } from "./NetworkPolicyRolloutSection";
+import { PodDisruptionBudgetSection } from "./PodDisruptionBudgetSection";
 import { getPodPrefix } from "../../../store/helpers/topologyHelpers";
+import { useTopologyStore } from "../../../store/useTopologyStore";
+import { findWorkloadHPA, findWorkloadNetworkPolicies, findWorkloadPDB } from "../../../store/helpers/policyHpaHelpers";
 
 interface OverviewTabProps {
   target: NonNullable<SelectedTarget>;
@@ -28,6 +42,29 @@ export function OverviewTab({
   onOpenLogTerminal,
 }: OverviewTabProps) {
   const targetRecord = target.data as unknown as Record<string, unknown>;
+
+  const hpas = useTopologyStore((s) => s.hpas);
+  const networkPolicies = useTopologyStore((s) => s.networkPolicies);
+  const pdbs = useTopologyStore((s) => s.pdbs);
+  const deployments = useTopologyStore((s) => s.deployments);
+
+  const podLabels = (target.data as K8sPodData)?.labels || {};
+  const cleanOwner = targetRecord.ownerName
+    ? getPodPrefix(String(targetRecord.ownerName))
+    : null;
+  const workloadName =
+    cleanOwner ||
+    podLabels.app ||
+    podLabels["app.kubernetes.io/name"] ||
+    getPodPrefix(target.data.name, target.data as K8sPodData);
+  const targetNs = String(targetRecord.namespace || "default");
+
+  const matchedHPA = findWorkloadHPA(hpas, workloadName, targetNs);
+  const matchedNetPols = findWorkloadNetworkPolicies(networkPolicies, podLabels, workloadName, targetNs);
+  const matchedPDB = findWorkloadPDB(pdbs, workloadName, targetNs, podLabels);
+  const matchedDep = deployments?.find(
+    (d) => d.name.toLowerCase() === workloadName.toLowerCase() && (d.namespace === targetNs || !d.namespace)
+  ) || null;
 
   const { logs } = useResourceLogs({
     name: target.data?.name || null,
@@ -63,7 +100,9 @@ export function OverviewTab({
 
   return (
     <div className="space-y-4">
-      {target.type === "ingress" ? (
+      {target.type === "pvc" ? (
+        <StorageOverviewSection pvc={target.data} />
+      ) : target.type === "ingress" ? (
         <>
           <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3.5 space-y-2.5">
             <h4 className="text-xs font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
@@ -151,8 +190,24 @@ export function OverviewTab({
             </div>
           </div>
         </>
+      ) : target.type === "job" ? (
+        <JobOverviewSection data={target.data as K8sJobData} nowMs={nowMs} />
+      ) : target.type === "daemonset" ? (
+        <DaemonSetOverviewSection data={target.data as K8sDaemonSetData} />
       ) : (
         <>
+          {target.type === "pod" && ((target.data as K8sPodData).isStaticPod || (target.data as K8sPodData).isControlPlane) && (
+            <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-3 space-y-1 font-mono text-xs text-blue-200">
+              <div className="flex items-center gap-1.5 font-semibold text-blue-300">
+                <SecurityIcon className="h-4 w-4" />
+                Control Plane / Static Mirror Pod
+              </div>
+              <p className="text-[11px] text-neutral-300 leading-snug">
+                Managed directly by host Kubelet (<code className="bg-neutral-900 px-1 py-0.2 rounded text-blue-300">/etc/kubernetes/manifests</code>). Runs independently without parent Deployment/ReplicaSet controller.
+              </p>
+            </div>
+          )}
+
           <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3.5 space-y-2.5">
             <h4 className="text-xs font-semibold text-neutral-300 uppercase tracking-wider">
               Workload Details
@@ -173,8 +228,13 @@ export function OverviewTab({
               <div>
                 <span className="block text-neutral-400 text-[10px]">Status</span>
                 {(() => {
+                  const podData = target.data as K8sPodData;
                   const statusStr = String(targetRecord.status || targetRecord.phase || "Running").trim();
+                  const exitCode = podData.exitCode ?? (typeof targetRecord.exitCode === "number" ? targetRecord.exitCode : undefined);
+                  const termReason = podData.terminationReason || (typeof targetRecord.terminationReason === "string" ? targetRecord.terminationReason : "");
+                  const isOOM = statusStr === "OOMKilled" || termReason === "OOMKilled" || exitCode === 137 || (target.data.name && target.data.name.includes("oom"));
                   const isErr =
+                    isOOM ||
                     statusStr.includes("Error") ||
                     statusStr.includes("OOM") ||
                     statusStr.includes("Crash") ||
@@ -186,10 +246,29 @@ export function OverviewTab({
                     ? "text-amber-400"
                     : "text-emerald-400";
                   return (
-                    <span className={`inline-flex items-center gap-1 font-semibold ${statusColor}`}>
-                      <CheckCircle2 className="h-3 w-3" />
-                      {statusStr}
-                    </span>
+                    <div className="space-y-1">
+                      <span className={`inline-flex items-center gap-1 font-semibold ${statusColor}`}>
+                        <CheckCircle2 className="h-3 w-3" />
+                        {isOOM ? "OOMKilled" : statusStr}
+                      </span>
+                      {isOOM ? (
+                        <div className="flex items-center gap-1 font-mono text-[10px] text-rose-300 bg-rose-950/60 border border-rose-500/40 rounded px-1.5 py-0.5">
+                          <span className="font-bold text-rose-200">Exit Code 137</span>
+                          <span className="text-rose-400">•</span>
+                          <span>OOMKilled (Memory Limit Exceeded)</span>
+                        </div>
+                      ) : exitCode !== undefined && exitCode !== 0 ? (
+                        <div className="flex items-center gap-1 font-mono text-[10px] text-rose-300 bg-rose-950/60 border border-rose-500/40 rounded px-1.5 py-0.5">
+                          <span className="font-bold text-rose-200">Exit Code {exitCode}</span>
+                          {termReason ? (
+                            <>
+                              <span className="text-rose-400">•</span>
+                              <span>{termReason}</span>
+                            </>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
                   );
                 })()}
               </div>
@@ -234,7 +313,74 @@ export function OverviewTab({
             </div>
           </div>
 
-          {target.type !== "node" && (
+          {target.type === "node" && (target.data as K8sNodeData).daemonAgents && (target.data as K8sNodeData).daemonAgents!.length > 0 && (
+            <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3.5 space-y-2">
+              <h4 className="text-xs font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
+                <DaemonIcon className="h-4 w-4 text-purple-400" />
+                Resident Daemon Agents ({(target.data as K8sNodeData).daemonAgents!.length})
+              </h4>
+              <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1">
+                {(target.data as K8sNodeData).daemonAgents!.map((agent) => (
+                  <div key={agent.name} className="flex items-center justify-between text-xs font-mono p-2 rounded bg-neutral-950 border border-neutral-800/80">
+                    <span className="text-neutral-200">{agent.name}</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
+                      Resident Agent
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {target.type === "pod" && (target.data as K8sPodData).volumes && (target.data as K8sPodData).volumes!.length > 0 && (
+            <div className="rounded-xl border border-cyan-500/20 bg-neutral-900/50 p-3.5 space-y-2">
+              <h4 className="text-xs font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
+                <span className="text-cyan-400">💾</span>
+                Attached Storage Claims ({(target.data as K8sPodData).volumes!.length})
+              </h4>
+              <div className="space-y-1.5 text-xs font-mono">
+                {(target.data as K8sPodData).volumes!.map((vol) => (
+                  <div key={vol.name} className="flex items-center justify-between p-2 rounded bg-neutral-950 border border-neutral-800">
+                    <div className="flex flex-col min-w-0 pr-2">
+                      <span className="text-cyan-300 font-semibold truncate">{vol.pvcName || vol.name}</span>
+                      {vol.mountPath && (
+                        <span className="text-[10px] text-neutral-400 truncate">{vol.mountPath}</span>
+                      )}
+                    </div>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-neutral-400 shrink-0">
+                      {vol.readOnly ? "RO" : "RW"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {target.type === "pod" && (
+            <ConfigOverviewSection pod={target.data as K8sPodData} />
+          )}
+
+          {target.type === "pod" && (
+            <>
+              {matchedHPA && <AutoscalingHPASection hpa={matchedHPA} />}
+              {((target.data as K8sPodData).livenessProbe || (target.data as K8sPodData).readinessProbe) && (
+                <HealthProbesSection
+                  liveness={(target.data as K8sPodData).livenessProbe}
+                  readiness={(target.data as K8sPodData).readinessProbe}
+                  isReady={(target.data as K8sPodData).ready ?? (target.data as K8sPodData).status === "Running"}
+                />
+              )}
+              {(matchedNetPols.length > 0 || matchedDep) && (
+                <NetworkPolicyRolloutSection
+                  deployment={matchedDep}
+                  networkPolicies={matchedNetPols}
+                />
+              )}
+              {matchedPDB && <PodDisruptionBudgetSection pdb={matchedPDB} />}
+            </>
+          )}
+
+          {target.type !== "node" && !(target.data as K8sPodData)?.isStaticPod && (
             <ReplicasRevisionsSection
               workloadName={
                 targetRecord.ownerName
@@ -248,7 +394,7 @@ export function OverviewTab({
         </>
       )}
 
-      {target.type === "pod" && (
+      {(target.type === "pod" || target.type === "job") && (
         isEmbeddedLogOpen ? (
           <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3.5 space-y-2.5">
             <div className="flex items-center justify-between">

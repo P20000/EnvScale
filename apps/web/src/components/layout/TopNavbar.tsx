@@ -7,6 +7,8 @@ import {
   mdiCheck,
   mdiCheckAll,
   mdiTrashCanOutline,
+  mdiAlertCircle,
+  mdiHeart,
 } from "@mdi/js";
 import { useTopologyStore, type NotificationItem } from "../../store/useTopologyStore";
 import type { Cluster } from "../../store/types/topologyTypes";
@@ -15,8 +17,11 @@ import { AuthModal } from "./AuthModal";
 import { WorkspaceModal } from "./WorkspaceModal";
 import { NamespaceFilterPill } from "./NamespaceFilterPill";
 import { EnvScaleLogo } from "../ui/EnvScaleLogo";
+import { useAuthStore } from "../../store/useAuthStore";
 
 import type { WsConnectionStatus } from "../../hooks/useK8sStream";
+import type { NavTab } from "./LeftSidebar";
+import { calculateClusterHealthScore } from "../../store/helpers/policyHpaHelpers";
 
 interface TopNavbarProps {
   activeCluster: string;
@@ -27,6 +32,7 @@ interface TopNavbarProps {
   wsLatencyMs?: number;
   wsStatus?: WsConnectionStatus;
   wsConnected?: boolean;
+  onNavigateTab?: (tab: NavTab) => void;
 }
 
 export function TopNavbar({
@@ -35,17 +41,30 @@ export function TopNavbar({
   onSelectCluster,
   onOpenConnectModal,
   wsStatus: propsWsStatus,
+  onNavigateTab,
 }: TopNavbarProps) {
   const notifications = useTopologyStore((s) => s.notifications);
   const markNotificationRead = useTopologyStore((s) => s.markNotificationRead);
   const markAllNotificationsRead = useTopologyStore((s) => s.markAllNotificationsRead);
+  const clearNotifications = useTopologyStore((s) => s.clearNotifications);
   const storeWsStatus = useTopologyStore((s) => s.wsStatus);
   const addCluster = useTopologyStore((s) => s.addCluster);
   const deleteCluster = useTopologyStore((s) => s.deleteCluster);
   const triggerWsReconnect = useTopologyStore((s) => s.triggerWsReconnect);
+  const pods = useTopologyStore((s) => s.pods);
+  const health = calculateClusterHealthScore(pods);
 
-  const handleDeleteCluster = async (e: React.MouseEvent, cluster: Cluster) => {
+  const [pendingDeleteCluster, setPendingDeleteCluster] = useState<Cluster | null>(null);
+
+  const handleDeleteClusterClick = (e: React.MouseEvent, cluster: Cluster) => {
     e.stopPropagation();
+    setPendingDeleteCluster(cluster);
+  };
+
+  const confirmDeleteCluster = async () => {
+    if (!pendingDeleteCluster) return;
+    const cluster = pendingDeleteCluster;
+    setPendingDeleteCluster(null);
     // Optimistically remove from frontend to prevent ghost clusters
     deleteCluster(cluster.id);
     const success = await apiDisconnectCluster(cluster.id);
@@ -53,9 +72,15 @@ export function TopNavbar({
       console.error(`Failed to delete cluster ${cluster.name || cluster.id} from backend, but it was removed locally.`);
     }
   };
+
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const openAuthModal = useAuthStore((s) => s.openAuthModal);
+  const authModalOpen = useAuthStore((s) => s.authModalOpen);
+  const closeAuthModal = useAuthStore((s) => s.closeAuthModal);
+  const authModalReason = useAuthStore((s) => s.authModalReason);
+
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notifMenuOpen, setNotifMenuOpen] = useState(false);
-  const [authModalOpen, setAuthModalOpen] = useState(false);
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -106,7 +131,7 @@ export function TopNavbar({
         />
       )}
 
-      <header className="fixed top-0 left-0 w-full h-14 bg-[#141417] border-b border-zinc-800 flex items-center justify-between px-4 select-none shrink-0 z-[60]">
+      <header className="fixed top-0 left-0 w-full h-14 bg-[#191B20] border-b border-[#30343B] flex items-center justify-between px-4 select-none shrink-0 z-[60]">
         
         {/* Absolute Background Layer (Clips only the mandala to the header bounds) */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none select-none z-0">
@@ -120,57 +145,65 @@ export function TopNavbar({
         </div>
 
         {/* Left Group: Foreground Brand Elements */}
-        <div className="relative z-10 flex items-center gap-3 h-full">
+        <div className="relative z-10 flex items-center gap-3 h-full select-none">
           <EnvScaleLogo className="w-7 h-7 text-blue-500 shrink-0 select-none" />
-          <span className="text-sm font-mono font-black tracking-widest text-white uppercase">
+          <span className="text-sm font-mono font-black tracking-widest text-[#E6E1E5] uppercase">
             ENVSCALE
           </span>
         </div>
 
         {/* Center Group: Navigation Pill Controls */}
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-3 z-10">
-          <div className="flex items-center gap-4 bg-[#18181b] border border-zinc-800 h-9 px-3.5 rounded-full" ref={dropdownRef}>
+          <div className="flex items-center gap-4 bg-[#1E2127] border border-[#30343B] h-9 px-3.5 rounded-full" ref={dropdownRef}>
 
           {/* Cluster Selector */}
           <button
             onClick={toggleDropdown}
-            className="flex items-center gap-2 text-xs font-mono font-bold tracking-wider text-zinc-100 hover:text-white transition-colors"
+            aria-haspopup="listbox"
+            aria-expanded={dropdownOpen}
+            aria-label="Select active cluster"
+            className="flex items-center gap-2 text-xs font-mono font-bold tracking-wider text-[#E6E1E5] hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-sm"
           >
-            <span>{activeCluster || "Select Cluster"}</span>
-            <Icon path={mdiChevronDown} size={0.65} className="text-zinc-400" />
+            <span>{clusters.find(c => c.id === activeCluster)?.name || (clusters.length > 0 ? "Select Cluster" : "No Cluster Connected")}</span>
+            <Icon path={mdiChevronDown} size={0.65} className="text-[#C4C7C5]" />
           </button>
 
           {/* Dropdown Menu */}
           {dropdownOpen && (
-            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-3 w-64 rounded-xl border border-zinc-700 bg-[#18181c] p-2 z-[70] shadow-2xl">
-              <div className="px-2 py-1.5 text-[10px] font-bold tracking-wider text-zinc-400 uppercase font-heading">
+            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-3 w-64 rounded-xl border border-[#424750] bg-[#23262D] p-2 z-[70] shadow-2xl">
+              <div className="px-2 py-1.5 text-[10px] font-bold tracking-wider text-[#92959D] uppercase font-heading">
                 Active Kubernetes Clusters
               </div>
               <div className="space-y-1">
+                {clusters.length === 0 && (
+                  <div className="px-2.5 py-2 text-xs font-mono text-[#92959D] italic">
+                    No clusters connected
+                  </div>
+                )}
                 {clusters.map((cluster) => (
                   <div
                     key={cluster.id}
                     onClick={() => {
-                      onSelectCluster(cluster.name);
+                      onSelectCluster(cluster.id);
                       setDropdownOpen(false);
                     }}
                     className={`group w-full flex items-center justify-between rounded-md px-2.5 py-1.5 text-xs font-mono cursor-pointer transition-colors ${
-                      activeCluster === cluster.name
-                        ? "bg-blue-500/10 text-blue-400 font-semibold"
-                        : "text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+                      activeCluster === cluster.id
+                        ? "bg-blue-500/15 text-blue-400 font-semibold"
+                        : "text-[#C4C7C5] hover:bg-[#30343B] hover:text-[#E6E1E5]"
                     }`}
                   >
                     <span className="flex items-center gap-2 truncate">
-                      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${activeCluster === cluster.name ? "bg-emerald-500" : "bg-zinc-600"}`} />
+                      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${activeCluster === cluster.id ? "bg-[#6DD6A8]" : "bg-[#777D87]"}`} />
                       <span className="truncate">{cluster.name}</span>
                     </span>
                     <div className="flex items-center gap-1 shrink-0">
-                      {activeCluster === cluster.name && <Icon path={mdiCheck} size={0.65} className="text-blue-400" />}
+                      {activeCluster === cluster.id && <Icon path={mdiCheck} size={0.65} className="text-blue-400" />}
                       <button
                         type="button"
-                        onClick={(e) => handleDeleteCluster(e, cluster)}
+                        onClick={(e) => handleDeleteClusterClick(e, cluster)}
                         title={`Delete cluster ${cluster.name}`}
-                        className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-red-400 p-1 rounded transition-all"
+                        className="opacity-0 group-hover:opacity-100 text-[#92959D] hover:text-[#F2B8B5] p-1 rounded transition-all"
                       >
                         <Icon path={mdiTrashCanOutline} size={0.6} />
                       </button>
@@ -178,10 +211,14 @@ export function TopNavbar({
                   </div>
                 ))}
               </div>
-              <div className="my-1 h-px bg-zinc-800" />
+              <div className="my-1 h-px bg-[#30343B]" />
               <button
                 onClick={() => {
                   setDropdownOpen(false);
+                  if (!isAuthenticated) {
+                    openAuthModal("Sign in to your account or workspace to connect a new Kubernetes cluster.");
+                    return;
+                  }
                   onOpenConnectModal();
                 }}
                 className="w-full flex items-center gap-2 rounded-md px-2.5 py-2 text-xs font-medium text-blue-400 hover:bg-blue-500/10 transition-colors"
@@ -192,17 +229,17 @@ export function TopNavbar({
             </div>
           )}
 
-          <div className="h-4 w-px bg-zinc-800" />
+          <div className="h-4 w-px bg-[#30343B]" />
 
           {/* Live WebSocket Status Indicator */}
-          <div className="flex items-center gap-2 text-xs font-mono font-bold tracking-wider text-zinc-100">
+          <div className="flex items-center gap-2 text-xs font-mono font-bold tracking-wider text-[#E6E1E5]">
             <span
               className={`h-1.5 w-1.5 rounded-full shrink-0 ${
                 isConnected
-                  ? "bg-emerald-500"
+                  ? "bg-[#6DD6A8]"
                   : isConnecting
-                  ? "bg-amber-400 animate-pulse"
-                  : "bg-rose-500"
+                  ? "bg-[#F4C26B]"
+                  : "bg-[#F2B8B5]"
               }`}
             />
             <span>
@@ -219,6 +256,45 @@ export function TopNavbar({
 
           {/* Dedicated Namespace Filter Pill Capsule */}
           <NamespaceFilterPill />
+
+          {/* Dynamic Cluster Health Score Pill */}
+          <button
+            type="button"
+            onClick={() => onNavigateTab?.("leaderboard")}
+            title={`Cluster Health Score: ${health.score}/100 (Grade ${health.grade}) • ${health.failingCount} failing pods • Click to view Cluster Health Leaderboard`}
+            className="flex items-center gap-1.5 bg-[#1E2127] hover:bg-[#23262D] border border-[#30343B] hover:border-[#424750] h-9 px-3.5 rounded-full text-xs font-mono font-bold transition-all cursor-pointer shadow-sm group select-none shrink-0"
+          >
+            <Icon
+              path={mdiHeart}
+              size={0.65}
+              className={`transition-transform duration-200 group-hover:scale-115 shrink-0 ${
+                health.score >= 90
+                  ? "text-emerald-400"
+                  : health.score >= 75
+                  ? "text-amber-400"
+                  : "text-rose-500"
+              }`}
+            />
+            <span className={`tracking-wide ${
+              health.score >= 90
+                ? "text-emerald-400"
+                : health.score >= 75
+                ? "text-amber-400"
+                : "text-rose-400"
+            }`}>
+              {health.score}/100
+            </span>
+            <span className="text-[#5C616B] font-normal">•</span>
+            <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+              health.grade === "A"
+                ? "bg-emerald-400 text-[#111318]"
+                : health.grade === "B"
+                ? "bg-amber-400 text-[#111318]"
+                : "bg-rose-500 text-[#111318]"
+            }`}>
+              Grade {health.grade}
+            </span>
+          </button>
         </div>
 
         {/* Right Group: Action Controls */}
@@ -228,11 +304,13 @@ export function TopNavbar({
             <button
               onClick={toggleNotif}
               title="Notifications"
-              className="relative h-8 w-8 rounded-full border border-zinc-800 bg-[#18181b] flex items-center justify-center text-zinc-400 hover:text-zinc-200 hover:border-zinc-700 transition-colors"
+              aria-label="Notifications"
+              aria-expanded={notifMenuOpen}
+              className="relative h-8 w-8 rounded-full border border-[#30343B] bg-[#1E2127] flex items-center justify-center text-[#C4C7C5] hover:text-[#E6E1E5] hover:border-[#424750] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             >
               <Icon path={mdiBell} size={0.7} />
               {unreadCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-[#410E0B] border border-[#F2B8B5]/30 text-[10px] font-bold text-[#F2B8B5]">
                   {unreadCount}
                 </span>
               )}
@@ -240,28 +318,40 @@ export function TopNavbar({
 
             {/* Notification Panel */}
             {notifMenuOpen && (
-              <div className="absolute top-full right-0 mt-3 w-80 rounded-xl border border-zinc-700 bg-[#18181c] p-3 z-[70] shadow-2xl space-y-2">
+              <div className="absolute top-full right-0 mt-3 w-96 rounded-xl border border-zinc-700 bg-[#18181c] p-3 z-[70] shadow-2xl space-y-2">
                 <div className="flex items-center justify-between px-1 pb-2 border-b border-zinc-800">
                   <div className="flex items-center gap-2">
-                    <Icon path={mdiBell} size={0.7} className="text-blue-400" />
-                    <span className="text-xs font-semibold text-zinc-100 font-heading">Notifications</span>
+                    <Icon path={mdiBell} size={0.7} className="text-blue-400 shrink-0" />
+                    <span className="text-xs font-semibold text-zinc-100 font-heading whitespace-nowrap">Notifications</span>
                     {unreadCount > 0 && (
-                      <span className="rounded-full bg-blue-500/10 px-1.5 py-0.2 text-[10px] font-semibold text-blue-400 border border-blue-500/20">
+                      <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-400 border border-blue-500/20 whitespace-nowrap">
                         {unreadCount} unread
                       </span>
                     )}
                   </div>
 
-                  {unreadCount > 0 && (
-                    <button
-                      onClick={markAllNotificationsRead}
-                      className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-blue-400 transition-colors"
-                      title="Mark all as read"
-                    >
-                      <Icon path={mdiCheckAll} size={0.65} />
-                      <span>Mark all read</span>
-                    </button>
-                  )}
+                  <div className="flex items-center gap-3 shrink-0">
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={markAllNotificationsRead}
+                        className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-blue-400 transition-colors whitespace-nowrap"
+                        title="Mark all as read"
+                      >
+                        <Icon path={mdiCheckAll} size={0.65} />
+                        <span>Mark all read</span>
+                      </button>
+                    )}
+                    {notifications.length > 0 && (
+                      <button
+                        onClick={clearNotifications}
+                        className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-red-400 transition-colors whitespace-nowrap"
+                        title="Clear all notifications"
+                      >
+                        <Icon path={mdiTrashCanOutline} size={0.6} />
+                        <span>Clear all</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="max-h-64 overflow-y-auto space-y-1.5 pr-0.5">
@@ -310,9 +400,10 @@ export function TopNavbar({
       {/* Auth & Workspace Modals */}
       <AuthModal
         isOpen={authModalOpen}
-        onClose={() => setAuthModalOpen(false)}
+        reason={authModalReason}
+        onClose={closeAuthModal}
         onLoginSuccess={() => {
-          setAuthModalOpen(false);
+          closeAuthModal();
           // Immediately reconnect WebSocket with the JWT now in localStorage
           triggerWsReconnect();
         }}
@@ -326,6 +417,45 @@ export function TopNavbar({
           addCluster({ id: `mock-${Date.now()}`, name: mockName });
         }}
       />
+
+      {/* Cluster Deletion Confirmation Dialog */}
+      {pendingDeleteCluster && (
+        <>
+          <div
+            className="fixed inset-0 z-[80] bg-black/75"
+            onClick={() => setPendingDeleteCluster(null)}
+          />
+          <div className="fixed z-[90] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] rounded-2xl border border-zinc-700 bg-[#18181c] p-6 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-500/10 border border-red-500/20">
+                <Icon path={mdiAlertCircle} size={0.9} className="text-red-400" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-zinc-100 font-heading">Delete Cluster</h3>
+                <p className="mt-1 text-xs text-zinc-400 leading-relaxed">
+                  Are you sure you want to disconnect and remove{" "}
+                  <span className="font-semibold text-zinc-200">{pendingDeleteCluster.name}</span>?
+                  This will unregister it from the streaming gateway and delete it from the database.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setPendingDeleteCluster(null)}
+                className="rounded-lg px-4 py-2 text-xs font-medium text-zinc-300 border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteCluster}
+                className="rounded-lg px-4 py-2 text-xs font-semibold text-white bg-red-500 hover:bg-red-600 transition-colors"
+              >
+                Delete Cluster
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 }

@@ -1,5 +1,7 @@
 import type { TopologyState } from "../useTopologyStore";
 import type { ApiToken, NotificationItem } from "../types/topologyTypes";
+import { toast } from "../../lib/toast";
+import { useUIStore } from "../useUIStore";
 
 export function handleAddToken(
   set: (partial: Partial<TopologyState> | ((state: TopologyState) => Partial<TopologyState>)) => void,
@@ -34,5 +36,37 @@ export function handleAddNotification(
     read: false,
     cluster: get().activeCluster,
   };
-  set((state) => ({ notifications: [newNotif, ...state.notifications] }));
+  set((state) => ({ notifications: [newNotif, ...state.notifications].slice(0, 50) }));
+
+  if (severity === "CRITICAL") {
+    toast.error(title, message);
+  } else if (severity === "WARNING") {
+    toast.warning(title, message);
+  } else {
+    toast.info(title, message);
+  }
+
+  // Outbound Webhook dispatch (Slack / Discord / HTTP)
+  try {
+    const webhookUrl = useUIStore.getState().alertWebhookUrl;
+    const criticalOnly = useUIStore.getState().alertWebhookCriticalOnly;
+    if (webhookUrl && (!criticalOnly || severity === "CRITICAL")) {
+      fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: `🚨 [EnvScale Alert] ${title}: ${message}`,
+          title,
+          message,
+          severity,
+          cluster: get().activeCluster,
+          timestamp: new Date().toISOString(),
+        }),
+        mode: "no-cors",
+      }).catch((err) => console.warn("[EnvScale] Outbound webhook dispatch failed:", err));
+    }
+  } catch {
+    // Non-blocking
+  }
 }
+

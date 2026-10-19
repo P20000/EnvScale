@@ -109,6 +109,11 @@ type SnapshotProvider interface {
 		[]types.IngressStatusDelta,
 		[]types.K8sIncidentEvent,
 		[]types.CronJobStatusDelta,
+		[]types.JobStatusDelta,
+		[]types.PVCStatusDelta,
+		[]types.PVStatusDelta,
+		[]types.ConfigMapStatusDelta,
+		[]types.SecretStatusDelta,
 		error,
 	)
 	ListClusters() map[string]bool
@@ -288,7 +293,7 @@ func (me *MetricEvaluator) evaluate() {
 			continue
 		}
 
-		pods, nodes, _, _, _, _, _, _, _, _, err := me.provider.GetClusterSnapshot(clusterID)
+		pods, nodes, _, _, _, _, _, _, _, _, _, _, _, _, _, err := me.provider.GetClusterSnapshot(clusterID)
 		if err != nil {
 			continue
 		}
@@ -342,27 +347,53 @@ func (me *MetricEvaluator) evaluate() {
 			if rule.MetricType == "node_status" {
 				for _, node := range nodes {
 					violated := me.evaluateNodeRule(rule, node)
+					vk := violationKey{
+						clusterID: clusterID,
+						namespace: "",
+						podName:   node.Name,
+						ruleID:    rule.RuleID,
+					}
+
 					if violated {
-						me.hub.BroadcastEvent(types.EventAlertTriggered, clusterID, types.AlertTriggeredEvent{
-							RuleID:      rule.RuleID,
-							RuleName:    rule.Name,
-							Severity:    rule.Severity,
-							MetricType:  rule.MetricType,
-							TargetKind:  "Node",
-							TargetName:  node.Name,
-							Namespace:   "",
-							Measured:    node.Status,
-							Threshold:   rule.ConditionValue,
-							Message:     fmt.Sprintf("Node '%s' status is '%s' (expected: %s %s)", node.Name, node.Status, rule.ConditionOperator, rule.ConditionValue),
-							Timestamp:   now.UTC().Format(time.RFC3339Nano),
-						})
+						activeViolations[vk] = true
+						me.violMu.Lock()
+						state, exists := me.violations[vk]
+						if !exists {
+							me.violations[vk] = &violationState{firstSeen: now, fired: false}
+							me.violMu.Unlock()
+							continue
+						}
+
+						elapsed := now.Sub(state.firstSeen)
+						if elapsed >= time.Duration(rule.DurationSeconds)*time.Second && !state.fired {
+							state.fired = true
+							me.violMu.Unlock()
+
+							event := types.AlertTriggeredEvent{
+								RuleID:      rule.RuleID,
+								RuleName:    rule.Name,
+								Severity:    rule.Severity,
+								MetricType:  rule.MetricType,
+								TargetKind:  "Node",
+								TargetName:  node.Name,
+								Namespace:   "",
+								Measured:    node.Status,
+								Threshold:   fmt.Sprintf("%s %s", rule.ConditionOperator, rule.ConditionValue),
+								Message:     fmt.Sprintf("Alert '%s': Node '%s' status is '%s' (expected: %s %s), sustained for %ds", rule.Name, node.Name, node.Status, rule.ConditionOperator, rule.ConditionValue, rule.DurationSeconds),
+								Timestamp:   now.UTC().Format(time.RFC3339Nano),
+							}
+							me.hub.BroadcastEvent(types.EventAlertTriggered, clusterID, event)
+							go dispatchIncidentToApiServer(clusterID, event)
+						} else {
+							me.violMu.Unlock()
+						}
 					}
 				}
 			}
 		}
 	}
 
-	// Prune cleared violations — if a pod was violating a rule last cycle
+	// Prune cleared violations — if a pod or node was violating a rule last cycle
 	// but is now healthy, remove the tracking entry so it can re-fire later
 	me.violMu.Lock()
 	for vk := range me.violations {
@@ -432,40 +463,8 @@ func (me *MetricEvaluator) emitAlert(clusterID string, rule AlertRule, pod types
 	}
 
 	me.hub.BroadcastEvent(types.EventAlertTriggered, clusterID, event)
+	go dispatchIncidentToApiServer(clusterID, event)
 	log.Printf("[MetricEvaluator] ALERT FIRED: rule=%s pod=%s/%s metric=%s value=%s",
 		rule.RuleID, pod.Namespace, pod.Name, rule.MetricType, measuredValue)
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Comparison Helpers
-// ────────────────────────────────────────────────────────────────────────────
-
-func compareNumeric(actual float64, op string, threshold float64) bool {
-	switch op {
-	case ">":
-		return actual > threshold
-	case ">=":
-		return actual >= threshold
-	case "<":
-		return actual < threshold
-	case "<=":
-		return actual <= threshold
-	case "==":
-		return actual == threshold
-	case "!=":
-		return actual != threshold
-	default:
-		return false
-	}
-}
-
-func compareString(actual, op, expected string) bool {
-	switch op {
-	case "==":
-		return actual == expected
-	case "!=":
-		return actual != expected
-	default:
-		return false
-	}
-}

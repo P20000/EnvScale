@@ -11,8 +11,13 @@ import { MetricsView } from "./components/views/MetricsView";
 import { LeaderboardView } from "./components/views/LeaderboardView";
 import { SettingsView } from "./components/views/SettingsView";
 import { useTopologyStore } from "./store/useTopologyStore";
+import { useUIStore } from "./store/useUIStore";
 import ConnectClusterWizard from "./components/onboarding/ConnectClusterWizard";
+import { ToastContainer } from "./components/ui/ToastContainer";
 import { apiMe, apiGetWorkspaceClusters } from "./config/api";
+import { useAuthStore } from "./store/useAuthStore";
+import { LandingPage } from "./components/landing/LandingPage";
+import { AuthBufferPage } from "./components/auth/AuthBufferPage";
 
 import { SYSTEM_NAMESPACES } from "./store/helpers/topologyHelpers";
 
@@ -31,28 +36,42 @@ function AppContent() {
   const clearSelectedNode = useTopologyStore((s) => s.clearSelectedNode);
   const pods = useTopologyStore((s) => s.pods);
   const notifications = useTopologyStore((s) => s.notifications);
-  const selectedNamespaces = useTopologyStore((s) => s.selectedNamespaces);
-  const showSystemNamespaces = useTopologyStore((s) => s.showSystemNamespaces);
+  const selectedNamespaces = useUIStore((s) => s.selectedNamespaces);
+  const showSystemNamespaces = useUIStore((s) => s.showSystemNamespaces);
   const wsReconnectTick = useTopologyStore((s) => s.wsReconnectTick);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
+  useEffect(() => {
+    useAuthStore.getState().checkAuth();
+  }, []);
 
   useEffect(() => {
     async function hydrateUserWorkspace() {
+      // If NOT authenticated, NEVER hydrate clusters!
+      if (!isAuthenticated) {
+        useTopologyStore.getState().resetStore();
+        return;
+      }
+
       const meData = await apiMe();
+      const store = useTopologyStore.getState();
+
       if (meData?.workspace?.id) {
         const dbClusters = await apiGetWorkspaceClusters(meData.workspace.id);
-        if (Array.isArray(dbClusters) && dbClusters.length > 0) {
-          const store = useTopologyStore.getState();
-          dbClusters.forEach((c: { id: string; name: string }) => {
-            if (c.id && c.name) store.addCluster({ id: c.id, name: c.name });
-          });
-          if (!store.activeCluster && dbClusters[0]?.name) {
-            store.setActiveCluster(dbClusters[0].name);
-          }
+        if (Array.isArray(dbClusters)) {
+          const workspaceClusters = dbClusters
+            .filter((c: { id?: string; name?: string }) => Boolean(c?.id && c?.name))
+            .map((c: { id: string; name: string }) => ({ id: c.id, name: c.name }));
+          store.setClusters(workspaceClusters);
+          return;
         }
       }
+
+      // If user has no workspace or workspace has no clusters in DB, keep empty
+      store.setClusters([]);
     }
     hydrateUserWorkspace();
-  }, [wsReconnectTick]);
+  }, [wsReconnectTick, isAuthenticated]);
 
   const activeIncidentsCount = useMemo(() => {
     const isNsAllowed = (ns?: string) => {
@@ -74,6 +93,7 @@ function AppContent() {
     return unhealthyPodsCount + unreadAlertsCount;
   }, [pods, notifications, selectedNamespaces, showSystemNamespaces]);
 
+  const [loggedOutView, setLoggedOutView] = useState<"landing" | "auth-buffer">("landing");
   const [activeTab, setActiveTab] = useState<NavTab>("topology");
   const [showConnectWizard, setShowConnectWizard] = useState(false);
 
@@ -96,7 +116,7 @@ function AppContent() {
     const activeNs =
       namespace && namespace !== "default"
         ? namespace
-        : useTopologyStore.getState().selectedNamespaces[0] || "default";
+        : useUIStore.getState().selectedNamespaces[0] || "default";
     setLogDrawerState({
       isOpen: true,
       podName,
@@ -108,17 +128,51 @@ function AppContent() {
     ? `${selectedNode.type}-${selectedNode.data?.name || selectedNode.data?.id || "target"}`
     : "none";
 
+  // When unauthenticated, render the landing page or the buffer auth page (neither dashboard nor landing)
+  if (!isAuthenticated) {
+    if (loggedOutView === "auth-buffer") {
+      return (
+        <div className="relative min-h-screen w-screen overflow-x-hidden bg-[#111318] font-sans text-[#E6E1E5]">
+          <AuthBufferPage
+            onBackToLanding={() => setLoggedOutView("landing")}
+            onLoginSuccess={() => setLoggedOutView("landing")}
+          />
+          <ToastContainer />
+        </div>
+      );
+    }
+
+    return (
+      <div className="relative min-h-screen w-screen overflow-x-clip bg-slate-50 font-sans text-slate-800">
+        <LandingPage onGetStarted={() => setLoggedOutView("auth-buffer")} />
+        <ToastContainer />
+      </div>
+    );
+  }
+
   return (
-    <div className="relative min-h-screen w-screen overflow-hidden bg-[#09090b] font-sans text-neutral-100 select-none">
+    <div className="relative min-h-screen w-screen overflow-hidden bg-[#111318] font-sans text-[#E6E1E5] select-none">
       {/* Region 1: Top Floating Navbar Capsule */}
       <TopNavbar
         activeCluster={activeCluster}
         clusters={clusters}
         onSelectCluster={(cluster) => setActiveCluster(cluster)}
-        onOpenConnectModal={() => setShowConnectWizard(true)}
+        onOpenConnectModal={() => {
+          if (!useAuthStore.getState().isAuthenticated) {
+            useAuthStore.getState().openAuthModal("Sign in to your account or workspace to connect a new Kubernetes cluster.");
+          } else {
+            setShowConnectWizard(true);
+          }
+        }}
         activeIncidentsCount={activeIncidentsCount}
         wsLatencyMs={wsLatencyMs}
         wsStatus={wsStatus}
+        onNavigateTab={(tab) => {
+          setActiveTab(tab);
+          if (tab !== "topology") {
+            clearSelectedNode();
+          }
+        }}
       />
 
       {/* Region 2: Left Floating Sidebar Capsule */}
@@ -134,7 +188,7 @@ function AppContent() {
       />
 
       {/* Region 3: Center Canvas & Auxiliary Views */}
-      <main className="relative h-screen w-screen overflow-hidden bg-[#09090b]">
+      <main className="relative h-screen w-screen overflow-hidden bg-[#111318]">
         {activeTab === "topology" && (
           <TopologyCanvas
             onSelectTarget={(target) => setSelectedNode(target)}
@@ -147,7 +201,17 @@ function AppContent() {
 
         {activeTab === "leaderboard" && <LeaderboardView />}
 
-        {activeTab === "settings" && <SettingsView />}
+        {activeTab === "settings" && (
+          <SettingsView
+            onOpenConnectModal={() => {
+              if (!useAuthStore.getState().isAuthenticated) {
+                useAuthStore.getState().openAuthModal("Sign in to your account or workspace to connect a new Kubernetes cluster.");
+              } else {
+                setShowConnectWizard(true);
+              }
+            }}
+          />
+        )}
       </main>
 
       {/* Region 4: Contextual Right Slide-out Inspector Drawer */}
@@ -180,6 +244,9 @@ function AppContent() {
           onClusterConnected={handleClusterConnected}
         />
       )}
+
+      {/* Global Toast Notification System */}
+      <ToastContainer />
     </div>
   );
 }

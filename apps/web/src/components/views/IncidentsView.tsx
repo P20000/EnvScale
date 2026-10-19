@@ -8,6 +8,7 @@ import {
   mdiShieldCheck,
 } from "@mdi/js";
 import { useTopologyStore } from "../../store/useTopologyStore";
+import { useUIStore } from "../../store/useUIStore";
 import { SYSTEM_NAMESPACES } from "../../store/helpers/topologyHelpers";
 import { useAlertStore } from "../../store/useAlertStore";
 import { AlertRuleList } from "../alerts/AlertRuleList";
@@ -45,7 +46,7 @@ export function IncidentsView() {
   const clusters = useTopologyStore((s) => s.clusters);
   const activeCluster = useTopologyStore((s) => s.activeCluster);
   const pods = useTopologyStore((s) => s.pods);
-  const notifications = useTopologyStore((s) => s.notifications);
+
   const k8sEvents = useTopologyStore((s) => s.incidents);
 
   const alertRules = useAlertStore((s) => s.alertRules);
@@ -63,6 +64,10 @@ export function IncidentsView() {
   useEffect(() => {
     markAllNotificationsRead();
   }, [markAllNotificationsRead]);
+
+  const activeClusterName = useMemo(() => {
+    return clusters.find((c) => c.id === activeCluster)?.name || activeCluster || "minikube";
+  }, [clusters, activeCluster]);
 
   const incidents = useMemo<IncidentItem[]>(() => {
     const list: IncidentItem[] = [];
@@ -95,7 +100,7 @@ export function IncidentsView() {
           id,
           pod: evt.targetPod || "cluster-node",
           namespace: evt.namespace || "default",
-          cluster: activeCluster || "minikube",
+          cluster: activeClusterName,
           severity,
           message: `${evt.reason || "K8s Event"}: ${evt.message}`,
           time: evt.timestamp ? formatPreciseTime(evt.timestamp) : "Just now",
@@ -105,24 +110,7 @@ export function IncidentsView() {
       }
     });
 
-    notifications.forEach((n) => {
-      const shortId = n.id ? n.id.slice(-6).toUpperCase() : "ALERT";
-      const id = `INC-${shortId}`;
-      if (!seenIds.has(id)) {
-        seenIds.add(id);
-        list.push({
-          id,
-          pod: n.targetPod || "workload",
-          namespace: n.namespace || "default",
-          cluster: activeCluster || "minikube",
-          severity: n.type === "error" ? "CRITICAL" : n.type === "warning" ? "WARNING" : "INFO",
-          message: n.message,
-          time: formatPreciseTime(),
-          rawTimestamp: new Date().toISOString(),
-          status: "TRIGGERED",
-        });
-      }
-    });
+
 
     pods.forEach((p) => {
       const podName = p.name || (p as unknown as { id?: string }).id || "pod";
@@ -135,7 +123,7 @@ export function IncidentsView() {
             id,
             pod: podName,
             namespace: p.namespace || "default",
-            cluster: activeCluster || "minikube",
+            cluster: activeClusterName,
             severity: "CRITICAL",
             message: `Pod entered state ${status} (Restarts: ${p.restarts ?? 0})`,
             time: formatPreciseTime(),
@@ -147,10 +135,10 @@ export function IncidentsView() {
     });
 
     return list.sort((a, b) => (b.rawTimestamp || "").localeCompare(a.rawTimestamp || ""));
-  }, [k8sEvents, notifications, pods, activeCluster]);
+  }, [k8sEvents, pods, activeClusterName]);
 
-  const selectedNamespaces = useTopologyStore((s) => s.selectedNamespaces);
-  const showSystemNamespaces = useTopologyStore((s) => s.showSystemNamespaces);
+  const selectedNamespaces = useUIStore((s) => s.selectedNamespaces);
+  const showSystemNamespaces = useUIStore((s) => s.showSystemNamespaces);
 
   const filteredIncidents = useMemo(() => {
     return incidents.filter((item) => {

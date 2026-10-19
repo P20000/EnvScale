@@ -5,12 +5,19 @@
  */
 
 export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+  import.meta.env.VITE_API_BASE_URL ||
+  (typeof window !== "undefined" && window.location.origin ? window.location.origin : "http://localhost:3000");
 
 export const STREAMER_BASE_URL =
-  import.meta.env.VITE_STREAMER_BASE_URL || "http://localhost:8080";
+  import.meta.env.VITE_STREAMER_BASE_URL ||
+  (typeof window !== "undefined" && window.location.origin ? window.location.origin : "http://localhost:8080");
 
-import { useTopologyStore } from "../store/useTopologyStore";
+export function getAuthHeaders(contentType?: string): Record<string, string> {
+  const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+  const headers: Record<string, string> = contentType ? { "Content-Type": contentType } : {};
+  if (rawAuth && rawAuth !== "null") headers["Authorization"] = `Bearer ${rawAuth}`;
+  return headers;
+}
 
 export interface LoginResponse {
   token?: string;       // kept for compatibility
@@ -92,16 +99,42 @@ export async function apiRegister(userData: {
   }
 }
 
-export async function apiDevQuickLogin(): Promise<LoginResponse> {
-  let res = await apiLogin({ email: "dev@envscale.local", password: "Password123!" });
-  if (res.error) {
-    res = await apiRegister({ name: "Local Dev User", email: "dev@envscale.local", password: "Password123!" });
+export interface SwitchSessionResponse {
+  token?: string;
+  user?: {
+    id: string;
+    email: string;
+    name: string;
+    role: string;
+  };
+  workspace?: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+  allowedClusterIds?: string[];
+  error?: string;
+}
+
+export async function apiSwitchSession(params: {
+  accountId?: string;
+  email?: string;
+}): Promise<SwitchSessionResponse> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/auth/switch-session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(params),
+    });
+    const data = (await res.json()) as SwitchSessionResponse;
+    if (!res.ok) {
+      return { error: data.error || `Switch session failed (${res.status})` };
+    }
+    return data;
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Network error" };
   }
-  if (res.accessToken) {
-    localStorage.setItem("envscale_auth_token", res.accessToken);
-    useTopologyStore.getState().triggerWsReconnect();
-  }
-  return res;
 }
 
 /**
@@ -163,31 +196,7 @@ export async function apiConnectCluster(clusterData: {
   workspaceId?: string;
 }): Promise<ClusterResponse> {
   try {
-    // 1. Direct registration to Go k8s-streamer gateway (http://localhost:8080) for instant streaming
-    const streamerRes = await fetch(`${STREAMER_BASE_URL}/api/v1/clusters/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        clusterId: clusterData.name,
-        kubeconfig: clusterData.kubeconfig,
-      }),
-    });
-
-    if (!streamerRes.ok) {
-      const errText = await streamerRes.text();
-      return { error: errText || `Failed to connect cluster to streamer gateway (${streamerRes.status})` };
-    }
-
-    console.log(`[EnvScale] Cluster "${clusterData.name}" registered with k8s-streamer gateway`);
-
-    // 2. Persist cluster registration in REST API server (http://localhost:3000)
     try {
-      const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (rawAuth && rawAuth !== "null") {
-        headers["Authorization"] = `Bearer ${rawAuth}`;
-      }
-
       const wsId = clusterData.workspaceId;
       const targetUrl = wsId
         ? `${API_BASE_URL}/api/v1/workspaces/${wsId}/clusters/connect`
@@ -195,7 +204,7 @@ export async function apiConnectCluster(clusterData: {
 
       const res = await fetch(targetUrl, {
         method: "POST",
-        headers,
+        headers: getAuthHeaders("application/json"),
         credentials: "include",
         body: JSON.stringify({
           name: clusterData.name,
@@ -205,9 +214,12 @@ export async function apiConnectCluster(clusterData: {
       });
 
       if (res.ok) {
-        const data = (await res.json()) as ClusterResponse;
+        const data = await res.json();
         console.log(`[EnvScale] Cluster "${clusterData.name}" persisted to PostgreSQL DB`);
-        return data;
+        // The backend returns the cluster object at the root level (e.g. { id, name, type, ... }).
+        // Normalize into the { cluster: { id, name } } shape the wizard expects.
+        const cluster = data.cluster || data;
+        return { cluster: { id: cluster.id, name: cluster.name, environment: cluster.type } } as ClusterResponse;
       } else {
         const errJson = await res.json().catch(() => ({}));
         console.warn("[EnvScale] REST server cluster persistence error response:", errJson);
@@ -226,12 +238,8 @@ export async function apiConnectCluster(clusterData: {
 
 export async function apiGetWorkspaces() {
   try {
-    const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
-    const headers: Record<string, string> = {};
-    if (rawAuth && rawAuth !== "null") headers["Authorization"] = `Bearer ${rawAuth}`;
-    
     const res = await fetch(`${API_BASE_URL}/api/v1/workspaces`, {
-      headers,
+      headers: getAuthHeaders(),
       credentials: "include",
     });
     if (res.ok) {
@@ -245,12 +253,8 @@ export async function apiGetWorkspaces() {
 
 export async function apiGetWorkspaceClusters(workspaceId: string) {
   try {
-    const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
-    const headers: Record<string, string> = {};
-    if (rawAuth && rawAuth !== "null") headers["Authorization"] = `Bearer ${rawAuth}`;
-
     const res = await fetch(`${API_BASE_URL}/api/v1/workspaces/${workspaceId}/clusters`, {
-      headers,
+      headers: getAuthHeaders(),
       credentials: "include",
     });
     if (res.ok) {
@@ -262,14 +266,32 @@ export async function apiGetWorkspaceClusters(workspaceId: string) {
   return [];
 }
 
+export async function apiGetStreamerClusters(): Promise<Array<{ id: string; name: string; status?: string }>> {
+  try {
+    const res = await fetch(`${STREAMER_BASE_URL}/api/v1/clusters`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.clusters && typeof data.clusters === "object") {
+        return Object.keys(data.clusters).map((id) => {
+          const clusterObj = (data.clusters as Record<string, { status?: string }>)[id];
+          return {
+            id,
+            name: id === "minikube" ? "Minikube Local" : (id.length > 20 ? `Cluster (${id.slice(0, 8)})` : id),
+            status: clusterObj?.status || "CONNECTED",
+          };
+        });
+      }
+    }
+  } catch {
+    // Streamer gateway offline or network unreachable
+  }
+  return [];
+}
+
 export async function apiMe() {
   try {
-    const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
-    const headers: Record<string, string> = {};
-    if (rawAuth && rawAuth !== "null") headers["Authorization"] = `Bearer ${rawAuth}`;
-
     const res = await fetch(`${API_BASE_URL}/api/v1/auth/me`, {
-      headers,
+      headers: getAuthHeaders(),
       credentials: "include",
     });
     if (res.ok) {
@@ -286,17 +308,22 @@ export async function apiMe() {
  */
 export async function apiDisconnectCluster(clusterId: string): Promise<boolean> {
   try {
+    let token = await getStreamerToken();
+    if (!token) {
+      const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+      if (rawAuth && rawAuth !== "null") token = rawAuth;
+    }
+    const streamerHeaders: Record<string, string> = {};
+    if (token) streamerHeaders["Authorization"] = `Bearer ${token}`;
+
     await fetch(`${STREAMER_BASE_URL}/api/v1/clusters?clusterId=${encodeURIComponent(clusterId)}`, {
       method: "DELETE",
+      headers: streamerHeaders,
     });
-
-    const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
-    const headers: Record<string, string> = {};
-    if (rawAuth && rawAuth !== "null") headers["Authorization"] = `Bearer ${rawAuth}`;
 
     const res = await fetch(`${API_BASE_URL}/api/v1/clusters/${clusterId}`, {
       method: "DELETE",
-      headers,
+      headers: getAuthHeaders(),
       credentials: "include",
     });
     return res.ok;
@@ -326,6 +353,9 @@ export const getStreamerToken = async (): Promise<string | null> => {
     
     if (res.ok) {
       const data = await res.json();
+      if (data.token) {
+        localStorage.setItem("envscale_auth_token", data.token);
+      }
       return data.token || null;
     }
   } catch (error) {
@@ -333,3 +363,115 @@ export const getStreamerToken = async (): Promise<string | null> => {
   }
   return null;
 };
+
+export interface RollbackParams {
+  clusterId: string;
+  namespace: string;
+  deploymentName: string;
+  replicaSetName?: string;
+  targetRevision?: string;
+  targetHash?: string;
+}
+
+export interface RollbackResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * Trigger an authenticated rollback of a deployment to a target ReplicaSet
+ * Endpoint: POST /api/v1/clusters/:id/rollout/rollback
+ */
+export async function apiRollbackDeployment(params: RollbackParams): Promise<RollbackResponse> {
+  try {
+    let token = await getStreamerToken();
+    if (!token) {
+      const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+      if (rawAuth && rawAuth !== "null") token = rawAuth;
+    }
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${STREAMER_BASE_URL}/api/v1/clusters/${encodeURIComponent(params.clusterId)}/rollout/rollback`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(params),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { success: false, error: data.error || `Rollback failed (HTTP ${res.status})` };
+    }
+    return { success: true, message: data.message || "Rollback initiated successfully" };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : "Network error during rollback";
+    return { success: false, error: errorMsg };
+  }
+}
+
+/**
+ * Retrieve saved canvas layout positions for a cluster
+ * Endpoint: GET /api/v1/clusters/:clusterId/layout
+ */
+export async function apiGetClusterLayout(clusterId: string): Promise<Record<string, { x: number; y: number }>> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/clusters/${encodeURIComponent(clusterId)}/layout`, {
+      headers: getAuthHeaders(),
+      credentials: "include",
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return (data?.positions || {}) as Record<string, { x: number; y: number }>;
+    }
+  } catch (err) {
+    console.warn(`Failed to fetch layout for cluster ${clusterId}:`, err);
+  }
+  return {};
+}
+
+/**
+ * Persist custom canvas layout positions for a cluster
+ * Endpoint: PUT /api/v1/clusters/:clusterId/layout
+ */
+export async function apiSaveClusterLayout(
+  clusterId: string,
+  positions: Record<string, { x: number; y: number }>
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/clusters/${encodeURIComponent(clusterId)}/layout`, {
+      method: "PUT",
+      headers: getAuthHeaders("application/json"),
+      credentials: "include",
+      body: JSON.stringify({ positions }),
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn(`Failed to save layout for cluster ${clusterId}:`, err);
+    return false;
+  }
+}
+
+/**
+ * Reset custom canvas layout positions for a cluster (reverts to autolayout)
+ * Endpoint: DELETE /api/v1/clusters/:clusterId/layout
+ */
+export async function apiResetClusterLayout(clusterId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/clusters/${encodeURIComponent(clusterId)}/layout`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+      credentials: "include",
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn(`Failed to reset layout for cluster ${clusterId}:`, err);
+    return false;
+  }
+}
+

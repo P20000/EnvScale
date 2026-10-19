@@ -1,0 +1,69 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-network-policy
+  namespace: testing-todo
+  labels:
+    tier: networking
+    app.kubernetes.io/part-of: todo-suite
+spec:
+  podSelector:
+    matchLabels:
+      app: todo-frontend
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-network-policy
+  namespace: testing-todo
+  labels:
+    tier: networking
+    app.kubernetes.io/part-of: todo-suite
+spec:
+  podSelector:
+    matchLabels:
+      app: todo-backend
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow traffic from Frontend pods and from Ingress Controller
+    - from:
+        - podSelector:
+            matchLabels:
+              app: todo-frontend
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 3001
+        - protocol: TCP
+          port: 9090
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-database-isolation
+  namespace: testing-todo
+  labels:
+    tier: networking
+    app.kubernetes.io/part-of: todo-suite
+spec:
+  podSelector:
+    matchLabels:
+      app: redis-db
+  policyTypes:
+    - Ingress
+  ingress:
+    # Strict tier isolation: ONLY backend pods can query the database
+    - from:
+        - podSelector:
+            matchLabels:
+              app: todo-backend
+      ports:
+        - protocol: TCP
+          port: 6379

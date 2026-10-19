@@ -10,61 +10,85 @@ export default {
   theme: {
     extend: {
       colors: {
-        background: "#09090b",
-        surface: "#141417",
-        panel: "#1f1f23",
-        foreground: "#f4f4f5",
+        background: "#111318",
+        surface: "#191B20",
+        panel: "#23262D",
+        foreground: "#E6E1E5",
 
         card: {
-          DEFAULT: "#141417",
-          foreground: "#f4f4f5",
+          DEFAULT: "#191B20",
+          foreground: "#E6E1E5",
         },
 
         popover: {
-          DEFAULT: "#1f1f23",
-          foreground: "#f4f4f5",
+          DEFAULT: "#23262D",
+          foreground: "#E6E1E5",
         },
 
         primary: {
-          DEFAULT: "#3b82f6",
-          foreground: "#ffffff",
+          DEFAULT: "#A8C7FA",
+          foreground: "#102F50",
+          container: "#284568",
+          onContainer: "#D3E3FD",
         },
 
         secondary: {
-          DEFAULT: "#27272a",
-          foreground: "#f4f4f5",
+          DEFAULT: "#C4C7C5",
+          foreground: "#111318",
         },
 
         muted: {
-          DEFAULT: "#18181b",
-          foreground: "#a1a1aa",
+          DEFAULT: "#1E2127",
+          foreground: "#92959D",
         },
 
         accent: {
-          DEFAULT: "#27272a",
-          foreground: "#f4f4f5",
+          DEFAULT: "#284568",
+          foreground: "#D3E3FD",
         },
 
         destructive: {
-          DEFAULT: "#ef4444",
-          foreground: "#ffffff",
+          DEFAULT: "#F2B8B5",
+          foreground: "#410E0B",
+          container: "#410E0B",
         },
 
-        border: "#27272a",
-        input: "#27272a",
-        ring: "#3b82f6",
+        border: "#30343B",
+        input: "#30343B",
+        ring: "#D3E3FD",
 
-        /* K8s Status Tokens */
+        /* K8s Status & M3 Tokens */
         canvas: {
-          bg: "#09090b",
-          dot: "#27272a",
+          bg: "#111318",
+          dot: "#2B2F36",
         },
 
         status: {
-          running: "#10b981",
-          warning: "#f59e0b",
-          error: "#ef4444",
-          inactive: "#6b7280",
+          running: "#6DD6A8",
+          warning: "#F4C26B",
+          error: "#F2B8B5",
+          inactive: "#9AA0AA",
+          idle: "#777D87",
+        },
+
+        k8s: {
+          ingress: "#D0BCFF",
+          service: "#8ACBFA",
+          storageBound: "#80DEEA",
+          storagePending: "#F4C26B",
+          cronjob: "#F4C26B",
+          edge: "#515660",
+        },
+
+        md: {
+          primary: "#A8C7FA",
+          onPrimary: "#102F50",
+          primaryContainer: "#284568",
+          onPrimaryContainer: "#D3E3FD",
+          secondary: "#C4C7C5",
+          surfaceVariant: "#30343B",
+          outline: "#8E939D",
+          outlineVariant: "#424750",
         },
       },
 
@@ -79,6 +103,7 @@ export default {
       fontFamily: {
         sans: ["'Plus Jakarta Sans'", "'Plus Jakarta Sans Variable'", "system-ui", "-apple-system", "sans-serif"],
         heading: ["'Google Sans'", "'Plus Jakarta Sans'", "sans-serif"],
+        courgette: ["'Courgette'", "cursive", "sans-serif"],
         mono: ["'Google Sans Code'", "'JetBrains Mono'", "ui-monospace", "SFMono-Regular", "Menlo", "Monaco", "Consolas", "monospace"],
       },
     },

@@ -1,11 +1,13 @@
-import type { Node, Edge } from "@xyflow/react";
+import type { Node } from "@xyflow/react";
 import type { K8sPodData } from "../../components/canvas/K8sPod";
 import type { K8sNodeData } from "../../components/canvas/K8sNode";
 import type { K8sServiceData } from "../../components/canvas/K8sService";
-import type { K8sIngressData, IngressRuleData } from "../../components/canvas/K8sIngress";
+import type { K8sIngressData } from "../../components/canvas/K8sIngress";
+import type { K8sDaemonSetData, K8sCronJobData, K8sJobData, K8sPVCData, K8sHPAData, K8sNetworkPolicyData, K8sPDBData } from "../types/topologyTypes";
 import type { SelectedTarget } from "../../components/drawer/InspectorDrawer";
-import type { K8sDaemonSetData, K8sCronJobData } from "../types/topologyTypes";
 import { calculateRolloutInfo, type K8sDeploymentData, type K8sReplicaSetData } from "./rolloutHelpers";
+import { findWorkloadHPA, findWorkloadNetworkPolicies, findWorkloadPDB, calculateWorkloadCpuUsage } from "./policyHpaHelpers";
+export { type EdgeHealthStatus, isPodReady, extractPodList, calculateEdgeHealth, getEdgeHealth, generateDynamicEdges } from "./edgeHelpers";
 
 export const SYSTEM_NAMESPACES = new Set(["kube-system", "kube-public", "kube-node-lease", "ingress-nginx"]);
 
@@ -20,213 +22,12 @@ export const extractPods = (nodes: Node[]): K8sPodData[] =>
     .map((n) => n.data as K8sPodData);
 
 export const getPodPrefix = (name: string, podData?: K8sPodData) => {
-  if (podData?.ownerName) {
-    return podData.ownerName.replace(/-(?:[a-f0-9]{8,10}|\d{8,10})$/i, "");
-  }
-  let prefix = name;
-  if (name.includes("-")) {
-    prefix = name
-      .replace(/-(?:[a-f0-9]{8,10}|\d{8,10})-[a-z0-9]{4,6}$/i, "")
-      .replace(/-\d+$/i, "")
-      .replace(/-[a-z0-9]{4,6}$/i, "");
-  }
-  return prefix;
-};
-
-export type EdgeHealthStatus = "healthy" | "broken" | "degraded" | "idle";
-
-export const isPodReady = (pod: unknown): boolean => {
-  if (!pod) return false;
-  const p = pod as Record<string, unknown>;
-  const podData = (p.data as Record<string, unknown>) || p;
-  const raw = (podData.rawResource as Record<string, unknown>) || podData;
-  const statusObj = (podData.status || raw.status || {}) as Record<string, unknown>;
-
-  const phaseStr = String(
-    (typeof statusObj === "string" ? statusObj : statusObj.phase) ||
-    podData.phase ||
-    podData.status ||
-    ""
-  ).toLowerCase();
-
-  const isReadyCondition = Array.isArray(statusObj.conditions)
-    ? statusObj.conditions.some(
-        (c: Record<string, unknown>) => c.type === "Ready" && c.status === "True"
-      )
-    : false;
-
-  const isReadyFlag = podData.ready === true || raw.ready === true;
-
-  return (
-    phaseStr === "running" ||
-    phaseStr === "ready" ||
-    phaseStr === "succeeded" ||
-    phaseStr === "completed" ||
-    Boolean(isReadyCondition) ||
-    isReadyFlag
-  );
-};
-
-export const extractPodList = (groupPodsInput: unknown): unknown[] => {
-  if (!groupPodsInput) return [];
-  if (Array.isArray(groupPodsInput)) return groupPodsInput;
-
-  const nodeObj = groupPodsInput as Record<string, unknown>;
-  const nodeData = (nodeObj.data as Record<string, unknown>) || nodeObj;
-
-  if (Array.isArray(nodeData.pods)) return nodeData.pods;
-  if (Array.isArray(nodeData.children)) return nodeData.children;
-
-  return [groupPodsInput];
-};
-
-export const calculateEdgeHealth = (
-  _svc: unknown,
-  groupPodsInput: unknown
-): { healthStatus: EdgeHealthStatus; strokeColor: string } => {
-  const podList = extractPodList(groupPodsInput);
-
-  if (!podList || podList.length === 0) {
-    return { healthStatus: "broken", strokeColor: "#ef4444" };
-  }
-
-  let healthyCount = 0;
-  let failingCount = 0;
-
-  podList.forEach((p) => {
-    const isReady = isPodReady(p);
-    const pData = ((p as Record<string, unknown>).data as Record<string, unknown>) || (p as Record<string, unknown>);
-    const status = String(pData.phase || pData.status || "").toLowerCase();
-
-    if (isReady) {
-      healthyCount++;
-    } else if (
-      status.includes("crash") ||
-      status.includes("fail") ||
-      status.includes("error") ||
-      status.includes("oom")
-    ) {
-      failingCount++;
-    }
-  });
-
-  if (failingCount > 0 && healthyCount > 0) {
-    return { healthStatus: "degraded", strokeColor: "#f59e0b" };
-  }
-  if (failingCount > 0 && healthyCount === 0) {
-    return { healthStatus: "broken", strokeColor: "#ef4444" };
-  }
-  if (healthyCount > 0) {
-    return { healthStatus: "healthy", strokeColor: "#10b981" };
-  }
-
-  return { healthStatus: "idle", strokeColor: "#475569" };
-};
-
-export const getEdgeHealth = calculateEdgeHealth;
-
-export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): Edge[] => {
-  const baseEdges = currentEdges.filter((e) => !e.id.startsWith("e-sys-"));
-  const sysEdges: Edge[] = [];
-
-  const pods = nodes.filter((n) => n.type === "k8sPod");
-  const services = nodes.filter((n) => n.type === "k8sService");
-  const ingresses = nodes.filter((n) => n.type === "k8sIngress");
-
-  ingresses.forEach((ing) => {
-    const rules = (ing.data as K8sIngressData).rules as IngressRuleData[];
-    if (rules && rules.length > 0) {
-      const rulesBySvc = new Map<string, IngressRuleData[]>();
-      rules.forEach((rule) => {
-        if (rule.serviceName) {
-          const svc = services.find(
-            (s) => s.id === rule.serviceName || (s.data as K8sServiceData).name === rule.serviceName
-          );
-          if (svc) {
-            const existing = rulesBySvc.get(svc.id) || [];
-            existing.push(rule);
-            rulesBySvc.set(svc.id, existing);
-          }
-        }
-      });
-
-      rulesBySvc.forEach((svcRules, svcId) => {
-        const formattedPaths = svcRules.map((r) => {
-          const pathStr = r.path || "/";
-          const portStr = r.servicePort ? `:${r.servicePort}` : "";
-          return `${pathStr}${portStr}`;
-        });
-        const labelText = Array.from(new Set(formattedPaths)).join(" • ");
-
-        const targetSvc = services.find((s) => s.id === svcId);
-        let strokeColor = "#8b5cf6"; // Purple Ingress default
-        if (targetSvc) {
-          const svcSelector = (targetSvc.data as K8sServiceData).selector;
-          if (svcSelector && Object.keys(svcSelector).length > 0) {
-            const matched = pods.filter((p) => {
-              const pData = p.data as K8sPodData;
-              const labels = pData.labels as Record<string, string>;
-              return labels && Object.keys(svcSelector).every((k) => labels[k] === svcSelector[k]);
-            });
-            const health = calculateEdgeHealth(targetSvc, matched);
-            if (health.healthStatus === "broken") strokeColor = "#ef4444";
-            else if (health.healthStatus === "degraded") strokeColor = "#f59e0b";
-          }
-        }
-
-        sysEdges.push({
-          id: `e-sys-${ing.id}-${svcId}`,
-          source: ing.id,
-          target: svcId,
-          type: "k8sEdge",
-          animated: false,
-          label: labelText,
-          data: { label: labelText, strokeColor },
-          style: { stroke: strokeColor, strokeWidth: 2, strokeDasharray: "none" },
-        });
-      });
-    }
-  });
-
-  services.forEach((svc) => {
-    const svcData = svc.data as K8sServiceData;
-    const svcSelector = svcData.selector;
-    if (svcSelector && Object.keys(svcSelector).length > 0) {
-      const targetedGroups = new Set<string>();
-      const matchingPods = pods.filter((pod) => {
-        const podData = pod.data as K8sPodData;
-        const labels = podData.labels as Record<string, string>;
-        if (labels) {
-          const match = Object.keys(svcSelector).every(
-            (key) => labels[key] === svcSelector[key as keyof typeof svcSelector]
-          );
-          if (match && pod.parentId) {
-            targetedGroups.add(pod.parentId);
-          }
-          return match;
-        }
-        return false;
-      });
-
-      targetedGroups.forEach((groupId) => {
-        const groupPods = matchingPods.filter((p) => p.parentId === groupId);
-        const podsToCheck = groupPods.length > 0 ? groupPods : matchingPods;
-        const { healthStatus, strokeColor } = calculateEdgeHealth(svc, podsToCheck);
-
-        sysEdges.push({
-          id: `e-sys-${svc.id}-${groupId}`,
-          source: svc.id,
-          target: groupId,
-          type: "k8sEdge",
-          animated: false,
-          data: { healthStatus, strokeColor },
-          style: { stroke: strokeColor, strokeWidth: 2, strokeDasharray: "none" },
-        });
-      });
-    }
-  });
-
-  return [...baseEdges, ...sysEdges];
+  if (podData?.ownerName) return podData.ownerName.replace(/-(?:[a-f0-9]{8,10}|\d{8,10})$/i, "");
+  if (!name.includes("-")) return name;
+  return name
+    .replace(/-(?:[a-f0-9]{8,10}|\d{8,10})-[a-z0-9]{4,6}$/i, "")
+    .replace(/-\d+$/i, "")
+    .replace(/-[a-z0-9]{4,6}$/i, "");
 };
 
 export const syncSelectedNode = (nodes: Node[], currentSelected: SelectedTarget): SelectedTarget => {
@@ -244,13 +45,31 @@ export const syncSelectedNode = (nodes: Node[], currentSelected: SelectedTarget)
   );
   if (matched && matched.data) {
     if (matched.type === "k8sPod") {
-      return { type: "pod", data: matched.data as K8sPodData };
+      const existingOwner = (currentSelected.data as Record<string, unknown>)?.ownerName;
+      const normalizedOwner = existingOwner
+        ? getPodPrefix(String(existingOwner))
+        : getPodPrefix(String((matched.data as Record<string, unknown>).name || ""), matched.data as K8sPodData);
+      return {
+        type: "pod",
+        data: {
+          ...(matched.data as K8sPodData),
+          ownerName: normalizedOwner,
+        },
+      };
     } else if (matched.type === "k8sWorker") {
       return { type: "node", data: matched.data as K8sNodeData };
     } else if (matched.type === "k8sService") {
       return { type: "service", data: matched.data as K8sServiceData };
     } else if (matched.type === "k8sIngress") {
       return { type: "ingress", data: matched.data as K8sIngressData };
+    } else if (matched.type === "k8sJob") {
+      return { type: "job", data: matched.data as K8sJobData };
+    } else if (matched.type === "k8sDaemonSet") {
+      return { type: "daemonset", data: matched.data as K8sDaemonSetData };
+    } else if (matched.type === "k8sCronJob") {
+      return { type: "cronjob", data: matched.data as K8sCronJobData };
+    } else if (matched.type === "k8sPVC") {
+      return { type: "pvc", data: matched.data as K8sPVCData };
     }
   }
   return currentSelected;
@@ -276,7 +95,12 @@ export const aggregateNodesWithWorkloads = (
   deployments: K8sDeploymentData[] = [],
   replicaSets: K8sReplicaSetData[] = [],
   daemonSets: K8sDaemonSetData[] = [],
-  cronJobs: K8sCronJobData[] = []
+  cronJobs: K8sCronJobData[] = [],
+  jobs: K8sJobData[] = [],
+  showCompletedJobs: boolean = false,
+  hpas: K8sHPAData[] = [],
+  networkPolicies: K8sNetworkPolicyData[] = [],
+  pdbs: K8sPDBData[] = []
 ): Node[] => {
   const appNodes = nodes.filter((n) => {
     const d = n.data as Record<string, unknown> | undefined;
@@ -339,11 +163,9 @@ export const aggregateNodesWithWorkloads = (
       return false;
     }
 
-    const rawRes = (podData?.rawResource as Record<string, unknown>) || {};
-    const meta = (rawRes.metadata as Record<string, unknown>) || {};
     const podPhase = String(podData?.phase || podData?.status || "").toLowerCase();
 
-    if (meta.deletionTimestamp || podPhase === "terminating" || podPhase === "deleted") {
+    if (podPhase === "deleted") {
       return false;
     }
 
@@ -361,7 +183,26 @@ export const aggregateNodesWithWorkloads = (
 
     return true;
   });
-  const nonPodNodes = appNodes.filter((n) => n.type !== "k8sPod");
+  const nonPodNodes = appNodes
+    .filter((n) => n.type !== "k8sPod")
+    .map((n) => {
+      if (n.type === "k8sWorker" && daemonSets && daemonSets.length > 0) {
+        const workerData = n.data as K8sNodeData;
+        const daemonAgents = daemonSets.map((ds) => ({
+          name: ds.name,
+          namespace: ds.namespace,
+          ready: (ds.numberReady ?? 0) > 0,
+        }));
+        return {
+          ...n,
+          data: {
+            ...workerData,
+            daemonAgents,
+          },
+        };
+      }
+      return n;
+    });
 
   const podsByPrefix = new Map<string, Node[]>();
 
@@ -381,8 +222,15 @@ export const aggregateNodesWithWorkloads = (
     const groupId = `group-${prefix}`;
 
     const sortedGroupPods = [...groupPods].sort((a, b) => {
-      const pA = String((a.data as K8sPodData)?.phase || (a.data as K8sPodData)?.status || "").toLowerCase();
-      const pB = String((b.data as K8sPodData)?.phase || (b.data as K8sPodData)?.status || "").toLowerCase();
+      const pAData = a.data as K8sPodData;
+      const pBData = b.data as K8sPodData;
+      const pA = String(pAData?.phase || pAData?.status || "").toLowerCase();
+      const pB = String(pBData?.phase || pBData?.status || "").toLowerCase();
+      const isATerminating = Boolean(pAData?.isTerminating || pA === "terminating");
+      const isBTerminating = Boolean(pBData?.isTerminating || pB === "terminating");
+
+      if (!isATerminating && isBTerminating) return -1;
+      if (isATerminating && !isBTerminating) return 1;
 
       const isAActive = pA === "running" || pA === "ready" || pA.includes("crash") || pA.includes("oom");
       const isBActive = pB === "running" || pB === "ready" || pB.includes("crash") || pB.includes("oom");
@@ -390,42 +238,66 @@ export const aggregateNodesWithWorkloads = (
       if (isAActive && !isBActive) return -1;
       if (!isAActive && isBActive) return 1;
 
-      const timeA = new Date(String((a.data as K8sPodData)?.createdAt || 0)).getTime();
-      const timeB = new Date(String((b.data as K8sPodData)?.createdAt || 0)).getTime();
+      const timeA = new Date(String(pAData?.createdAt || 0)).getTime();
+      const timeB = new Date(String(pBData?.createdAt || 0)).getTime();
       return timeB - timeA;
     });
 
-    const activeRunningPods = sortedGroupPods.filter((p) => {
-      const ph = String((p.data as K8sPodData)?.phase || (p.data as K8sPodData)?.status || "").toLowerCase();
-      return ph === "running" || ph === "ready" || ph.includes("crash") || ph.includes("oom");
+    const readyPods = sortedGroupPods.filter((p) => {
+      const pData = p.data as K8sPodData;
+      const ph = String(pData?.phase || pData?.status || "").toLowerCase();
+      const isTerminating = Boolean(pData?.isTerminating || ph === "terminating");
+      const isFailing =
+        ph.includes("crash") ||
+        ph.includes("oom") ||
+        ph.includes("error") ||
+        ph.includes("fail") ||
+        ph.includes("imagepull") ||
+        ph.includes("createcontainer");
+      return !isTerminating && !isFailing && (ph === "running" || ph === "ready") && pData?.ready !== false;
     });
-
-    const activeCap = Math.max(2, activeRunningPods.length);
-    const finalGroupPods = sortedGroupPods.slice(0, activeCap);
 
     const firstPodData = groupPods[0]?.data as K8sPodData | undefined;
     const ns = firstPodData?.namespace || "default";
     const rolloutInfo = calculateRolloutInfo(prefix, ns, deployments, replicaSets);
+    const podsData = groupPods.map((p) => p.data as K8sPodData);
+
+    const isStateful = prefix.toLowerCase().includes("db") || prefix.toLowerCase().includes("redis") || prefix.toLowerCase().includes("stateful");
+    const workloadType = isStateful ? "StatefulSet" : "Deployment";
+
+    const matchedHPA = findWorkloadHPA(hpas, prefix, ns);
+    const podLabels = firstPodData?.labels || {};
+    const matchedNetPols = findWorkloadNetworkPolicies(networkPolicies, podLabels, prefix, ns);
+    const hasNetworkPolicy = matchedNetPols.length > 0;
+    const matchedPDB = findWorkloadPDB(pdbs, prefix, ns, podLabels);
+
+    const hasProbeWarning = groupPods.some((p) => {
+      const pd = p.data as K8sPodData;
+      const ph = String(pd?.phase || pd?.status || "").toLowerCase();
+      return (ph === "running" || ph === "ready") && pd?.ready === false;
+    });
+
+    const cpuUsagePct = calculateWorkloadCpuUsage(groupPods, readyPods.length, matchedHPA);
 
     processedNodes.push({
       id: groupId,
       type: "k8sGroup",
       position: { x: 0, y: 0 },
-      data: { name: prefix, namespace: ns, rolloutInfo },
-    });
-
-    finalGroupPods.forEach((pod, index) => {
-      const col = index % 2;
-      const row = Math.floor(index / 2);
-      const x = 16 + col * (208 + 10);
-      const y = 40 + row * (32 + 10);
-
-      processedNodes.push({
-        ...pod,
-        parentId: groupId,
-        extent: "parent",
-        position: { x, y },
-      });
+      data: {
+        name: prefix,
+        namespace: ns,
+        workloadType,
+        rolloutInfo,
+        pods: podsData,
+        replicas: groupPods.length,
+        readyReplicas: readyPods.length,
+        hpa: matchedHPA,
+        hasNetworkPolicy,
+        networkPolicies: matchedNetPols,
+        pdb: matchedPDB,
+        hasProbeWarning,
+        cpuUsagePct,
+      },
     });
   });
 
@@ -473,7 +345,64 @@ export const aggregateNodesWithWorkloads = (
       data: cj,
     }));
 
-  return [...nonPodNodes, ...dsNodes, ...cjNodes, ...processedNodes];
+  const jobNodes: Node[] = [];
+  const filteredJobs = (jobs || []).filter((j) => {
+    const ns = j.namespace || "default";
+    let isExplicitlyRequested = false;
+    if (typeof selectedNamespaces === "string" && selectedNamespaces !== "all") {
+      if (ns !== selectedNamespaces) return false;
+      isExplicitlyRequested = true;
+    } else if (Array.isArray(selectedNamespaces) && selectedNamespaces.length > 0) {
+      if (selectedNamespaces.includes("__NONE__")) return false;
+      if (!selectedNamespaces.includes(ns)) return false;
+      isExplicitlyRequested = true;
+    }
+    if (!showSystemNamespaces && !isExplicitlyRequested && SYSTEM_NAMESPACES.has(ns)) return false;
+    return true;
+  });
+
+  const activeOrFailedJobs: K8sJobData[] = [];
+  const completedJobs: K8sJobData[] = [];
+
+  filteredJobs.forEach((j) => {
+    const isCompleted = (j.succeeded ?? 0) >= (j.completions ?? 1) || (j.active === 0 && (j.failed ?? 0) === 0);
+    if (isCompleted) {
+      completedJobs.push(j);
+    } else {
+      activeOrFailedJobs.push(j);
+    }
+  });
+
+  // Active and Failed jobs are always rendered as individual cards on the side-rail
+  activeOrFailedJobs.forEach((j) => {
+    jobNodes.push({
+      id: `job-${j.name}`,
+      type: "k8sJob",
+      position: { x: 0, y: 0 },
+      data: j,
+    });
+  });
+
+  // Completed jobs: if showCompletedJobs is true, render individually; otherwise collapse into a single summary card
+  if (showCompletedJobs) {
+    completedJobs.forEach((j) => {
+      jobNodes.push({
+        id: `job-${j.name}`,
+        type: "k8sJob",
+        position: { x: 0, y: 0 },
+        data: j,
+      });
+    });
+  } else if (completedJobs.length > 0) {
+    jobNodes.push({
+      id: "completed-jobs-summary",
+      type: "k8sCompletedJobs",
+      position: { x: 0, y: 0 },
+      data: { count: completedJobs.length },
+    });
+  }
+
+  return [...nonPodNodes, ...dsNodes, ...cjNodes, ...jobNodes, ...processedNodes];
 };
 
 export const sanitizeManifestSnapshot = (node: Node): Record<string, unknown> => {
@@ -492,12 +421,73 @@ export const sanitizeManifestSnapshot = (node: Node): Record<string, unknown> =>
   };
 
   const meta = manifest.metadata as Record<string, unknown>;
-  delete meta.resourceVersion;
-  delete meta.uid;
-  delete meta.creationTimestamp;
-  delete meta.generation;
-  delete meta.managedFields;
+  ["resourceVersion", "uid", "creationTimestamp", "generation", "managedFields"].forEach((k) => delete meta[k]);
   delete manifest.status;
-
   return manifest;
 };
+
+export function parseK8sCpuCapacity(cpuVal?: string | number): number {
+  if (!cpuVal) return 0;
+  const str = String(cpuVal).trim();
+  if (str.endsWith("m")) {
+    const m = parseFloat(str.slice(0, -1));
+    return isNaN(m) ? 0 : m / 1000;
+  }
+  const n = parseFloat(str);
+  return isNaN(n) ? 0 : n;
+}
+
+export function parseK8sMemoryCapacity(memVal?: string | number): number {
+  if (!memVal) return 0;
+  const str = String(memVal).trim();
+  if (str.endsWith("Ki") || str.endsWith("ki")) {
+    const ki = parseFloat(str.slice(0, -2));
+    return isNaN(ki) ? 0 : ki / (1024 * 1024);
+  }
+  if (str.endsWith("Mi") || str.endsWith("mi")) {
+    const mi = parseFloat(str.slice(0, -2));
+    return isNaN(mi) ? 0 : mi / 1024;
+  }
+  if (str.endsWith("Gi") || str.endsWith("gi")) {
+    const gi = parseFloat(str.slice(0, -2));
+    return isNaN(gi) ? 0 : gi;
+  }
+  if (str.endsWith("Ti") || str.endsWith("ti")) {
+    const ti = parseFloat(str.slice(0, -2));
+    return isNaN(ti) ? 0 : ti * 1024;
+  }
+  if (str.endsWith("K") || str.endsWith("k")) {
+    const k = parseFloat(str.slice(0, -1));
+    return isNaN(k) ? 0 : (k * 1000) / (1024 * 1024 * 1024);
+  }
+  if (str.endsWith("M") || str.endsWith("m")) {
+    const m = parseFloat(str.slice(0, -1));
+    return isNaN(m) ? 0 : (m * 1000 * 1000) / (1024 * 1024 * 1024);
+  }
+  if (str.endsWith("G") || str.endsWith("g")) {
+    const g = parseFloat(str.slice(0, -1));
+    return isNaN(g) ? 0 : (g * 1000 * 1000 * 1000) / (1024 * 1024 * 1024);
+  }
+  const bytes = parseFloat(str);
+  if (!isNaN(bytes) && bytes > 0) {
+    return bytes / (1024 * 1024 * 1024);
+  }
+  return 0;
+}
+
+export function calculateClusterCapacity(nodes: Node[]): { clusterCpuCores: number; clusterMemoryGB: number } {
+  let totalCpu = 0;
+  let totalMemGB = 0;
+  for (const n of nodes) {
+    if (n.type === "k8sWorker" && n.data) {
+      const data = n.data as K8sNodeData;
+      totalCpu += parseK8sCpuCapacity(data.cpuCapacity);
+      totalMemGB += parseK8sMemoryCapacity(data.memoryCapacity);
+    }
+  }
+  return {
+    clusterCpuCores: totalCpu,
+    clusterMemoryGB: parseFloat(totalMemGB.toFixed(1)),
+  };
+}
+

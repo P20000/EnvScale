@@ -4,12 +4,14 @@ import type { K8sPodData } from "../canvas/K8sPod";
 import type { K8sNodeData } from "../canvas/K8sNode";
 import type { K8sServiceData } from "../canvas/K8sService";
 import type { K8sIngressData } from "../canvas/K8sIngress";
-import type { K8sDaemonSetData, K8sCronJobData } from "../../store/types/topologyTypes";
+import type { K8sDaemonSetData, K8sCronJobData, K8sJobData, K8sPVCData } from "../../store/types/topologyTypes";
 import { useTopologyStore } from "../../store/useTopologyStore";
+import { useAuthStore } from "../../store/useAuthStore";
 import { OverviewTab } from "./inspector/OverviewTab";
 import { LogsTab } from "./inspector/LogsTab";
 import { MetricsTab } from "./inspector/MetricsTab";
 import { ChaosTab } from "./inspector/ChaosTab";
+import { STREAMER_BASE_URL, getStreamerToken } from "../../config/api";
 
 export type SelectedTarget =
   | { type: "pod"; data: K8sPodData }
@@ -18,7 +20,10 @@ export type SelectedTarget =
   | { type: "ingress"; data: K8sIngressData }
   | { type: "daemonset"; data: K8sDaemonSetData }
   | { type: "cronjob"; data: K8sCronJobData }
+  | { type: "job"; data: K8sJobData }
+  | { type: "pvc"; data: K8sPVCData }
   | null;
+
 
 interface InspectorDrawerProps {
   target: SelectedTarget;
@@ -41,38 +46,109 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
   const [chaosActionMsg, setChaosActionMsg] = useState<string | null>(null);
   const [isEmbeddedLogOpen, setIsEmbeddedLogOpen] = useState(true);
 
-  const triggerChaos = async (faultType: "crash" | "oom-pressure" | "scale-down", actionLabel: string) => {
+  const triggerChaos = async (
+    faultType: "crash" | "oom-pressure" | "scale-down",
+    actionLabel: string,
+    force: boolean = false
+  ) => {
     if (!target) return;
-    setChaosActionMsg(`Injecting ${actionLabel} into ${target.data.name}...`);
+    const podData = target.data as K8sPodData;
+    const targetWorkloadName = podData.labels?.app || podData.ownerName || target.data.name;
+    const nameToInject = faultType === "scale-down" ? targetWorkloadName : target.data.name;
+
+    setChaosActionMsg(`Injecting ${actionLabel} into ${nameToInject}...`);
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
       const clusterId = useTopologyStore.getState().activeCluster;
       if (!clusterId) {
         setChaosActionMsg("Error: No active cluster selected.");
         return;
       }
-      const namespace = (target.data as K8sPodData).namespace || "default";
+      const namespace = podData.namespace || "default";
 
-      const res = await fetch(`${API_BASE_URL}/api/v1/chaos/inject`, {
+      let token = useAuthStore.getState().token || localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+      if (!token || token === "null") {
+        token = await getStreamerToken();
+      }
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token && token !== "null") {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const res = await fetch(`${STREAMER_BASE_URL}/api/v1/chaos/inject`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers,
         body: JSON.stringify({
           clusterId: clusterId,
           namespace: namespace,
-          name: target.data.name,
+          name: nameToInject,
           faultType: faultType,
+          force,
         }),
       });
 
       if (res.ok) {
-        setChaosActionMsg(`[CHAOS FAULT INJECTED]: ${actionLabel} applied live to cluster.`);
+        setChaosActionMsg(
+          force
+            ? `[CHAOS FORCED]: ${actionLabel} applied live (PDB guardrail bypassed).`
+            : `[CHAOS FAULT INJECTED]: ${actionLabel} applied live to cluster.`
+        );
+      } else if (res.status === 409) {
+        const errJson = await res.json().catch(() => null);
+        const msg = errJson?.message || "Disruptions budget exhausted (0 allowed).";
+        setChaosActionMsg(`[PDB SAFETY BLOCKED]: ${msg} Enable 'Force' toggle to bypass.`);
+      } else if (res.status === 401) {
+        if (!useAuthStore.getState().isAuthenticated) {
+          useAuthStore.getState().openAuthModal("Authentication required: Sign in or register to inject cluster faults.");
+          setChaosActionMsg("[AUTH REQUIRED]: Sign in via popup or bottom-left profile to run chaos.");
+        } else {
+          setChaosActionMsg("[AUTH EXPIRED]: Streamer access token expired. Refreshing token...");
+          await getStreamerToken();
+        }
       } else {
-        setChaosActionMsg(`[CHAOS FAULT DISPATCHED]: ${actionLabel} sent to streaming engine.`);
+        const errText = await res.text();
+        setChaosActionMsg(`[CHAOS FAILED]: ${errText || "Cluster rejected injection request"}`);
+      }
+      setTimeout(() => setChaosActionMsg(null), 6000);
+    } catch (err: unknown) {
+      setChaosActionMsg(`[CHAOS ERROR]: ${err instanceof Error ? err.message : String(err)}`);
+      setTimeout(() => setChaosActionMsg(null), 6000);
+    }
+  };
+
+  const clearChaos = async (faultId: string) => {
+    try {
+      setChaosActionMsg("Reverting injected chaos fault...");
+      let token = useAuthStore.getState().token || localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+      if (!token || token === "null") {
+        token = await getStreamerToken();
+      }
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token && token !== "null") {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const res = await fetch(`${STREAMER_BASE_URL}/api/v1/chaos/inject`, {
+        method: "DELETE",
+        headers,
+        body: JSON.stringify({ faultId }),
+      });
+      if (res.ok) {
+        setChaosActionMsg("[CHAOS HEALED]: Cluster fault reversed successfully.");
+      } else if (res.status === 401) {
+        if (!useAuthStore.getState().isAuthenticated) {
+          useAuthStore.getState().openAuthModal("Authentication required: Sign in or register to revert cluster faults.");
+          setChaosActionMsg("[AUTH REQUIRED]: Sign in to reverse chaos fault.");
+        } else {
+          setChaosActionMsg("[AUTH EXPIRED]: Streamer access token expired. Refreshing token...");
+          await getStreamerToken();
+        }
+      } else {
+        const errText = await res.text();
+        setChaosActionMsg(`[CLEAR FAILED]: ${errText || "Could not reverse fault"}`);
       }
       setTimeout(() => setChaosActionMsg(null), 4000);
-    } catch {
-      setChaosActionMsg(`[CHAOS FAULT DISPATCHED]: ${actionLabel} sent to streaming engine.`);
+    } catch (err: unknown) {
+      setChaosActionMsg(`[CLEAR ERROR]: ${err instanceof Error ? err.message : String(err)}`);
       setTimeout(() => setChaosActionMsg(null), 4000);
     }
   };
@@ -86,9 +162,20 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
       const capStr = nodeData.cpuCapacity || (clusterCpuCores ? `${clusterCpuCores} cores` : "Allocating");
       return { label: `${pct}% (${capStr})`, pct: Math.min(100, Math.max(0, pct)) };
     }
+    if (target.type === "job") {
+      const jobData = target.data as K8sJobData;
+      return { label: `Batch Task (${jobData.status})`, pct: jobData.status === "Completed" ? 100 : 50 };
+    }
+    if (target.type === "pvc") {
+      const pvcData = target.data as K8sPVCData;
+      return { label: `Storage (${pvcData.phase})`, pct: pvcData.phase === "Bound" ? 100 : 30 };
+    }
     const podData = target.data as K8sPodData;
     const mcores = podData.cpuUsageMcores ?? 0;
-    const maxMcores = (clusterCpuCores || 12) * 1000;
+    if (!clusterCpuCores || clusterCpuCores === 0) {
+      return { label: `${mcores} mcores (Detecting…)`, pct: 0 };
+    }
+    const maxMcores = clusterCpuCores * 1000;
     const pct = Math.min(100, parseFloat(((mcores / maxMcores) * 100).toFixed(1)));
     return { label: `${mcores} mcores (${pct}%)`, pct };
   };
@@ -100,25 +187,68 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
       const capStr = nodeData.memoryCapacity || (clusterMemoryGB ? `${clusterMemoryGB.toFixed(1)} GiB` : "Allocating");
       return { label: `${pct}% (${capStr})`, pct: Math.min(100, Math.max(0, pct)) };
     }
+    if (target.type === "job") {
+      const jobData = target.data as K8sJobData;
+      return { label: `${jobData.succeeded ?? 0}/${jobData.completions ?? 1} pods`, pct: ((jobData.succeeded ?? 0) / (jobData.completions || 1)) * 100 };
+    }
+    if (target.type === "pvc") {
+      const pvcData = target.data as K8sPVCData;
+      return { label: pvcData.capacity || pvcData.requestedSize || "Dynamic", pct: 100 };
+    }
     const podData = target.data as K8sPodData;
     const mib = podData.memoryUsageMiB ?? 0;
-    const totalMib = (clusterMemoryGB || 14.8) * 1024;
+    if (!clusterMemoryGB || clusterMemoryGB === 0) {
+      return { label: `${mib.toFixed(1)} MiB (Detecting…)`, pct: 0 };
+    }
+    const totalMib = clusterMemoryGB * 1024;
     const pct = Math.min(100, parseFloat(((mib / totalMib) * 100).toFixed(1)));
     return { label: `${mib.toFixed(1)} MiB / ${(totalMib / 1024).toFixed(1)} GiB (${pct}%)`, pct };
   };
 
   return (
-    <aside className="fixed right-0 top-0 bottom-0 z-50 w-[420px] bg-[#141417] border-l border-neutral-800 shadow-2xl flex flex-col animate-in slide-in-from-right duration-250">
-      <div className="flex items-center justify-between p-4 border-b border-neutral-800 bg-neutral-900/50">
+    <aside className="fixed right-0 top-0 bottom-0 z-50 w-[420px] bg-[#191B20] border-l border-[#30343B] shadow-2xl flex flex-col animate-in slide-in-from-right duration-250">
+      <div className="flex items-center justify-between p-4 border-b border-[#30343B] bg-[#23262D]">
         <div className="flex items-center gap-2.5 min-w-0">
-          <span className={`flex h-2.5 w-2.5 rounded-full shrink-0 ${target.type === "ingress" ? "bg-violet-400" : "bg-emerald-500"}`} />
+          <span className={`flex h-2.5 w-2.5 rounded-full shrink-0 ${
+            target.type === "ingress"
+              ? "bg-[#D0BCFF]"
+              : target.type === "daemonset"
+              ? "bg-[#D0BCFF]"
+              : target.type === "pvc"
+              ? "bg-[#80DEEA]"
+              : target.type === "job"
+              ? ((target.data as K8sJobData).status === "Completed" ? "bg-[#6DD6A8]" : (target.data as K8sJobData).status === "Failed" ? "bg-[#F2B8B5]" : "bg-[#8ACBFA]")
+              : target.type === "cronjob"
+              ? "bg-[#F4C26B]"
+              : "bg-[#6DD6A8]"
+          }`} />
           <div className="min-w-0">
-            <h3 className="text-sm font-bold text-neutral-100 truncate">{target.data.name}</h3>
-            <p className="text-[11px] font-mono text-neutral-400 capitalize flex items-center gap-1.5">
+            <h3 className="text-sm font-bold text-[#E6E1E5] truncate">{target.data.name}</h3>
+            <p className="text-[11px] font-mono text-[#C4C7C5] capitalize flex items-center gap-1.5 flex-wrap">
               Type: {target.type}
+              {target.type === "pvc" && (
+                <span className="rounded border border-[#80DEEA]/30 bg-[#80DEEA]/10 px-1.5 py-0.2 text-[10px] font-mono text-[#80DEEA]">
+                  PERSISTENT VOLUME CLAIM
+                </span>
+              )}
               {target.type === "ingress" && (
-                <span className="rounded border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.2 text-[10px] font-mono text-violet-300">
+                <span className="rounded border border-[#D0BCFF]/30 bg-[#D0BCFF]/10 px-1.5 py-0.2 text-[10px] font-mono text-[#D0BCFF]">
                   INGRESS ROUTER
+                </span>
+              )}
+              {target.type === "job" && (
+                <span className="rounded border border-[#F4C26B]/30 bg-[#F4C26B]/10 px-1.5 py-0.2 text-[10px] font-mono text-[#F4C26B]">
+                  BATCH JOB
+                </span>
+              )}
+              {target.type === "daemonset" && (
+                <span className="rounded border border-purple-500/30 bg-purple-500/10 px-1.5 py-0.2 text-[10px] font-mono text-purple-300">
+                  DAEMONSET
+                </span>
+              )}
+              {target.type === "pod" && ((target.data as K8sPodData).isStaticPod || (target.data as K8sPodData).isControlPlane) && (
+                <span className="rounded border border-blue-500/30 bg-blue-500/10 px-1.5 py-0.2 text-[10px] font-mono text-blue-300">
+                  STATIC MIRROR POD
                 </span>
               )}
             </p>
@@ -132,18 +262,18 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
         </button>
       </div>
 
-      <div className="flex border-b border-neutral-800 bg-neutral-950 px-2 text-xs font-medium">
-        {(["overview", "logs", "metrics", "chaos"] as const).map((tab) => (
+      <div className="flex border-b border-neutral-800 bg-neutral-950 p-1.5 gap-1 text-xs font-medium">
+        {(target.type === "pvc" ? (["overview"] as const) : (["overview", "logs", "metrics", "chaos"] as const)).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`flex-1 py-2.5 border-b-2 text-center transition-colors capitalize ${
+            className={`flex-1 py-1.5 rounded-md text-center transition-colors capitalize ${
               activeTab === tab
-                ? "border-blue-500 text-blue-400 font-semibold"
-                : "border-transparent text-neutral-400 hover:text-neutral-200"
+                ? "bg-blue-500 text-white font-semibold shadow-sm shadow-blue-500/20"
+                : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900"
             }`}
           >
-            {tab === "metrics" ? "Usage" : tab === "logs" ? "Live Logs" : tab}
+            {tab === "overview" && target.type === "pvc" ? "Storage Spec" : tab === "metrics" ? "Usage" : tab === "logs" ? "Live Logs" : tab}
           </button>
         ))}
       </div>
@@ -176,6 +306,7 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
             target={target}
             chaosActionMsg={chaosActionMsg}
             triggerChaos={triggerChaos}
+            clearChaos={clearChaos}
           />
         )}
       </div>
