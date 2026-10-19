@@ -3,11 +3,11 @@ import { Icon } from "../ui/Icon";
 import {
   mdiChevronDown,
   mdiAccount,
-  mdiCheck,
+  mdiCheckCircle,
   mdiPlus,
   mdiLock,
   mdiLogout,
-  mdiClose,
+  mdiDeleteOutline,
   mdiKeyOutline,
 } from "@mdi/js";
 import { useAuthStore, type AuthMedium, type StoredAccount } from "../../store/useAuthStore";
@@ -201,12 +201,6 @@ export function UserProfileMenu({ isOpen, onClose, onOpenAuthModal }: UserProfil
               <div className="text-[11px] text-[#E6E1E5]/80 font-sans truncate">
                 {userEmail}
               </div>
-              <div className="flex items-center gap-1.5 mt-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#6DD6A8] animate-pulse" />
-                <span className="text-[9px] font-semibold text-[#6DD6A8] uppercase tracking-wider">
-                  Active Session
-                </span>
-              </div>
             </>
           ) : (
             <>
@@ -215,6 +209,12 @@ export function UserProfileMenu({ isOpen, onClose, onOpenAuthModal }: UserProfil
             </>
           )}
         </div>
+
+        {isAuthenticated && (
+          <div className="shrink-0 flex items-center pr-1 text-[#6DD6A8]" title="Active Session">
+            <Icon path={mdiCheckCircle} size={0.75} />
+          </div>
+        )}
       </div>
 
       <div className="h-px bg-[#30343B]" />
@@ -306,25 +306,19 @@ export function UserProfileMenu({ isOpen, onClose, onOpenAuthModal }: UserProfil
                         {/* Status / Action Indicator */}
                         <div className="flex items-center gap-1 shrink-0">
                           {isActive ? (
-                            <span className="flex items-center gap-0.5 text-[9px] font-bold text-[#6DD6A8] bg-[#6DD6A8]/10 px-1.5 py-0.5 rounded-md border border-[#6DD6A8]/30">
-                              <Icon path={mdiCheck} size={0.45} />
-                              Active
+                            <span className="text-[#6DD6A8] p-0.5" title="Active Account">
+                              <Icon path={mdiCheckCircle} size={0.7} />
                             </span>
                           ) : (
-                            <div className="flex items-center gap-1">
-                              <span className="hidden group-hover:inline-block text-[10px] text-[#A8C7FA] font-medium">
-                                Switch
-                              </span>
-                              <button
-                                type="button"
-                                onClick={(e) => handleRemove(e, acc.id || acc.email)}
-                                title="Remove session"
-                                aria-label="Remove session"
-                                className="opacity-0 group-hover:opacity-100 p-1 text-[#9AA0AA] hover:text-[#F2B8B5] hover:bg-[#410E0B]/40 rounded transition-all"
-                              >
-                                <Icon path={mdiClose} size={0.5} />
-                              </button>
-                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => handleRemove(e, acc.id || acc.email)}
+                              title="Remove session"
+                              aria-label="Remove session"
+                              className="opacity-0 group-hover:opacity-100 p-1.5 text-[#9AA0AA] hover:text-[#F2B8B5] hover:bg-[#373d49] rounded-lg transition-all"
+                            >
+                              <Icon path={mdiDeleteOutline} size={0.6} />
+                            </button>
                           )}
                         </div>
                       </div>
@@ -347,9 +341,9 @@ export function UserProfileMenu({ isOpen, onClose, onOpenAuthModal }: UserProfil
             onClose();
             onOpenAuthModal();
           }}
-          className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#C4C7C5] hover:bg-[#30343B] hover:text-[#E6E1E5] transition-colors"
+          className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-[#C4C7C5] hover:bg-[#373d49] hover:text-[#E6E1E5] transition-colors"
         >
-          <Icon path={mdiPlus} size={0.65} className="text-[#A8C7FA]" />
+          <Icon path={mdiPlus} size={0.65} className="text-[#A8C7FA] shrink-0" />
           <span>Add another account</span>
         </button>
 
@@ -363,10 +357,10 @@ export function UserProfileMenu({ isOpen, onClose, onOpenAuthModal }: UserProfil
                     onClose();
                     await logoutCurrentAccount();
                   }}
-                  className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-[#F2B8B5] hover:bg-[#410E0B]/50 transition-colors"
+                  className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-[#C4C7C5] hover:bg-[#373d49] hover:text-[#E6E1E5] transition-colors"
                 >
-                  <Icon path={mdiLock} size={0.65} className="text-[#F2B8B5]" />
-                  <span>Sign Out Current Account</span>
+                  <Icon path={mdiLock} size={0.65} className="text-[#A8C7FA] shrink-0" />
+                  <span>Sign out of current account</span>
                 </button>
                 <button
                   type="button"
@@ -374,10 +368,10 @@ export function UserProfileMenu({ isOpen, onClose, onOpenAuthModal }: UserProfil
                     onClose();
                     await logoutAll();
                   }}
-                  className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-[#F2B8B5]/80 hover:bg-[#410E0B]/50 hover:text-[#F2B8B5] transition-colors"
+                  className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-[#C4C7C5] hover:bg-[#373d49] hover:text-[#E6E1E5] transition-colors"
                 >
-                  <Icon path={mdiLogout} size={0.65} className="text-[#F2B8B5]/80" />
-                  <span>Sign Out All Accounts</span>
+                  <Icon path={mdiLogout} size={0.65} className="text-[#A8C7FA] shrink-0" />
+                  <span>Sign out of all accounts</span>
                 </button>
               </>
             ) : (
@@ -387,9 +381,9 @@ export function UserProfileMenu({ isOpen, onClose, onOpenAuthModal }: UserProfil
                   onClose();
                   await logoutAll();
                 }}
-                className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-[#F2B8B5] hover:bg-[#410E0B]/50 hover:text-[#F2B8B5] transition-colors"
+                className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-[#C4C7C5] hover:bg-[#373d49] hover:text-[#E6E1E5] transition-colors"
               >
-                <Icon path={mdiLock} size={0.65} className="text-[#F2B8B5]" />
+                <Icon path={mdiLogout} size={0.65} className="text-[#A8C7FA] shrink-0" />
                 <span>Sign Out</span>
               </button>
             )}
