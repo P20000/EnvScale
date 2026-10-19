@@ -14,8 +14,10 @@ import { useTopologyStore } from "./store/useTopologyStore";
 import { useUIStore } from "./store/useUIStore";
 import ConnectClusterWizard from "./components/onboarding/ConnectClusterWizard";
 import { ToastContainer } from "./components/ui/ToastContainer";
-import { apiMe, apiGetWorkspaceClusters, apiGetStreamerClusters } from "./config/api";
+import { apiMe, apiGetWorkspaceClusters } from "./config/api";
 import { useAuthStore } from "./store/useAuthStore";
+import { LandingPage } from "./components/landing/LandingPage";
+import { AuthBufferPage } from "./components/auth/AuthBufferPage";
 
 import { SYSTEM_NAMESPACES } from "./store/helpers/topologyHelpers";
 
@@ -37,6 +39,7 @@ function AppContent() {
   const selectedNamespaces = useUIStore((s) => s.selectedNamespaces);
   const showSystemNamespaces = useUIStore((s) => s.showSystemNamespaces);
   const wsReconnectTick = useTopologyStore((s) => s.wsReconnectTick);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
   useEffect(() => {
     useAuthStore.getState().checkAuth();
@@ -44,43 +47,31 @@ function AppContent() {
 
   useEffect(() => {
     async function hydrateUserWorkspace() {
+      // If NOT authenticated, NEVER hydrate clusters!
+      if (!isAuthenticated) {
+        useTopologyStore.getState().resetStore();
+        return;
+      }
+
       const meData = await apiMe();
-      let clusterFound = false;
       const store = useTopologyStore.getState();
 
       if (meData?.workspace?.id) {
         const dbClusters = await apiGetWorkspaceClusters(meData.workspace.id);
-        if (Array.isArray(dbClusters) && dbClusters.length > 0) {
-          dbClusters.forEach((c: { id: string; name: string }) => {
-            if (c.id && c.name) store.addCluster({ id: c.id, name: c.name });
-          });
-          if (!store.activeCluster && dbClusters[0]?.id) {
-            store.setActiveCluster(dbClusters[0].id);
-          }
-          clusterFound = true;
+        if (Array.isArray(dbClusters)) {
+          const workspaceClusters = dbClusters
+            .filter((c: { id?: string; name?: string }) => Boolean(c?.id && c?.name))
+            .map((c: { id: string; name: string }) => ({ id: c.id, name: c.name }));
+          store.setClusters(workspaceClusters);
+          return;
         }
       }
 
-      if (!clusterFound || store.clusters.length === 0) {
-        const streamerClusters = await apiGetStreamerClusters();
-        if (Array.isArray(streamerClusters) && streamerClusters.length > 0) {
-          streamerClusters.forEach((c) => {
-            if (c.name) {
-              store.addCluster({ id: c.id || c.name, name: c.name, status: c.status });
-            }
-          });
-          if (!store.activeCluster && streamerClusters[0]) {
-            store.setActiveCluster(streamerClusters[0].id || streamerClusters[0].name);
-          }
-        }
-      }
-
-      if (!store.activeCluster && store.clusters.length > 0) {
-        store.setActiveCluster(store.clusters[0].id || store.clusters[0].name);
-      }
+      // If user has no workspace or workspace has no clusters in DB, keep empty
+      store.setClusters([]);
     }
     hydrateUserWorkspace();
-  }, [wsReconnectTick]);
+  }, [wsReconnectTick, isAuthenticated]);
 
   const activeIncidentsCount = useMemo(() => {
     const isNsAllowed = (ns?: string) => {
@@ -102,6 +93,7 @@ function AppContent() {
     return unhealthyPodsCount + unreadAlertsCount;
   }, [pods, notifications, selectedNamespaces, showSystemNamespaces]);
 
+  const [loggedOutView, setLoggedOutView] = useState<"landing" | "auth-buffer">("landing");
   const [activeTab, setActiveTab] = useState<NavTab>("topology");
   const [showConnectWizard, setShowConnectWizard] = useState(false);
 
@@ -135,6 +127,28 @@ function AppContent() {
   const selectedKey = selectedNode
     ? `${selectedNode.type}-${selectedNode.data?.name || selectedNode.data?.id || "target"}`
     : "none";
+
+  // When unauthenticated, render the landing page or the buffer auth page (neither dashboard nor landing)
+  if (!isAuthenticated) {
+    if (loggedOutView === "auth-buffer") {
+      return (
+        <div className="relative min-h-screen w-screen overflow-x-hidden bg-[#111318] font-sans text-[#E6E1E5]">
+          <AuthBufferPage
+            onBackToLanding={() => setLoggedOutView("landing")}
+            onLoginSuccess={() => setLoggedOutView("landing")}
+          />
+          <ToastContainer />
+        </div>
+      );
+    }
+
+    return (
+      <div className="relative min-h-screen w-screen overflow-x-hidden bg-[#111318] font-sans text-[#E6E1E5]">
+        <LandingPage onGetStarted={() => setLoggedOutView("auth-buffer")} />
+        <ToastContainer />
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-screen w-screen overflow-hidden bg-[#111318] font-sans text-[#E6E1E5] select-none">

@@ -7,12 +7,14 @@ import { env } from "../config/env.js";
 import * as schema from "../db/schema/index.js";
 
 // Dynamically construct social providers configuration only if client credentials exist
-const socialProviders: Record<string, { clientId: string; clientSecret: string }> = {};
+const socialProviders: Record<string, { clientId: string; clientSecret: string; prompt?: string; accessType?: "offline" | "online" }> = {};
 
 if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) {
   socialProviders.google = {
     clientId: env.GOOGLE_CLIENT_ID,
     clientSecret: env.GOOGLE_CLIENT_SECRET,
+    prompt: "select_account",
+    accessType: "offline",
   };
 }
 
@@ -55,7 +57,7 @@ export const auth = betterAuth({
     jwt({
       jwt: {
         secret: env.JWT_ACCESS_SECRET, // Shared secret key for Go k8s-streamer gateway HMAC verification
-        expirationTime: "15m",
+        expirationTime: "7d",
       },
     }),
   ],

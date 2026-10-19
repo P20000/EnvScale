@@ -10,7 +10,7 @@ import {
   mdiLoading,
   mdiShieldLockOutline,
 } from "@mdi/js";
-import { apiLogin, apiRegister, apiDevQuickLogin } from "../../config/api";
+import { apiLogin, apiRegister } from "../../config/api";
 import { authClient } from "../../lib/auth-client";
 import { useAuthStore } from "../../store/useAuthStore";
 import { EnvScaleLogo } from "../ui/EnvScaleLogo";
@@ -65,7 +65,7 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess, reason: propsReason
       setSuccessMsg(mode === "register" ? "Account created successfully!" : "Authenticated successfully!");
       const jwt = result.accessToken || result.token;
       if (jwt) {
-        loginWithToken(jwt, result.user);
+        loginWithToken(jwt, result.user, "credentials");
       }
       setTimeout(() => {
         onLoginSuccess?.(email);
@@ -123,7 +123,7 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess, reason: propsReason
           </div>
         )}
 
-        {/* Tab switcher: Sign In vs Register */}
+        {/* Tab switcher: Sign In vs Register (Signature Blue background with Dark Text) */}
         <div className="flex rounded-lg bg-background p-1 border border-neutral-800 text-xs font-medium">
           <button
             type="button"
@@ -131,9 +131,9 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess, reason: propsReason
               setMode("signin");
               setError(null);
             }}
-            className={`flex-1 py-1.5 rounded-md text-center transition-colors ${
+            className={`flex-1 py-1.5 rounded-md text-center transition-all text-xs font-bold ${
               mode === "signin"
-                ? "bg-blue-500 text-white font-semibold shadow-sm shadow-blue-500/20"
+                ? "bg-[#A8C7FA] text-[#102F50] shadow-sm"
                 : "text-neutral-400 hover:text-neutral-200"
             }`}
           >
@@ -145,9 +145,9 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess, reason: propsReason
               setMode("register");
               setError(null);
             }}
-            className={`flex-1 py-1.5 rounded-md text-center transition-colors ${
+            className={`flex-1 py-1.5 rounded-md text-center transition-all text-xs font-bold ${
               mode === "register"
-                ? "bg-blue-500 text-white font-semibold shadow-sm shadow-blue-500/20"
+                ? "bg-[#A8C7FA] text-[#102F50] shadow-sm"
                 : "text-neutral-400 hover:text-neutral-200"
             }`}
           >
@@ -160,7 +160,19 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess, reason: propsReason
             type="button"
             onClick={async () => {
               try {
-                const res = await authClient.signIn.social({ provider: "google", callbackURL: window.location.origin });
+                sessionStorage.setItem("envscale_pending_auth_medium", "google");
+                sessionStorage.setItem("envscale_pending_oauth", "true");
+                await authClient.signOut({}).catch(() => {});
+                localStorage.removeItem("envscale_auth_token");
+                localStorage.removeItem("envscale_access_token");
+                const res = await authClient.signIn.social({
+                  provider: "google",
+                  callbackURL: window.location.origin,
+                });
+                if (res?.data?.url) {
+                  window.location.href = res.data.url;
+                  return;
+                }
                 if (res?.error) {
                   setError(res.error.message || "Google OAuth is not configured on the server.");
                 }
@@ -195,7 +207,16 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess, reason: propsReason
             type="button"
             onClick={async () => {
               try {
+                sessionStorage.setItem("envscale_pending_auth_medium", "github");
+                sessionStorage.setItem("envscale_pending_oauth", "true");
+                await authClient.signOut({}).catch(() => {});
+                localStorage.removeItem("envscale_auth_token");
+                localStorage.removeItem("envscale_access_token");
                 const res = await authClient.signIn.social({ provider: "github", callbackURL: window.location.origin });
+                if (res?.data?.url) {
+                  window.location.href = res.data.url;
+                  return;
+                }
                 if (res?.error) {
                   setError(res.error.message || "GitHub OAuth is not configured on the server.");
                 }
@@ -210,39 +231,15 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess, reason: propsReason
             </svg>
             <span>Continue with GitHub</span>
           </button>
-
-          <button
-            type="button"
-            onClick={async () => {
-              setIsLoading(true);
-              setError(null);
-              const result = await apiDevQuickLogin();
-              setIsLoading(false);
-              if (result.error) {
-                setError(result.error);
-              } else {
-                setSuccessMsg("Authenticated as Local Dev User!");
-                const jwt = result.accessToken || result.token;
-                if (jwt) {
-                  loginWithToken(jwt, result.user);
-                }
-                setTimeout(() => {
-                  onLoginSuccess?.("dev@envscale.local");
-                  onClose();
-                  setSuccessMsg(null);
-                }, 600);
-              }
-            }}
-            className="w-full flex items-center justify-center gap-2 rounded-md border border-blue-500/30 bg-blue-500/10 py-2 text-xs font-semibold text-blue-400 hover:bg-blue-500/20 transition-colors"
-          >
-            <span>⚡ Quick Dev Login (dev@envscale.local)</span>
-          </button>
         </div>
 
-        <div className="relative flex items-center justify-center my-2">
-          <div className="border-t border-neutral-800 w-full"></div>
-          <span className="bg-surface px-2 text-[10px] uppercase tracking-wider text-neutral-500 font-heading">
-            Or continue with email
+        {/* Centered Divider for Credentials Section */}
+        <div className="relative flex items-center justify-center my-4">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-neutral-800" />
+          </div>
+          <span className="relative bg-surface px-3 text-[10px] uppercase tracking-wider text-neutral-500 font-mono select-none">
+            Or continue with credentials
           </span>
         </div>
 
@@ -305,9 +302,9 @@ export function AuthModal({ isOpen, onClose, onLoginSuccess, reason: propsReason
             <button
               type="submit"
               disabled={isLoading}
-              className="flex items-center gap-2 rounded-md bg-blue-500 px-5 py-2 text-xs font-semibold text-white hover:bg-blue-600 transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 rounded-md bg-[#A8C7FA] px-5 py-2 text-xs font-bold text-[#102F50] hover:bg-[#D3E3FD] transition-colors disabled:opacity-50 shadow-sm cursor-pointer"
             >
-              {isLoading && <Icon path={mdiLoading} size={0.65} className="animate-spin" />}
+              {isLoading && <Icon path={mdiLoading} size={0.65} className="animate-spin text-[#102F50]" />}
               <span>
                 {isLoading
                   ? mode === "register"

@@ -112,3 +112,37 @@ export const getStreamerToken = async (request: Request, response: Response) => 
   const token = createAccessToken(request.user, { allowedClusterIds });
   response.json({ token, allowedClusterIds });
 };
+
+export const switchSession = async (request: Request, response: Response) => {
+  try {
+    const { accountId, email } = request.body as { accountId?: string; email?: string };
+    if (!accountId && !email) {
+      response.status(400).json({ error: "accountId or email is required" });
+      return;
+    }
+
+    let user = accountId ? await getUserById(accountId) : undefined;
+    if (!user && email) {
+      user = await findUserByEmail(email);
+    }
+
+    if (!user || user.isActive === false) {
+      response.status(404).json({ error: "User session not found" });
+      return;
+    }
+
+    const allowedClusterIds = await getUserAccessibleClusterIds(user.id, user.role);
+    const token = createAccessToken(user, { allowedClusterIds });
+    const workspace = await ensureDefaultWorkspace(user.id, user.name);
+
+    response.json({
+      token,
+      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      workspace,
+      allowedClusterIds,
+    });
+  } catch (error) {
+    console.error("switchSession handler error:", error);
+    response.status(500).json({ error: "Failed to switch user session" });
+  }
+};

@@ -25,7 +25,7 @@ export const createAccessToken = (user: AuthUser, extraClaims?: Record<string, u
   jwt.sign(
     { sub: user.id, email: user.email, role: user.role, ...(extraClaims || {}) },
     getAccessTokenSecret(),
-    { expiresIn: "15m" }
+    { expiresIn: "7d" }
   );
 
 export const createServiceToken = (subject: string = "api-server") =>
@@ -81,9 +81,15 @@ export const issueTokens = async (user: AuthUser) => ({
   refreshToken: await createRefreshToken(user.id),
 });
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const findUserByEmail = async (email: string) => {
-  const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
-  return result[0];
+  if (!email) return undefined;
+  const normEmail = email.trim().toLowerCase();
+  const result = await db.select().from(users).where(eq(users.email, normEmail)).limit(1);
+  if (result[0]) return result[0];
+  const exact = await db.select().from(users).where(eq(users.email, email.trim())).limit(1);
+  return exact[0];
 };
 
 export const registerUser = async (name: string, email: string, password: string) => {
@@ -120,6 +126,9 @@ export const rotateRefreshToken = async (token: string) => {
 };
 
 export const getUserById = async (id: string) => {
+  if (!id || !UUID_REGEX.test(id)) {
+    return undefined;
+  }
   const result = await db
     .select()
     .from(users)

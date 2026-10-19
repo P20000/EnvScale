@@ -7,11 +7,9 @@ import {
   mdiTrophy,
   mdiCog,
   mdiAccount,
-  mdiLock,
 } from "@mdi/js";
 import { EnvScaleLogo } from "../ui/EnvScaleLogo";
-import { AuthModal } from "./AuthModal";
-import { useTopologyStore } from "../../store/useTopologyStore";
+import { UserProfileMenu } from "./UserProfileMenu";
 import { useAuthStore } from "../../store/useAuthStore";
 
 export type NavTab = "topology" | "incidents" | "metrics" | "leaderboard" | "settings";
@@ -34,12 +32,7 @@ export function LeftSidebar({
   const userMenuRef = useRef<HTMLDivElement>(null);
 
   const user = useAuthStore((s) => s.user);
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const openAuthModal = useAuthStore((s) => s.openAuthModal);
-  const closeAuthModal = useAuthStore((s) => s.closeAuthModal);
-  const authModalOpen = useAuthStore((s) => s.authModalOpen);
-  const authModalReason = useAuthStore((s) => s.authModalReason);
-  const logout = useAuthStore((s) => s.logout);
   const checkAuth = useAuthStore((s) => s.checkAuth);
 
   const loggedInEmail = user?.email || null;
@@ -95,7 +88,7 @@ export function LeftSidebar({
   return (
     <aside className="fixed left-0 top-0 h-screen w-14 z-40 flex flex-col items-center py-4 bg-[#191B20] border-r border-[#30343B] select-none">
       {/* Brand Emblem Logo Header */}
-      <div className="group relative flex h-10 w-10 items-center justify-center rounded-md bg-blue-500 text-white cursor-pointer hover:bg-blue-600 transition-all shrink-0">
+      <div className="group relative flex h-10 w-10 items-center justify-center rounded-md bg-blue-500 text-white shrink-0 select-none">
         <EnvScaleLogo className="h-5 w-5 text-white" />
         <div className="absolute left-full ml-3 hidden rounded-md bg-[#23262D] px-3 py-1.5 text-xs font-bold text-[#E6E1E5] border border-[#424750] whitespace-nowrap group-hover:block z-[70] shadow-xl pointer-events-none font-heading">
           EnvScale Platform
@@ -207,81 +200,19 @@ export function LeftSidebar({
           </button>
 
           {/* User Profile Flyout Menu */}
-          {userMenuOpen && (
-            <div className="absolute left-full bottom-0 ml-3 w-60 rounded-xl border border-[#424750] bg-[#23262D] p-2.5 z-[70] shadow-2xl space-y-2 animate-in fade-in zoom-in-95 duration-150">
-              <div className="flex items-center gap-2.5 px-1 py-1">
-                {userAvatarUrl && !avatarFailed ? (
-                  <img
-                    src={userAvatarUrl}
-                    alt="User avatar"
-                    className="h-9 w-9 rounded-full object-cover border border-blue-500/40 shrink-0 shadow-sm"
-                  />
-                ) : (
-                  <div className="h-9 w-9 rounded-full bg-blue-500/20 text-blue-400 font-bold flex items-center justify-center shrink-0">
-                    {loggedInEmail ? loggedInEmail.charAt(0).toUpperCase() : "?"}
-                  </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  {loggedInEmail ? (
-                    <>
-                      <div className="text-xs font-bold text-[#E6E1E5] font-heading truncate">
-                        {userName || "Authenticated User"}
-                      </div>
-                      <div className="text-[11px] text-blue-400 font-mono truncate">{loggedInEmail}</div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="text-xs font-bold text-[#E6E1E5] font-heading">Guest Account</div>
-                      <div className="text-[10px] text-[#92959D]">Sign in to authenticate telemetry</div>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              <div className="h-px bg-[#30343B] my-1" />
-
-              {isAuthenticated ? (
-                <button
-                  onClick={async () => {
-                    setUserMenuOpen(false);
-                    await logout();
-                  }}
-                  className="w-full flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs text-[#F2B8B5] hover:bg-[#410E0B]/50 hover:text-[#F2B8B5] transition-colors"
-                >
-                  <Icon path={mdiLock} size={0.65} className="text-[#F2B8B5]" />
-                  <span>Sign Out</span>
-                </button>
-              ) : (
-                <button
-                  onClick={() => {
-                    setUserMenuOpen(false);
-                    if (onOpenAuthModal) {
-                      onOpenAuthModal();
-                    } else {
-                      openAuthModal();
-                    }
-                  }}
-                  className="w-full flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs text-blue-400 hover:bg-blue-500/10 font-medium transition-colors"
-                >
-                  <Icon path={mdiLock} size={0.65} className="text-blue-400" />
-                  <span>Sign In / Register</span>
-                </button>
-              )}
-            </div>
-          )}
+          <UserProfileMenu
+            isOpen={userMenuOpen}
+            onClose={() => setUserMenuOpen(false)}
+            onOpenAuthModal={() => {
+              if (onOpenAuthModal) {
+                onOpenAuthModal();
+              } else {
+                openAuthModal();
+              }
+            }}
+          />
         </div>
       </div>
-
-      {/* Auth Modal Triggered from Profile Icon */}
-      <AuthModal
-        isOpen={authModalOpen}
-        reason={authModalReason}
-        onClose={closeAuthModal}
-        onLoginSuccess={() => {
-          closeAuthModal();
-          useTopologyStore.getState().triggerWsReconnect();
-        }}
-      />
     </aside>
   );
 }

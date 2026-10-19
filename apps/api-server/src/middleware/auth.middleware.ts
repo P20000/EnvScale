@@ -18,11 +18,50 @@ declare global {
 }
 
 import { auth } from "../lib/auth.js";
+import { fromNodeHeaders } from "better-auth/node";
 
 export const requireAuth = async (request: Request, response: Response, next: NextFunction) => {
+  // 1. Check Bearer JWT token first (explicit client-specified session)
+  const header = request.header("authorization");
+  const token = header?.startsWith("Bearer ") ? header.slice(7) : undefined;
+  const secret = process.env.JWT_ACCESS_SECRET;
+
+  if (token && secret) {
+    try {
+      const payload = jwt.verify(token, secret);
+      if (typeof payload === "object" && typeof payload.sub === "string") {
+        // Recognize internal system service tokens (e.g. k8s-streamer -> api-server)
+        if (payload.sub === "k8s-streamer" || payload.sub === "api-server") {
+          request.user = {
+            id: payload.sub,
+            name: "System Service",
+            email: `${payload.sub}@envscale.internal`,
+            role: "ADMIN",
+            isActive: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            passwordHash: "",
+            avatar: null,
+          } as any;
+          next();
+          return;
+        }
+
+        const user = await getUserById(payload.sub);
+        if (user && user.isActive !== false) {
+          request.user = user;
+          next();
+          return;
+        }
+      }
+    } catch {
+      // If Bearer token is invalid or expired, continue to fallback checks
+    }
+  }
+
+  // 2. Fallback to Better Auth session cookie (e.g., initial OAuth setup / streamer-token fetch)
   try {
-    // 1. Check Better Auth session from request headers / cookies
-    const session = await auth.api.getSession({ headers: request.headers });
+    const session = await auth.api.getSession({ headers: fromNodeHeaders(request.headers) });
     if (session?.user) {
       const dbUser = await getUserById(session.user.id);
       if (dbUser && dbUser.isActive !== false) {
@@ -32,53 +71,10 @@ export const requireAuth = async (request: Request, response: Response, next: Ne
       }
     }
   } catch {
-    // Session check fallback to Bearer JWT token verification
+    // Session check failed
   }
 
-  // 2. Check Bearer JWT token fallback
-  const header = request.header("authorization");
-  const token = header?.startsWith("Bearer ") ? header.slice(7) : undefined;
-  const secret = process.env.JWT_ACCESS_SECRET;
-
-  if (!token || !secret) {
-    response.status(401).json({ error: "Authentication required" });
-    return;
-  }
-
-  try {
-    const payload = jwt.verify(token, secret);
-    if (typeof payload !== "object" || typeof payload.sub !== "string") {
-      response.status(401).json({ error: "Invalid access token" });
-      return;
-    }
-
-    // Recognize internal system service tokens (e.g. k8s-streamer -> api-server)
-    if (payload.sub === "k8s-streamer" || payload.sub === "api-server") {
-      request.user = {
-        id: payload.sub,
-        name: "System Service",
-        email: `${payload.sub}@envscale.internal`,
-        role: "ADMIN",
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        passwordHash: "",
-        avatar: null,
-      } as any;
-      next();
-      return;
-    }
-
-    const user = await getUserById(payload.sub);
-    if (!user) {
-      response.status(401).json({ error: "User is inactive or unavailable" });
-      return;
-    }
-    request.user = user;
-    next();
-  } catch {
-    response.status(401).json({ error: "Invalid or expired access token" });
-  }
+  response.status(401).json({ error: "Authentication required" });
 };
 
 export const requireWorkspaceRole = (...allowedRoles: WorkspaceRole[]) =>

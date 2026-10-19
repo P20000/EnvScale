@@ -145,7 +145,7 @@ export function TopNavbar({
         </div>
 
         {/* Left Group: Foreground Brand Elements */}
-        <div className="relative z-10 flex items-center gap-3 h-full">
+        <div className="relative z-10 flex items-center gap-3 h-full select-none">
           <EnvScaleLogo className="w-7 h-7 text-blue-500 shrink-0 select-none" />
           <span className="text-sm font-mono font-black tracking-widest text-[#E6E1E5] uppercase">
             ENVSCALE
@@ -164,7 +164,7 @@ export function TopNavbar({
             aria-label="Select active cluster"
             className="flex items-center gap-2 text-xs font-mono font-bold tracking-wider text-[#E6E1E5] hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-sm"
           >
-            <span>{clusters.find(c => c.id === activeCluster)?.name || "Select Cluster"}</span>
+            <span>{clusters.find(c => c.id === activeCluster)?.name || (clusters.length > 0 ? "Select Cluster" : "No Cluster Connected")}</span>
             <Icon path={mdiChevronDown} size={0.65} className="text-[#C4C7C5]" />
           </button>
 
@@ -175,6 +175,11 @@ export function TopNavbar({
                 Active Kubernetes Clusters
               </div>
               <div className="space-y-1">
+                {clusters.length === 0 && (
+                  <div className="px-2.5 py-2 text-xs font-mono text-[#92959D] italic">
+                    No clusters connected
+                  </div>
+                )}
                 {clusters.map((cluster) => (
                   <div
                     key={cluster.id}

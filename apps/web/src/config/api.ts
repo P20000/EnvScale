@@ -10,7 +10,12 @@ export const API_BASE_URL =
 export const STREAMER_BASE_URL =
   import.meta.env.VITE_STREAMER_BASE_URL || "http://localhost:8080";
 
-import { useTopologyStore } from "../store/useTopologyStore";
+export function getAuthHeaders(contentType?: string): Record<string, string> {
+  const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
+  const headers: Record<string, string> = contentType ? { "Content-Type": contentType } : {};
+  if (rawAuth && rawAuth !== "null") headers["Authorization"] = `Bearer ${rawAuth}`;
+  return headers;
+}
 
 export interface LoginResponse {
   token?: string;       // kept for compatibility
@@ -92,16 +97,42 @@ export async function apiRegister(userData: {
   }
 }
 
-export async function apiDevQuickLogin(): Promise<LoginResponse> {
-  let res = await apiLogin({ email: "dev@envscale.local", password: "Password123!" });
-  if (res.error) {
-    res = await apiRegister({ name: "Local Dev User", email: "dev@envscale.local", password: "Password123!" });
+export interface SwitchSessionResponse {
+  token?: string;
+  user?: {
+    id: string;
+    email: string;
+    name: string;
+    role: string;
+  };
+  workspace?: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+  allowedClusterIds?: string[];
+  error?: string;
+}
+
+export async function apiSwitchSession(params: {
+  accountId?: string;
+  email?: string;
+}): Promise<SwitchSessionResponse> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/auth/switch-session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(params),
+    });
+    const data = (await res.json()) as SwitchSessionResponse;
+    if (!res.ok) {
+      return { error: data.error || `Switch session failed (${res.status})` };
+    }
+    return data;
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Network error" };
   }
-  if (res.accessToken) {
-    localStorage.setItem("envscale_auth_token", res.accessToken);
-    useTopologyStore.getState().triggerWsReconnect();
-  }
-  return res;
 }
 
 /**
@@ -163,17 +194,7 @@ export async function apiConnectCluster(clusterData: {
   workspaceId?: string;
 }): Promise<ClusterResponse> {
   try {
-    // 1. Direct registration removed; API server now handles it with correct UUID
-    // 2. Persist cluster registration in REST API server (http://localhost:3000)
-
-    // 2. Persist cluster registration in REST API server (http://localhost:3000)
     try {
-      const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (rawAuth && rawAuth !== "null") {
-        headers["Authorization"] = `Bearer ${rawAuth}`;
-      }
-
       const wsId = clusterData.workspaceId;
       const targetUrl = wsId
         ? `${API_BASE_URL}/api/v1/workspaces/${wsId}/clusters/connect`
@@ -181,7 +202,7 @@ export async function apiConnectCluster(clusterData: {
 
       const res = await fetch(targetUrl, {
         method: "POST",
-        headers,
+        headers: getAuthHeaders("application/json"),
         credentials: "include",
         body: JSON.stringify({
           name: clusterData.name,
@@ -215,12 +236,8 @@ export async function apiConnectCluster(clusterData: {
 
 export async function apiGetWorkspaces() {
   try {
-    const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
-    const headers: Record<string, string> = {};
-    if (rawAuth && rawAuth !== "null") headers["Authorization"] = `Bearer ${rawAuth}`;
-    
     const res = await fetch(`${API_BASE_URL}/api/v1/workspaces`, {
-      headers,
+      headers: getAuthHeaders(),
       credentials: "include",
     });
     if (res.ok) {
@@ -234,12 +251,8 @@ export async function apiGetWorkspaces() {
 
 export async function apiGetWorkspaceClusters(workspaceId: string) {
   try {
-    const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
-    const headers: Record<string, string> = {};
-    if (rawAuth && rawAuth !== "null") headers["Authorization"] = `Bearer ${rawAuth}`;
-
     const res = await fetch(`${API_BASE_URL}/api/v1/workspaces/${workspaceId}/clusters`, {
-      headers,
+      headers: getAuthHeaders(),
       credentials: "include",
     });
     if (res.ok) {
@@ -275,12 +288,8 @@ export async function apiGetStreamerClusters(): Promise<Array<{ id: string; name
 
 export async function apiMe() {
   try {
-    const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
-    const headers: Record<string, string> = {};
-    if (rawAuth && rawAuth !== "null") headers["Authorization"] = `Bearer ${rawAuth}`;
-
     const res = await fetch(`${API_BASE_URL}/api/v1/auth/me`, {
-      headers,
+      headers: getAuthHeaders(),
       credentials: "include",
     });
     if (res.ok) {
@@ -310,13 +319,9 @@ export async function apiDisconnectCluster(clusterId: string): Promise<boolean> 
       headers: streamerHeaders,
     });
 
-    const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
-    const headers: Record<string, string> = {};
-    if (rawAuth && rawAuth !== "null") headers["Authorization"] = `Bearer ${rawAuth}`;
-
     const res = await fetch(`${API_BASE_URL}/api/v1/clusters/${clusterId}`, {
       method: "DELETE",
-      headers,
+      headers: getAuthHeaders(),
       credentials: "include",
     });
     return res.ok;
@@ -414,12 +419,8 @@ export async function apiRollbackDeployment(params: RollbackParams): Promise<Rol
  */
 export async function apiGetClusterLayout(clusterId: string): Promise<Record<string, { x: number; y: number }>> {
   try {
-    const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
-    const headers: Record<string, string> = {};
-    if (rawAuth && rawAuth !== "null") headers["Authorization"] = `Bearer ${rawAuth}`;
-
     const res = await fetch(`${API_BASE_URL}/api/v1/clusters/${encodeURIComponent(clusterId)}/layout`, {
-      headers,
+      headers: getAuthHeaders(),
       credentials: "include",
     });
     if (res.ok) {
@@ -441,13 +442,9 @@ export async function apiSaveClusterLayout(
   positions: Record<string, { x: number; y: number }>
 ): Promise<boolean> {
   try {
-    const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (rawAuth && rawAuth !== "null") headers["Authorization"] = `Bearer ${rawAuth}`;
-
     const res = await fetch(`${API_BASE_URL}/api/v1/clusters/${encodeURIComponent(clusterId)}/layout`, {
       method: "PUT",
-      headers,
+      headers: getAuthHeaders("application/json"),
       credentials: "include",
       body: JSON.stringify({ positions }),
     });
@@ -464,13 +461,9 @@ export async function apiSaveClusterLayout(
  */
 export async function apiResetClusterLayout(clusterId: string): Promise<boolean> {
   try {
-    const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
-    const headers: Record<string, string> = {};
-    if (rawAuth && rawAuth !== "null") headers["Authorization"] = `Bearer ${rawAuth}`;
-
     const res = await fetch(`${API_BASE_URL}/api/v1/clusters/${encodeURIComponent(clusterId)}/layout`, {
       method: "DELETE",
-      headers,
+      headers: getAuthHeaders(),
       credentials: "include",
     });
     return res.ok;

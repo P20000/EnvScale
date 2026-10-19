@@ -70,9 +70,7 @@ export interface TopologyState {
   replicaSets: K8sReplicaSetData[];
   deployments: K8sDeploymentData[];
   daemonSets: K8sDaemonSetData[];
-  cronJobs: K8sCronJobData[];
-  jobs: K8sJobData[];
-  pvcs: K8sPVCData[];
+  cronJobs: K8sCronJobData[]; jobs: K8sJobData[]; pvcs: K8sPVCData[];
   pvs: K8sPVData[];
   configMaps: K8sConfigMapData[];
   secrets: K8sSecretData[];
@@ -107,6 +105,7 @@ export interface TopologyState {
   setIncidents: (incidents: K8sIncidentEvent[] | ((prev: K8sIncidentEvent[]) => K8sIncidentEvent[])) => void;
 
   setActiveCluster: (cluster: string) => void;
+  setClusters: (clusters: Cluster[]) => void;
   addCluster: (cluster: Cluster) => void;
   deleteCluster: (clusterId: string) => void;
   deleteNode: (nodeId: string) => void;
@@ -200,6 +199,13 @@ export const useTopologyStore = create<TopologyState>()(
       clearSelectedNode: () => set({ selectedNode: null }),
 
       setActiveCluster: (cluster) => set({ activeCluster: cluster }),
+      setClusters: (clusters) =>
+        set((state) => ({
+          clusters,
+          activeCluster: clusters.some((c) => c.id === state.activeCluster)
+            ? state.activeCluster
+            : clusters[0]?.id || "",
+        })),
 
       addCluster: (cluster) => {
         if (!cluster || !cluster.id || !cluster.name) return;
@@ -457,20 +463,9 @@ export const useTopologyStore = create<TopologyState>()(
           replicaSets: [],
           deployments: [],
           daemonSets: [],
-          cronJobs: [],
-          jobs: [],
-          pvcs: [],
-          hpas: [],
-          networkPolicies: [],
-          pdbs: [],
-          incidents: [],
-          activeChaosFaults: {},
-          selectedNode: null,
-          notifications: [],
-          undoStack: [],
-          redoStack: [],
-          wsStatus: "DISCONNECTED",
-          wsLatencyMs: 0,
+          cronJobs: [], jobs: [], pvcs: [], hpas: [], networkPolicies: [], pdbs: [],
+          incidents: [], activeChaosFaults: {}, selectedNode: null, notifications: [],
+          undoStack: [], redoStack: [], wsStatus: "DISCONNECTED", wsLatencyMs: 0,
         });
       },
     }),
@@ -478,18 +473,15 @@ export const useTopologyStore = create<TopologyState>()(
       name: "envscale-topology-storage-v2",
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
-        clusters: state.clusters,
-        activeCluster: state.activeCluster,
         tokens: state.tokens,
         notifications: state.notifications,
         userNodePositions: state.userNodePositions,
       }),
       onRehydrateStorage: () => (state) => {
         if (!state) return;
-        const raw = state.clusters || [];
-        const parsed = raw.map((c, i) => (typeof c === "string" ? { id: `migrated-${i}`, name: c } : c)).filter((c): c is Cluster => Boolean(c && c.name));
-        if (parsed.length !== raw.length || raw.some((c) => typeof c === "string")) {
-          useTopologyStore.setState({ clusters: parsed, activeCluster: state.activeCluster });
+        const isAuth = Boolean(typeof window !== "undefined" && (localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token")));
+        if (!isAuth) {
+          useTopologyStore.setState({ clusters: [], activeCluster: "", nodes: [], edges: [], pods: [], services: [] });
         }
       },
     }
