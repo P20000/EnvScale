@@ -22,10 +22,18 @@ NC='\033[0m'
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TF_DIR="$ROOT_DIR/deployment/terraform"
 KEY_FILE="$TF_DIR/envscale_key.pem"
-
 DUCKDNS_DOMAIN="${DUCKDNS_DOMAIN:-envscale}"
-DUCKDNS_TOKEN="${DUCKDNS_TOKEN:-1e0d36a5-1bed-44ce-8cd7-0dbce560d7e8}"
-FULL_DOMAIN="${DUCKDNS_DOMAIN}.duckdns.org"
+DUCKDNS_TOKEN="${DUCKDNS_TOKEN:-}"
+
+# Load secrets from git-ignored local .env if present
+if [ -z "$DUCKDNS_TOKEN" ] && [ -f "$ROOT_DIR/.env" ]; then
+    DUCKDNS_TOKEN=$(grep -E '^DUCKDNS_TOKEN=' "$ROOT_DIR/.env" | cut -d '=' -f2- | tr -d '"' | tr -d "'" || true)
+fi
+if [ -z "$DUCKDNS_DOMAIN" ] && [ -f "$ROOT_DIR/.env" ]; then
+    DUCKDNS_DOMAIN=$(grep -E '^DUCKDNS_DOMAIN=' "$ROOT_DIR/.env" | cut -d '=' -f2- | tr -d '"' | tr -d "'" || true)
+fi
+
+FULL_DOMAIN="${DUCKDNS_DOMAIN:-envscale}.duckdns.org"
 
 # ------------------------------------------------------------------------------
 # Helpers
