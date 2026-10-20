@@ -70,14 +70,6 @@ $DOMAIN {
     reverse_proxy /api* localhost:3001
     reverse_proxy localhost:3000
 }
-
-http:// {
-    reverse_proxy /healthz localhost:8080
-    reverse_proxy /ws* localhost:8080
-    reverse_proxy /api/v1/stream/* localhost:8080
-    reverse_proxy /api* localhost:3001
-    reverse_proxy localhost:3000
-}
 EOF
 else
 cat <<EOF > /etc/caddy/Caddyfile

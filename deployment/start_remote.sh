@@ -17,6 +17,12 @@ echo "✓ K3s cluster is online and healthy!"
 # Ensure permissions on Kubeconfig
 sudo chmod 644 /etc/rancher/k3s/k3s.yaml
 
+# Ensure secure permissions on .env secrets if present
+if [ -f "$ROOT_DIR/.env" ]; then
+    chmod 600 "$ROOT_DIR/.env"
+    echo "✓ Secured .env permissions with chmod 600"
+fi
+
 # Build and start Docker Compose stack
 docker compose -f deployment/docker-compose.prod.yml up -d --build
 
@@ -39,8 +45,8 @@ CREATE INDEX IF NOT EXISTS \"workspace_members_workspace_id_idx\" ON \"workspace
 CREATE INDEX IF NOT EXISTS \"workspace_members_user_id_idx\" ON \"workspace_members\" (\"user_id\");
 " 2>/dev/null || true
 
-# Restart api-server to hydrate schemas cleanly
-docker compose -f deployment/docker-compose.prod.yml restart api-server
+# Restart api-server & k8s-streamer to hydrate schemas and rotated secrets cleanly
+docker compose -f deployment/docker-compose.prod.yml restart api-server k8s-streamer
 
 echo "=== EnvScale is running! ==="
 docker compose -f deployment/docker-compose.prod.yml ps
