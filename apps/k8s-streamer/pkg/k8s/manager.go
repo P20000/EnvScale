@@ -146,6 +146,14 @@ func (cm *ClusterManager) GetClusterSnapshot(clusterID string) (
 	[]types.SecretStatusDelta,
 	error,
 ) {
+	// 1. Check if cluster is streaming via an outbound agent first
+	if agentSnap, found := cm.agentRegistry.GetSnapshot(clusterID); found && agentSnap != nil {
+		return agentSnap.Pods, agentSnap.Nodes, agentSnap.Services, agentSnap.Deployments,
+			agentSnap.ReplicaSets, agentSnap.StatefulSets, agentSnap.DaemonSets, agentSnap.Ingresses,
+			agentSnap.Incidents, agentSnap.CronJobs, agentSnap.Jobs, agentSnap.PVCs, agentSnap.PVs,
+			agentSnap.ConfigMaps, agentSnap.Secrets, nil
+	}
+
 	cm.mu.RLock()
 	im, ok := cm.clusters[clusterID]
 	if !ok && len(cm.clusters) == 1 {
@@ -158,13 +166,6 @@ func (cm *ClusterManager) GetClusterSnapshot(clusterID string) (
 	cm.mu.RUnlock()
 
 	if !ok {
-		// Check if cluster is streaming via an outbound agent
-		if agentSnap, found := cm.agentRegistry.GetSnapshot(clusterID); found && agentSnap != nil {
-			return agentSnap.Pods, agentSnap.Nodes, agentSnap.Services, agentSnap.Deployments,
-				agentSnap.ReplicaSets, agentSnap.StatefulSets, agentSnap.DaemonSets, agentSnap.Ingresses,
-				agentSnap.Incidents, agentSnap.CronJobs, agentSnap.Jobs, agentSnap.PVCs, agentSnap.PVs,
-				agentSnap.ConfigMaps, agentSnap.Secrets, nil
-		}
 		return nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("cluster %s not found", clusterID)
 	}
 	pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, cronJobs, jobs, pvcs, pvs, configMaps, secrets := im.GetSnapshot()
@@ -173,6 +174,10 @@ func (cm *ClusterManager) GetClusterSnapshot(clusterID string) (
 
 // GetHPASnapshot retrieves all cached HPAs for a cluster
 func (cm *ClusterManager) GetHPASnapshot(clusterID string) []types.HPAStatusDelta {
+	if agentSnap, found := cm.agentRegistry.GetSnapshot(clusterID); found && agentSnap != nil {
+		return agentSnap.HPAs
+	}
+
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 	if im, ok := cm.clusters[clusterID]; ok {
@@ -183,14 +188,15 @@ func (cm *ClusterManager) GetHPASnapshot(clusterID string) []types.HPAStatusDelt
 			return v.GetHPASnapshot()
 		}
 	}
-	if agentSnap, found := cm.agentRegistry.GetSnapshot(clusterID); found && agentSnap != nil {
-		return agentSnap.HPAs
-	}
 	return nil
 }
 
 // GetNetworkPolicySnapshot retrieves all cached NetworkPolicies for a cluster
 func (cm *ClusterManager) GetNetworkPolicySnapshot(clusterID string) []types.NetworkPolicyStatusDelta {
+	if agentSnap, found := cm.agentRegistry.GetSnapshot(clusterID); found && agentSnap != nil {
+		return agentSnap.NetworkPolicies
+	}
+
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 	if im, ok := cm.clusters[clusterID]; ok {
@@ -201,14 +207,15 @@ func (cm *ClusterManager) GetNetworkPolicySnapshot(clusterID string) []types.Net
 			return v.GetNetworkPolicySnapshot()
 		}
 	}
-	if agentSnap, found := cm.agentRegistry.GetSnapshot(clusterID); found && agentSnap != nil {
-		return agentSnap.NetworkPolicies
-	}
 	return nil
 }
 
 // GetPDBSnapshot retrieves all cached PodDisruptionBudgets for a cluster
 func (cm *ClusterManager) GetPDBSnapshot(clusterID string) []types.PDBStatusDelta {
+	if agentSnap, found := cm.agentRegistry.GetSnapshot(clusterID); found && agentSnap != nil {
+		return agentSnap.PDBs
+	}
+
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 	if im, ok := cm.clusters[clusterID]; ok {
@@ -218,9 +225,6 @@ func (cm *ClusterManager) GetPDBSnapshot(clusterID string) []types.PDBStatusDelt
 		for _, v := range cm.clusters {
 			return v.GetPDBSnapshot()
 		}
-	}
-	if agentSnap, found := cm.agentRegistry.GetSnapshot(clusterID); found && agentSnap != nil {
-		return agentSnap.PDBs
 	}
 	return nil
 }
