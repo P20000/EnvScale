@@ -1,13 +1,10 @@
-import { useState, type ChangeEvent, type DragEvent } from "react";
+import { useState } from "react";
 import { Icon } from "../ui/Icon";
 import {
   mdiClose,
-  mdiUpload,
   mdiChevronDown,
-  mdiAlertCircle,
-  mdiCheck,
-  mdiLock,
-  mdiShieldLockOutline,
+  mdiServerNetwork,
+  mdiFileUploadOutline,
 } from "@mdi/js";
 import { Button } from "../ui/button";
 import { apiConnectCluster, apiMe } from "../../config/api";
@@ -15,6 +12,10 @@ import { useTopologyStore } from "../../store/useTopologyStore";
 import { useAuthStore } from "../../store/useAuthStore";
 import { connectClusterSchema, formatConnectionError } from "./wizardHelpers";
 import { ConnectSuccessScreen } from "./ConnectSuccessScreen";
+import { AgentInstallStep } from "./AgentInstallStep";
+import { KubeconfigUploadStep } from "./KubeconfigUploadStep";
+import { DirectReviewStep } from "./DirectReviewStep";
+import { WizardAuthRequiredModal } from "./WizardAuthRequiredModal";
 import type { Cluster } from "../../store/types/topologyTypes";
 
 type ConnectClusterWizardProps = {
@@ -29,6 +30,7 @@ export default function ConnectClusterWizard({
   const [step, setStep] = useState(1);
   const [clusterName, setClusterName] = useState("");
   const [environment, setEnvironment] = useState<"development" | "staging" | "production">("development");
+  const [connectionMode, setConnectionMode] = useState<"agent" | "direct">("agent");
   const [kubeconfigFile, setKubeconfigFile] = useState<File | null>(null);
   const [kubeconfigContent, setKubeconfigContent] = useState<string>("");
   const [isDragging, setIsDragging] = useState(false);
@@ -37,9 +39,10 @@ export default function ConnectClusterWizard({
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState("");
-  const [showErrorDetails, setShowErrorDetails] = useState(false);
 
   const clusters = useTopologyStore((s) => s.clusters);
+  const addCluster = useTopologyStore((s) => s.addCluster);
+  const setActiveCluster = useTopologyStore((s) => s.setActiveCluster);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const openAuthModal = useAuthStore((s) => s.openAuthModal);
   const [connectedCluster, setConnectedCluster] = useState<{ id: string; name: string } | null>(null);
@@ -58,69 +61,91 @@ export default function ConnectClusterWizard({
 
     setFileError("");
     setKubeconfigFile(file);
-    file.text().then(text => {
-      setKubeconfigContent(text);
-      // Optional: inline validation when loaded
-      const result = connectClusterSchema.safeParse({
-        name: clusterName || "temp",
-        environment,
-        kubeconfig: text,
-      });
-      if (!result.success) {
-        const issues = result.error.issues;
-        const kubeErr = issues.find(i => i.path[0] === "kubeconfig");
-        if (kubeErr) setFileError(kubeErr.message);
-      }
-    }).catch(() => setKubeconfigContent(""));
+    file
+      .text()
+      .then((text) => setKubeconfigContent(text))
+      .catch(() => setKubeconfigContent(""));
   };
 
-  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    handleFile(event.target.files?.[0]);
-  };
-
-  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    setIsDragging(false);
-    handleFile(event.dataTransfer.files?.[0]);
-  };
-
-  const nextStep = () => {
+  const nextStep = async () => {
     if (step === 1) {
       if (!clusterName.trim()) {
         setClusterError("Cluster name is required.");
         return;
       }
-      if (clusters.some(c => c.name === clusterName.trim())) {
+      if (clusters.some((c) => c.name === clusterName.trim())) {
         setClusterError("A cluster with this name already exists.");
         return;
       }
-      
-      const res = connectClusterSchema.pick({ name: true, environment: true }).safeParse({
-        name: clusterName,
-        environment,
-      });
-      if (!res.success) {
-        setClusterError(res.error.issues[0]?.message || "Invalid input");
+
+      setClusterError("");
+
+      if (connectionMode === "agent") {
+        if (!isAuthenticated) {
+          openAuthModal("Sign in to register and connect your cluster.");
+          return;
+        }
+
+        setIsConnecting(true);
+        setConnectionError("");
+
+        try {
+          let workspaceId: string | undefined = undefined;
+          const meData = await apiMe();
+          if (meData?.workspace?.id) {
+            workspaceId = meData.workspace.id;
+          }
+
+          const res = await apiConnectCluster({
+            name: clusterName.trim(),
+            environment,
+            connectionMode: "agent",
+            workspaceId,
+          });
+
+          setIsConnecting(false);
+
+          if (res.error) {
+            setConnectionError(res.error);
+            return;
+          }
+
+          if (res.cluster?.id) {
+            const clusterObj: Cluster = {
+              id: res.cluster.id,
+              name: res.cluster.name,
+              status: "connected",
+              healthScore: 100,
+              type: environment,
+            };
+            setConnectedCluster({ id: res.cluster.id, name: res.cluster.name });
+            addCluster(clusterObj);
+            setActiveCluster(res.cluster.id);
+            setStep(2);
+          }
+        } catch (err) {
+          setIsConnecting(false);
+          setConnectionError(err instanceof Error ? err.message : "Failed to register cluster");
+        }
         return;
       }
-      setClusterError("");
     }
 
-    if (step === 2) {
+    if (step === 2 && connectionMode === "direct") {
       if (!kubeconfigFile || !kubeconfigContent) {
         setFileError("Please upload a valid kubeconfig file.");
         return;
       }
-      
+
       const res = connectClusterSchema.pick({ kubeconfig: true }).safeParse({
         kubeconfig: kubeconfigContent,
       });
-      
+
       if (!res.success) {
         setFileError(res.error.issues[0]?.message || "Invalid kubeconfig");
         return;
       }
-      
+
       setFileError("");
     }
 
@@ -131,7 +156,7 @@ export default function ConnectClusterWizard({
     setStep((currentStep) => currentStep - 1);
   };
 
-  const handleConnect = async () => {
+  const handleConnectDirect = async () => {
     if (!kubeconfigFile || !clusterName.trim()) return;
 
     if (!isAuthenticated) {
@@ -141,21 +166,8 @@ export default function ConnectClusterWizard({
 
     setIsConnecting(true);
     setConnectionError("");
-    setShowErrorDetails(false);
 
     try {
-      const parsed = connectClusterSchema.safeParse({
-        name: clusterName,
-        environment,
-        kubeconfig: kubeconfigContent,
-      });
-
-      if (!parsed.success) {
-        setConnectionError(parsed.error.issues[0]?.message || "Invalid configuration");
-        setIsConnecting(false);
-        return;
-      }
-
       let workspaceId: string | undefined = undefined;
       const meData = await apiMe();
       if (meData?.workspace?.id) {
@@ -163,9 +175,10 @@ export default function ConnectClusterWizard({
       }
 
       const res = await apiConnectCluster({
-        name: parsed.data.name,
-        environment: parsed.data.environment,
-        kubeconfig: parsed.data.kubeconfig,
+        name: clusterName.trim(),
+        environment,
+        kubeconfig: kubeconfigContent,
+        connectionMode: "direct",
         workspaceId,
       });
 
@@ -176,6 +189,15 @@ export default function ConnectClusterWizard({
       } else if (!res.cluster?.id) {
         setConnectionError("Backend did not return a valid Cluster ID. Registration may have failed.");
       } else {
+        const clusterObj: Cluster = {
+          id: res.cluster.id,
+          name: res.cluster.name,
+          status: "connected",
+          healthScore: 100,
+          type: environment,
+        };
+        addCluster(clusterObj);
+        setActiveCluster(res.cluster.id);
         setConnectedCluster({ id: res.cluster.id, name: res.cluster.name });
         setIsConnected(true);
       }
@@ -185,71 +207,35 @@ export default function ConnectClusterWizard({
     }
   };
 
+  const handleAgentCompleted = () => {
+    if (connectedCluster) {
+      const clusterObj: Cluster = {
+        id: connectedCluster.id,
+        name: connectedCluster.name,
+        status: "connected",
+        healthScore: 100,
+        type: environment,
+      };
+      onClusterConnected?.(clusterObj);
+      onClose();
+    }
+  };
+
   if (!isAuthenticated) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-        <div className="w-full max-w-md rounded-3xl border border-[#30343B] bg-[#191B20] p-6 text-[#E6E1E5] shadow-2xl">
-          <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400">
-                <Icon path={mdiShieldLockOutline} size={0.8} />
-              </div>
-              <div>
-                <h2 className="text-sm font-semibold font-heading text-neutral-100">Authentication Required</h2>
-                <p className="text-xs text-neutral-400">Sign in to connect clusters</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1 text-neutral-400 hover:text-white rounded-md transition-colors"
-              aria-label="Close"
-            >
-              <Icon path={mdiClose} size={0.8} />
-            </button>
-          </div>
-
-          <div className="my-6 space-y-3 text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400">
-              <Icon path={mdiLock} size={1.5} />
-            </div>
-            <h3 className="text-base font-semibold text-neutral-100 font-heading">
-              Restricted Cluster Setup
-            </h3>
-            <p className="text-xs text-neutral-400 leading-relaxed max-w-sm mx-auto">
-              Connecting a Kubernetes cluster requires an authenticated user session to securely encrypt Kubeconfig credentials and attach telemetry streams to your workspace.
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-2 pt-2 border-t border-zinc-800 sm:flex-row sm:justify-end">
-            <Button
-              variant="outline"
-              onClick={onClose}
-              className="border-zinc-800 text-neutral-300 hover:bg-zinc-800 hover:text-white"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                onClose();
-                openAuthModal("Sign in to your account or workspace to connect a new Kubernetes cluster.");
-              }}
-              className="bg-blue-500 text-white hover:bg-blue-600"
-            >
-              Sign In to Continue
-            </Button>
-          </div>
-        </div>
-      </div>
+      <WizardAuthRequiredModal
+        onClose={onClose}
+        onSignIn={() => openAuthModal("Sign in to your account or workspace to connect a new Kubernetes cluster.")}
+      />
     );
   }
 
   if (isConnected && connectedCluster) {
     return (
-      <ConnectSuccessScreen 
-        connectedCluster={connectedCluster} 
-        onClose={onClose} 
-        onClusterConnected={onClusterConnected} 
+      <ConnectSuccessScreen
+        connectedCluster={connectedCluster}
+        onClose={onClose}
+        onClusterConnected={onClusterConnected}
       />
     );
   }
@@ -261,10 +247,12 @@ export default function ConnectClusterWizard({
       <div className="w-full max-w-lg rounded-3xl border border-[#30343B] bg-[#191B20] shadow-none p-6 text-[#E6E1E5]">
         <div className="mb-6 flex items-start gap-4">
           <div>
-            <p className="text-sm text-blue-400 font-mono">Step {step} of 3</p>
+            <p className="text-sm text-blue-400 font-mono">
+              Step {step} of {connectionMode === "agent" ? 2 : 3}
+            </p>
             <h2 className="mt-1 text-2xl font-semibold font-heading">Connect Cluster</h2>
             <p className="mt-1 max-w-full break-words text-sm leading-5 text-[#C4C7C5]">
-              Connect your Kubernetes cluster to EnvScale.
+              Observe any Kubernetes cluster live on the EnvScale platform.
             </p>
           </div>
           <button
@@ -291,7 +279,7 @@ export default function ConnectClusterWizard({
                   setClusterName(event.target.value);
                   if (event.target.value.trim()) setClusterError("");
                 }}
-                placeholder="e.g. production-cluster"
+                placeholder="e.g. minikube-local, staging-cluster"
                 className="w-full bg-[#111318] border border-[#30343B] text-xs font-mono py-2 px-3 focus:border-blue-500 focus:outline-none rounded-md text-[#E6E1E5] placeholder:text-[#92959D]"
               />
               {clusterError && <p className="mt-2 text-sm text-[#F2B8B5]">{clusterError}</p>}
@@ -308,9 +296,9 @@ export default function ConnectClusterWizard({
                   onChange={(e) => setEnvironment(e.target.value as "development" | "staging" | "production")}
                   className="w-full appearance-none bg-[#111318] border border-[#30343B] text-xs font-mono py-2 px-3 pr-8 focus:border-blue-500 focus:outline-none rounded-md text-[#E6E1E5] cursor-pointer"
                 >
-                  <option value="development">Development (Minikube / Kind)</option>
+                  <option value="development">Development (Minikube / KinD / Local)</option>
                   <option value="staging">Staging</option>
-                  <option value="production">Production (AWS EKS)</option>
+                  <option value="production">Production (AWS EKS / Cloud)</option>
                 </select>
                 <Icon
                   path={mdiChevronDown}
@@ -319,113 +307,81 @@ export default function ConnectClusterWizard({
                 />
               </div>
             </div>
-          </div>
-        )}
 
-        {step === 2 && (
-          <div className="space-y-4">
             <div>
-              <p className="mb-2 text-sm font-medium text-[#E6E1E5]">Kubeconfig File</p>
-              <div
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  setIsDragging(true);
-                }}
-                onDragLeave={() => setIsDragging(false)}
-                onDrop={handleDrop}
-                className={`rounded-xl border border-dashed p-8 text-center transition-colors ${
-                  isDragging ? "border-blue-500 bg-blue-500/10" : "border-[#30343B] bg-[#111318]"
-                }`}
-              >
-                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                  <Icon path={mdiUpload} size={0.83} />
-                </div>
-                <p className="text-[#E6E1E5] text-sm">Drag & drop your kubeconfig here</p>
-                <p className="my-1.5 text-xs text-[#92959D]">or</p>
-                <p className="mb-3 text-xs text-[#92959D]">YAML files only (.yaml, .yml)</p>
-                <label className="inline-flex cursor-pointer rounded-md bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 transition-colors font-semibold">
-                  Browse File
-                  <input type="file" accept=".yaml,.yml" className="hidden" onChange={handleFileChange} />
-                </label>
-
-                {kubeconfigFile && (
-                  <div className="mt-4 flex items-center justify-center gap-3">
-                    <p className="text-sm text-emerald-400 font-mono">Selected: {kubeconfigFile.name}</p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setKubeconfigFile(null);
-                        setFileError("");
-                      }}
-                      className="text-sm text-red-400 hover:text-red-300"
-                    >
-                      Remove
-                    </button>
+              <p className="mb-2 text-sm font-medium text-[#E6E1E5]">Connection Mode</p>
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setConnectionMode("agent")}
+                  className={`flex flex-col items-start rounded-xl border p-3.5 text-left transition-all ${
+                    connectionMode === "agent"
+                      ? "border-blue-500 bg-blue-500/10 text-white"
+                      : "border-zinc-800 bg-[#111318] text-neutral-400 hover:border-zinc-700"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Icon path={mdiServerNetwork} size={0.75} className={connectionMode === "agent" ? "text-blue-400" : ""} />
+                    <span className="text-xs font-semibold text-neutral-200">In-Cluster Agent</span>
                   </div>
-                )}
-                {fileError && <p className="mt-4 text-sm text-red-400">{fileError}</p>}
+                  <span className="mt-1 text-[11px] text-neutral-400 leading-snug">
+                    Recommended for Minikube, KinD, & on-prem. Zero open ports needed.
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setConnectionMode("direct")}
+                  className={`flex flex-col items-start rounded-xl border p-3.5 text-left transition-all ${
+                    connectionMode === "direct"
+                      ? "border-blue-500 bg-blue-500/10 text-white"
+                      : "border-zinc-800 bg-[#111318] text-neutral-400 hover:border-zinc-700"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Icon path={mdiFileUploadOutline} size={0.75} className={connectionMode === "direct" ? "text-blue-400" : ""} />
+                    <span className="text-xs font-semibold text-neutral-200">Kubeconfig File</span>
+                  </div>
+                  <span className="mt-1 text-[11px] text-neutral-400 leading-snug">
+                    Upload Kubeconfig for clusters with public API endpoints.
+                  </span>
+                </button>
               </div>
             </div>
           </div>
         )}
 
-        {step === 3 && (
-          <div className="space-y-4">
-            <div className="rounded-xl border border-[#30343B] bg-[#111318] p-3 text-[#E6E1E5] font-mono text-xs">
-              <p className="mb-1 text-[#92959D]">Cluster Name</p>
-              <p className="font-semibold text-[#E6E1E5]">{clusterName}</p>
-            </div>
+        {step === 2 && connectionMode === "agent" && connectedCluster && (
+          <AgentInstallStep
+            clusterId={connectedCluster.id}
+            clusterName={connectedCluster.name}
+            onConnected={handleAgentCompleted}
+          />
+        )}
 
-            <div className="rounded-xl border border-[#30343B] bg-[#111318] p-3 text-[#E6E1E5] font-mono text-xs">
-              <p className="mb-1 text-[#92959D]">Environment</p>
-              <p className="font-semibold text-[#E6E1E5] capitalize">{environment}</p>
-            </div>
+        {step === 2 && connectionMode === "direct" && (
+          <KubeconfigUploadStep
+            kubeconfigFile={kubeconfigFile}
+            fileError={fileError}
+            isDragging={isDragging}
+            setIsDragging={setIsDragging}
+            onFileSelected={handleFile}
+            onRemoveFile={() => {
+              setKubeconfigFile(null);
+              setKubeconfigContent("");
+              setFileError("");
+            }}
+          />
+        )}
 
-            <div className="rounded-xl border border-[#30343B] bg-[#111318] p-3 text-[#E6E1E5] font-mono text-xs">
-              <p className="mb-1 text-[#92959D]">Kubeconfig Payload</p>
-              <div className="flex items-center justify-between">
-                <p className="font-semibold text-[#E6E1E5]">{kubeconfigFile?.name}</p>
-              </div>
-              <div className="mt-3 flex items-center gap-2 rounded bg-[#6DD6A8]/10 px-3 py-2 text-[#6DD6A8] border border-[#6DD6A8]/20">
-                <Icon path={mdiCheck} size={0.7} />
-                <span className="text-xs font-medium">Kubeconfig securely loaded in memory</span>
-              </div>
-            </div>
-
-            {formattedError && (
-              <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4">
-                <div className="flex items-start gap-2.5">
-                  <Icon path={mdiAlertCircle} size={0.7} className="mt-0.5 shrink-0 text-red-400" />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-red-300">Connection Failed</p>
-                    <p className="mt-1 text-xs text-red-400/80 leading-relaxed">{formattedError.friendly}</p>
-                    {formattedError.details && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => setShowErrorDetails(!showErrorDetails)}
-                          className="mt-2 text-[11px] text-zinc-500 hover:text-zinc-400 underline underline-offset-2 transition-colors"
-                        >
-                          {showErrorDetails ? "Hide" : "Show"} Technical Details
-                        </button>
-                        {showErrorDetails && (
-                          <pre className="mt-2 max-h-24 overflow-auto rounded-md bg-black/40 p-2 text-[10px] text-zinc-500 leading-relaxed whitespace-pre-wrap break-all">
-                            {formattedError.details}
-                          </pre>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {!connectionError && (
-              <p className="text-sm text-neutral-400">
-                Review the details above and connect your Kubernetes cluster.
-              </p>
-            )}
-          </div>
+        {step === 3 && connectionMode === "direct" && (
+          <DirectReviewStep
+            clusterName={clusterName}
+            environment={environment}
+            kubeconfigFile={kubeconfigFile}
+            connectionError={connectionError}
+            formattedError={formattedError}
+          />
         )}
 
         <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
@@ -436,7 +392,6 @@ export default function ConnectClusterWizard({
                 onClose();
               } else {
                 setConnectionError("");
-                setShowErrorDetails(false);
                 previousStep();
               }
             }}
@@ -444,10 +399,16 @@ export default function ConnectClusterWizard({
             {step === 1 ? "Cancel" : "Back"}
           </Button>
 
-          {step < 3 ? (
+          {step === 1 ? (
+            <Button onClick={nextStep} disabled={isConnecting}>
+              {isConnecting ? "Generating Agent..." : connectionMode === "agent" ? "Generate Agent Command" : "Next"}
+            </Button>
+          ) : step === 2 && connectionMode === "agent" ? (
+            <Button onClick={handleAgentCompleted}>Done</Button>
+          ) : step === 2 ? (
             <Button onClick={nextStep}>Next</Button>
           ) : (
-            <Button onClick={handleConnect} disabled={isConnecting}>
+            <Button onClick={handleConnectDirect} disabled={isConnecting}>
               {isConnecting ? "Connecting..." : connectionError ? "Try Again" : "Connect Cluster"}
             </Button>
           )}
