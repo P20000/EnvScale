@@ -30,11 +30,75 @@ jobs:
       - name: Deploy via SSH
         if: steps.check_creds.outputs.has_creds == 'true'
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          DUCKDNS_DOMAIN: ${{ secrets.DUCKDNS_DOMAIN }}
+          DUCKDNS_TOKEN: ${{ secrets.DUCKDNS_TOKEN }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          JWT_ACCESS_SECRET: ${{ secrets.JWT_ACCESS_SECRET }}
+          JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
+          KUBECONFIG_ENCRYPTION_KEY: ${{ secrets.KUBECONFIG_ENCRYPTION_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: "ubuntu"
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: DUCKDNS_DOMAIN,DUCKDNS_TOKEN,BETTER_AUTH_SECRET,JWT_ACCESS_SECRET,JWT_REFRESH_SECRET,KUBECONFIG_ENCRYPTION_KEY,GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET
           script: |
+            set -e
             cd /opt/envscale
             git pull origin develop
+
+            # 1. Secure Atomic .env Generation with chmod 600
+            (
+              umask 077
+              cat <<EOF > .env.tmp
+            NODE_ENV=production
+            PORT=3000
+            DATABASE_URL=postgresql://envscale:envscale_password@postgres:5432/envscale
+            REDIS_URL=redis://redis:6379
+            DUCKDNS_DOMAIN=${DUCKDNS_DOMAIN:-envscale}
+            DUCKDNS_TOKEN=${DUCKDNS_TOKEN}
+            BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+            BETTER_AUTH_URL=https://${DUCKDNS_DOMAIN:-envscale}.duckdns.org/api
+            JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}
+            JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+            KUBECONFIG_ENCRYPTION_KEY=${KUBECONFIG_ENCRYPTION_KEY}
+            GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+            GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+            CORS_ORIGIN=https://${DUCKDNS_DOMAIN:-envscale}.duckdns.org,http://${DUCKDNS_DOMAIN:-envscale}.duckdns.org,http://localhost:3000,http://localhost:5173
+            EOF
+              chmod 600 .env.tmp
+              mv -f .env.tmp .env
+            )
+
+            # 2. Dynamic DNS Routing to EC2 Elastic IP
+            PUBLIC_IP=$(curl -s --max-time 5 http://checkip.amazonaws.com || curl -s --max-time 5 http://169.254.169.254/latest/meta-data/public-ipv4 || true)
+            if [ -n "$DUCKDNS_DOMAIN" ] && [ -n "$DUCKDNS_TOKEN" ] && [ -n "$PUBLIC_IP" ]; then
+              echo "Routing DuckDNS: ${DUCKDNS_DOMAIN}.duckdns.org -> ${PUBLIC_IP} ..."
+              curl -s --max-time 10 "https://www.duckdns.org/update?domains=${DUCKDNS_DOMAIN}&token=${DUCKDNS_TOKEN}&ip=${PUBLIC_IP}"
+              echo ""
+            fi
+
+            # 3. Configure Caddy with Automated Let's Encrypt TLS and Direct IP
+            sudo bash -c "cat <<EOF > /etc/caddy/Caddyfile
+            http://${PUBLIC_IP} {
+                reverse_proxy /healthz localhost:8080
+                reverse_proxy /ws* localhost:8080
+                reverse_proxy /api/v1/stream/* localhost:8080
+                reverse_proxy /api* localhost:3001
+                reverse_proxy localhost:3000
+            }
+
+            ${DUCKDNS_DOMAIN:-envscale}.duckdns.org {
+                reverse_proxy /healthz localhost:8080
+                reverse_proxy /ws* localhost:8080
+                reverse_proxy /api/v1/stream/* localhost:8080
+                reverse_proxy /api* localhost:3001
+                reverse_proxy localhost:3000
+            }
+            EOF"
+            sudo systemctl reload caddy || sudo systemctl restart caddy
+
+            # 4. Trigger Container Build & Migration Runner
             ./deployment/start_remote.sh

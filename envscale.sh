@@ -22,18 +22,15 @@ NC='\033[0m'
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TF_DIR="$ROOT_DIR/deployment/terraform"
 KEY_FILE="$TF_DIR/envscale_key.pem"
+
+# Load secrets from git-ignored local .env if present before setting fallbacks
+if [ -f "$ROOT_DIR/.env" ]; then
+    [ -z "$DUCKDNS_TOKEN" ] && DUCKDNS_TOKEN=$(grep -E '^DUCKDNS_TOKEN=' "$ROOT_DIR/.env" | cut -d '=' -f2- | tr -d '"' | tr -d "'" || true)
+    [ -z "$DUCKDNS_DOMAIN" ] && DUCKDNS_DOMAIN=$(grep -E '^DUCKDNS_DOMAIN=' "$ROOT_DIR/.env" | cut -d '=' -f2- | tr -d '"' | tr -d "'" || true)
+fi
+
 DUCKDNS_DOMAIN="${DUCKDNS_DOMAIN:-envscale}"
-DUCKDNS_TOKEN="${DUCKDNS_TOKEN:-}"
-
-# Load secrets from git-ignored local .env if present
-if [ -z "$DUCKDNS_TOKEN" ] && [ -f "$ROOT_DIR/.env" ]; then
-    DUCKDNS_TOKEN=$(grep -E '^DUCKDNS_TOKEN=' "$ROOT_DIR/.env" | cut -d '=' -f2- | tr -d '"' | tr -d "'" || true)
-fi
-if [ -z "$DUCKDNS_DOMAIN" ] && [ -f "$ROOT_DIR/.env" ]; then
-    DUCKDNS_DOMAIN=$(grep -E '^DUCKDNS_DOMAIN=' "$ROOT_DIR/.env" | cut -d '=' -f2- | tr -d '"' | tr -d "'" || true)
-fi
-
-FULL_DOMAIN="${DUCKDNS_DOMAIN:-envscale}.duckdns.org"
+FULL_DOMAIN="${DUCKDNS_DOMAIN}.duckdns.org"
 
 # ------------------------------------------------------------------------------
 # Helpers
@@ -56,23 +53,30 @@ check_aws_cli() {
 
 update_duckdns() {
     local ip="$1"
-    if [ -n "$DUCKDNS_DOMAIN" ] && [ -n "$DUCKDNS_TOKEN" ] && [ -n "$ip" ]; then
+    if [ -z "$DUCKDNS_TOKEN" ]; then
+        log_warn "DUCKDNS_TOKEN is not configured in .env or environment!"
+        log_warn "DuckDNS record ${FULL_DOMAIN} was NOT updated to point to ${ip}."
+        log_warn "To enable automated TLS and domain access, add DUCKDNS_TOKEN to your .env"
+        return 0
+    fi
+
+    if [ -n "$DUCKDNS_DOMAIN" ] && [ -n "$ip" ]; then
         log_info "Routing DuckDNS record: https://${FULL_DOMAIN} -> ${ip} ..."
         local res
         res=$(curl -s --max-time 10 "https://www.duckdns.org/update?domains=${DUCKDNS_DOMAIN}&token=${DUCKDNS_TOKEN}&ip=${ip}")
         if [ "$res" = "OK" ]; then
             log_succ "DuckDNS record routed successfully: ${FULL_DOMAIN} -> ${ip}"
         else
-            log_warn "DuckDNS response: $res"
+            log_warn "DuckDNS update response: $res"
         fi
     fi
 }
 
 configure_remote_caddy() {
     local ip="$1"
-    log_info "Configuring Caddy reverse proxy with automated TLS for ${FULL_DOMAIN}..."
+    log_info "Configuring Caddy reverse proxy for ${FULL_DOMAIN} and http://${ip}..."
     ssh -o StrictHostKeyChecking=no -i "$KEY_FILE" ubuntu@"$ip" "sudo bash -c 'cat <<EOF > /etc/caddy/Caddyfile
-${FULL_DOMAIN} {
+http://${ip} {
     reverse_proxy /healthz localhost:8080
     reverse_proxy /ws* localhost:8080
     reverse_proxy /api/v1/stream/* localhost:8080
@@ -80,7 +84,7 @@ ${FULL_DOMAIN} {
     reverse_proxy localhost:3000
 }
 
-http:// {
+${FULL_DOMAIN} {
     reverse_proxy /healthz localhost:8080
     reverse_proxy /ws* localhost:8080
     reverse_proxy /api/v1/stream/* localhost:8080
@@ -90,7 +94,7 @@ http:// {
 EOF
 systemctl reload caddy || systemctl restart caddy
 '"
-    log_succ "Caddy TLS proxy initialized!"
+    log_succ "Caddy proxy initialized!"
 }
 
 ensure_s3_vault() {
