@@ -32,6 +32,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Normalize Repository Owner Name
+        run: |
+          echo "OWNER_LC=${OWNER,,}" >> ${GITHUB_ENV}
+        env:
+          OWNER: '${{ github.repository_owner }}'
+
       - name: Build & Push API Server
         uses: docker/build-push-action@v5
         with:
@@ -39,8 +45,8 @@ jobs:
           file: ./apps/api-server/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/envscale-api-server:latest
-            ghcr.io/${{ github.repository_owner }}/envscale-api-server:${{ github.sha }}
+            ghcr.io/${{ env.OWNER_LC }}/envscale-api-server:latest
+            ghcr.io/${{ env.OWNER_LC }}/envscale-api-server:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -51,8 +57,8 @@ jobs:
           file: ./apps/k8s-streamer/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/envscale-k8s-streamer:latest
-            ghcr.io/${{ github.repository_owner }}/envscale-k8s-streamer:${{ github.sha }}
+            ghcr.io/${{ env.OWNER_LC }}/envscale-k8s-streamer:latest
+            ghcr.io/${{ env.OWNER_LC }}/envscale-k8s-streamer:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -67,8 +73,8 @@ jobs:
             VITE_WS_URL=/ws/k8s
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/envscale-web:latest
-            ghcr.io/${{ github.repository_owner }}/envscale-web:${{ github.sha }}
+            ghcr.io/${{ env.OWNER_LC }}/envscale-web:latest
+            ghcr.io/${{ env.OWNER_LC }}/envscale-web:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
