@@ -1,4 +1,4 @@
-aws_region        = "us-east-1"
+aws_region        = "ap-south-1"
 environment       = "demo"
 instance_type     = "t3a.large" # 2 vCPU, 8GB RAM (~$0.06/hr, burns credits slowly)
 volume_size_gb    = 30

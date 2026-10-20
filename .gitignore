@@ -46,4 +46,6 @@ bin/
 *.tfstate.backup
 *.tfvars
 !*.tfvars.example
-
+# Backups & Dumps
+deployment/backups/
+*.sql.bak
