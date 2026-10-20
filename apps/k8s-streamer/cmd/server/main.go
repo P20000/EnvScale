@@ -11,6 +11,7 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"github.com/EnvScale/k8s-streamer/pkg/agent"
 	"github.com/EnvScale/k8s-streamer/pkg/chaos"
 	"github.com/EnvScale/k8s-streamer/pkg/k8s"
 	envredis "github.com/EnvScale/k8s-streamer/pkg/redis"
@@ -19,13 +20,22 @@ import (
 )
 
 func main() {
-	log.Println("==================================================")
-	log.Println(" Starting EnvScale K8s WebSocket Streaming Gateway")
-	log.Println("==================================================")
-
 	if err := godotenv.Load(); err != nil {
 		log.Println("[Config] No .env file found; using default environment variables")
 	}
+
+	// Check if started in Agent Mode
+	if (len(os.Args) > 1 && os.Args[1] == "agent") || os.Getenv("MODE") == "agent" || os.Getenv("ENVSCALE_MODE") == "agent" {
+		cfg := agent.LoadConfigFromEnv()
+		if err := agent.Run(cfg); err != nil {
+			log.Fatalf("[Agent] Fatal error: %v", err)
+		}
+		return
+	}
+
+	log.Println("==================================================")
+	log.Println(" Starting EnvScale K8s WebSocket Streaming Gateway")
+	log.Println("==================================================")
 
 	websocket.ValidateEnvironmentAuthConfig()
 

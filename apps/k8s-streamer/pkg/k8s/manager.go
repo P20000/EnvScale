@@ -13,17 +13,24 @@ import (
 
 // ClusterManager maintains a dynamic, thread-safe registry of InformerManager instances keyed by cluster/workspace ID.
 type ClusterManager struct {
-	clusters map[string]*InformerManager
-	hub      *websocket.Hub
-	mu       sync.RWMutex
+	clusters      map[string]*InformerManager
+	agentRegistry *AgentRegistry
+	hub           *websocket.Hub
+	mu            sync.RWMutex
 }
 
 // NewClusterManager creates a new ClusterManager registry instance
 func NewClusterManager(hub *websocket.Hub) *ClusterManager {
 	return &ClusterManager{
-		clusters: make(map[string]*InformerManager),
-		hub:      hub,
+		clusters:      make(map[string]*InformerManager),
+		agentRegistry: NewAgentRegistry(),
+		hub:           hub,
 	}
+}
+
+// AgentRegistry returns the agent registry for outbound agents
+func (cm *ClusterManager) AgentRegistry() *AgentRegistry {
+	return cm.agentRegistry
 }
 
 // RegisterCluster parses raw Kubeconfig bytes, instantiates an InformerManager, and starts informers asynchronously.
@@ -151,6 +158,13 @@ func (cm *ClusterManager) GetClusterSnapshot(clusterID string) (
 	cm.mu.RUnlock()
 
 	if !ok {
+		// Check if cluster is streaming via an outbound agent
+		if agentSnap, found := cm.agentRegistry.GetSnapshot(clusterID); found && agentSnap != nil {
+			return agentSnap.Pods, agentSnap.Nodes, agentSnap.Services, agentSnap.Deployments,
+				agentSnap.ReplicaSets, agentSnap.StatefulSets, agentSnap.DaemonSets, agentSnap.Ingresses,
+				agentSnap.Incidents, agentSnap.CronJobs, agentSnap.Jobs, agentSnap.PVCs, agentSnap.PVs,
+				agentSnap.ConfigMaps, agentSnap.Secrets, nil
+		}
 		return nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("cluster %s not found", clusterID)
 	}
 	pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, cronJobs, jobs, pvcs, pvs, configMaps, secrets := im.GetSnapshot()
@@ -169,6 +183,9 @@ func (cm *ClusterManager) GetHPASnapshot(clusterID string) []types.HPAStatusDelt
 			return v.GetHPASnapshot()
 		}
 	}
+	if agentSnap, found := cm.agentRegistry.GetSnapshot(clusterID); found && agentSnap != nil {
+		return agentSnap.HPAs
+	}
 	return nil
 }
 
@@ -184,6 +201,9 @@ func (cm *ClusterManager) GetNetworkPolicySnapshot(clusterID string) []types.Net
 			return v.GetNetworkPolicySnapshot()
 		}
 	}
+	if agentSnap, found := cm.agentRegistry.GetSnapshot(clusterID); found && agentSnap != nil {
+		return agentSnap.NetworkPolicies
+	}
 	return nil
 }
 
@@ -198,6 +218,9 @@ func (cm *ClusterManager) GetPDBSnapshot(clusterID string) []types.PDBStatusDelt
 		for _, v := range cm.clusters {
 			return v.GetPDBSnapshot()
 		}
+	}
+	if agentSnap, found := cm.agentRegistry.GetSnapshot(clusterID); found && agentSnap != nil {
+		return agentSnap.PDBs
 	}
 	return nil
 }
