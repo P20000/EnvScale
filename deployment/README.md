@@ -1,73 +1,63 @@
-# EnvScale AWS Low-Cost Deployment Guide
+# EnvScale Production Deployment Guide (Relmonition Pattern)
 
-This directory contains the production Docker packaging and modular Terraform configurations to deploy the full **EnvScale** stack (Frontend + Backend + Streaming Gateway + Postgres + Redis + CNCF K3s Kubernetes) on AWS using **minimal AWS credits**.
-
----
-
-## 1. Directory Structure
-
-```text
-deployment/
-├── terraform/
-│   ├── versions.tf              # Terraform & AWS provider requirements (~> 5.40)
-│   ├── variables.tf             # Configurable input variables (region, instance type, volume)
-│   ├── network.tf               # Free VPC + Internet Gateway + Public Subnet (No NAT Gateway)
-│   ├── security_group.tf        # Ingress (22, 80, 443, 3000, 3001, 8080) & Egress rules
-│   ├── compute.tf               # Ubuntu 22.04 LTS EC2 + Auto SSH Keypair + gp3 EBS
-│   ├── user_data.sh.tpl         # Cloud-init script: installs Docker, K3s, Caddy, Node.js, pnpm
-│   ├── outputs.tf               # Elastic IP, SSH command, and application URLs
-│   └── terraform.tfvars.example # Sample variable overrides
-├── docker-compose.prod.yml       # Production Compose orchestrating all 5 services
-├── deploy.sh                    # Host runner to verify AWS CLI and apply Terraform
-└── start_remote.sh              # Remote runner to spin up the containerized stack on EC2
-```
+This directory contains the production Docker packaging, CI/CD orchestration, and modular Terraform configurations to deploy the full **EnvScale** stack (Frontend + Backend + Streaming Gateway + Postgres + Redis + CNCF K3s Kubernetes) on AWS using a decoupled, cost-optimized pattern inspired by **Relmonition**.
 
 ---
 
-## 2. Prerequisites
+## 1. Architectural Philosophy: Decoupled Deployments
 
-1. **AWS CLI:** Configure credentials with your AWS Academy/Credit account:
-   ```bash
-   aws configure
-   # or export AWS_ACCESS_KEY_ID="..." AWS_SECRET_ACCESS_KEY="..." AWS_SESSION_TOKEN="..."
-   ```
-2. **Terraform CLI:** (Already installed on your system: `/usr/bin/terraform`).
+In traditional throwaway setups, infrastructure is destroyed and recreated on every deploy or test session, which causes IP changes, DNS/SSL breakage, and slow 15-minute rebuilds. 
+
+EnvScale decouples **Infrastructure Lifecycle** from **Application Deployment**:
+
+1. **Infrastructure (EC2 + VPC + EIP):** Provisioned once via Terraform. When testing is paused, the EC2 instance is **stopped** (`./envscale.sh infra stop`), dropping compute charges to **$0.00/hour** while preserving the static Elastic IP, database records, and cached images for ~8¢/day (EBS storage).
+2. **CI/CD Pipeline (`cd.yml`):** Automatically builds Docker images on GitHub Actions runners, pushes to GitHub Container Registry (`ghcr.io`), and executes `./envscale.sh deploy` over SSH. The EC2 instance merely pulls pre-built images in ~15 seconds instead of compiling from source.
 
 ---
 
-## 3. How to Deploy (Step-by-Step)
+## 2. Quick Command Reference
 
-### Step 1: Execute the Deployment Script
-From the repository root:
-```bash
-./deployment/deploy.sh
-```
-This script will:
-- Authenticate using your active AWS CLI profile/credentials.
-- Initialize Terraform.
-- Automatically generate a local SSH key pair (`deployment/terraform/envscale_key.pem`).
-- Provision the cost-optimized VPC, Security Group, and EC2 instance (`t3a.large` with 8 GB RAM, ~$0.06/hr).
-- Output the public IP, SSH command, and Web/API/WebSocket URLs.
+All deployment and infrastructure commands are accessible via `./envscale.sh`:
 
-### Step 2: SSH into the Provisioned EC2 Instance
 ```bash
-cd deployment/terraform
-ssh -i envscale_key.pem ubuntu@<EC2_PUBLIC_IP>
+# Application Deployment (Invoked by GitHub Actions CD or manually)
+./envscale.sh deploy         # Pulls pre-built GHCR images, updates .env/Caddy, & runs migrations
+
+# Infrastructure Lifecycle Management
+./envscale.sh infra up       # Provisions EC2 via Terraform & auto-syncs secrets to GitHub Actions
+./envscale.sh infra stop     # Pauses EC2 instance (Compute: $0.00/hr, preserves state)
+./envscale.sh infra start    # Resumes EC2 instance in ~20s & syncs GitHub secrets
+./envscale.sh infra destroy  # Archives Postgres dump to S3 vault and destroys AWS resources
+
+# Diagnostics & Monitoring
+./envscale.sh status         # Checks container statuses and health on EC2
+./envscale.sh logs [service] # Tails container logs (e.g. ./envscale.sh logs api-server)
+./envscale.sh ssh            # Opens direct SSH terminal into the EC2 instance
 ```
 
-### Step 3: Run the Application Stack
-Once logged into the EC2 instance:
-```bash
-git clone https://github.com/<your-username>/EnvScale.git
-cd EnvScale
-./deployment/start_remote.sh
-```
+---
+
+## 3. GitHub Actions CI/CD Pipeline
+
+The `.github/workflows/cd.yml` workflow triggers automatically on pushes to `develop` (ignoring changes to `deployment/terraform/**` or markdown files):
+
+1. **Build & Push Job:**
+   - Multi-stage Docker Buildx runs on GitHub's 4-core runner.
+   - Images are tagged and pushed to GitHub Container Registry:
+     - `ghcr.io/p20000/envscale-api-server:latest`
+     - `ghcr.io/p20000/envscale-k8s-streamer:latest`
+     - `ghcr.io/p20000/envscale-web:latest`
+2. **Deploy Job:**
+   - SSHes into `secrets.EC2_HOST` using `secrets.SSH_PRIVATE_KEY`.
+   - Injects production secrets (`DUCKDNS_TOKEN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, etc.).
+   - Executes `./envscale.sh deploy` on the host.
+   - Total deployment time: **< 45 seconds**.
 
 ---
 
 ## 4. Why This Architecture Burns Minimal Credits
 
-- **Zero NAT Gateway Fees:** Saves ~$35 - $65/month by using an Internet Gateway.
-- **Zero Managed EKS Fees:** Runs CNCF K3s on-node, avoiding the $73/month flat AWS EKS control plane fee.
+- **Zero NAT Gateway Fees:** Saves ~$35 - $65/month by routing traffic via Internet Gateway.
+- **Zero Managed EKS Fees:** Runs CNCF K3s directly on the node, avoiding the $73/month flat AWS EKS control plane fee.
 - **Zero Managed RDS/ElastiCache Fees:** Postgres 16 and Redis 7 run directly in Docker on the instance.
-- **Can Be Stopped When Idle:** You can stop the EC2 instance anytime via AWS Console when not presenting or testing. The compute cost drops to $0.00 while paused!
+- **Zero Compute Fees When Idle:** Run `./envscale.sh infra stop` anytime. Compute drops to $0.00/hr. The only fee while paused is ~$2.40/month (~$0.08/day) for 30 GB gp3 root EBS disk.

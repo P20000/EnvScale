@@ -38,6 +38,7 @@ services:
 
   # Backend REST API Server
   api-server:
+    image: ${API_SERVER_IMAGE:-ghcr.io/p20000/envscale-api-server:latest}
     build:
       context: ..
       dockerfile: apps/api-server/Dockerfile
@@ -65,6 +66,7 @@ services:
 
   # Kubernetes Streaming Gateway
   k8s-streamer:
+    image: ${STREAMER_IMAGE:-ghcr.io/p20000/envscale-k8s-streamer:latest}
     build:
       context: ../apps/k8s-streamer
       dockerfile: Dockerfile
@@ -90,6 +92,7 @@ services:
 
   # Frontend Web UI
   web:
+    image: ${WEB_IMAGE:-ghcr.io/p20000/envscale-web:latest}
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
