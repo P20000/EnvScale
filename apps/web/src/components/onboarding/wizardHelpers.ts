@@ -5,8 +5,9 @@ export const connectClusterSchema = z.object({
   environment: z.enum(["development", "staging", "production"], {
     errorMap: () => ({ message: "Invalid environment selected" }),
   }),
-  kubeconfig: z.string().min(1, "Please upload a kubeconfig file").refine(
-    (text) => text.includes("apiVersion") && text.includes("clusters"),
+  connectionMode: z.enum(["agent", "direct"]).default("agent").optional(),
+  kubeconfig: z.string().optional().refine(
+    (text) => !text || (text.includes("apiVersion") && text.includes("clusters")),
     { message: "Invalid Kubeconfig file: Missing 'apiVersion' or 'clusters' specification in YAML." }
   ),
 });

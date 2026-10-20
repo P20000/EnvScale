@@ -194,6 +194,7 @@ export async function apiConnectCluster(clusterData: {
   environment?: string;
   kubeconfig?: string;
   workspaceId?: string;
+  connectionMode?: "direct" | "agent";
 }): Promise<ClusterResponse> {
   try {
     try {
@@ -210,6 +211,7 @@ export async function apiConnectCluster(clusterData: {
           name: clusterData.name,
           type: clusterData.environment || "development",
           kubeconfig: clusterData.kubeconfig || "",
+          connectionMode: clusterData.connectionMode || "direct",
         }),
       });
 
