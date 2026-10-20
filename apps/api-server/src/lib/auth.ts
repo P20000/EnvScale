@@ -42,7 +42,7 @@ export const auth = betterAuth({
     },
   },
   secret: env.BETTER_AUTH_SECRET || env.JWT_ACCESS_SECRET,
-  baseURL: env.BETTER_AUTH_URL,
+  baseURL: env.BETTER_AUTH_URL ? env.BETTER_AUTH_URL.replace(/\/api\/?$/, "") : undefined,
   trustedOrigins: [
     "http://localhost:5173",
     "http://localhost:3000",

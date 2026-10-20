@@ -54,7 +54,7 @@ services:
       KUBECONFIG_ENCRYPTION_KEY: "${KUBECONFIG_ENCRYPTION_KEY:-dGhpcy1pcy1hLTMyLWJ5dGUtYmFzZTY0LWtleS0xMjM=}"
       CORS_ORIGIN: "${CORS_ORIGIN:-https://envscale.duckdns.org,http://envscale.duckdns.org,http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000}"
       BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:-9f8a3c4b1e2d7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a}"
-      BETTER_AUTH_URL: "${BETTER_AUTH_URL:-https://envscale.duckdns.org/api}"
+      BETTER_AUTH_URL: "${BETTER_AUTH_URL:-https://envscale.duckdns.org}"
       GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:-}"
       GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET:-}"
     depends_on:
