@@ -56,7 +56,9 @@ curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--write-kubeconfig-mode 644 --d
 kubectl wait --for=condition=Ready node --all --timeout=60s || true
 
 echo "=== [3/5] Setting up Project Workspace & Reverse Proxy ==="
-mkdir -p /opt/envscale
+if [ ! -d /opt/envscale/.git ]; then
+    git clone -b develop https://github.com/P20000/EnvScale.git /opt/envscale || mkdir -p /opt/envscale
+fi
 chown -R ubuntu:ubuntu /opt/envscale
 
 DOMAIN="${DOMAIN_NAME}"

@@ -37,9 +37,14 @@ if [ -f "$ROOT_DIR/.env" ]; then
     [ -z "$DUCKDNS_DOMAIN" ] && DUCKDNS_DOMAIN=$(grep -E '^DUCKDNS_DOMAIN=' "$ROOT_DIR/.env" | cut -d '=' -f2- | tr -d '"' | tr -d "'" || true)
     [ -z "$GOOGLE_CLIENT_ID" ] && GOOGLE_CLIENT_ID=$(grep -E '^GOOGLE_CLIENT_ID=' "$ROOT_DIR/.env" | cut -d '=' -f2- | tr -d '"' | tr -d "'" || true)
     [ -z "$GOOGLE_CLIENT_SECRET" ] && GOOGLE_CLIENT_SECRET=$(grep -E '^GOOGLE_CLIENT_SECRET=' "$ROOT_DIR/.env" | cut -d '=' -f2- | tr -d '"' | tr -d "'" || true)
+    [ -z "$BETTER_AUTH_SECRET" ] && BETTER_AUTH_SECRET=$(grep -E '^BETTER_AUTH_SECRET=' "$ROOT_DIR/.env" | cut -d '=' -f2- | tr -d '"' | tr -d "'" || true)
+    [ -z "$JWT_ACCESS_SECRET" ] && JWT_ACCESS_SECRET=$(grep -E '^JWT_ACCESS_SECRET=' "$ROOT_DIR/.env" | cut -d '=' -f2- | tr -d '"' | tr -d "'" || true)
+    [ -z "$JWT_REFRESH_SECRET" ] && JWT_REFRESH_SECRET=$(grep -E '^JWT_REFRESH_SECRET=' "$ROOT_DIR/.env" | cut -d '=' -f2- | tr -d '"' | tr -d "'" || true)
+    [ -z "$KUBECONFIG_ENCRYPTION_KEY" ] && KUBECONFIG_ENCRYPTION_KEY=$(grep -E '^KUBECONFIG_ENCRYPTION_KEY=' "$ROOT_DIR/.env" | cut -d '=' -f2- | tr -d '"' | tr -d "'" || true)
 elif [ -f "$ROOT_DIR/apps/api-server/.env" ]; then
     [ -z "$GOOGLE_CLIENT_ID" ] && GOOGLE_CLIENT_ID=$(grep -E '^GOOGLE_CLIENT_ID=' "$ROOT_DIR/apps/api-server/.env" | cut -d '=' -f2- | tr -d '"' | tr -d "'" || true)
     [ -z "$GOOGLE_CLIENT_SECRET" ] && GOOGLE_CLIENT_SECRET=$(grep -E '^GOOGLE_CLIENT_SECRET=' "$ROOT_DIR/apps/api-server/.env" | cut -d '=' -f2- | tr -d '"' | tr -d "'" || true)
+    [ -z "$BETTER_AUTH_SECRET" ] && BETTER_AUTH_SECRET=$(grep -E '^BETTER_AUTH_SECRET=' "$ROOT_DIR/apps/api-server/.env" | cut -d '=' -f2- | tr -d '"' | tr -d "'" || true)
 fi
 
 DUCKDNS_DOMAIN="${DUCKDNS_DOMAIN:-envscale}"
@@ -233,9 +238,17 @@ EOF"
         fi
         log_info "Deploying to active cloud host ${PUBLIC_IP} via SSH..."
         ssh -o StrictHostKeyChecking=no -i "$KEY_FILE" ubuntu@"$PUBLIC_IP" \
-            "cd /opt/envscale && git pull origin develop && \
+            "if [ ! -d /opt/envscale/.git ]; then
+                git clone -b develop https://github.com/P20000/EnvScale.git /opt/envscale || (mkdir -p /opt/envscale && cd /opt/envscale && git init && git remote add origin https://github.com/P20000/EnvScale.git && git fetch origin develop && git checkout -b develop origin/develop -f)
+             fi && \
+             cd /opt/envscale && \
+             git pull origin develop && \
              DUCKDNS_DOMAIN='$DUCKDNS_DOMAIN' \
              DUCKDNS_TOKEN='$DUCKDNS_TOKEN' \
+             BETTER_AUTH_SECRET='$BETTER_AUTH_SECRET' \
+             JWT_ACCESS_SECRET='$JWT_ACCESS_SECRET' \
+             JWT_REFRESH_SECRET='$JWT_REFRESH_SECRET' \
+             KUBECONFIG_ENCRYPTION_KEY='$KUBECONFIG_ENCRYPTION_KEY' \
              GOOGLE_CLIENT_ID='$GOOGLE_CLIENT_ID' \
              GOOGLE_CLIENT_SECRET='$GOOGLE_CLIENT_SECRET' \
              ./envscale.sh deploy"
@@ -273,12 +286,13 @@ action_infra_up() {
     done
     log_succ "Host dependencies initialized!"
 
-    log_info "Syncing repository source code to /opt/envscale/ ..."
-    cd "$ROOT_DIR"
-    rsync -avz --delete \
-        --exclude 'node_modules' --exclude '.turbo' --exclude '.git' --exclude 'dist' --exclude '.terraform' \
-        -e "ssh -i \"$KEY_FILE\" -o StrictHostKeyChecking=no" \
-        . ubuntu@"$PUBLIC_IP":/opt/envscale/
+    log_info "Ensuring workspace repository is cloned & updated on EC2..."
+    ssh -o StrictHostKeyChecking=no -i "$KEY_FILE" ubuntu@"$PUBLIC_IP" \
+        "if [ ! -d /opt/envscale/.git ]; then
+            git clone -b develop https://github.com/P20000/EnvScale.git /opt/envscale
+         else
+            cd /opt/envscale && git pull origin develop
+         fi"
 
     # Run deployment to start containers
     action_deploy
@@ -372,6 +386,18 @@ case "$COMMAND" in
         PUBLIC_IP=$(get_public_ip)
         [ -n "$PUBLIC_IP" ] && ssh -o StrictHostKeyChecking=no -i "$KEY_FILE" ubuntu@"$PUBLIC_IP" "docker compose -f /opt/envscale/deployment/docker-compose.prod.yml logs --tail=100 -f ${SUBCOMMAND:-}"
         ;;
+    sync)
+        PUBLIC_IP=$(get_public_ip)
+        if [ -z "$PUBLIC_IP" ] || [ ! -f "$KEY_FILE" ]; then
+            log_err "No active AWS host found. Run './envscale.sh infra up' to provision first."
+            exit 1
+        fi
+        log_info "Syncing local file modifications to /opt/envscale/ on ${PUBLIC_IP}..."
+        rsync -avz --filter='P .git' --exclude 'node_modules' --exclude '.turbo' --exclude 'dist' --exclude '.terraform' \
+            -e "ssh -i \"$KEY_FILE\" -o StrictHostKeyChecking=no" \
+            . ubuntu@"$PUBLIC_IP":/opt/envscale/
+        action_deploy
+        ;;
     ssh)
         PUBLIC_IP=$(get_public_ip)
         [ -n "$PUBLIC_IP" ] && ssh -o StrictHostKeyChecking=no -i "$KEY_FILE" ubuntu@"$PUBLIC_IP"
@@ -386,6 +412,7 @@ case "$COMMAND" in
         echo "  infra stop      Pause EC2 instance to stop compute billing (\$0.00/hr)"
         echo "  infra start     Resume EC2 instance in ~20s"
         echo "  infra destroy   Backup DB to S3 and tear down all AWS resources"
+        echo "  sync            Sync local source changes to EC2 & deploy without committing"
         echo "  status          Check running Docker containers on EC2"
         echo "  logs [service]  Tail production container logs"
         echo "  ssh             Open direct SSH terminal into EC2 host"
