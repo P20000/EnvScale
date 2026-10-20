@@ -61,7 +61,7 @@ check_aws_cli() {
     ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
     AWS_REGION=$(aws configure get region || echo "ap-south-1")
     AWS_REGION="${AWS_REGION:-ap-south-1}"
-    S3_BUCKET="envscale-cloud-vault-${ACCOUNT_ID}"
+    S3_BUCKET="envscale-cloud-vault-${ACCOUNT_ID}-${AWS_REGION}"
 }
 
 ensure_s3_vault() {
