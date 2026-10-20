@@ -66,6 +66,10 @@ func SetupRoutes(
 		websocket.ServeWs(hub, clientID, w, r)
 	})
 
+	mux.HandleFunc("/ws/agent", func(w http.ResponseWriter, r *http.Request) {
+		HandleAgentWebSocket(hub, clusterManager, w, r)
+	})
+
 	mux.HandleFunc("/api/v1/stream/logs", func(w http.ResponseWriter, r *http.Request) {
 		HandleUniversalLogStream(clusterManager, w, r)
 	})

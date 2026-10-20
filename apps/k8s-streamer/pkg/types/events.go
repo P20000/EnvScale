@@ -50,6 +50,8 @@ const (
 
 	EventPDBMutated = "EVENT_PDB_MUTATED"
 	EventPDBDeleted = "EVENT_PDB_DELETED"
+
+	EventSnapshotSync = "EVENT_SNAPSHOT_SYNC"
 )
 
 // K8sIncidentEvent encapsulates authentic Kubernetes v1.Event telemetry
