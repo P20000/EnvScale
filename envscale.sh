@@ -258,7 +258,8 @@ EOF"
                 git clone -b develop https://github.com/P20000/EnvScale.git /opt/envscale || (mkdir -p /opt/envscale && cd /opt/envscale && git init && git remote add origin https://github.com/P20000/EnvScale.git && git fetch origin develop && git checkout -b develop origin/develop -f)
              fi && \
              cd /opt/envscale && \
-             git pull origin develop && \
+             git fetch origin develop && \
+             git reset --hard origin/develop && \
              DUCKDNS_DOMAIN='$DUCKDNS_DOMAIN' \
              DUCKDNS_TOKEN='$DUCKDNS_TOKEN' \
              BETTER_AUTH_SECRET='$BETTER_AUTH_SECRET' \
@@ -307,7 +308,7 @@ action_infra_up() {
         "if [ ! -d /opt/envscale/.git ]; then
             git clone -b develop https://github.com/P20000/EnvScale.git /opt/envscale
          else
-            cd /opt/envscale && git pull origin develop
+            cd /opt/envscale && git fetch origin develop && git reset --hard origin/develop
          fi"
 
     # Run deployment to start containers

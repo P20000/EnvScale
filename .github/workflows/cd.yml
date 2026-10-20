@@ -116,7 +116,8 @@ jobs:
           script: |
             set -e
             cd /opt/envscale
-            git pull origin develop
+            git fetch origin develop
+            git reset --hard origin/develop
             chmod +x ./envscale.sh
             
             DUCKDNS_DOMAIN="${DUCKDNS_DOMAIN}" \
