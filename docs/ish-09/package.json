@@ -1,0 +1,13 @@
+{
+  "name": "envscale-ish-09-screenshots",
+  "version": "1.0.0",
+  "description": "ISH-09: Automated screenshot capture for EnvScale demo assets",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "capture": "node capture-screenshots.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.47.2"
+  }
+}

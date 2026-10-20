@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: faulty-worker
+  namespace: testing-todo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: faulty-worker
+  template:
+    metadata:
+      labels:
+        app: faulty-worker
+    spec:
+      containers:
+      - name: crash-container
+        image: busybox
+        command: ["/bin/sh", "-c", "sleep 5; exit 1"]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oom-worker
+  namespace: testing-todo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: oom-worker
+  template:
+    metadata:
+      labels:
+        app: oom-worker
+    spec:
+      containers:
+      - name: memory-eater
+        image: busybox
+        command: ["/bin/sh", "-c", "x='a'; while true; do x=$x$x; done"]
+        resources:
+          limits:
+            memory: "10Mi"

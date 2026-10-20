@@ -7,22 +7,30 @@ import (
 
 	"k8s.io/client-go/kubernetes"
 
+	"github.com/EnvScale/k8s-streamer/pkg/types"
 	"github.com/EnvScale/k8s-streamer/pkg/websocket"
 )
 
 // ClusterManager maintains a dynamic, thread-safe registry of InformerManager instances keyed by cluster/workspace ID.
 type ClusterManager struct {
-	clusters map[string]*InformerManager
-	hub      *websocket.Hub
-	mu       sync.RWMutex
+	clusters      map[string]*InformerManager
+	agentRegistry *AgentRegistry
+	hub           *websocket.Hub
+	mu            sync.RWMutex
 }
 
 // NewClusterManager creates a new ClusterManager registry instance
 func NewClusterManager(hub *websocket.Hub) *ClusterManager {
 	return &ClusterManager{
-		clusters: make(map[string]*InformerManager),
-		hub:      hub,
+		clusters:      make(map[string]*InformerManager),
+		agentRegistry: NewAgentRegistry(),
+		hub:           hub,
 	}
+}
+
+// AgentRegistry returns the agent registry for outbound agents
+func (cm *ClusterManager) AgentRegistry() *AgentRegistry {
+	return cm.agentRegistry
 }
 
 // RegisterCluster parses raw Kubeconfig bytes, instantiates an InformerManager, and starts informers asynchronously.
@@ -107,12 +115,147 @@ func (cm *ClusterManager) UnregisterCluster(clusterID string) error {
 	return nil
 }
 
+// UnregisterAllClusters stops all running informers and clears the registry.
+func (cm *ClusterManager) UnregisterAllClusters() {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	for id, im := range cm.clusters {
+		im.Stop()
+		delete(cm.clusters, id)
+		log.Printf("[ClusterManager] Unregistered and stopped informers for cluster: %s", id)
+	}
+}
+
+// GetClusterSnapshot retrieves the current cached state of pods, nodes, services, and workloads for a given cluster.
+func (cm *ClusterManager) GetClusterSnapshot(clusterID string) (
+	[]types.PodStatusDelta,
+	[]types.NodeStatusDelta,
+	[]types.ServiceStatusDelta,
+	[]types.DeploymentStatusDelta,
+	[]types.ReplicaSetStatusDelta,
+	[]types.StatefulSetStatusDelta,
+	[]types.DaemonSetStatusDelta,
+	[]types.IngressStatusDelta,
+	[]types.K8sIncidentEvent,
+	[]types.CronJobStatusDelta,
+	[]types.JobStatusDelta,
+	[]types.PVCStatusDelta,
+	[]types.PVStatusDelta,
+	[]types.ConfigMapStatusDelta,
+	[]types.SecretStatusDelta,
+	error,
+) {
+	cm.mu.RLock()
+	im, ok := cm.clusters[clusterID]
+	if !ok && len(cm.clusters) == 1 {
+		for _, v := range cm.clusters {
+			im = v
+			ok = true
+			break
+		}
+	}
+	cm.mu.RUnlock()
+
+	if !ok {
+		// Check if cluster is streaming via an outbound agent
+		if agentSnap, found := cm.agentRegistry.GetSnapshot(clusterID); found && agentSnap != nil {
+			return agentSnap.Pods, agentSnap.Nodes, agentSnap.Services, agentSnap.Deployments,
+				agentSnap.ReplicaSets, agentSnap.StatefulSets, agentSnap.DaemonSets, agentSnap.Ingresses,
+				agentSnap.Incidents, agentSnap.CronJobs, agentSnap.Jobs, agentSnap.PVCs, agentSnap.PVs,
+				agentSnap.ConfigMaps, agentSnap.Secrets, nil
+		}
+		return nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("cluster %s not found", clusterID)
+	}
+	pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, cronJobs, jobs, pvcs, pvs, configMaps, secrets := im.GetSnapshot()
+	return pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, cronJobs, jobs, pvcs, pvs, configMaps, secrets, nil
+}
+
+// GetHPASnapshot retrieves all cached HPAs for a cluster
+func (cm *ClusterManager) GetHPASnapshot(clusterID string) []types.HPAStatusDelta {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	if im, ok := cm.clusters[clusterID]; ok {
+		return im.GetHPASnapshot()
+	}
+	if len(cm.clusters) == 1 {
+		for _, v := range cm.clusters {
+			return v.GetHPASnapshot()
+		}
+	}
+	if agentSnap, found := cm.agentRegistry.GetSnapshot(clusterID); found && agentSnap != nil {
+		return agentSnap.HPAs
+	}
+	return nil
+}
+
+// GetNetworkPolicySnapshot retrieves all cached NetworkPolicies for a cluster
+func (cm *ClusterManager) GetNetworkPolicySnapshot(clusterID string) []types.NetworkPolicyStatusDelta {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	if im, ok := cm.clusters[clusterID]; ok {
+		return im.GetNetworkPolicySnapshot()
+	}
+	if len(cm.clusters) == 1 {
+		for _, v := range cm.clusters {
+			return v.GetNetworkPolicySnapshot()
+		}
+	}
+	if agentSnap, found := cm.agentRegistry.GetSnapshot(clusterID); found && agentSnap != nil {
+		return agentSnap.NetworkPolicies
+	}
+	return nil
+}
+
+// GetPDBSnapshot retrieves all cached PodDisruptionBudgets for a cluster
+func (cm *ClusterManager) GetPDBSnapshot(clusterID string) []types.PDBStatusDelta {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	if im, ok := cm.clusters[clusterID]; ok {
+		return im.GetPDBSnapshot()
+	}
+	if len(cm.clusters) == 1 {
+		for _, v := range cm.clusters {
+			return v.GetPDBSnapshot()
+		}
+	}
+	if agentSnap, found := cm.agentRegistry.GetSnapshot(clusterID); found && agentSnap != nil {
+		return agentSnap.PDBs
+	}
+	return nil
+}
+
+// CheckPDBSafety checks if a workload is protected by a PDB and whether disruptions are allowed
+func (cm *ClusterManager) CheckPDBSafety(clusterID, namespace, workloadName string, labels map[string]string) (*types.PDBStatusDelta, bool) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	im, ok := cm.clusters[clusterID]
+	if !ok && len(cm.clusters) == 1 {
+		for _, v := range cm.clusters {
+			im = v
+			ok = true
+			break
+		}
+	}
+	if !ok || im == nil {
+		return nil, false
+	}
+
+	return im.CheckWorkloadPDB(namespace, workloadName, labels)
+}
+
 // GetCluster returns the InformerManager associated with the given clusterID.
 func (cm *ClusterManager) GetCluster(clusterID string) (*InformerManager, bool) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
 	im, ok := cm.clusters[clusterID]
+	if !ok && len(cm.clusters) == 1 {
+		for _, v := range cm.clusters {
+			return v, true
+		}
+	}
 	return im, ok
 }
 
@@ -146,4 +289,19 @@ func (cm *ClusterManager) ShutdownAll() {
 		delete(cm.clusters, id)
 	}
 	log.Println("[ClusterManager] All cluster informers successfully shut down.")
+}
+
+// GetClientset returns the kubernetes.Interface for the registered cluster with the
+// given clusterID. This implements the chaos.ClientsetProvider interface, allowing the
+// chaos Injector to borrow an authenticated clientset for fault API calls without
+// needing to re-parse or store a second copy of the Kubeconfig.
+func (cm *ClusterManager) GetClientset(clusterID string) (kubernetes.Interface, error) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	im, ok := cm.clusters[clusterID]
+	if !ok {
+		return nil, fmt.Errorf("cluster %q is not registered", clusterID)
+	}
+	return im.Clientset(), nil
 }

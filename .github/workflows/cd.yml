@@ -1,0 +1,131 @@
+name: EnvScale CD - Build & Deploy
+
+on:
+  push:
+    branches:
+      - develop
+    paths-ignore:
+      - 'deployment/terraform/**'
+      - 'docs/**'
+      - '**.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    name: Build & Push Images (GHCR)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Normalize Repository Owner Name
+        run: |
+          echo "OWNER_LC=${OWNER,,}" >> ${GITHUB_ENV}
+        env:
+          OWNER: '${{ github.repository_owner }}'
+
+      - name: Build & Push API Server
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./apps/api-server/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ env.OWNER_LC }}/envscale-api-server:latest
+            ghcr.io/${{ env.OWNER_LC }}/envscale-api-server:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & Push K8s Streamer
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/k8s-streamer
+          file: ./apps/k8s-streamer/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ env.OWNER_LC }}/envscale-k8s-streamer:latest
+            ghcr.io/${{ env.OWNER_LC }}/envscale-k8s-streamer:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & Push Web UI
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./apps/web/Dockerfile
+          build-args: |
+            VITE_API_BASE_URL=
+            VITE_STREAMER_BASE_URL=
+            VITE_WS_URL=/ws/k8s
+          push: true
+          tags: |
+            ghcr.io/${{ env.OWNER_LC }}/envscale-web:latest
+            ghcr.io/${{ env.OWNER_LC }}/envscale-web:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to EC2 Integration Host
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Deployment Credentials
+        id: check_creds
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          if [ -n "$SSH_PRIVATE_KEY" ] && [ -n "$EC2_HOST" ]; then
+            echo "has_creds=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_creds=false" >> "$GITHUB_OUTPUT"
+            echo "::notice ::SSH_PRIVATE_KEY or EC2_HOST secret not configured in GitHub Repository Settings. Deployment step skipped."
+          fi
+
+      - name: Deploy via SSH
+        if: steps.check_creds.outputs.has_creds == 'true'
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          DUCKDNS_DOMAIN: ${{ secrets.DUCKDNS_DOMAIN }}
+          DUCKDNS_TOKEN: ${{ secrets.DUCKDNS_TOKEN }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          JWT_ACCESS_SECRET: ${{ secrets.JWT_ACCESS_SECRET }}
+          JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
+          KUBECONFIG_ENCRYPTION_KEY: ${{ secrets.KUBECONFIG_ENCRYPTION_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: "ubuntu"
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: DUCKDNS_DOMAIN,DUCKDNS_TOKEN,BETTER_AUTH_SECRET,JWT_ACCESS_SECRET,JWT_REFRESH_SECRET,KUBECONFIG_ENCRYPTION_KEY,GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET
+          script: |
+            set -e
+            cd /opt/envscale
+            git fetch origin develop
+            git reset --hard origin/develop
+            chmod +x ./envscale.sh
+            
+            DUCKDNS_DOMAIN="${DUCKDNS_DOMAIN}" \
+            DUCKDNS_TOKEN="${DUCKDNS_TOKEN}" \
+            BETTER_AUTH_SECRET="${BETTER_AUTH_SECRET}" \
+            JWT_ACCESS_SECRET="${JWT_ACCESS_SECRET}" \
+            JWT_REFRESH_SECRET="${JWT_REFRESH_SECRET}" \
+            KUBECONFIG_ENCRYPTION_KEY="${KUBECONFIG_ENCRYPTION_KEY}" \
+            GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID}" \
+            GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET}" \
+            ./envscale.sh deploy

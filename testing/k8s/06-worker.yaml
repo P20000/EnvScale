@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-pool
+  namespace: testing-todo
+  labels:
+    app: worker-pool
+    tier: background
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: worker-pool
+  template:
+    metadata:
+      labels:
+        app: worker-pool
+        tier: background
+    spec:
+      containers:
+        - name: queue-worker
+          image: alpine:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - "while true; do echo '[Worker] Processing async task queue payload...'; sleep 10; done"
+          resources:
+            requests:
+              cpu: 20m
+              memory: 16Mi
+            limits:
+              cpu: 80m
+              memory: 64Mi

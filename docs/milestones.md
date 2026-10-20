@@ -225,7 +225,7 @@ EnvScale Monorepo Structure
 - [ ] Build Workspace Settings & Member Management UI pages.
 
 #### Ishika (UI Polish, Static Pages & Quality Assurance)
-- [ ] Implement step-by-step "Connect Cluster" onboarding flow UI with drag-and-drop file dropzone.
+- [x] Implement step-by-step "Connect Cluster" onboarding flow UI with Material Design 3 proportions and drag-and-drop file dropzone.
 - [ ] Build empty-state components for workspaces without clusters connected or missing pod deployments.
 - [ ] Integrate global Toast notification system for connection errors and API failures.
 - [ ] Author Draft IEEE SRS Document (Sections 1 & 2: Introduction and Overall Description).
@@ -308,7 +308,7 @@ EnvScale Monorepo Structure
 - [ ] Implement Leaderboard query aggregation APIs with workspace ranking calculations.
 
 #### Neha (Frontend UI & Visualization Engine)
-- [ ] Build custom React Flow node components (`K8sNodeComponent`, `K8sPodComponent`, `K8sServiceComponent`).
+- [x] Build custom React Flow node components (`K8sGroup`, `K8sNode`, `K8sPod`, `K8sService`) with Nested Hybrid Topology layout.
 - [ ] Integrate Dagre graph auto-layout algorithm for dynamic canvas rendering.
 - [ ] Build Alert Rule Configuration modal UI and rule builder interface.
 - [ ] Build Leaderboard visual view with rank badges, streak indicators, and health score gauges.

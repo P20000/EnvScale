@@ -1,0 +1,474 @@
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
+import type { Node, Edge } from "@xyflow/react";
+import { useTopologyStore } from "../store/useTopologyStore";
+import { getStreamerToken } from "../config/api";
+
+export type WsConnectionStatus = "CONNECTING" | "CONNECTED" | "DISCONNECTED" | "RECONNECTING" | "ERROR";
+
+export interface WsTopologyMessage {
+  type?:
+    | "EVENT_TOPOLOGY_SNAPSHOT"
+    | "EVENT_POD_ADDED"
+    | "EVENT_POD_MODIFIED"
+    | "EVENT_POD_DELETED"
+    | "EVENT_POD_STATUS_CHANGED"
+    | "EVENT_NODE_ADDED"
+    | "EVENT_NODE_MODIFIED"
+    | "EVENT_NODE_DELETED"
+    | "EVENT_NODE_MUTATED"
+    | "EVENT_SERVICE_ADDED"
+    | "EVENT_SERVICE_MODIFIED"
+    | "EVENT_SERVICE_DELETED"
+    | "EVENT_SERVICE_MUTATED"
+    | "EVENT_DAEMONSET_MUTATED"
+    | "EVENT_DAEMONSET_DELETED"
+    | "EVENT_LOG_LINE"
+    | "EVENT_ALERT_TRIGGERED"
+    | "EVENT_HEARTBEAT"
+    | string;
+  event?: string;
+  payload?: {
+    nodes?: Node[];
+    edges?: Edge[];
+    node?: Node;
+    nodeId?: string;
+    pod?: Node;
+    podId?: string;
+    service?: Node;
+    serviceId?: string;
+    cluster?: string;
+    metrics?: Record<string, unknown>;
+    [key: string]: unknown;
+  };
+  data?: unknown;
+  clusterId?: string;
+  timestamp?: string;
+  latencyMs?: number;
+}
+
+const DEFAULT_WS_URL = "ws://localhost:8080/ws/k8s";
+
+export function useK8sStream(
+  onMessageReceived?: (msg: WsTopologyMessage) => void,
+  urlOverride?: string,
+  clusterId?: string
+) {
+  const [status, setStatus] = useState<WsConnectionStatus>("DISCONNECTED");
+  const [latencyMs, setLatencyMs] = useState<number>(0);
+
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastPingTimeRef = useRef<number>(0);
+
+  const isComponentMounted = useRef<boolean>(true);
+  const shouldReconnectRef = useRef<boolean>(true);
+  const reconnectAttemptRef = useRef<number>(0);
+  const snapshotRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const snapshotAttemptsRef = useRef<number>(0);
+
+  const connectRef = useRef<() => void>(() => {});
+  const onMessageReceivedRef = useRef(onMessageReceived);
+
+  const clusters = useTopologyStore((state) => state.clusters);
+  const activeCluster = useTopologyStore((state) => state.activeCluster);
+  const resolvedCluster = clusters.find((c) => c.id === activeCluster || c.name === activeCluster);
+  const targetClusterId = clusterId || resolvedCluster?.id || activeCluster;
+
+  const wsUrl = useMemo(() => {
+    const rawUrl = urlOverride || import.meta.env.VITE_WS_URL || DEFAULT_WS_URL;
+    let fullUrl = rawUrl;
+    if (rawUrl.startsWith("/")) {
+      const protocol = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:";
+      const host = typeof window !== "undefined" ? window.location.host : "localhost:8080";
+      fullUrl = `${protocol}//${host}${rawUrl}`;
+    }
+    try {
+      const url = new URL(fullUrl);
+      url.searchParams.set("clusterId", targetClusterId);
+      return url.toString();
+    } catch {
+      const hasQuery = fullUrl.includes("?");
+      return `${fullUrl}${hasQuery ? "&" : "?"}clusterId=${encodeURIComponent(targetClusterId)}`;
+    }
+  }, [urlOverride, targetClusterId]);
+
+  useEffect(() => {
+    onMessageReceivedRef.current = onMessageReceived;
+  }, [onMessageReceived]);
+
+  const scheduleReconnect = useCallback(() => {
+    if (!isComponentMounted.current || !shouldReconnectRef.current) return;
+
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+
+    const attempt = reconnectAttemptRef.current;
+    const baseDelay = 1000; // 1s base
+    const maxDelay = 30000; // 30s max
+    const expDelay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
+    // Add jitter (80% to 120% of delay)
+    const jitter = 0.8 + Math.random() * 0.4;
+    const delay = Math.round(expDelay * jitter);
+
+    reconnectAttemptRef.current = attempt + 1;
+    setStatus("RECONNECTING");
+
+    reconnectTimeoutRef.current = setTimeout(() => {
+      if (isComponentMounted.current && shouldReconnectRef.current) {
+        connectRef.current();
+      }
+    }, delay);
+  }, []);
+
+  const connect = useCallback(async () => {
+    if (!shouldReconnectRef.current || !targetClusterId) {
+      if (!targetClusterId) {
+        queueMicrotask(() => {
+          if (isComponentMounted.current) setStatus("DISCONNECTED");
+        });
+      }
+      return;
+    }
+
+    if (
+      wsRef.current &&
+      (wsRef.current.readyState === WebSocket.CONNECTING ||
+        wsRef.current.readyState === WebSocket.OPEN)
+    ) {
+      return;
+    }
+
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+
+    const nextStatus = reconnectAttemptRef.current > 0 ? "RECONNECTING" : "CONNECTING";
+    queueMicrotask(() => {
+      if (isComponentMounted.current) {
+        setStatus(nextStatus);
+      }
+    });
+
+    try {
+      const token = await getStreamerToken();
+      let authenticatedWsUrl = wsUrl;
+      if (token) {
+        try {
+          const urlObj = new URL(wsUrl);
+          urlObj.searchParams.set("token", token);
+          authenticatedWsUrl = urlObj.toString();
+        } catch {
+          const hasQuery = wsUrl.includes("?");
+          authenticatedWsUrl = `${wsUrl}${hasQuery ? "&" : "?"}token=${encodeURIComponent(token)}`;
+        }
+      } else {
+        console.info("[EnvScale WS] No stored JWT token found; attempting direct connection (local dev / anonymous fallback).");
+      }
+
+      const socket = new WebSocket(authenticatedWsUrl);
+      wsRef.current = socket;
+
+      socket.onopen = async () => {
+        if (!isComponentMounted.current) return;
+        setStatus("CONNECTED");
+        reconnectAttemptRef.current = 0;
+
+        const url = new URL(wsUrl);
+        const clusterId = url.searchParams.get("clusterId");
+        if (clusterId) {
+          const streamerUrl = url.protocol === "wss:" ? `https://${url.host}` : `http://${url.host}`;
+
+          const fetchSnapshotWithBackoff = async (attempt = 0) => {
+            if (!isComponentMounted.current || wsRef.current !== socket) return;
+
+            try {
+              let currentToken: string | null = token;
+              if (!currentToken) {
+                currentToken = await getStreamerToken();
+              }
+              const headers: Record<string, string> = {
+                "Content-Type": "application/json",
+              };
+              if (currentToken) {
+                headers["Authorization"] = `Bearer ${currentToken}`;
+              }
+              const snapshotUrl = `${streamerUrl}/api/v1/clusters/snapshot?clusterId=${encodeURIComponent(targetClusterId)}${currentToken ? `&token=${encodeURIComponent(currentToken)}` : ""}`;
+              const res = await fetch(snapshotUrl, {
+                headers,
+              });
+              if (res.ok) {
+                snapshotAttemptsRef.current = 0;
+                const snapshot = await res.json();
+                if (onMessageReceivedRef.current) {
+                  onMessageReceivedRef.current({
+                    type: "EVENT_SNAPSHOT_SYNC",
+                    event: "EVENT_SNAPSHOT_SYNC",
+                    data: snapshot,
+                  } as WsTopologyMessage);
+                  if (snapshot.nodes) {
+                    snapshot.nodes.forEach((node: unknown) =>
+                      onMessageReceivedRef.current?.({ type: "EVENT_NODE_ADDED", event: "EVENT_NODE_ADDED", data: node } as WsTopologyMessage)
+                    );
+                  }
+                  if (snapshot.pods) {
+                    snapshot.pods.forEach((pod: unknown) =>
+                      onMessageReceivedRef.current?.({ type: "EVENT_POD_ADDED", event: "EVENT_POD_ADDED", data: pod } as WsTopologyMessage)
+                    );
+                  }
+                  if (snapshot.services) {
+                    snapshot.services.forEach((svc: unknown) =>
+                      onMessageReceivedRef.current?.({ type: "EVENT_SERVICE_ADDED", event: "EVENT_SERVICE_ADDED", data: svc } as WsTopologyMessage)
+                    );
+                  }
+                  if (snapshot.deployments) {
+                    snapshot.deployments.forEach((dep: unknown) =>
+                      onMessageReceivedRef.current?.({ type: "EVENT_DEPLOYMENT_ADDED", event: "EVENT_DEPLOYMENT_ADDED", data: dep } as WsTopologyMessage)
+                    );
+                  }
+                  if (snapshot.replicaSets) {
+                    snapshot.replicaSets.forEach((rs: unknown) =>
+                      onMessageReceivedRef.current?.({ type: "EVENT_REPLICA_SET_ADDED", event: "EVENT_REPLICA_SET_ADDED", data: rs } as WsTopologyMessage)
+                    );
+                  }
+                  if (snapshot.statefulSets) {
+                    snapshot.statefulSets.forEach((sts: unknown) =>
+                      onMessageReceivedRef.current?.({ type: "EVENT_STATEFUL_SET_ADDED", event: "EVENT_STATEFUL_SET_ADDED", data: sts } as WsTopologyMessage)
+                    );
+                  }
+                  if (snapshot.ingresses) {
+                    snapshot.ingresses.forEach((ing: unknown) =>
+                      onMessageReceivedRef.current?.({ type: "EVENT_INGRESS_ADDED", event: "EVENT_INGRESS_ADDED", data: ing } as WsTopologyMessage)
+                    );
+                  }
+                  
+                  // Notify store to run layout calculations once
+                  onMessageReceivedRef.current({
+                    type: "EVENT_BATCH_COMPLETE",
+                    event: "EVENT_BATCH_COMPLETE",
+                    data: {},
+                  } as WsTopologyMessage);
+                }
+                return;
+              }
+
+              // Non-200 response (e.g. 404 Cluster not yet registered in streamer)
+              const maxAttempts = 5;
+              if (attempt + 1 < maxAttempts) {
+                const nextAttempt = attempt + 1;
+                snapshotAttemptsRef.current = nextAttempt;
+                const delay = Math.min(1500 * Math.pow(1.8, attempt), 12000);
+                console.log(`[EnvScale] Topology snapshot not ready for cluster ${clusterId} (attempt ${nextAttempt}/${maxAttempts}). Retrying in ${Math.round(delay)}ms...`);
+                snapshotRetryTimeoutRef.current = setTimeout(() => {
+                  fetchSnapshotWithBackoff(nextAttempt);
+                }, delay);
+              } else {
+                console.warn(`[EnvScale] Circuit breaker tripped: Cluster ${clusterId} is offline or unreachable after ${maxAttempts} attempts.`);
+                onMessageReceivedRef.current?.({
+                  type: "EVENT_ALERT_TRIGGERED",
+                  event: "EVENT_ALERT_TRIGGERED",
+                  data: {
+                    id: `alert-offline-${clusterId}`,
+                    title: "Cluster Offline / Waiting for Connection",
+                    message: `Cluster ${clusterId} is unreachable or offline. Background reconciliation will auto-connect once the cluster starts.`,
+                    severity: "WARNING",
+                    cluster: clusterId,
+                  },
+                } as WsTopologyMessage);
+              }
+            } catch (e) {
+              console.warn("[EnvScale] Network error fetching topology snapshot:", e);
+            }
+          };
+
+          snapshotRetryTimeoutRef.current = setTimeout(() => {
+            fetchSnapshotWithBackoff(0);
+          }, 150);
+        }
+
+        lastPingTimeRef.current = performance.now();
+        try {
+          socket.send(JSON.stringify({ type: "ping", timestamp: Date.now() }));
+        } catch {
+          // Send ping frame
+        }
+
+        if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+        pingIntervalRef.current = setInterval(() => {
+          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            lastPingTimeRef.current = performance.now();
+            try {
+              wsRef.current.send(JSON.stringify({ type: "ping", timestamp: Date.now() }));
+            } catch {
+              // Send ping frame
+            }
+          }
+        }, 3000);
+      };
+
+      socket.onmessage = (event: MessageEvent) => {
+        if (!isComponentMounted.current) return;
+
+        try {
+          const raw = JSON.parse(event.data);
+          if (!raw) return;
+          const rawEvents = Array.isArray(raw) ? raw : [raw];
+
+          for (const parsed of rawEvents) {
+            if (!parsed) continue;
+            const eventType = String(parsed.event || parsed.type || "");
+            const eventPayload = parsed.data !== undefined ? parsed.data : parsed.payload;
+
+            let measuredLatency = 0;
+            if (eventType === "pong" || eventType === "EVENT_HEARTBEAT" || parsed.type === "pong") {
+              if (lastPingTimeRef.current > 0) {
+                measuredLatency = Math.max(1, Math.round(performance.now() - lastPingTimeRef.current));
+              }
+            } else if (typeof parsed.latencyMs === "number" && parsed.latencyMs > 0 && parsed.latencyMs < 200) {
+              measuredLatency = Math.round(parsed.latencyMs);
+            }
+
+            if (measuredLatency > 0) {
+              setLatencyMs(measuredLatency);
+            }
+
+            const normalizedMsg: WsTopologyMessage = {
+              type: eventType,
+              event: eventType,
+              payload: eventPayload as WsTopologyMessage["payload"],
+              data: eventPayload,
+              clusterId: typeof parsed.clusterId === "string" ? parsed.clusterId : undefined,
+              timestamp: typeof parsed.timestamp === "string" ? parsed.timestamp : undefined,
+              latencyMs: measuredLatency || undefined,
+            };
+
+            if (eventType) {
+              onMessageReceivedRef.current?.(normalizedMsg);
+            }
+          }
+        } catch {
+          // Safe JSON parsing: malformed frame will not break socket
+        }
+      };
+
+      socket.onerror = () => {
+        if (!isComponentMounted.current) return;
+        setStatus("ERROR");
+        setLatencyMs(0);
+      };
+
+      socket.onclose = () => {
+        if (!isComponentMounted.current) return;
+        wsRef.current = null;
+        if (pingIntervalRef.current) {
+          clearInterval(pingIntervalRef.current);
+          pingIntervalRef.current = null;
+        }
+
+        if (shouldReconnectRef.current) {
+          scheduleReconnect();
+        } else {
+          setStatus("DISCONNECTED");
+          setLatencyMs(0);
+        }
+      };
+    } catch {
+      if (!isComponentMounted.current) return;
+      wsRef.current = null;
+      if (shouldReconnectRef.current) {
+        scheduleReconnect();
+      } else {
+        setStatus("DISCONNECTED");
+        setLatencyMs(0);
+      }
+    }
+  }, [wsUrl, scheduleReconnect, targetClusterId]);
+
+  const disconnect = useCallback(() => {
+    shouldReconnectRef.current = false;
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+    if (snapshotRetryTimeoutRef.current) {
+      clearTimeout(snapshotRetryTimeoutRef.current);
+      snapshotRetryTimeoutRef.current = null;
+    }
+    if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current);
+      pingIntervalRef.current = null;
+    }
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    setStatus("DISCONNECTED");
+    setLatencyMs(0);
+  }, []);
+
+  const manualReconnect = useCallback(() => {
+    shouldReconnectRef.current = true;
+    reconnectAttemptRef.current = 0;
+    snapshotAttemptsRef.current = 0;
+    if (snapshotRetryTimeoutRef.current) {
+      clearTimeout(snapshotRetryTimeoutRef.current);
+      snapshotRetryTimeoutRef.current = null;
+    }
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    connect();
+  }, [connect]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
+
+  useEffect(() => {
+    isComponentMounted.current = true;
+    shouldReconnectRef.current = true;
+    connect();
+
+    return () => {
+      isComponentMounted.current = false;
+      shouldReconnectRef.current = false;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current);
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, [connect]);
+
+  // --- Post-login immediate reconnect ---
+  // When the user signs in, TopNavbar calls triggerWsReconnect() which increments
+  // wsReconnectTick in the Zustand store. This effect catches that increment and
+  // immediately tears down the current unauthenticated socket and opens a new one
+  // with the token that was just written to localStorage by AuthModal.
+  const wsReconnectTick = useTopologyStore((s) => s.wsReconnectTick);
+  const manualReconnectRef = useRef(manualReconnect);
+  useEffect(() => {
+    manualReconnectRef.current = manualReconnect;
+  }, [manualReconnect]);
+  useEffect(() => {
+    if (wsReconnectTick > 0) {
+      manualReconnectRef.current();
+    }
+  }, [wsReconnectTick]);
+
+  return {
+    status,
+    latencyMs,
+    reconnect: manualReconnect,
+    disconnect,
+  };
+}

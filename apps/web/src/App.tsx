@@ -1,167 +1,260 @@
-import { useCallback, useState } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { ReactFlowProvider } from "@xyflow/react";
 
-import {
-  ReactFlow,
-  Background,
-  Controls,
-  MiniMap,
-  useNodesState,
-  useEdgesState,
-  addEdge,
-  type Connection,
-  type Edge,
-  type Node,
-} from "@xyflow/react";
+import { TopNavbar } from "./components/layout/TopNavbar";
+import { LeftSidebar, type NavTab } from "./components/layout/LeftSidebar";
+import { TopologyCanvas } from "./components/flow/TopologyCanvas";
+import { InspectorDrawer } from "./components/drawer/InspectorDrawer";
+import { PodLogDrawer } from "./components/drawer/PodLogDrawer";
+import { IncidentsView } from "./components/views/IncidentsView";
+import { MetricsView } from "./components/views/MetricsView";
+import { LeaderboardView } from "./components/views/LeaderboardView";
+import { SettingsView } from "./components/views/SettingsView";
+import { useTopologyStore } from "./store/useTopologyStore";
+import { useUIStore } from "./store/useUIStore";
+import ConnectClusterWizard from "./components/onboarding/ConnectClusterWizard";
+import { ToastContainer } from "./components/ui/ToastContainer";
+import { apiMe, apiGetWorkspaceClusters } from "./config/api";
+import { useAuthStore } from "./store/useAuthStore";
+import { LandingPage } from "./components/landing/LandingPage";
+import { AuthBufferPage } from "./components/auth/AuthBufferPage";
+
+import { SYSTEM_NAMESPACES } from "./store/helpers/topologyHelpers";
 
 import "@xyflow/react/dist/style.css";
-
-import WorkflowNode, {
-  type WorkflowNodeData,
-} from "./components/nodes/WorkflowNode";
-
-import ShapePalette from "./components/ShapePalette";
-
 import "./index.css";
 
-type ShapeType =
-  | "rectangle"
-  | "circle"
-  | "diamond"
-  | "cylinder"
-  | "hexagon";
+function AppContent() {
+  const activeCluster = useTopologyStore((s) => s.activeCluster);
+  const clusters = useTopologyStore((s) => s.clusters);
+  const setActiveCluster = useTopologyStore((s) => s.setActiveCluster);
+  const addCluster = useTopologyStore((s) => s.addCluster);
+  const wsStatus = useTopologyStore((s) => s.wsStatus);
+  const wsLatencyMs = useTopologyStore((s) => s.wsLatencyMs);
+  const selectedNode = useTopologyStore((s) => s.selectedNode);
+  const setSelectedNode = useTopologyStore((s) => s.setSelectedNode);
+  const clearSelectedNode = useTopologyStore((s) => s.clearSelectedNode);
+  const pods = useTopologyStore((s) => s.pods);
+  const notifications = useTopologyStore((s) => s.notifications);
+  const selectedNamespaces = useUIStore((s) => s.selectedNamespaces);
+  const showSystemNamespaces = useUIStore((s) => s.showSystemNamespaces);
+  const wsReconnectTick = useTopologyStore((s) => s.wsReconnectTick);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
-const nodeTypes = {
-  workflow: WorkflowNode,
-};
+  useEffect(() => {
+    useAuthStore.getState().checkAuth();
+  }, []);
 
-const initialNodes: Node<WorkflowNodeData>[] = [
-  {
-    id: "cluster-1",
-    type: "workflow",
-    position: {
-      x: 450,
-      y: 180,
-    },
-    data: {
-      label: "Kubernetes Cluster",
-      shape: "hexagon",
-    },
-  },
-];
+  useEffect(() => {
+    async function hydrateUserWorkspace() {
+      // If NOT authenticated, NEVER hydrate clusters!
+      if (!isAuthenticated) {
+        useTopologyStore.getState().resetStore();
+        return;
+      }
 
-const initialEdges: Edge[] = [];
+      const meData = await apiMe();
+      const store = useTopologyStore.getState();
 
-export default function App() {
-  const [nodes, setNodes, onNodesChange] =
-    useNodesState(initialNodes);
+      if (meData?.workspace?.id) {
+        const dbClusters = await apiGetWorkspaceClusters(meData.workspace.id);
+        if (Array.isArray(dbClusters)) {
+          const workspaceClusters = dbClusters
+            .filter((c: { id?: string; name?: string }) => Boolean(c?.id && c?.name))
+            .map((c: { id: string; name: string }) => ({ id: c.id, name: c.name }));
+          store.setClusters(workspaceClusters);
+          return;
+        }
+      }
 
-  const [edges, setEdges, onEdgesChange] =
-    useEdgesState(initialEdges);
+      // If user has no workspace or workspace has no clusters in DB, keep empty
+      store.setClusters([]);
+    }
+    hydrateUserWorkspace();
+  }, [wsReconnectTick, isAuthenticated]);
 
-  const [showPalette, setShowPalette] =
-    useState(false);
-
-  const onConnect = useCallback(
-    (connection: Connection) => {
-      setEdges((currentEdges) =>
-        addEdge(
-          {
-            ...connection,
-            animated: true,
-            style: {
-              stroke: "#00e5ff",
-              strokeWidth: 2,
-            },
-          },
-          currentEdges,
-        ),
-      );
-    },
-    [setEdges],
-  );
-
-  const addShape = (
-    shape: ShapeType,
-    label: string,
-  ) => {
-    const id = `${shape}-${Date.now()}`;
-
-    const newNode: Node<WorkflowNodeData> = {
-      id,
-      type: "workflow",
-      position: {
-        x: 200 + Math.random() * 700,
-        y: 100 + Math.random() * 400,
-      },
-      data: {
-        label,
-        shape,
-      },
+  const activeIncidentsCount = useMemo(() => {
+    const isNsAllowed = (ns?: string) => {
+      const namespace = ns || "default";
+      if (Array.isArray(selectedNamespaces) && selectedNamespaces.length > 0) {
+        return selectedNamespaces.includes(namespace);
+      }
+      return showSystemNamespaces || !SYSTEM_NAMESPACES.has(namespace);
     };
 
-    setNodes((currentNodes) => [
-      ...currentNodes,
-      newNode,
-    ]);
+    const unhealthyPodsCount = pods.filter(
+      (p) => isNsAllowed(p.namespace) && (p.status === "Failed" || (p.restarts && p.restarts > 0))
+    ).length;
+
+    const unreadAlertsCount = notifications.filter(
+      (n) => isNsAllowed(n.namespace) && !n.read && (n.severity === "CRITICAL" || n.severity === "WARNING")
+    ).length;
+
+    return unhealthyPodsCount + unreadAlertsCount;
+  }, [pods, notifications, selectedNamespaces, showSystemNamespaces]);
+
+  const [loggedOutView, setLoggedOutView] = useState<"landing" | "auth-buffer">("landing");
+  const [activeTab, setActiveTab] = useState<NavTab>("topology");
+  const [showConnectWizard, setShowConnectWizard] = useState(false);
+
+  const [logDrawerState, setLogDrawerState] = useState<{
+    isOpen: boolean;
+    podName: string | null;
+    namespace?: string;
+  }>({
+    isOpen: false,
+    podName: null,
+  });
+  const handleClusterConnected = (newCluster: { id: string, name: string }) => {
+    addCluster(newCluster);
   };
 
-  return (
-    <div className="app-shell">
+  const handleOpenLogTerminal = (
+    podName: string,
+    namespace?: string,
+  ) => {
+    const activeNs =
+      namespace && namespace !== "default"
+        ? namespace
+        : useUIStore.getState().selectedNamespaces[0] || "default";
+    setLogDrawerState({
+      isOpen: true,
+      podName,
+      namespace: activeNs,
+    });
+  };
 
-      <header className="app-header">
-        <div>
-          <h1>EnvScale</h1>
-          <span>Kubernetes Observability Platform</span>
+  const selectedKey = selectedNode
+    ? `${selectedNode.type}-${selectedNode.data?.name || selectedNode.data?.id || "target"}`
+    : "none";
+
+  // When unauthenticated, render the landing page or the buffer auth page (neither dashboard nor landing)
+  if (!isAuthenticated) {
+    if (loggedOutView === "auth-buffer") {
+      return (
+        <div className="relative min-h-screen w-screen overflow-x-hidden bg-[#111318] font-sans text-[#E6E1E5]">
+          <AuthBufferPage
+            onBackToLanding={() => setLoggedOutView("landing")}
+            onLoginSuccess={() => setLoggedOutView("landing")}
+          />
+          <ToastContainer />
         </div>
+      );
+    }
 
-        <button
-          className="add-shape-button"
-          onClick={() =>
-            setShowPalette((visible) => !visible)
+    return (
+      <div className="relative min-h-screen w-screen overflow-x-clip bg-slate-50 font-sans text-slate-800">
+        <LandingPage onGetStarted={() => setLoggedOutView("auth-buffer")} />
+        <ToastContainer />
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative min-h-screen w-screen overflow-hidden bg-[#111318] font-sans text-[#E6E1E5] select-none">
+      {/* Region 1: Top Floating Navbar Capsule */}
+      <TopNavbar
+        activeCluster={activeCluster}
+        clusters={clusters}
+        onSelectCluster={(cluster) => setActiveCluster(cluster)}
+        onOpenConnectModal={() => {
+          if (!useAuthStore.getState().isAuthenticated) {
+            useAuthStore.getState().openAuthModal("Sign in to your account or workspace to connect a new Kubernetes cluster.");
+          } else {
+            setShowConnectWizard(true);
           }
-        >
-          <span>＋</span>
-          Add Shape
-        </button>
-      </header>
+        }}
+        activeIncidentsCount={activeIncidentsCount}
+        wsLatencyMs={wsLatencyMs}
+        wsStatus={wsStatus}
+        onNavigateTab={(tab) => {
+          setActiveTab(tab);
+          if (tab !== "topology") {
+            clearSelectedNode();
+          }
+        }}
+      />
 
-      <main className="workflow-area">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          fitView
-          connectionLineStyle={{
-            stroke: "#00e5ff",
-            strokeWidth: 2,
-          }}
-        >
-          <Background
-            gap={30}
-            size={1}
-            color="#334155"
+      {/* Region 2: Left Floating Sidebar Capsule */}
+      <LeftSidebar
+        activeTab={activeTab}
+        onTabChange={(tab) => {
+          setActiveTab(tab);
+          if (tab !== "topology") {
+            clearSelectedNode();
+          }
+        }}
+        activeIncidentsCount={activeIncidentsCount}
+      />
+
+      {/* Region 3: Center Canvas & Auxiliary Views */}
+      <main className="relative h-screen w-screen overflow-hidden bg-[#111318]">
+        {activeTab === "topology" && (
+          <TopologyCanvas
+            onSelectTarget={(target) => setSelectedNode(target)}
           />
+        )}
 
-          <Controls />
+        {activeTab === "incidents" && <IncidentsView />}
 
-          <MiniMap
-            nodeColor="#00e5ff"
-            maskColor="rgba(8, 15, 31, 0.75)"
-          />
-        </ReactFlow>
+        {activeTab === "metrics" && <MetricsView />}
 
-        {showPalette && (
-          <ShapePalette
-            onAddShape={addShape}
-            onClose={() =>
-              setShowPalette(false)
-            }
+        {activeTab === "leaderboard" && <LeaderboardView />}
+
+        {activeTab === "settings" && (
+          <SettingsView
+            onOpenConnectModal={() => {
+              if (!useAuthStore.getState().isAuthenticated) {
+                useAuthStore.getState().openAuthModal("Sign in to your account or workspace to connect a new Kubernetes cluster.");
+              } else {
+                setShowConnectWizard(true);
+              }
+            }}
           />
         )}
       </main>
+
+      {/* Region 4: Contextual Right Slide-out Inspector Drawer */}
+      {activeTab === "topology" && (
+        <InspectorDrawer
+          key={selectedKey}
+          target={selectedNode}
+          onClose={() => clearSelectedNode()}
+          onOpenLogTerminal={handleOpenLogTerminal}
+        />
+      )}
+
+      {/* Region 5: Pod Log Terminal Drawer */}
+      <PodLogDrawer
+        isOpen={logDrawerState.isOpen}
+        podName={logDrawerState.podName}
+        namespace={logDrawerState.namespace}
+        onClose={() =>
+          setLogDrawerState((prev) => ({
+            ...prev,
+            isOpen: false,
+          }))
+        }
+      />
+
+      {/* ISH-01: Connect Cluster Onboarding Wizard */}
+      {showConnectWizard && (
+        <ConnectClusterWizard
+          onClose={() => setShowConnectWizard(false)}
+          onClusterConnected={handleClusterConnected}
+        />
+      )}
+
+      {/* Global Toast Notification System */}
+      <ToastContainer />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ReactFlowProvider>
+      <AppContent />
+    </ReactFlowProvider>
   );
 }

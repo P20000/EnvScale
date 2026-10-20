@@ -217,6 +217,23 @@ func (ls *PodLogStreamer) doStream(
 			Stream:    "stdout", // kubectl logs API merges stdout/stderr by default
 			Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
 		})
+
+		// Inline anomaly detection: scan every log line for known failure patterns
+		// (OOMKilled, panic, fatal error, ImagePullBackOff, etc.) and emit a
+		// high-priority anomaly alert alongside the raw log line event.
+		if match := AnalyzeLogLine(line); match != nil {
+			ls.hub.BroadcastEvent(types.EventPodAnomalyDetected, key.ClusterID, types.PodAnomalyEvent{
+				PodName:     key.PodName,
+				Namespace:   key.Namespace,
+				Container:   key.Container,
+				AnomalyType: match.AnomalyType,
+				Severity:    match.Severity,
+				Message:     match.Message,
+				LogSnippet:  line,
+				Source:      "log_stream",
+				Timestamp:   time.Now().UTC().Format(time.RFC3339Nano),
+			})
+		}
 	}
 
 	if err := scanner.Err(); err != nil {

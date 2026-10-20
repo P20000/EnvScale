@@ -182,3 +182,12 @@
     border-right-color: var(--border);
   }
 }
+
+@keyframes dash {
+  from {
+    stroke-dashoffset: 20;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}

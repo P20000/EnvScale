@@ -4,13 +4,67 @@ import "time"
 
 // Event Type Constants matching shared monorepo contracts
 const (
-	EventPodStatusChanged = "EVENT_POD_STATUS_CHANGED"
-	EventNodeMutated      = "EVENT_NODE_MUTATED"
-	EventServiceMutated   = "EVENT_SERVICE_MUTATED"
-	EventLogLine          = "EVENT_LOG_LINE"
-	EventAlertTriggered   = "EVENT_ALERT_TRIGGERED"
-	EventHeartbeat        = "EVENT_HEARTBEAT"
+	EventPodStatusChanged   = "EVENT_POD_STATUS_CHANGED"
+	EventPodDeleted         = "EVENT_POD_DELETED"
+	EventNodeMutated        = "EVENT_NODE_MUTATED"
+	EventServiceMutated     = "EVENT_SERVICE_MUTATED"
+	EventLogLine            = "EVENT_LOG_LINE"
+	EventAlertTriggered     = "EVENT_ALERT_TRIGGERED"
+	EventHeartbeat          = "EVENT_HEARTBEAT"
+	EventPodAnomalyDetected = "EVENT_POD_ANOMALY_DETECTED"
+	EventDeploymentMutated  = "EVENT_DEPLOYMENT_MUTATED"
+	EventDeploymentDeleted  = "EVENT_DEPLOYMENT_DELETED"
+	EventReplicaSetMutated  = "EVENT_REPLICA_SET_MUTATED"
+	EventReplicaSetDeleted  = "EVENT_REPLICA_SET_DELETED"
+	EventStatefulSetMutated = "EVENT_STATEFUL_SET_MUTATED"
+	EventDaemonSetMutated   = "EVENT_DAEMONSET_MUTATED"
+	EventDaemonSetDeleted   = "EVENT_DAEMONSET_DELETED"
+	EventIngressMutated     = "EVENT_INGRESS_MUTATED"
+	EventCronJobMutated     = "EVENT_CRONJOB_MUTATED"
+	EventCronJobDeleted     = "EVENT_CRONJOB_DELETED"
+	EventJobMutated         = "EVENT_JOB_MUTATED"
+	EventJobDeleted         = "EVENT_JOB_DELETED"
+
+	// Chaos fault injection events — emitted by the chaos engine when a fault is
+	// injected into or cleared from a target workload.
+	EventChaosFaultInjected = "EVENT_CHAOS_FAULT_INJECTED"
+	EventChaosFaultCleared  = "EVENT_CHAOS_FAULT_CLEARED"
+
+	EventK8sIncidentCreated = "EVENT_K8S_INCIDENT_CREATED"
+	EventRolloutRollback    = "EVENT_ROLLOUT_ROLLBACK"
+
+	EventPVCMutated = "EVENT_PVC_MUTATED"
+	EventPVCDeleted = "EVENT_PVC_DELETED"
+	EventPVMutated  = "EVENT_PV_MUTATED"
+	EventPVDeleted  = "EVENT_PV_DELETED"
+
+	EventConfigMapMutated = "EVENT_CONFIGMAP_MUTATED"
+	EventConfigMapDeleted = "EVENT_CONFIGMAP_DELETED"
+	EventSecretMutated    = "EVENT_SECRET_MUTATED"
+	EventSecretDeleted    = "EVENT_SECRET_DELETED"
+
+	EventHPAMutated           = "EVENT_HPA_MUTATED"
+	EventHPADeleted           = "EVENT_HPA_DELETED"
+	EventNetworkPolicyMutated = "EVENT_NETWORKPOLICY_MUTATED"
+	EventNetworkPolicyDeleted = "EVENT_NETWORKPOLICY_DELETED"
+
+	EventPDBMutated = "EVENT_PDB_MUTATED"
+	EventPDBDeleted = "EVENT_PDB_DELETED"
+
+	EventSnapshotSync = "EVENT_SNAPSHOT_SYNC"
 )
+
+// K8sIncidentEvent encapsulates authentic Kubernetes v1.Event telemetry
+type K8sIncidentEvent struct {
+	EventID      string    `json:"eventId"`
+	Reason       string    `json:"reason"`
+	Message      string    `json:"message"`
+	TargetPod    string    `json:"targetPod"`
+	Namespace    string    `json:"namespace"`
+	Cluster      string    `json:"cluster"`
+	SeverityType string    `json:"severityType"`
+	Timestamp    time.Time `json:"timestamp"`
+}
 
 // WSEventEnvelope represents the standardized WebSocket JSON frame delivered to client subscribers
 type WSEventEnvelope struct {
@@ -25,12 +79,110 @@ type PodStatusDelta struct {
 	Name           string            `json:"name"`
 	Namespace      string            `json:"namespace"`
 	NodeName       string            `json:"nodeName"`
+	PodIP          string            `json:"podIp"`
 	Phase          string            `json:"phase"`
+	IsTerminating  bool              `json:"isTerminating"`
 	RestartCount   int32             `json:"restartCount"`
-	CPUUsagePct    float64           `json:"cpuUsagePct,omitempty"`
-	MemoryUsageMb  float64           `json:"memoryUsageMb,omitempty"`
+	CpuUsageMcores int64             `json:"cpuUsageMcores"`
+	MemoryUsageMiB int64             `json:"memoryUsageMiB"`
+	CPUUsagePct    float64           `json:"cpuUsagePct"`
+	MemoryUsageMb  float64           `json:"memoryUsageMb"`
 	Labels         map[string]string `json:"labels"`
-	CreatedAt      time.Time         `json:"createdAt"`
+	OwnerUID       string            `json:"ownerUid,omitempty"`
+	OwnerName      string            `json:"ownerName,omitempty"`
+	OwnerKind      string            `json:"ownerKind,omitempty"`
+	IsStaticPod    bool                 `json:"isStaticPod,omitempty"`
+	IsControlPlane bool                 `json:"isControlPlane,omitempty"`
+	ExitCode          *int32               `json:"exitCode,omitempty"`
+	TerminationReason string               `json:"terminationReason,omitempty"`
+	LivenessProbe     *ProbeSpecInfo       `json:"livenessProbe,omitempty"`
+	ReadinessProbe    *ProbeSpecInfo       `json:"readinessProbe,omitempty"`
+	Volumes        []PodVolumeMountInfo `json:"volumes,omitempty"`
+	ConfigMaps     []PodConfigRef       `json:"configMaps,omitempty"`
+	Secrets        []PodSecretRef       `json:"secrets,omitempty"`
+	CreatedAt      time.Time            `json:"createdAt"`
+}
+
+// DeploymentStatusDelta encapsulates Deployment state updates
+type DeploymentStatusDelta struct {
+	Name            string            `json:"name"`
+	Namespace       string            `json:"namespace"`
+	Replicas        int32             `json:"replicas"`
+	ReadyReplicas   int32             `json:"readyReplicas"`
+	Selector        map[string]string `json:"selector"`
+	Labels          map[string]string `json:"labels"`
+	MaxSurge        string            `json:"maxSurge,omitempty"`
+	MaxUnavailable  string            `json:"maxUnavailable,omitempty"`
+	MinReadySeconds int32             `json:"minReadySeconds,omitempty"`
+}
+
+// ReplicaSetStatusDelta encapsulates ReplicaSet state updates
+type ReplicaSetStatusDelta struct {
+	Name          string            `json:"name"`
+	Namespace     string            `json:"namespace"`
+	Replicas      int32             `json:"replicas"`
+	ReadyReplicas int32             `json:"readyReplicas"`
+	OwnerUID      string            `json:"ownerUid,omitempty"`
+	OwnerName     string            `json:"ownerName,omitempty"`
+	OwnerKind     string            `json:"ownerKind,omitempty"`
+	Labels        map[string]string `json:"labels"`
+	Revision      string            `json:"revision,omitempty"`
+	Images        []string          `json:"images,omitempty"`
+	CreatedAt     time.Time         `json:"createdAt,omitempty"`
+}
+
+// StatefulSetStatusDelta encapsulates StatefulSet state updates
+type StatefulSetStatusDelta struct {
+	Name          string            `json:"name"`
+	Namespace     string            `json:"namespace"`
+	Replicas      int32             `json:"replicas"`
+	ReadyReplicas int32             `json:"readyReplicas"`
+	Selector      map[string]string `json:"selector"`
+	Labels        map[string]string `json:"labels"`
+}
+
+// DaemonSetStatusDelta encapsulates DaemonSet state updates
+type DaemonSetStatusDelta struct {
+	Name                   string            `json:"name"`
+	Namespace              string            `json:"namespace"`
+	DesiredNumberScheduled int32             `json:"desiredNumberScheduled"`
+	CurrentNumberScheduled int32             `json:"currentNumberScheduled"`
+	NumberReady            int32             `json:"numberReady"`
+	NumberUnavailable      int32             `json:"numberUnavailable"`
+	Images                 []string          `json:"images,omitempty"`
+	Labels                 map[string]string `json:"labels,omitempty"`
+	CreatedAt              time.Time         `json:"createdAt,omitempty"`
+}
+
+// CronJobStatusDelta encapsulates CronJob state updates
+type CronJobStatusDelta struct {
+	Name               string     `json:"name"`
+	Namespace          string     `json:"namespace"`
+	Schedule           string     `json:"schedule"`
+	Suspend            bool       `json:"suspend"`
+	ActiveJobsCount    int        `json:"activeJobsCount"`
+	LastScheduleTime   *time.Time `json:"lastScheduleTime,omitempty"`
+	LastSuccessfulTime *time.Time `json:"lastSuccessfulTime,omitempty"`
+	Images             []string   `json:"images,omitempty"`
+	CreatedAt          time.Time  `json:"createdAt"`
+}
+
+// JobStatusDelta encapsulates standalone Kubernetes Job state updates
+type JobStatusDelta struct {
+	Name            string            `json:"name"`
+	Namespace       string            `json:"namespace"`
+	Completions     int32             `json:"completions"`
+	Parallelism     int32             `json:"parallelism"`
+	Succeeded       int32             `json:"succeeded"`
+	Failed          int32             `json:"failed"`
+	Active          int32             `json:"active"`
+	StartTime       *time.Time        `json:"startTime,omitempty"`
+	CompletionTime  *time.Time        `json:"completionTime,omitempty"`
+	DurationSeconds int64             `json:"durationSeconds"`
+	Labels          map[string]string `json:"labels,omitempty"`
+	OwnerKind       string            `json:"ownerKind,omitempty"`
+	OwnerName       string            `json:"ownerName,omitempty"`
+	CreatedAt       time.Time         `json:"createdAt"`
 }
 
 // NodeStatusDelta encapsulates node health state updates
@@ -53,6 +205,31 @@ type ServiceStatusDelta struct {
 	TargetPorts []int32           `json:"targetPorts"`
 }
 
+// IngressRuleStatus represents a single routing rule path in an Ingress
+type IngressRuleStatus struct {
+	Host        string `json:"host"`
+	Path        string `json:"path"`
+	ServiceName string `json:"serviceName"`
+	ServicePort int32  `json:"servicePort"`
+}
+
+// IngressTLSStatus represents TLS secret and host bindings
+type IngressTLSStatus struct {
+	Hosts      []string `json:"hosts"`
+	SecretName string   `json:"secretName"`
+}
+
+// IngressStatusDelta encapsulates K8s Ingress state updates
+type IngressStatusDelta struct {
+	Name             string              `json:"name"`
+	Namespace        string              `json:"namespace"`
+	IngressClassName string              `json:"ingressClassName,omitempty"`
+	Rules            []IngressRuleStatus `json:"rules"`
+	TLS              []IngressTLSStatus  `json:"tls,omitempty"`
+	LoadBalancerIPs  []string            `json:"loadBalancerIps,omitempty"`
+	Labels           map[string]string   `json:"labels"`
+}
+
 // LogStreamEvent encapsulates live stdout/stderr log lines
 type LogStreamEvent struct {
 	PodName   string `json:"podName"`
@@ -61,4 +238,197 @@ type LogStreamEvent struct {
 	Log       string `json:"log"`
 	Stream    string `json:"stream"` // "stdout" | "stderr"
 	Timestamp string `json:"timestamp"`
+}
+
+// AnomalySeverity classifies the urgency of a detected pod anomaly
+type AnomalySeverity string
+
+const (
+	SeverityCritical AnomalySeverity = "CRITICAL"
+	SeverityWarning  AnomalySeverity = "WARNING"
+)
+
+// PodAnomalyEvent encapsulates a real-time anomaly detection alert emitted
+// when the parser identifies a known failure pattern from either the Informer
+// pipeline (pod status phase) or the live log stream (regex-matched text).
+type PodAnomalyEvent struct {
+	PodName     string          `json:"podName"`
+	Namespace   string          `json:"namespace"`
+	Container   string          `json:"container,omitempty"`
+	AnomalyType string          `json:"anomalyType"` // "OOMKilled", "CrashLoopBackOff", "ImagePullBackOff", "PanicDetected", etc.
+	Severity    AnomalySeverity `json:"severity"`
+	Message     string          `json:"message"`              // Human-readable anomaly description
+	LogSnippet  string          `json:"logSnippet,omitempty"` // Triggering log line (for log-source detections only)
+	Source      string          `json:"source"`               // "informer" | "log_stream"
+	Timestamp   string          `json:"timestamp"`
+}
+
+// ChaosFaultEvent is broadcast over WebSocket when the chaos engine injects or
+// clears a fault on a Kubernetes workload. The frontend topology canvas uses this
+// to visually highlight affected pods/deployments with a "chaos" badge overlay.
+type ChaosFaultEvent struct {
+	FaultID     string `json:"faultId"`    // Unique ID for this fault injection (used to track/cancel)
+	FaultType   string `json:"faultType"`  // "crash", "oom-pressure", "scale-down"
+	Target      string `json:"target"`     // "pod" | "deployment"
+	Name        string `json:"name"`       // Pod or Deployment name
+	Namespace   string `json:"namespace"`
+	ClusterID   string `json:"clusterId"`
+	Status      string `json:"status"`     // "injected" | "cleared" | "failed"
+	Message     string `json:"message"`    // Human-readable description
+	Timestamp   string `json:"timestamp"`
+	PDBBreached bool   `json:"pdbBreached,omitempty"`
+	PDBName     string `json:"pdbName,omitempty"`
+}
+
+// AlertTriggeredEvent is broadcast when the background Metric Evaluator detects
+// a pod or node metric violation that has been sustained beyond the rule's
+// configured duration threshold. The frontend alert panel uses this to surface
+// real-time alerts and optionally record incidents via the api-server.
+type AlertTriggeredEvent struct {
+	RuleID     string `json:"ruleId"`     // Alert policy ID from api-server
+	RuleName   string `json:"ruleName"`   // Human-readable rule name
+	Severity   string `json:"severity"`   // "CRITICAL" | "WARNING"
+	MetricType string `json:"metricType"` // "pod_restarts" | "pod_phase" | "cpu_usage" | "memory_usage" | "node_status"
+	TargetKind string `json:"targetKind"` // "Pod" | "Node"
+	TargetName string `json:"targetName"` // Pod or Node name
+	Namespace  string `json:"namespace"`
+	Measured   string `json:"measured"`   // The actual measured value
+	Threshold  string `json:"threshold"`  // The threshold expression (e.g., "> 5")
+	Message    string `json:"message"`    // Full human-readable alert description
+	Timestamp  string `json:"timestamp"`
+}
+
+// PodVolumeMountInfo encapsulates volume mount reference from a Pod
+type PodVolumeMountInfo struct {
+	Name      string `json:"name"`
+	PVCName   string `json:"pvcName,omitempty"`
+	MountPath string `json:"mountPath,omitempty"`
+	ReadOnly  bool   `json:"readOnly,omitempty"`
+}
+
+// PVCStatusDelta encapsulates real-time PVC state updates
+type PVCStatusDelta struct {
+	Name             string            `json:"name"`
+	Namespace        string            `json:"namespace"`
+	Phase            string            `json:"phase"` // "Bound", "Pending", "Lost"
+	VolumeName       string            `json:"volumeName,omitempty"`
+	StorageClassName string            `json:"storageClassName,omitempty"`
+	RequestedSize    string            `json:"requestedSize,omitempty"`
+	Capacity         string            `json:"capacity,omitempty"`
+	AccessModes      []string          `json:"accessModes,omitempty"`
+	VolumeMode       string            `json:"volumeMode,omitempty"`
+	Labels           map[string]string `json:"labels,omitempty"`
+	MountedByPods    []string          `json:"mountedByPods,omitempty"`
+	CreatedAt        time.Time         `json:"createdAt"`
+}
+
+// PVStatusDelta encapsulates cluster-scoped PersistentVolume states
+type PVStatusDelta struct {
+	Name             string            `json:"name"`
+	Phase            string            `json:"phase"` // "Available", "Bound", "Released", "Failed"
+	Capacity         string            `json:"capacity,omitempty"`
+	AccessModes      []string          `json:"accessModes,omitempty"`
+	ReclaimPolicy    string            `json:"reclaimPolicy,omitempty"`
+	StorageClassName string            `json:"storageClassName,omitempty"`
+	ClaimRefName     string            `json:"claimRefName,omitempty"`
+	ClaimRefNs       string            `json:"claimRefNs,omitempty"`
+	VolumeSourceType string            `json:"volumeSourceType,omitempty"`
+	Labels           map[string]string `json:"labels,omitempty"`
+	CreatedAt        time.Time         `json:"createdAt"`
+}
+
+// PodConfigRef encapsulates a ConfigMap referenced by a Pod
+type PodConfigRef struct {
+	Name      string `json:"name"`
+	Type      string `json:"type"` // "volume" | "env" | "envFrom"
+	MountPath string `json:"mountPath,omitempty"`
+	Key       string `json:"key,omitempty"`
+	Optional  bool   `json:"optional,omitempty"`
+}
+
+// PodSecretRef encapsulates a Secret referenced by a Pod
+type PodSecretRef struct {
+	Name      string `json:"name"`
+	Type      string `json:"type"` // "volume" | "env" | "envFrom"
+	MountPath string `json:"mountPath,omitempty"`
+	Key       string `json:"key,omitempty"`
+	Optional  bool   `json:"optional,omitempty"`
+}
+
+// ConfigMapStatusDelta encapsulates real-time ConfigMap state updates
+type ConfigMapStatusDelta struct {
+	Name               string            `json:"name"`
+	Namespace          string            `json:"namespace"`
+	Keys               []string          `json:"keys"`
+	BinaryKeys         []string          `json:"binaryKeys,omitempty"`
+	DataCount          int               `json:"dataCount"`
+	Immutable          bool              `json:"immutable"`
+	Labels             map[string]string `json:"labels,omitempty"`
+	MountedByWorkloads []string          `json:"mountedByWorkloads,omitempty"`
+	CreatedAt          time.Time         `json:"createdAt"`
+	Age                string            `json:"age"`
+}
+
+// SecretStatusDelta encapsulates real-time sanitized Secret state updates (strictly metadata)
+type SecretStatusDelta struct {
+	Name               string            `json:"name"`
+	Namespace          string            `json:"namespace"`
+	Type               string            `json:"type"` // e.g. "Opaque", "kubernetes.io/tls"
+	Keys               []string          `json:"keys"` // Key names ONLY — never raw data values
+	DataCount          int               `json:"dataCount"`
+	Immutable          bool              `json:"immutable"`
+	Labels             map[string]string `json:"labels,omitempty"`
+	MountedByWorkloads []string          `json:"mountedByWorkloads,omitempty"`
+	CreatedAt          time.Time         `json:"createdAt"`
+	Age                string            `json:"age"`
+}
+
+// HPAStatusDelta encapsulates HorizontalPodAutoscaler state updates
+type HPAStatusDelta struct {
+	Name            string     `json:"name"`
+	Namespace       string     `json:"namespace"`
+	TargetRefKind   string     `json:"targetRefKind"`
+	TargetRefName   string     `json:"targetRefName"`
+	MinReplicas     int32      `json:"minReplicas"`
+	MaxReplicas     int32      `json:"maxReplicas"`
+	CurrentReplicas int32      `json:"currentReplicas"`
+	DesiredReplicas int32      `json:"desiredReplicas"`
+	CurrentCPUUtil  *int32     `json:"currentCpuUtil,omitempty"`
+	TargetCPUUtil   *int32     `json:"targetCpuUtil,omitempty"`
+	LastScaleTime   *time.Time `json:"lastScaleTime,omitempty"`
+}
+
+// NetworkPolicyStatusDelta encapsulates NetworkPolicy telemetry and ingress isolation rules
+type NetworkPolicyStatusDelta struct {
+	Name         string            `json:"name"`
+	Namespace    string            `json:"namespace"`
+	PodSelector  map[string]string `json:"podSelector"`
+	PolicyTypes  []string          `json:"policyTypes"`
+	IngressRules []string          `json:"ingressRules"`
+	TargetPods   []string          `json:"targetPods,omitempty"`
+}
+
+// ProbeSpecInfo encapsulates HTTP/TCP container health probe settings
+type ProbeSpecInfo struct {
+	Type                string `json:"type"` // "http" | "tcp" | "exec"
+	Path                string `json:"path,omitempty"`
+	Port                int32  `json:"port,omitempty"`
+	InitialDelaySeconds int32  `json:"initialDelaySeconds"`
+	PeriodSeconds       int32  `json:"periodSeconds"`
+	TimeoutSeconds      int32  `json:"timeoutSeconds"`
+	FailureThreshold    int32  `json:"failureThreshold"`
+}
+
+// PDBStatusDelta encapsulates PodDisruptionBudget availability constraints
+type PDBStatusDelta struct {
+	Name               string            `json:"name"`
+	Namespace          string            `json:"namespace"`
+	MinAvailable       string            `json:"minAvailable,omitempty"`
+	MaxUnavailable     string            `json:"maxUnavailable,omitempty"`
+	CurrentHealthy     int32             `json:"currentHealthy"`
+	DesiredHealthy     int32             `json:"desiredHealthy"`
+	ExpectedPods       int32             `json:"expectedPods"`
+	DisruptionsAllowed int32             `json:"disruptionsAllowed"`
+	MatchLabels        map[string]string `json:"matchLabels"`
+	CreatedAt          time.Time         `json:"createdAt"`
 }
