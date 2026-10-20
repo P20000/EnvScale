@@ -8,8 +8,10 @@ import {
   getClusterLayout,
   saveClusterLayout,
   resetClusterLayout,
+  getClusterById,
 } from "../services/cluster.service.js";
 
+import { generateAgentManifest } from "../services/agent-manifest.service.js";
 import { ensureDefaultWorkspace } from "../services/workspace.service.js";
 
 export const connect = async (request: Request, response: Response) => {
@@ -110,5 +112,32 @@ export const resetLayout = async (request: Request, response: Response) => {
       return;
     }
     throw error;
+  }
+};
+
+export const getAgentManifest = async (request: Request, response: Response) => {
+  const clusterId = request.params.clusterId as string;
+  try {
+    const cluster = await getClusterById(clusterId);
+    if (!cluster) {
+      response.status(404).send("# Error: Cluster not found");
+      return;
+    }
+
+    const host = request.get("host") || "envscale.duckdns.org";
+    const protocol = request.protocol === "https" || host.includes("envscale.duckdns.org") ? "wss" : "ws";
+    const serverUrl = process.env.STREAMER_WS_URL || `${protocol}://${host}/ws/agent`;
+
+    const manifest = generateAgentManifest({
+      clusterId: cluster.id,
+      clusterName: cluster.name,
+      serverUrl,
+    });
+
+    response.setHeader("Content-Type", "application/yaml");
+    response.setHeader("Content-Disposition", `inline; filename="envscale-agent-${cluster.name}.yaml"`);
+    response.send(manifest);
+  } catch (error: unknown) {
+    response.status(500).send(`# Error generating manifest: ${error instanceof Error ? error.message : "Internal error"}`);
   }
 };

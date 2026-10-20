@@ -33,7 +33,8 @@ export const memberParamsSchema = workspaceParamsSchema.extend({ userId: idSchem
 export const clusterConnectSchema = z.object({
   name: z.string().trim().min(1).max(255),
   type: z.string().trim().min(1).max(50).default("kubernetes"),
-  kubeconfig: z.string().min(1).max(2_000_000),
+  connectionMode: z.enum(["direct", "agent"]).default("direct").optional(),
+  kubeconfig: z.string().max(2_000_000).optional(),
 });
 
 export const clusterParamsSchema = z.object({

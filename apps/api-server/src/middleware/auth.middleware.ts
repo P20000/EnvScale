@@ -21,9 +21,9 @@ import { auth } from "../lib/auth.js";
 import { fromNodeHeaders } from "better-auth/node";
 
 export const requireAuth = async (request: Request, response: Response, next: NextFunction) => {
-  // 1. Check Bearer JWT token first (explicit client-specified session)
+  // 1. Check Bearer JWT token first (explicit client-specified session or query param for kubectl / curl)
   const header = request.header("authorization");
-  const token = header?.startsWith("Bearer ") ? header.slice(7) : undefined;
+  const token = (header?.startsWith("Bearer ") ? header.slice(7) : undefined) || (typeof request.query.token === "string" ? request.query.token : undefined);
   const secret = process.env.JWT_ACCESS_SECRET;
 
   if (token && secret) {

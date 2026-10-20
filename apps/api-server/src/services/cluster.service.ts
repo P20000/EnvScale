@@ -90,10 +90,28 @@ const validateKubeconfig = async (kubeconfig: string) => {
 
 export const connectCluster = async (
   rawWorkspaceId: string,
-  rawValues: { name: string; type: string; kubeconfig: string }
+  rawValues: { name: string; type: string; kubeconfig?: string; connectionMode?: "direct" | "agent" }
 ) => {
   const workspaceId = idSchema.parse(rawWorkspaceId);
   const values = clusterConnectSchema.parse(rawValues);
+
+  if (values.connectionMode === "agent" || !values.kubeconfig) {
+    const [cluster] = await db
+      .insert(clusters)
+      .values({
+        workspaceId,
+        name: values.name,
+        type: values.type,
+        kubeconfig: null,
+        apiServerUrl: "agent://in-cluster",
+        status: "waiting_for_agent",
+        metadata: { connectionMode: "agent" },
+        lastSyncAt: new Date(),
+      })
+      .returning(publicClusterFields);
+
+    return cluster;
+  }
 
   const connection = await validateKubeconfig(values.kubeconfig);
   const encryptedKubeconfig = encryptKubeconfig(values.kubeconfig);
@@ -107,6 +125,7 @@ export const connectCluster = async (
       kubeconfig: encryptedKubeconfig,
       apiServerUrl: connection.apiServerUrl,
       status: "disconnected",
+      metadata: { connectionMode: "direct" },
       lastSyncAt: new Date(),
     })
     .returning(publicClusterFields);
@@ -119,6 +138,15 @@ export const connectCluster = async (
     console.log(`[ClusterService] Cluster ${cluster.name} registered offline. Background reconciler will auto-connect once reachable.`);
   }
 
+  return cluster;
+};
+
+export const getClusterById = async (clusterId: string) => {
+  const [cluster] = await db
+    .select(publicClusterFields)
+    .from(clusters)
+    .where(or(eq(clusters.id, clusterId), eq(clusters.name, clusterId)))
+    .limit(1);
   return cluster;
 };
 
