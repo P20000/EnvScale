@@ -60,7 +60,7 @@ jobs:
             DUCKDNS_DOMAIN=${DUCKDNS_DOMAIN:-envscale}
             DUCKDNS_TOKEN=${DUCKDNS_TOKEN}
             BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
-            BETTER_AUTH_URL=https://${DUCKDNS_DOMAIN:-envscale}.duckdns.org/api
+            BETTER_AUTH_URL=https://${DUCKDNS_DOMAIN:-envscale}.duckdns.org
             JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}
             JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
             KUBECONFIG_ENCRYPTION_KEY=${KUBECONFIG_ENCRYPTION_KEY}
