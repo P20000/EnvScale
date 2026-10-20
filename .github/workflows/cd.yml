@@ -80,8 +80,16 @@ jobs:
               echo ""
             fi
 
-            # 3. Configure Caddy with Automated Let's Encrypt TLS
+            # 3. Configure Caddy with Automated Let's Encrypt TLS and Direct IP
             sudo bash -c "cat <<EOF > /etc/caddy/Caddyfile
+            http://${PUBLIC_IP} {
+                reverse_proxy /healthz localhost:8080
+                reverse_proxy /ws* localhost:8080
+                reverse_proxy /api/v1/stream/* localhost:8080
+                reverse_proxy /api* localhost:3001
+                reverse_proxy localhost:3000
+            }
+
             ${DUCKDNS_DOMAIN:-envscale}.duckdns.org {
                 reverse_proxy /healthz localhost:8080
                 reverse_proxy /ws* localhost:8080
