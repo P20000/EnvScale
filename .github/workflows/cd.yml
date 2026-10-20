@@ -1,19 +1,82 @@
-name: EnvScale CD - Continuous Deployment
+name: EnvScale CD - Build & Deploy
 
 on:
   push:
     branches:
       - develop
+    paths-ignore:
+      - 'deployment/terraform/**'
+      - 'docs/**'
+      - '**.md'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
-  deploy:
-    name: Deploy to EC2 Integration Host
+  build-and-push:
+    name: Build & Push Images (GHCR)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & Push API Server
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./apps/api-server/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/envscale-api-server:latest
+            ghcr.io/${{ github.repository_owner }}/envscale-api-server:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & Push K8s Streamer
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/k8s-streamer
+          file: ./apps/k8s-streamer/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/envscale-k8s-streamer:latest
+            ghcr.io/${{ github.repository_owner }}/envscale-k8s-streamer:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & Push Web UI
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./apps/web/Dockerfile
+          build-args: |
+            VITE_API_BASE_URL=
+            VITE_STREAMER_BASE_URL=
+            VITE_WS_URL=/ws/k8s
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/envscale-web:latest
+            ghcr.io/${{ github.repository_owner }}/envscale-web:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to EC2 Integration Host
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
       - name: Check Deployment Credentials
         id: check_creds
         env:
@@ -48,57 +111,14 @@ jobs:
             set -e
             cd /opt/envscale
             git pull origin develop
-
-            # 1. Secure Atomic .env Generation with chmod 600
-            (
-              umask 077
-              cat <<EOF > .env.tmp
-            NODE_ENV=production
-            PORT=3000
-            DATABASE_URL=postgresql://envscale:envscale_password@postgres:5432/envscale
-            REDIS_URL=redis://redis:6379
-            DUCKDNS_DOMAIN=${DUCKDNS_DOMAIN:-envscale}
-            DUCKDNS_TOKEN=${DUCKDNS_TOKEN}
-            BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
-            BETTER_AUTH_URL=https://${DUCKDNS_DOMAIN:-envscale}.duckdns.org
-            JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}
-            JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
-            KUBECONFIG_ENCRYPTION_KEY=${KUBECONFIG_ENCRYPTION_KEY}
-            GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-            GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-            CORS_ORIGIN=https://${DUCKDNS_DOMAIN:-envscale}.duckdns.org,http://${DUCKDNS_DOMAIN:-envscale}.duckdns.org,http://localhost:3000,http://localhost:5173
-            EOF
-              chmod 600 .env.tmp
-              mv -f .env.tmp .env
-            )
-
-            # 2. Dynamic DNS Routing to EC2 Elastic IP
-            PUBLIC_IP=$(curl -s --max-time 5 http://checkip.amazonaws.com || curl -s --max-time 5 http://169.254.169.254/latest/meta-data/public-ipv4 || true)
-            if [ -n "$DUCKDNS_DOMAIN" ] && [ -n "$DUCKDNS_TOKEN" ] && [ -n "$PUBLIC_IP" ]; then
-              echo "Routing DuckDNS: ${DUCKDNS_DOMAIN}.duckdns.org -> ${PUBLIC_IP} ..."
-              curl -s --max-time 10 "https://www.duckdns.org/update?domains=${DUCKDNS_DOMAIN}&token=${DUCKDNS_TOKEN}&ip=${PUBLIC_IP}"
-              echo ""
-            fi
-
-            # 3. Configure Caddy with Automated Let's Encrypt TLS and Direct IP
-            sudo bash -c "cat <<EOF > /etc/caddy/Caddyfile
-            http://${PUBLIC_IP} {
-                reverse_proxy /healthz localhost:8080
-                reverse_proxy /ws* localhost:8080
-                reverse_proxy /api/v1/stream/* localhost:8080
-                reverse_proxy /api* localhost:3001
-                reverse_proxy localhost:3000
-            }
-
-            ${DUCKDNS_DOMAIN:-envscale}.duckdns.org {
-                reverse_proxy /healthz localhost:8080
-                reverse_proxy /ws* localhost:8080
-                reverse_proxy /api/v1/stream/* localhost:8080
-                reverse_proxy /api* localhost:3001
-                reverse_proxy localhost:3000
-            }
-            EOF"
-            sudo systemctl reload caddy || sudo systemctl restart caddy
-
-            # 4. Trigger Container Build & Migration Runner
-            ./deployment/start_remote.sh
+            chmod +x ./envscale.sh
+            
+            DUCKDNS_DOMAIN="${DUCKDNS_DOMAIN}" \
+            DUCKDNS_TOKEN="${DUCKDNS_TOKEN}" \
+            BETTER_AUTH_SECRET="${BETTER_AUTH_SECRET}" \
+            JWT_ACCESS_SECRET="${JWT_ACCESS_SECRET}" \
+            JWT_REFRESH_SECRET="${JWT_REFRESH_SECRET}" \
+            KUBECONFIG_ENCRYPTION_KEY="${KUBECONFIG_ENCRYPTION_KEY}" \
+            GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID}" \
+            GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET}" \
+            ./envscale.sh deploy
