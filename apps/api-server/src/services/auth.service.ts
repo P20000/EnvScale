@@ -35,6 +35,13 @@ export const createServiceToken = (subject: string = "api-server") =>
     { expiresIn: "1h" }
   );
 
+export const createAgentToken = (clusterId: string) =>
+  jwt.sign(
+    { sub: `agent-${clusterId}`, role: "MEMBER", allowedClusterIds: [clusterId] },
+    getAccessTokenSecret(),
+    { expiresIn: "365d" }
+  );
+
 export const getUserAccessibleClusterIds = async (userId: string, role?: string | null): Promise<string[]> => {
   if (role && role.toUpperCase() === "ADMIN") {
     return ["*"];
