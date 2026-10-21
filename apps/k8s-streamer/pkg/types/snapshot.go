@@ -20,4 +20,7 @@ type ClusterSnapshot struct {
 	HPAs            []HPAStatusDelta           `json:"hpas,omitempty"`
 	NetworkPolicies []NetworkPolicyStatusDelta `json:"networkPolicies,omitempty"`
 	PDBs            []PDBStatusDelta           `json:"pdbs,omitempty"`
+	ResourceQuotas  []ResourceQuotaStatusDelta `json:"resourceQuotas,omitempty"`
+	LimitRanges     []LimitRangeStatusDelta    `json:"limitRanges,omitempty"`
 }
+

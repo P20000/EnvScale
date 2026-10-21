@@ -3,7 +3,14 @@ import { jwtClient } from "better-auth/client/plugins";
 
 const getBaseUrl = () => {
   if (import.meta.env.VITE_API_BASE_URL) return import.meta.env.VITE_API_BASE_URL;
-  if (typeof window !== "undefined" && window.location.origin) return window.location.origin;
+  if (
+    typeof window !== "undefined" &&
+    window.location.origin &&
+    window.location.port !== "5173" &&
+    window.location.port !== "5174"
+  ) {
+    return window.location.origin;
+  }
   return "http://localhost:3000";
 };
 

@@ -24,6 +24,7 @@ clusterRouter.delete("/:clusterId/layout", resetLayout);
 
 export const topLevelClusterRouter: Router = Router();
 topLevelClusterRouter.use(requireAuth);
+topLevelClusterRouter.get("/", list);
 topLevelClusterRouter.post("/", validate("body", clusterConnectSchema, "Invalid cluster data"), connect);
 topLevelClusterRouter.post("/connect", validate("body", clusterConnectSchema, "Invalid cluster data"), connect);
 topLevelClusterRouter.get("/:clusterId/agent.yaml", getAgentManifest);

@@ -9,10 +9,15 @@ export interface AgentManifestOptions {
 }
 
 export const generateAgentManifest = (options: AgentManifestOptions): string => {
+  const isProduction = process.env.NODE_ENV === "production";
+  const defaultWsUrl = isProduction
+    ? "wss://envscale.duckdns.org/ws/agent"
+    : (process.env.LOCAL_STREAMER_WS_URL || "ws://host.minikube.internal:8080/ws/agent");
+
   const {
     clusterId,
     clusterName = "cluster",
-    serverUrl = process.env.STREAMER_WS_URL || "wss://envscale.duckdns.org/ws/agent",
+    serverUrl = process.env.STREAMER_WS_URL || defaultWsUrl,
     token = createAgentToken(options.clusterId),
     image = process.env.AGENT_IMAGE || "ghcr.io/p20000/envscale-k8s-streamer:latest",
   } = options;

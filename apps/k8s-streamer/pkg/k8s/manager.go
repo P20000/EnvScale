@@ -3,6 +3,7 @@ package k8s
 import (
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 
 	"k8s.io/client-go/kubernetes"
@@ -56,6 +57,19 @@ func (cm *ClusterManager) RegisterCluster(clusterID string, kubeconfigBytes []by
 	cm.clusters[clusterID] = im
 	log.Printf("[ClusterManager] Successfully registered and started cluster informers for: %s", clusterID)
 	return nil
+}
+
+// RegisterClusterAlias registers an alternative identifier/alias (such as friendly cluster name) for a registered cluster.
+func (cm *ClusterManager) RegisterClusterAlias(clusterID, alias string) {
+	if alias == "" || alias == clusterID {
+		return
+	}
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	if im, ok := cm.clusters[clusterID]; ok {
+		cm.clusters[alias] = im
+		log.Printf("[ClusterManager] Registered alias %q for cluster %q", alias, clusterID)
+	}
 }
 
 // RegisterInCluster creates and starts an InformerManager using in-cluster ServiceAccount config.
@@ -127,6 +141,36 @@ func (cm *ClusterManager) UnregisterAllClusters() {
 	}
 }
 
+
+// resolveInformerManagerLocked resolves an InformerManager by ID, name, or local development alias.
+// Caller must hold cm.mu (either read or write lock).
+func (cm *ClusterManager) resolveInformerManagerLocked(clusterID string) (*InformerManager, bool) {
+	if im, ok := cm.clusters[clusterID]; ok {
+		return im, true
+	}
+	// Case-insensitive exact match
+	for id, im := range cm.clusters {
+		if strings.EqualFold(id, clusterID) {
+			return im, true
+		}
+	}
+	// Fallback for single registered cluster, or common local development aliases
+	if len(cm.clusters) > 0 {
+		lower := strings.ToLower(clusterID)
+		if lower == "minikube" || lower == "minikube-local" || lower == "local" || lower == "default" || lower == "development" {
+			for _, im := range cm.clusters {
+				return im, true
+			}
+		}
+		if len(cm.clusters) == 1 {
+			for _, im := range cm.clusters {
+				return im, true
+			}
+		}
+	}
+	return nil, false
+}
+
 // GetClusterSnapshot retrieves the current cached state of pods, nodes, services, and workloads for a given cluster.
 func (cm *ClusterManager) GetClusterSnapshot(clusterID string) (
 	[]types.PodStatusDelta,
@@ -155,17 +199,10 @@ func (cm *ClusterManager) GetClusterSnapshot(clusterID string) (
 	}
 
 	cm.mu.RLock()
-	im, ok := cm.clusters[clusterID]
-	if !ok && len(cm.clusters) == 1 {
-		for _, v := range cm.clusters {
-			im = v
-			ok = true
-			break
-		}
-	}
+	im, ok := cm.resolveInformerManagerLocked(clusterID)
 	cm.mu.RUnlock()
 
-	if !ok {
+	if !ok || im == nil {
 		return nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("cluster %s not found", clusterID)
 	}
 	pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, cronJobs, jobs, pvcs, pvs, configMaps, secrets := im.GetSnapshot()
@@ -180,13 +217,8 @@ func (cm *ClusterManager) GetHPASnapshot(clusterID string) []types.HPAStatusDelt
 
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
-	if im, ok := cm.clusters[clusterID]; ok {
+	if im, ok := cm.resolveInformerManagerLocked(clusterID); ok && im != nil {
 		return im.GetHPASnapshot()
-	}
-	if len(cm.clusters) == 1 {
-		for _, v := range cm.clusters {
-			return v.GetHPASnapshot()
-		}
 	}
 	return nil
 }
@@ -199,13 +231,8 @@ func (cm *ClusterManager) GetNetworkPolicySnapshot(clusterID string) []types.Net
 
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
-	if im, ok := cm.clusters[clusterID]; ok {
+	if im, ok := cm.resolveInformerManagerLocked(clusterID); ok && im != nil {
 		return im.GetNetworkPolicySnapshot()
-	}
-	if len(cm.clusters) == 1 {
-		for _, v := range cm.clusters {
-			return v.GetNetworkPolicySnapshot()
-		}
 	}
 	return nil
 }
@@ -218,13 +245,36 @@ func (cm *ClusterManager) GetPDBSnapshot(clusterID string) []types.PDBStatusDelt
 
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
-	if im, ok := cm.clusters[clusterID]; ok {
+	if im, ok := cm.resolveInformerManagerLocked(clusterID); ok && im != nil {
 		return im.GetPDBSnapshot()
 	}
-	if len(cm.clusters) == 1 {
-		for _, v := range cm.clusters {
-			return v.GetPDBSnapshot()
-		}
+	return nil
+}
+
+// GetResourceQuotaSnapshot retrieves all cached ResourceQuotas for a cluster
+func (cm *ClusterManager) GetResourceQuotaSnapshot(clusterID string) []types.ResourceQuotaStatusDelta {
+	if agentSnap, found := cm.agentRegistry.GetSnapshot(clusterID); found && agentSnap != nil {
+		return agentSnap.ResourceQuotas
+	}
+
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	if im, ok := cm.resolveInformerManagerLocked(clusterID); ok && im != nil {
+		return im.GetResourceQuotaSnapshot()
+	}
+	return nil
+}
+
+// GetLimitRangeSnapshot retrieves all cached LimitRanges for a cluster
+func (cm *ClusterManager) GetLimitRangeSnapshot(clusterID string) []types.LimitRangeStatusDelta {
+	if agentSnap, found := cm.agentRegistry.GetSnapshot(clusterID); found && agentSnap != nil {
+		return agentSnap.LimitRanges
+	}
+
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	if im, ok := cm.resolveInformerManagerLocked(clusterID); ok && im != nil {
+		return im.GetLimitRangeSnapshot()
 	}
 	return nil
 }
@@ -234,14 +284,7 @@ func (cm *ClusterManager) CheckPDBSafety(clusterID, namespace, workloadName stri
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
-	im, ok := cm.clusters[clusterID]
-	if !ok && len(cm.clusters) == 1 {
-		for _, v := range cm.clusters {
-			im = v
-			ok = true
-			break
-		}
-	}
+	im, ok := cm.resolveInformerManagerLocked(clusterID)
 	if !ok || im == nil {
 		return nil, false
 	}
@@ -254,13 +297,7 @@ func (cm *ClusterManager) GetCluster(clusterID string) (*InformerManager, bool) 
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
-	im, ok := cm.clusters[clusterID]
-	if !ok && len(cm.clusters) == 1 {
-		for _, v := range cm.clusters {
-			return v, true
-		}
-	}
-	return im, ok
+	return cm.resolveInformerManagerLocked(clusterID)
 }
 
 // ListClusters returns a map of cluster IDs and their running status.
@@ -296,15 +333,13 @@ func (cm *ClusterManager) ShutdownAll() {
 }
 
 // GetClientset returns the kubernetes.Interface for the registered cluster with the
-// given clusterID. This implements the chaos.ClientsetProvider interface, allowing the
-// chaos Injector to borrow an authenticated clientset for fault API calls without
-// needing to re-parse or store a second copy of the Kubeconfig.
+// given clusterID (or resolved name/alias). This implements the chaos.ClientsetProvider interface.
 func (cm *ClusterManager) GetClientset(clusterID string) (kubernetes.Interface, error) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
-	im, ok := cm.clusters[clusterID]
-	if !ok {
+	im, ok := cm.resolveInformerManagerLocked(clusterID)
+	if !ok || im == nil {
 		return nil, fmt.Errorf("cluster %q is not registered", clusterID)
 	}
 	return im.Clientset(), nil

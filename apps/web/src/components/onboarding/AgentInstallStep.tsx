@@ -29,12 +29,16 @@ export function AgentInstallStep({ clusterId, clusterName, onConnected }: AgentI
     localStorage.getItem("envscale_access_token") ||
     "";
 
+  const isLocalhost =
+    typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+
   const hostUrl =
     API_BASE_URL.startsWith("http")
       ? API_BASE_URL
       : typeof window !== "undefined"
-      ? window.location.origin
-      : "https://envscale.duckdns.org";
+      ? (isLocalhost ? "http://localhost:3000" : window.location.origin)
+      : "http://localhost:3000";
 
   const manifestUrl = `${hostUrl}/api/v1/clusters/${clusterId}/agent.yaml?token=${token}`;
   const installCmd = `kubectl apply -f "${manifestUrl}"`;
@@ -51,8 +55,8 @@ export function AgentInstallStep({ clusterId, clusterName, onConnected }: AgentI
       const streamerHost = STREAMER_BASE_URL.startsWith("http")
         ? STREAMER_BASE_URL
         : typeof window !== "undefined"
-        ? window.location.origin
-        : "https://envscale.duckdns.org";
+        ? (isLocalhost ? "http://localhost:8080" : window.location.origin)
+        : "http://localhost:8080";
 
       const res = await fetch(
         `${streamerHost}/api/v1/clusters/snapshot?clusterId=${encodeURIComponent(

@@ -4,6 +4,7 @@ import { mdiChevronDown, mdiFilterVariant, mdiCheck } from "@mdi/js";
 import { useTopologyStore } from "../../store/useTopologyStore";
 import { useUIStore } from "../../store/useUIStore";
 import { extractAvailableNamespaces, SYSTEM_NAMESPACES } from "../../store/helpers/topologyHelpers";
+import { findNamespaceQuota, getQuotaUtilizationSummary } from "../../store/helpers/quotaHelpers";
 
 export function NamespaceFilterPill() {
   const rawNodes = useTopologyStore((s) => s.rawNodes);
@@ -11,6 +12,7 @@ export function NamespaceFilterPill() {
   const selectedNamespaces = useUIStore((s) => s.selectedNamespaces);
   const setSelectedNamespaces = useUIStore((s) => s.setSelectedNamespaces);
   const showSystemNamespaces = useUIStore((s) => s.showSystemNamespaces);
+  const resourceQuotas = useTopologyStore((s) => s.resourceQuotas);
 
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -141,11 +143,30 @@ export function NamespaceFilterPill() {
                     <span className="truncate">{ns}</span>
                   </div>
 
-                  {count > 0 && (
-                    <span className="text-[10px] font-mono font-semibold text-zinc-500 px-1.5 py-0.5 rounded bg-zinc-900/60 border border-zinc-800">
-                      {count}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {(() => {
+                      const quota = findNamespaceQuota(resourceQuotas, ns);
+                      const qSummary = getQuotaUtilizationSummary(quota);
+                      if (!qSummary) return null;
+                      return (
+                        <span
+                          className={`h-2 w-2 rounded-full shrink-0 ${
+                            qSummary.status === "breached"
+                              ? "bg-rose-500 animate-pulse"
+                              : qSummary.status === "warning"
+                              ? "bg-amber-400"
+                              : "bg-emerald-400/80"
+                          }`}
+                          title={`Quota: ${qSummary.label}`}
+                        />
+                      );
+                    })()}
+                    {count > 0 && (
+                      <span className="text-[10px] font-mono font-semibold text-zinc-500 px-1.5 py-0.5 rounded bg-zinc-900/60 border border-zinc-800">
+                        {count}
+                      </span>
+                    )}
+                  </div>
                 </div>
               );
             })}

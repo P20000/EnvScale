@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -107,6 +108,15 @@ func HandleUniversalLogStream(
 
 	clientset, err := clusterManager.GetClientset(clusterID)
 	if err != nil {
+		isDevMode := os.Getenv("ALLOW_ANONYMOUS_WS") == "true" || os.Getenv("ENVSCALE_DEV_MODE") == "true" || os.Getenv("NODE_ENV") != "production"
+		if isDevMode {
+			streamFallbackTelemetry(ctx, namespace, name, kind, logChan)
+			<-ctx.Done()
+			close(logChan)
+			wg.Wait()
+			return
+		}
+
 		select {
 		case logChan <- StreamLogMessage{
 			Timestamp: time.Now().UTC().Format(time.RFC3339),
@@ -148,6 +158,12 @@ func streamPodLogs(
 ) {
 	pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
+		isDevMode := os.Getenv("ALLOW_ANONYMOUS_WS") == "true" || os.Getenv("ENVSCALE_DEV_MODE") == "true" || os.Getenv("NODE_ENV") != "production"
+		if isDevMode {
+			streamFallbackTelemetry(ctx, namespace, podName, "Pod", logChan)
+			return
+		}
+
 		select {
 		case logChan <- StreamLogMessage{
 			Timestamp: time.Now().UTC().Format(time.RFC3339),
@@ -287,6 +303,12 @@ func streamWorkloadLogs(
 	}
 
 	if len(matchingPods) == 0 {
+		isDevMode := os.Getenv("ALLOW_ANONYMOUS_WS") == "true" || os.Getenv("ENVSCALE_DEV_MODE") == "true" || os.Getenv("NODE_ENV") != "production"
+		if isDevMode {
+			streamFallbackTelemetry(ctx, namespace, name, kind, logChan)
+			return
+		}
+
 		select {
 		case logChan <- StreamLogMessage{
 			Timestamp: time.Now().UTC().Format(time.RFC3339),

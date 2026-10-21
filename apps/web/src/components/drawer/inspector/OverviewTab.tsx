@@ -22,9 +22,11 @@ import { AutoscalingHPASection } from "./AutoscalingHPASection";
 import { HealthProbesSection } from "./HealthProbesSection";
 import { NetworkPolicyRolloutSection } from "./NetworkPolicyRolloutSection";
 import { PodDisruptionBudgetSection } from "./PodDisruptionBudgetSection";
+import { ResourceQuotaSection } from "./ResourceQuotaSection";
 import { getPodPrefix } from "../../../store/helpers/topologyHelpers";
 import { useTopologyStore } from "../../../store/useTopologyStore";
 import { findWorkloadHPA, findWorkloadNetworkPolicies, findWorkloadPDB } from "../../../store/helpers/policyHpaHelpers";
+import { findNamespaceQuota, findNamespaceLimitRanges } from "../../../store/helpers/quotaHelpers";
 
 interface OverviewTabProps {
   target: NonNullable<SelectedTarget>;
@@ -46,6 +48,8 @@ export function OverviewTab({
   const hpas = useTopologyStore((s) => s.hpas);
   const networkPolicies = useTopologyStore((s) => s.networkPolicies);
   const pdbs = useTopologyStore((s) => s.pdbs);
+  const resourceQuotas = useTopologyStore((s) => s.resourceQuotas);
+  const limitRanges = useTopologyStore((s) => s.limitRanges);
   const deployments = useTopologyStore((s) => s.deployments);
 
   const podLabels = (target.data as K8sPodData)?.labels || {};
@@ -62,6 +66,8 @@ export function OverviewTab({
   const matchedHPA = findWorkloadHPA(hpas, workloadName, targetNs);
   const matchedNetPols = findWorkloadNetworkPolicies(networkPolicies, podLabels, workloadName, targetNs);
   const matchedPDB = findWorkloadPDB(pdbs, workloadName, targetNs, podLabels);
+  const matchedQuota = findNamespaceQuota(resourceQuotas, targetNs);
+  const matchedLimitRanges = findNamespaceLimitRanges(limitRanges, targetNs);
   const matchedDep = deployments?.find(
     (d) => d.name.toLowerCase() === workloadName.toLowerCase() && (d.namespace === targetNs || !d.namespace)
   ) || null;
@@ -377,6 +383,9 @@ export function OverviewTab({
                 />
               )}
               {matchedPDB && <PodDisruptionBudgetSection pdb={matchedPDB} />}
+              {(matchedQuota || matchedLimitRanges.length > 0) && (
+                <ResourceQuotaSection quota={matchedQuota} limitRanges={matchedLimitRanges} />
+              )}
             </>
           )}
 
