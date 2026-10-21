@@ -240,3 +240,39 @@ export interface K8sPDBData extends Record<string, unknown> {
   createdAt?: string;
 }
 
+export interface K8sResourceQuotaData extends Record<string, unknown> {
+  name: string;
+  namespace: string;
+  hard: Record<string, string>;
+  used: Record<string, string>;
+  cpuLimitCores?: number;
+  cpuUsedCores?: number;
+  cpuUtilizationPct?: number;
+  memoryLimitBytes?: number;
+  memoryUsedBytes?: number;
+  memoryUtilizationPct?: number;
+  podsLimit?: number;
+  podsUsed?: number;
+  podsUtilizationPct?: number;
+  isBreached?: boolean;
+  isWarning?: boolean;
+  createdAt?: string;
+}
+
+export interface K8sLimitRangeItemData {
+  type: string;
+  min?: Record<string, string>;
+  max?: Record<string, string>;
+  default?: Record<string, string>;
+  defaultRequest?: Record<string, string>;
+  maxLimitRequestRatio?: Record<string, string>;
+}
+
+export interface K8sLimitRangeData extends Record<string, unknown> {
+  name: string;
+  namespace: string;
+  limits: K8sLimitRangeItemData[];
+  createdAt?: string;
+}
+
+

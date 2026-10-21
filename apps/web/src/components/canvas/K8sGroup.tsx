@@ -15,6 +15,7 @@ import {
   MdFlashOn as ChaosIcon,
   MdShield as ShieldIcon,
 } from "react-icons/md";
+import { findNamespaceQuota, getQuotaUtilizationSummary } from "../../store/helpers/quotaHelpers";
 
 export interface PodSummary {
   name: string;
@@ -126,6 +127,9 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
   const pdb = data.pdb;
   const hasNetPol = Boolean(data.hasNetworkPolicy || (data.networkPolicies && data.networkPolicies.length > 0));
   const netPolNames = (data.networkPolicies || []).map((n) => n.name).join(", ") || "Active Policy";
+  const resourceQuotas = useTopologyStore((s) => s.resourceQuotas);
+  const matchedQuota = findNamespaceQuota(resourceQuotas, data.namespace || "default");
+  const quotaSummary = getQuotaUtilizationSummary(matchedQuota);
 
   const hasProbeWarning = Boolean(
     data.hasProbeWarning ||
@@ -332,6 +336,27 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
               <LifeBuoy className={`w-3 h-3 ${pdb.disruptionsAllowed > 0 ? "text-teal-400" : "text-rose-400 animate-spin"}`} />
               <span className="text-[8.5px] font-mono font-bold tracking-tight">
                 {pdb.disruptionsAllowed > 0 ? `PDB: ${pdb.disruptionsAllowed}` : "PDB: 0!"}
+              </span>
+            </span>
+          )}
+
+          {/* Quota Pressure Badge */}
+          {quotaSummary && (quotaSummary.status !== "normal" || quotaSummary.maxPct >= 75) && (
+            <span
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md transition-all shrink-0 ${
+                quotaSummary.status === "breached"
+                  ? "bg-rose-500/20 text-rose-300 animate-pulse"
+                  : quotaSummary.status === "warning"
+                  ? "bg-amber-500/15 text-amber-300"
+                  : "bg-indigo-500/15 text-indigo-300"
+              }`}
+              title={`Namespace Quota (${matchedQuota?.name}): ${quotaSummary.label} utilized`}
+            >
+              <span className="text-[7.5px] font-extrabold uppercase px-1 py-[0.5px] rounded bg-indigo-500/25 text-indigo-300 tracking-wider">
+                QUOTA
+              </span>
+              <span className="text-[9px] font-mono font-medium">
+                {quotaSummary.maxPct}%
               </span>
             </span>
           )}

@@ -37,7 +37,7 @@ import { handleAddToken, handleAddNotification } from "./slices/topologyNotifSli
 import {
   type ApiToken, type NotificationItem, type K8sIncidentEvent, type HistoryAction, type DeleteModalState,
   type Cluster, type K8sPVCData, type K8sPVData, type K8sConfigMapData, type K8sSecretData, type ChaosFaultEvent,
-  type K8sHPAData, type K8sNetworkPolicyData, type K8sPDBData,
+  type K8sHPAData, type K8sNetworkPolicyData, type K8sPDBData, type K8sResourceQuotaData, type K8sLimitRangeData,
 } from "./types/topologyTypes";
 import {
   extractServices,
@@ -76,7 +76,7 @@ export interface TopologyState {
   secrets: K8sSecretData[];
   hpas: K8sHPAData[];
   networkPolicies: K8sNetworkPolicyData[];
-  pdbs: K8sPDBData[];
+  pdbs: K8sPDBData[]; resourceQuotas: K8sResourceQuotaData[]; limitRanges: K8sLimitRangeData[];
   incidents: K8sIncidentEvent[];
   activeChaosFaults: Record<string, ChaosFaultEvent>;
   selectedNode: SelectedTarget;
@@ -173,7 +173,7 @@ export const useTopologyStore = create<TopologyState>()(
       secrets: [],
       hpas: [],
       networkPolicies: [],
-      pdbs: [],
+      pdbs: [], resourceQuotas: [], limitRanges: [],
       incidents: [],
       activeChaosFaults: {},
       selectedNode: null,
@@ -463,7 +463,7 @@ export const useTopologyStore = create<TopologyState>()(
           replicaSets: [],
           deployments: [],
           daemonSets: [],
-          cronJobs: [], jobs: [], pvcs: [], hpas: [], networkPolicies: [], pdbs: [],
+          cronJobs: [], jobs: [], pvcs: [], hpas: [], networkPolicies: [], pdbs: [], resourceQuotas: [], limitRanges: [],
           incidents: [], activeChaosFaults: {}, selectedNode: null, notifications: [],
           undoStack: [], redoStack: [], wsStatus: "DISCONNECTED", wsLatencyMs: 0,
         });

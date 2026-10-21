@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -37,9 +38,10 @@ func setupRollbackRoutes(mux *http.ServeMux, clusterManager *k8s.ClusterManager,
 			return
 		}
 
-		// 1. Strict Auth Guard: enforce valid JWT token verification
+		// 1. Strict Auth Guard: enforce valid JWT token verification (or allowAnonymous in local dev)
+		allowAnonymous := os.Getenv("ALLOW_ANONYMOUS_WS") == "true"
 		claims, err := websocket.AuthenticateRequest(r)
-		if err != nil {
+		if err != nil && !allowAnonymous {
 			log.Printf("[Rollout Auth Failed] Unauthorized rollback attempt from %s: %v", r.RemoteAddr, err)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
@@ -50,10 +52,12 @@ func setupRollbackRoutes(mux *http.ServeMux, clusterManager *k8s.ClusterManager,
 		}
 
 		userIdentifier := "authenticated-user"
-		if sub, ok := claims["sub"].(string); ok && sub != "" {
-			userIdentifier = sub
-		} else if email, ok := claims["email"].(string); ok && email != "" {
-			userIdentifier = email
+		if claims != nil {
+			if sub, ok := claims["sub"].(string); ok && sub != "" {
+				userIdentifier = sub
+			} else if email, ok := claims["email"].(string); ok && email != "" {
+				userIdentifier = email
+			}
 		}
 
 		// 2. Parse request body
@@ -91,13 +95,15 @@ func setupRollbackRoutes(mux *http.ServeMux, clusterManager *k8s.ClusterManager,
 		}
 
 		// Verify that caller has authorization to target cluster
-		if authErr := websocket.CheckClusterAuthorization(claims, req.ClusterID); authErr != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusForbidden)
-			json.NewEncoder(w).Encode(map[string]string{
-				"error": fmt.Sprintf("Cluster authorization denied: %v", authErr),
-			})
-			return
+		if !allowAnonymous && claims != nil {
+			if authErr := websocket.CheckClusterAuthorization(claims, req.ClusterID); authErr != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				json.NewEncoder(w).Encode(map[string]string{
+					"error": fmt.Sprintf("Cluster authorization denied: %v", authErr),
+				})
+				return
+			}
 		}
 
 		clientset, err := clusterManager.GetClientset(req.ClusterID)

@@ -16,6 +16,7 @@ import (
 
 type RegisterClusterRequest struct {
 	ClusterID       string `json:"clusterId"`
+	ClusterName     string `json:"clusterName,omitempty"`
 	Kubeconfig      string `json:"kubeconfig"`
 	IsInClusterMode bool   `json:"isInClusterMode"`
 }
@@ -73,6 +74,12 @@ func SetupRoutes(
 	mux.HandleFunc("/api/v1/stream/logs", func(w http.ResponseWriter, r *http.Request) {
 		HandleUniversalLogStream(clusterManager, w, r)
 	})
+	mux.HandleFunc("/ws/logs", func(w http.ResponseWriter, r *http.Request) {
+		HandleUniversalLogStream(clusterManager, w, r)
+	})
+	mux.HandleFunc("/ws/stream/logs", func(w http.ResponseWriter, r *http.Request) {
+		HandleUniversalLogStream(clusterManager, w, r)
+	})
 
 	setupRollbackRoutes(mux, clusterManager, hub)
 
@@ -99,6 +106,9 @@ func SetupRoutes(
 				http.Error(w, fmt.Sprintf("Failed to register in-cluster: %v", err), http.StatusInternalServerError)
 				return
 			}
+			if req.ClusterName != "" {
+				clusterManager.RegisterClusterAlias(req.ClusterID, req.ClusterName)
+			}
 		} else {
 			if req.Kubeconfig == "" {
 				http.Error(w, "kubeconfig is required when not in cluster mode", http.StatusBadRequest)
@@ -113,6 +123,9 @@ func SetupRoutes(
 			if err := clusterManager.RegisterCluster(req.ClusterID, rawKubeconfig); err != nil {
 				http.Error(w, fmt.Sprintf("Failed to register cluster: %v", err), http.StatusBadRequest)
 				return
+			}
+			if req.ClusterName != "" {
+				clusterManager.RegisterClusterAlias(req.ClusterID, req.ClusterName)
 			}
 		}
 
@@ -146,6 +159,8 @@ func SetupRoutes(
 		hpas := clusterManager.GetHPASnapshot(clusterID)
 		networkPolicies := clusterManager.GetNetworkPolicySnapshot(clusterID)
 		pdbs := clusterManager.GetPDBSnapshot(clusterID)
+		resourceQuotas := clusterManager.GetResourceQuotaSnapshot(clusterID)
+		limitRanges := clusterManager.GetLimitRangeSnapshot(clusterID)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -167,6 +182,8 @@ func SetupRoutes(
 			"hpas":            hpas,
 			"networkPolicies": networkPolicies,
 			"pdbs":            pdbs,
+			"resourceQuotas":  resourceQuotas,
+			"limitRanges":     limitRanges,
 		})
 	}))
 

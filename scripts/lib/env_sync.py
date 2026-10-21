@@ -4,6 +4,7 @@ from typing import Dict, Tuple, List
 from .config import (
     API_SERVER_DIR,
     K8S_STREAMER_DIR,
+    WEB_DIR,
     SHARED_JWT_SECRET,
     SHARED_ENCRYPTION_KEY,
 )
@@ -70,6 +71,22 @@ def ensure_env_files() -> List[str]:
             write_dotenv(streamer_env_path, streamer_defaults)
             logs.append("[ENV] Generated default apps/k8s-streamer/.env with secure secrets")
 
+    # Web Frontend .env
+    web_env_path = os.path.join(WEB_DIR, ".env")
+    if not os.path.exists(web_env_path):
+        web_example = os.path.join(WEB_DIR, ".env.example")
+        if os.path.exists(web_example):
+            shutil.copyfile(web_example, web_env_path)
+            logs.append("[ENV] Created apps/web/.env from .env.example")
+        else:
+            web_defaults = {
+                "VITE_API_BASE_URL": "http://localhost:3000",
+                "VITE_STREAMER_BASE_URL": "http://localhost:8080",
+                "VITE_WS_URL": "ws://localhost:8080/ws/k8s",
+            }
+            write_dotenv(web_env_path, web_defaults)
+            logs.append("[ENV] Generated default apps/web/.env")
+
     # Ensure JWT secret parity between API Server and K8s Streamer
     api_env = parse_dotenv(api_env_path)
     streamer_env = parse_dotenv(streamer_env_path)
@@ -93,14 +110,18 @@ def ensure_env_files() -> List[str]:
 def verify_env_parity() -> Tuple[bool, List[str]]:
     api_env_path = os.path.join(API_SERVER_DIR, ".env")
     streamer_env_path = os.path.join(K8S_STREAMER_DIR, ".env")
+    web_env_path = os.path.join(WEB_DIR, ".env")
     api_env = parse_dotenv(api_env_path)
     streamer_env = parse_dotenv(streamer_env_path)
+    web_env = parse_dotenv(web_env_path)
 
     issues = []
     if not api_env:
         issues.append("apps/api-server/.env is missing")
     if not streamer_env:
         issues.append("apps/k8s-streamer/.env is missing")
+    if not web_env:
+        issues.append("apps/web/.env is missing")
 
     if api_env and streamer_env:
         if api_env.get("JWT_ACCESS_SECRET") != streamer_env.get("JWT_ACCESS_SECRET"):

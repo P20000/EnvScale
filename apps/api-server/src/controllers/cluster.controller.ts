@@ -39,7 +39,17 @@ export const connect = async (request: Request, response: Response) => {
 };
 
 export const list = async (request: Request, response: Response) => {
-  const workspaceId = request.params.id as string;
+  let workspaceId = request.params.id as string | undefined;
+
+  if (!workspaceId && request.user) {
+    try {
+      const workspace = await ensureDefaultWorkspace(request.user.id, request.user.name);
+      workspaceId = workspace?.id;
+    } catch {
+      // fallback
+    }
+  }
+
   response.json(await listClusters(workspaceId));
 };
 

@@ -51,6 +51,11 @@ const (
 	EventPDBMutated = "EVENT_PDB_MUTATED"
 	EventPDBDeleted = "EVENT_PDB_DELETED"
 
+	EventResourceQuotaMutated = "EVENT_RESOURCE_QUOTA_MUTATED"
+	EventResourceQuotaDeleted = "EVENT_RESOURCE_QUOTA_DELETED"
+	EventLimitRangeMutated    = "EVENT_LIMIT_RANGE_MUTATED"
+	EventLimitRangeDeleted    = "EVENT_LIMIT_RANGE_DELETED"
+
 	EventSnapshotSync = "EVENT_SNAPSHOT_SYNC"
 )
 
@@ -432,3 +437,42 @@ type PDBStatusDelta struct {
 	MatchLabels        map[string]string `json:"matchLabels"`
 	CreatedAt          time.Time         `json:"createdAt"`
 }
+
+// ResourceQuotaStatusDelta encapsulates ResourceQuota constraints and live usage
+type ResourceQuotaStatusDelta struct {
+	Name                 string            `json:"name"`
+	Namespace            string            `json:"namespace"`
+	Hard                 map[string]string `json:"hard"`
+	Used                 map[string]string `json:"used"`
+	CPULimitCores        float64           `json:"cpuLimitCores"`
+	CPUUsedCores         float64           `json:"cpuUsedCores"`
+	CPUUtilizationPct    float64           `json:"cpuUtilizationPct"`
+	MemoryLimitBytes     int64             `json:"memoryLimitBytes"`
+	MemoryUsedBytes      int64             `json:"memoryUsedBytes"`
+	MemoryUtilizationPct float64           `json:"memoryUtilizationPct"`
+	PodsLimit            int32             `json:"podsLimit"`
+	PodsUsed             int32             `json:"podsUsed"`
+	PodsUtilizationPct   float64           `json:"podsUtilizationPct"`
+	IsBreached           bool              `json:"isBreached"`
+	IsWarning            bool              `json:"isWarning"`
+	CreatedAt            time.Time         `json:"createdAt"`
+}
+
+// LimitRangeItemDelta encapsulates a single limit constraint
+type LimitRangeItemDelta struct {
+	Type                 string            `json:"type"`
+	Min                  map[string]string `json:"min,omitempty"`
+	Max                  map[string]string `json:"max,omitempty"`
+	Default              map[string]string `json:"default,omitempty"`
+	DefaultRequest       map[string]string `json:"defaultRequest,omitempty"`
+	MaxLimitRequestRatio map[string]string `json:"maxLimitRequestRatio,omitempty"`
+}
+
+// LimitRangeStatusDelta encapsulates LimitRange container/pod constraints
+type LimitRangeStatusDelta struct {
+	Name      string                `json:"name"`
+	Namespace string                `json:"namespace"`
+	Limits    []LimitRangeItemDelta `json:"limits"`
+	CreatedAt time.Time             `json:"createdAt"`
+}
+

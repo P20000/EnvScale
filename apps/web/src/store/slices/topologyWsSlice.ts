@@ -18,6 +18,7 @@ import { handlePVCWsEvent, handlePVWsEvent } from "../helpers/storageHelpers";
 import { handleConfigMapWsEvent, handleSecretWsEvent } from "../helpers/configHelpers";
 import { handleChaosWsEvent } from "../helpers/chaosHelpers";
 import { handlePolicyHpaWsEvent } from "../helpers/policyHpaHelpers";
+import { handleQuotaWsEvent } from "../helpers/quotaHelpers";
 import { handleSnapshotSync } from "./topologySnapshotHandler";
 
 export function handleWsMessage(
@@ -483,5 +484,10 @@ export function handleWsMessage(
     eventType.startsWith("EVENT_PDB_")
   ) {
     handlePolicyHpaWsEvent(state, set, eventType, payloadData);
+  } else if (
+    eventType.startsWith("EVENT_RESOURCE_QUOTA_") ||
+    eventType.startsWith("EVENT_LIMIT_RANGE_")
+  ) {
+    handleQuotaWsEvent(state, set, eventType, payloadData);
   }
 }

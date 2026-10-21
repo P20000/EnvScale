@@ -54,6 +54,10 @@ export const WS_EVENTS = {
   CHAOS_FAULT_CLEARED: 'EVENT_CHAOS_FAULT_CLEARED',
   PDB_MUTATED: 'EVENT_PDB_MUTATED',
   PDB_DELETED: 'EVENT_PDB_DELETED',
+  RESOURCE_QUOTA_MUTATED: 'EVENT_RESOURCE_QUOTA_MUTATED',
+  RESOURCE_QUOTA_DELETED: 'EVENT_RESOURCE_QUOTA_DELETED',
+  LIMIT_RANGE_MUTATED: 'EVENT_LIMIT_RANGE_MUTATED',
+  LIMIT_RANGE_DELETED: 'EVENT_LIMIT_RANGE_DELETED',
 } as const;
 
 export type WSEventType = typeof WS_EVENTS[keyof typeof WS_EVENTS];
@@ -229,4 +233,43 @@ export interface PDBTopologyData {
   matchLabels: Record<string, string>;
   createdAt?: string;
 }
+
+// ResourceQuota State Payload for Topology Engine
+export interface ResourceQuotaTopologyData {
+  name: string;
+  namespace: string;
+  hard: Record<string, string>;
+  used: Record<string, string>;
+  cpuLimitCores?: number;
+  cpuUsedCores?: number;
+  cpuUtilizationPct?: number;
+  memoryLimitBytes?: number;
+  memoryUsedBytes?: number;
+  memoryUtilizationPct?: number;
+  podsLimit?: number;
+  podsUsed?: number;
+  podsUtilizationPct?: number;
+  isBreached?: boolean;
+  isWarning?: boolean;
+  createdAt?: string;
+}
+
+// LimitRange Container/Pod Constraint Item
+export interface LimitRangeItemData {
+  type: string; // "Container" | "Pod" | "PersistentVolumeClaim"
+  min?: Record<string, string>;
+  max?: Record<string, string>;
+  default?: Record<string, string>;
+  defaultRequest?: Record<string, string>;
+  maxLimitRequestRatio?: Record<string, string>;
+}
+
+// LimitRange State Payload for Topology Engine
+export interface LimitRangeTopologyData {
+  name: string;
+  namespace: string;
+  limits: LimitRangeItemData[];
+  createdAt?: string;
+}
+
 

@@ -4,13 +4,17 @@
  * Target Streaming Gateway: http://localhost:8080
  */
 
+const isViteDev =
+  typeof window !== "undefined" &&
+  (window.location.port === "5173" || window.location.port === "5174");
+
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
-  (typeof window !== "undefined" && window.location.origin ? window.location.origin : "http://localhost:3000");
+  (!isViteDev && typeof window !== "undefined" && window.location.origin ? window.location.origin : "http://localhost:3000");
 
 export const STREAMER_BASE_URL =
   import.meta.env.VITE_STREAMER_BASE_URL ||
-  (typeof window !== "undefined" && window.location.origin ? window.location.origin : "http://localhost:8080");
+  (!isViteDev && typeof window !== "undefined" && window.location.origin ? window.location.origin : "http://localhost:8080");
 
 export function getAuthHeaders(contentType?: string): Record<string, string> {
   const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");

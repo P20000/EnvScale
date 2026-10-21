@@ -150,7 +150,10 @@ export const getClusterById = async (clusterId: string) => {
   return cluster;
 };
 
-export const listClusters = async (rawWorkspaceId: string) => {
+export const listClusters = async (rawWorkspaceId?: string) => {
+  if (!rawWorkspaceId) {
+    return db.select(publicClusterFields).from(clusters);
+  }
   const workspaceId = idSchema.parse(rawWorkspaceId);
   return db
     .select(publicClusterFields)
