@@ -325,7 +325,8 @@ class CloudDeployer:
                         stamp = time.strftime("%Y%m%d_%H%M%S")
                         s3_path = f"s3://{ctx['s3_bucket']}/database/backup_{stamp}.sql"
                         p = subprocess.Popen(["aws", "s3", "cp", "-", s3_path], stdin=subprocess.PIPE)
-                        p.communicate(input=dump_res.stdout.encode("utf-8"))
+                        input_bytes = dump_res.stdout if isinstance(dump_res.stdout, bytes) else dump_res.stdout.encode("utf-8")
+                        p.communicate(input=input_bytes)
                         self._emit_step(s1, t1, "log", f"Archived database dump to {s3_path}")
             self.backup_to_s3(step_id=s1, step_title=t1)
             self._emit_step(s1, t1, "success")
