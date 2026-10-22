@@ -30,30 +30,7 @@ resource "aws_security_group" "envscale_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Direct dev port access for evaluation inspection (optional frontend/api direct access)
-  ingress {
-    description = "Frontend direct dev port"
-    from_port   = 3000
-    to_port     = 3000
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
 
-  ingress {
-    description = "API Server direct dev port"
-    from_port   = 3001
-    to_port     = 3001
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "K8s Streamer WebSocket port"
-    from_port   = 8080
-    to_port     = 8080
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
 
   # Outbound: allow all internet traffic (to download docker images, packages, etc.)
   egress {

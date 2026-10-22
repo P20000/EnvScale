@@ -11,11 +11,12 @@ from .view_services import ServicesView
 from .view_logs import LogsView
 from .view_k8s import K8sView
 from .view_chaos import ChaosView
+from .view_cloud import CloudView
 
 class MainWindow(Adw.ApplicationWindow):
     def __init__(self, app, process_manager):
-        super().__init__(application=app, title="EnvScale Local Manager")
-        self.set_default_size(1080, 750)
+        super().__init__(application=app, title="EnvScale Test Center")
+        self.set_default_size(1120, 780)
         self.pm = process_manager
 
         ensure_env_files()
@@ -26,7 +27,7 @@ class MainWindow(Adw.ApplicationWindow):
 
         # Header Bar
         header = Adw.HeaderBar()
-        title = Adw.WindowTitle(title="EnvScale Local Manager", subtitle="Kubernetes Observability &amp; Governance")
+        title = Adw.WindowTitle(title="EnvScale Test Center", subtitle="Kubernetes Observability, Governance & Cloud Operations")
         header.set_title_widget(title)
 
         # Theme Toggle
@@ -48,11 +49,13 @@ class MainWindow(Adw.ApplicationWindow):
         self.logs_view = LogsView(self.pm)
         self.k8s_view = K8sView(self.pm)
         self.chaos_view = ChaosView(self.pm)
+        self.cloud_view = CloudView(self.pm)
 
         self.view_stack.add_titled_with_icon(self.services_view, "services", "Services", "network-server-symbolic")
         self.view_stack.add_titled_with_icon(self.logs_view, "logs", "Live Logs", "utilities-terminal-symbolic")
         self.view_stack.add_titled_with_icon(self.k8s_view, "k8s", "Kubernetes", "emblem-default-symbolic")
         self.view_stack.add_titled_with_icon(self.chaos_view, "chaos", "Chaos Lab", "dialog-warning-symbolic")
+        self.view_stack.add_titled_with_icon(self.cloud_view, "cloud", "Cloud Ops", "cloud-symbolic")
 
         # Top Switcher Bar
         switcher_bar = Adw.ViewSwitcher()
@@ -80,9 +83,9 @@ class MainWindow(Adw.ApplicationWindow):
         self.pm.stop_all()
         return False
 
-class LocalRunAdwApp(Adw.Application):
+class TestCenterAdwApp(Adw.Application):
     def __init__(self, process_manager):
-        super().__init__(application_id="io.envscale.localrun", flags=Gio.ApplicationFlags.FLAGS_NONE)
+        super().__init__(application_id="io.envscale.testcenter", flags=Gio.ApplicationFlags.FLAGS_NONE)
         self.pm = process_manager
 
     def do_activate(self):
@@ -127,7 +130,7 @@ def launch_adw_gui(process_manager=None):
     sys.stderr = StdoutStderrRedirector("system", pm, orig_stderr)
 
     try:
-        app = LocalRunAdwApp(pm)
+        app = TestCenterAdwApp(pm)
         app.run(sys.argv[:1])
     finally:
         sys.stdout = orig_stdout

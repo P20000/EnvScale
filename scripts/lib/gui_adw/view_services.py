@@ -20,18 +20,18 @@ class ServicesView(Gtk.Box):
         # Quick Actions Bar
         actions_card = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         
-        self.btn_launch_all = Gtk.Button(label="🚀 Launch Full Stack")
+        self.btn_launch_all = Gtk.Button(label="Launch Full Stack")
         self.btn_launch_all.add_css_class("suggested-action")
         self.btn_launch_all.connect("clicked", self._on_launch_all_clicked)
 
-        self.btn_stop_all = Gtk.Button(label="🛑 Stop All")
+        self.btn_stop_all = Gtk.Button(label="Stop All")
         self.btn_stop_all.add_css_class("destructive-action")
         self.btn_stop_all.connect("clicked", self._on_stop_all_clicked)
 
-        self.btn_open_web = Gtk.Button(label="🌐 Open Web UI")
+        self.btn_open_web = Gtk.Button(label="Open Web UI")
         self.btn_open_web.connect("clicked", lambda _: open_browser_url("http://localhost:5173", log_fn=lambda m: self.pm.emit_log("web", m)))
 
-        self.btn_db_seed = Gtk.Button(label="🌱 Seed Database")
+        self.btn_db_seed = Gtk.Button(label="Seed Database")
         self.btn_db_seed.connect("clicked", self._on_db_seed_clicked)
 
         actions_card.append(self.btn_launch_all)

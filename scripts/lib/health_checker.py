@@ -33,7 +33,7 @@ def check_redis(port: int = 6379, host: str = "127.0.0.1", timeout: float = 1.0)
 def check_http_endpoint(url: str, timeout: float = 1.5) -> Tuple[bool, Dict[str, Any], float]:
     start_time = time.time()
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "EnvScale-LocalRun/2.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "EnvScale-TestCenter/1.0"})
         with urllib.request.urlopen(req, timeout=timeout) as response:
             latency = (time.time() - start_time) * 1000.0
             if response.status == 200:

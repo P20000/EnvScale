@@ -20,7 +20,7 @@ pm = ProcessManager()
 @click.group(invoke_without_command=True)
 @click.pass_context
 def cli(ctx):
-    """EnvScale Local Environment Manager CLI & Headless TUI."""
+    """EnvScale Test Center CLI & Headless Runner."""
     if ctx.invoked_subcommand is None:
         ctx.invoke(status)
 
@@ -66,7 +66,7 @@ def start(service, start_all):
         console.print(f"[bold green]Starting {SERVICES[service]['name']}...[/bold green]")
         pm.start_service(service)
     elif start_all or not service:
-        console.print("[bold green]🚀 Launching full EnvScale application stack...[/bold green]")
+        console.print("[bold green]Launching full EnvScale application stack...[/bold green]")
         pm.start_docker_infra()
         time.sleep(2)
         for sid in ["api", "streamer", "web"]:
@@ -86,7 +86,7 @@ def stop(service, stop_all):
         console.print(f"[yellow]Stopping {service}...[/yellow]")
         pm.stop_service(service)
     else:
-        console.print("[yellow]🛑 Stopping all EnvScale services and Docker containers...[/yellow]")
+        console.print("[yellow]Stopping all EnvScale services and Docker containers...[/yellow]")
         pm.stop_all()
         console.print("[green]All services spun down cleanly.[/green]")
 
@@ -214,3 +214,74 @@ def config_check():
     else:
         for i in issues:
             console.print(f"[bold red]✘ Issue:[/bold red] {i}")
+
+@cli.group()
+def infra():
+    """AWS Cloud Infrastructure Lifecycle (up, stop, start, destroy)."""
+    pass
+
+@infra.command("up")
+def infra_up():
+    """Provision AWS EC2, configure VPC/S3, and sync DNS/secrets."""
+    from .cloud_deployer import CloudDeployer
+    deployer = CloudDeployer(log_fn=lambda m: console.print(f"[blue]{m}[/blue]"))
+    deployer.infra_up()
+    console.print("[bold green]✔ Cloud Infrastructure Provisioned & Ready![/bold green]")
+
+@infra.command("stop")
+def infra_stop():
+    """Pause EC2 instance to eliminate compute billing ($0.00/hr)."""
+    from .cloud_deployer import CloudDeployer
+    deployer = CloudDeployer(log_fn=lambda m: console.print(f"[yellow]{m}[/yellow]"))
+    deployer.infra_stop()
+    console.print("[bold yellow]✔ EC2 Instance Paused ($0.00/hr).[/bold yellow]")
+
+@infra.command("start")
+def infra_start():
+    """Resume EC2 instance and redeploy application containers."""
+    from .cloud_deployer import CloudDeployer
+    deployer = CloudDeployer(log_fn=lambda m: console.print(f"[blue]{m}[/blue]"))
+    deployer.infra_start()
+    console.print("[bold green]✔ EC2 Instance Resumed & Operational![/bold green]")
+
+@infra.command("destroy")
+def infra_destroy():
+    """Backup database to S3 and tear down all AWS resources."""
+    if Confirm.ask("[bold red]Are you sure you want to destroy all AWS resources?[/bold red]"):
+        from .cloud_deployer import CloudDeployer
+        deployer = CloudDeployer(log_fn=lambda m: console.print(f"[red]{m}[/red]"))
+        deployer.infra_destroy()
+        console.print("[bold green]✔ All cloud resources destroyed and DB archived to S3.[/bold green]")
+
+@infra.command("status")
+def infra_status():
+    """Check AWS EC2 instance public IP and state."""
+    from .cloud_deployer import CloudDeployer
+    deployer = CloudDeployer()
+    ip = deployer.get_public_ip()
+    instance_id = deployer.get_instance_id()
+    if ip:
+        console.print(f"[bold green]Cloud Host:[/bold green] {instance_id} | [bold]IP:[/bold] {ip} | [bold]Domain:[/bold] https://envscale.duckdns.org")
+    else:
+        console.print("[dim]No active AWS infrastructure found in Terraform state.[/dim]")
+
+@cli.command("deploy")
+@click.option("--prod", "mode", flag_value="prod", default=True, help="Production deploy: committed release images from GHCR (no local rsync)")
+@click.option("--dev", "mode", flag_value="dev", help="Development deploy: sync local snapshot to EC2")
+@click.option("--sha", default=None, help="Specific commit SHA or image tag to deploy (default: latest committed SHA)")
+def deploy_cmd(mode, sha):
+    """Deploy containers to active cloud EC2 host (--prod committed release, --dev local snapshot)."""
+    from .cloud_deployer import CloudDeployer
+    deployer = CloudDeployer(log_fn=lambda m: console.print(f"[cyan]{m}[/cyan]"))
+    deployer.deploy(release_sha=sha, mode=mode)
+    console.print("[bold green]✔ Deployment Complete & Verified![/bold green]")
+
+@cli.command("rollback")
+def rollback_cmd():
+    """Roll back active EC2 host to the previous stable release images."""
+    from .cloud_deployer import CloudDeployer
+    deployer = CloudDeployer(log_fn=lambda m: console.print(f"[cyan]{m}[/cyan]"))
+    deployer.rollback()
+    console.print("[bold green]✔ Rollback Complete & Verified![/bold green]")
+
+

@@ -47,15 +47,15 @@ class K8sView(Gtk.Box):
         workload_row.set_subtitle("Includes: Canary, Backend, Frontend, Ingress, CronJobs, HPA, and NetworkPolicies")
 
         ctrl_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        self.btn_deploy = Gtk.Button(label="☸️ Deploy Workloads")
+        self.btn_deploy = Gtk.Button(label="Deploy Workloads")
         self.btn_deploy.add_css_class("suggested-action")
         self.btn_deploy.connect("clicked", self._on_deploy_clicked)
 
-        self.btn_teardown = Gtk.Button(label="🗑️ Teardown Workloads")
+        self.btn_teardown = Gtk.Button(label="Teardown Workloads")
         self.btn_teardown.add_css_class("destructive-action")
         self.btn_teardown.connect("clicked", self._on_teardown_clicked)
 
-        self.btn_open_ingress = Gtk.Button(label="🌐 Open Ingress")
+        self.btn_open_ingress = Gtk.Button(label="Open Ingress")
         self.btn_open_ingress.connect("clicked", self._on_open_ingress_clicked)
 
         ctrl_box.append(self.btn_deploy)

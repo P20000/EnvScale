@@ -41,7 +41,7 @@ class ChaosView(Gtk.Box):
             pref_group.add(row)
 
         info_label = Gtk.Label(
-            label="💡 Tip: Keep EnvScale UI open at http://localhost:5173 while injecting faults\n"
+            label="Notice: Keep EnvScale UI open at http://localhost:5173 while injecting faults\n"
                   "to observe real-time incident alerts, topology color shifts, and pod logs."
         )
         info_label.set_xalign(0)
