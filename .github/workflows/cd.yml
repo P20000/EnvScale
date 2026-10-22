@@ -16,10 +16,30 @@ permissions:
 
 jobs:
   build-and-push:
-    name: Build & Push Images (GHCR)
+    name: Build & Push (${{ matrix.service.name }})
     runs-on: ubuntu-latest
-    outputs:
-      owner_lc: ${{ steps.normalize_owner.outputs.owner_lc }}
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - name: api-server
+            image: envscale-api-server
+            context: .
+            file: ./apps/api-server/Dockerfile
+            build_args: ""
+          - name: k8s-streamer
+            image: envscale-k8s-streamer
+            context: ./apps/k8s-streamer
+            file: ./apps/k8s-streamer/Dockerfile
+            build_args: ""
+          - name: web
+            image: envscale-web
+            context: .
+            file: ./apps/web/Dockerfile
+            build_args: |
+              VITE_API_BASE_URL=
+              VITE_STREAMER_BASE_URL=
+              VITE_WS_URL=/ws/k8s
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -35,51 +55,21 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Normalize Repository Owner Name
-        id: normalize_owner
         run: |
-          OWNER_LOWER="${OWNER,,}"
-          echo "OWNER_LC=${OWNER_LOWER}" >> ${GITHUB_ENV}
-          echo "owner_lc=${OWNER_LOWER}" >> ${GITHUB_OUTPUT}
+          echo "OWNER_LC=${OWNER,,}" >> ${GITHUB_ENV}
         env:
           OWNER: '${{ github.repository_owner }}'
 
-      - name: Build & Push API Server
+      - name: Build & Push Container Image
         uses: docker/build-push-action@v5
         with:
-          context: .
-          file: ./apps/api-server/Dockerfile
+          context: ${{ matrix.service.context }}
+          file: ${{ matrix.service.file }}
+          build-args: ${{ matrix.service.build_args }}
           push: true
           tags: |
-            ghcr.io/${{ env.OWNER_LC }}/envscale-api-server:latest
-            ghcr.io/${{ env.OWNER_LC }}/envscale-api-server:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build & Push K8s Streamer
-        uses: docker/build-push-action@v5
-        with:
-          context: ./apps/k8s-streamer
-          file: ./apps/k8s-streamer/Dockerfile
-          push: true
-          tags: |
-            ghcr.io/${{ env.OWNER_LC }}/envscale-k8s-streamer:latest
-            ghcr.io/${{ env.OWNER_LC }}/envscale-k8s-streamer:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build & Push Web UI
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./apps/web/Dockerfile
-          build-args: |
-            VITE_API_BASE_URL=
-            VITE_STREAMER_BASE_URL=
-            VITE_WS_URL=/ws/k8s
-          push: true
-          tags: |
-            ghcr.io/${{ env.OWNER_LC }}/envscale-web:latest
-            ghcr.io/${{ env.OWNER_LC }}/envscale-web:${{ github.sha }}
+            ghcr.io/${{ env.OWNER_LC }}/${{ matrix.service.image }}:latest
+            ghcr.io/${{ env.OWNER_LC }}/${{ matrix.service.image }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -89,7 +79,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     env:
-      OWNER_LC: ${{ needs.build-and-push.outputs.owner_lc || 'p20000' }}
+      OWNER_LC: ${{ github.repository_owner }}
     steps:
       - name: Check Deployment Credentials
         id: check_creds
@@ -103,6 +93,12 @@ jobs:
             echo "has_creds=false" >> "$GITHUB_OUTPUT"
             echo "::notice ::SSH_PRIVATE_KEY or EC2_HOST secret not configured in GitHub Repository Settings. Deployment step skipped."
           fi
+
+      - name: Normalize Repository Owner Name
+        run: |
+          echo "OWNER_LC=${OWNER,,}" >> ${GITHUB_ENV}
+        env:
+          OWNER: '${{ github.repository_owner }}'
 
       - name: Deploy via SSH
         if: steps.check_creds.outputs.has_creds == 'true'
