@@ -1,7 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { CircleAlert, RotateCcw } from "lucide-react";
-
-import { Button } from "./ui/button";
+import { Error500ServerCrash } from "./errors/Error500ServerCrash";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -9,49 +7,45 @@ interface ErrorBoundaryProps {
 
 interface ErrorBoundaryState {
   hasError: boolean;
+  error: Error | null;
 }
 
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  state: ErrorBoundaryState = { hasError: false };
+  state: ErrorBoundaryState = { hasError: false, error: null };
 
-  static getDerivedStateFromError(): ErrorBoundaryState {
-    return { hasError: true };
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("[EnvScale] Unhandled application error", error, errorInfo);
+    console.error("[EnvScale] Unhandled React application error:", error, errorInfo);
   }
 
   handleRetry = () => {
-    this.setState({ hasError: false });
+    this.setState({ hasError: false, error: null });
+  };
+
+  handleSafeReload = () => {
+    try {
+      localStorage.removeItem("envscale-topology-storage");
+      sessionStorage.clear();
+    } catch {
+      // Ignore cache clearing errors
+    }
+    window.location.reload();
   };
 
   render() {
     if (!this.state.hasError) return this.props.children;
 
     return (
-      <main className="flex min-h-screen w-screen items-center justify-center bg-[#111318] px-6 text-[#E6E1E5]">
-        <section
-          role="alert"
-          aria-labelledby="application-error-title"
-          className="flex w-full max-w-md flex-col items-center gap-5 rounded-2xl border border-[#30343B] bg-[#191B20] p-8 text-center shadow-2xl"
-        >
-          <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-400">
-                <CircleAlert className="h-7 w-7" />
-          </div>
-          <div className="space-y-2">
-            <h1 id="application-error-title" className="text-lg font-semibold text-neutral-100">
-              Something went wrong
-            </h1>
-            <p className="text-sm leading-6 text-neutral-400">
-              EnvScale could not render this view. Try again to return to the application.
-            </p>
-          </div>
-          <Button type="button" onClick={this.handleRetry}>
-                <RotateCcw aria-hidden="true" />
-            Try again
-          </Button>
-        </section>
+      <main className="flex min-h-screen w-screen items-center justify-center bg-[#111318]">
+        <Error500ServerCrash
+          errorId={`UI-CRASH-${Date.now().toString(36).toUpperCase()}`}
+          errorMessage={this.state.error?.message || "An unexpected rendering error occurred in the application canvas."}
+          retryAction={this.handleRetry}
+          onSafeReload={this.handleSafeReload}
+        />
       </main>
     );
   }
