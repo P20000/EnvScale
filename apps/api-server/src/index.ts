@@ -16,6 +16,7 @@ import { workspaceRouter } from "./routes/workspace.routes.js";
 import { startHealthSnapshotWorker } from "./workers/snapshot.worker.js";
 import { startClusterReconcileWorker, stopClusterReconcileWorker } from "./workers/cluster-reconcile.worker.js";
 import { hydrateClustersOnStartup } from "./services/cluster-sync.service.js";
+import { runMigrations } from "./db/migrate.js";
 
 const app: Express = express();
 const port = env.PORT;
@@ -84,27 +85,37 @@ app.use((error: unknown, _request: express.Request, response: express.Response, 
 });
 
 if (process.env.NODE_ENV !== "test") {
-  const server = app.listen(port, () => {
-    console.log(`API server listening on port ${port}`);
-    console.log(`  Environment: ${env.NODE_ENV}`);
-    console.log(`  CORS origins: ${env.CORS_ORIGIN}`);
-    startHealthSnapshotWorker();
-    startClusterReconcileWorker();
-    void hydrateClustersOnStartup();
-  });
+  // Apply versioned schema migrations on startup before binding port
+  void (async () => {
+    try {
+      await runMigrations();
+    } catch (err) {
+      console.error("[FATAL] Automatic database migration failed on server startup:", err);
+      process.exit(1);
+    }
 
-  const gracefulShutdown = (signal: string) => {
-    console.log(`\n[API Server] ${signal} signal received: initiating clean teardown...`);
-    stopClusterReconcileWorker();
-    server.close(() => {
-      console.log("[API Server] HTTP server closed cleanly.");
-      process.exit(0);
+    const server = app.listen(port, () => {
+      console.log(`API server listening on port ${port}`);
+      console.log(`  Environment: ${env.NODE_ENV}`);
+      console.log(`  CORS origins: ${env.CORS_ORIGIN}`);
+      startHealthSnapshotWorker();
+      startClusterReconcileWorker();
+      void hydrateClustersOnStartup();
     });
-    setTimeout(() => process.exit(0), 3000).unref();
-  };
 
-  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
-  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+    const gracefulShutdown = (signal: string) => {
+      console.log(`\n[API Server] ${signal} signal received: initiating clean teardown...`);
+      stopClusterReconcileWorker();
+      server.close(() => {
+        console.log("[API Server] HTTP server closed cleanly.");
+        process.exit(0);
+      });
+      setTimeout(() => process.exit(0), 3000).unref();
+    };
+
+    process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+    process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  })();
 }
 
 export default app;

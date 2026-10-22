@@ -68,7 +68,17 @@ class MainWindow(Adw.ApplicationWindow):
         switcher_box.append(switcher_bar)
 
         main_box.append(switcher_box)
-        main_box.append(self.view_stack)
+
+        # Scroll container: keeps the window's minimum size independent of view
+        # content so overflow scrolls instead of growing the window (fixes maximize).
+        content_scroller = Gtk.ScrolledWindow()
+        content_scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        content_scroller.set_propagate_natural_height(False)
+        content_scroller.set_propagate_natural_width(False)
+        content_scroller.set_vexpand(True)
+        content_scroller.set_hexpand(True)
+        content_scroller.set_child(self.view_stack)
+        main_box.append(content_scroller)
 
         self.connect("close-request", self._on_close_request)
 

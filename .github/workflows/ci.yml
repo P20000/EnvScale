@@ -57,6 +57,9 @@ jobs:
       - name: Run Monorepo Lint (ESLint Cleanliness)
         run: pnpm lint
 
+      - name: Verify Database Schema & Migrations Consistency (Drizzle Kit)
+        run: pnpm --filter envscale-api-server db:check
+
   # ----------------------------------------------------------------------------
   # Job 2: Kubernetes Streaming Gateway (Go 1.24, Informers & Chaos Engine)
   # ----------------------------------------------------------------------------
