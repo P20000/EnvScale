@@ -20,6 +20,8 @@ import { apiMe, apiGetWorkspaceClusters } from "./config/api";
 import { useAuthStore } from "./store/useAuthStore";
 import { LandingPage } from "./components/landing/LandingPage";
 import { AuthBufferPage } from "./components/auth/AuthBufferPage";
+import { GlobalErrorPresenter } from "./components/errors/GlobalErrorPresenter";
+import { useErrorStore } from "./store/useErrorStore";
 
 import { SYSTEM_NAMESPACES } from "./store/helpers/topologyHelpers";
 
@@ -77,6 +79,22 @@ function AppContent() {
 
   useEffect(() => {
     useAuthStore.getState().checkAuth();
+
+    // 300s Series: Intercept dangling OAuth error params or loops
+    if (typeof window !== "undefined") {
+      const searchParams = new URLSearchParams(window.location.search);
+      const oauthError = searchParams.get("error") || searchParams.get("error_description");
+      if (oauthError) {
+        useErrorStore.getState().setError({
+          status: 302,
+          title: "OAuth Callback Interrupted",
+          message: "Third-party authorization failed or was canceled.",
+          details: oauthError,
+          variant: "fullscreen",
+        });
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -170,6 +188,10 @@ function AppContent() {
             onBackToLanding={() => setLoggedOutView("landing")}
             onLoginSuccess={() => setLoggedOutView("landing")}
           />
+          <GlobalErrorPresenter
+            onOpenConnectModal={() => setShowConnectWizard(true)}
+            onReturnToTopology={() => setActiveTab("topology")}
+          />
           <ToastContainer />
         </div>
       );
@@ -178,6 +200,10 @@ function AppContent() {
     return (
       <div className="relative min-h-screen w-screen overflow-x-clip bg-slate-50 font-sans text-slate-800">
         <LandingPage onGetStarted={() => setLoggedOutView("auth-buffer")} />
+        <GlobalErrorPresenter
+          onOpenConnectModal={() => setShowConnectWizard(true)}
+          onReturnToTopology={() => setActiveTab("topology")}
+        />
         <ToastContainer />
       </div>
     );
@@ -271,6 +297,12 @@ function AppContent() {
           onClusterConnected={handleClusterConnected}
         />
       )}
+
+      {/* Global Error Fallback & Presentation System */}
+      <GlobalErrorPresenter
+        onOpenConnectModal={() => setShowConnectWizard(true)}
+        onReturnToTopology={() => setActiveTab("topology")}
+      />
 
       {/* Toast Notification System - displayed strictly on the canvas (topology) tab only */}
       {activeTab === "topology" && <ToastContainer />}
