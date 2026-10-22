@@ -21,6 +21,9 @@ import { runMigrations } from "./db/migrate.js";
 const app: Express = express();
 const port = env.PORT;
 
+// Trust reverse proxy (Caddy / Nginx) so client IP and SSL termination headers are trusted
+app.set("trust proxy", 1);
+
 // ── Security Headers ────────────────────────────────────────────────────────
 // Mount Helmet middleware to enforce security headers (X-Content-Type-Options,
 // X-Frame-Options, X-XSS-Protection, etc.) configured for cross-origin CORS.
