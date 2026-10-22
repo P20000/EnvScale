@@ -61,11 +61,31 @@ if [ ! -d /opt/envscale/.git ]; then
 fi
 chown -R ubuntu:ubuntu /opt/envscale
 
+CURRENT_IP=$(curl -s --max-time 5 http://checkip.amazonaws.com || curl -s --max-time 5 http://169.254.169.254/latest/meta-data/public-ipv4 || true)
 DOMAIN="${DOMAIN_NAME}"
 
-if [ -n "$DOMAIN" ]; then
 cat <<EOF > /etc/caddy/Caddyfile
-$DOMAIN {
+EOF
+
+if [ -n "$CURRENT_IP" ]; then
+cat <<EOF >> /etc/caddy/Caddyfile
+http://$CURRENT_IP {
+    reverse_proxy /healthz localhost:8080
+    reverse_proxy /ws* localhost:8080
+    reverse_proxy /api/v1/stream/* localhost:8080
+    reverse_proxy /api/v1/clusters/snapshot* localhost:8080
+    reverse_proxy /api/v1/clusters/register* localhost:8080
+    reverse_proxy /api/v1/clusters/unregister-all* localhost:8080
+    reverse_proxy /api/v1/logs/stream* localhost:8080
+    reverse_proxy /api/v1/chaos/* localhost:8080
+    reverse_proxy /api/v1/resource/* localhost:8080
+    reverse_proxy /api/v1/evaluator/* localhost:8080
+    reverse_proxy /api/v1/rollout/* localhost:8080
+    reverse_proxy /api* localhost:3001
+    reverse_proxy localhost:3000
+}
+
+$CURRENT_IP.sslip.io {
     reverse_proxy /healthz localhost:8080
     reverse_proxy /ws* localhost:8080
     reverse_proxy /api/v1/stream/* localhost:8080
@@ -81,9 +101,11 @@ $DOMAIN {
     reverse_proxy localhost:3000
 }
 EOF
-else
-cat <<EOF > /etc/caddy/Caddyfile
-http:// {
+fi
+
+if [ -n "$DOMAIN" ]; then
+cat <<EOF >> /etc/caddy/Caddyfile
+$DOMAIN {
     reverse_proxy /healthz localhost:8080
     reverse_proxy /ws* localhost:8080
     reverse_proxy /api/v1/stream/* localhost:8080

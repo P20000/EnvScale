@@ -62,7 +62,7 @@ app.use(cookieParser());
 app.use("/api/v1/", standardLimiter);
 app.use("/api/v1/auth/login", authLimiter);
 
-app.get("/health", (_request, response) => {
+app.get(["/health", "/api/health", "/api/v1/health"], (_request, response) => {
   response.json({ status: "ok" });
 });
 app.use("/api/v1/auth", authRouter);

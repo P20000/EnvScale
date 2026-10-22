@@ -1,4 +1,4 @@
-# Libadwaita GTK4 GUI Package for EnvScale LocalRun
-from .app_window import LocalRunAdwApp, launch_adw_gui
+# Libadwaita GTK4 GUI Package for EnvScale Test Center
+from .app_window import TestCenterAdwApp, launch_adw_gui
 
-__all__ = ["LocalRunAdwApp", "launch_adw_gui"]
+__all__ = ["TestCenterAdwApp", "launch_adw_gui"]

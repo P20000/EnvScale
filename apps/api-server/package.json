@@ -10,7 +10,7 @@
     "type-check": "tsc --noEmit",
     "test:load": "k6 run tests/load/api-load-test.js",
     "db:generate": "drizzle-kit generate:pg",
-    "db:migrate": "drizzle-kit push:pg",
+    "db:migrate": "tsx src/db/migrate.ts",
     "db:push": "drizzle-kit push:pg",
     "db:check": "drizzle-kit check:pg",
     "db:seed": "tsx src/db/seed.ts",

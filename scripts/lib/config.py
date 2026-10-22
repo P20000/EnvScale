@@ -8,6 +8,10 @@ K8S_STREAMER_DIR = os.path.join(PROJECT_ROOT, "apps/k8s-streamer")
 WEB_DIR = os.path.join(PROJECT_ROOT, "apps/web")
 TESTING_K8S_DIR = os.path.join(PROJECT_ROOT, "testing/k8s")
 DOCKER_COMPOSE_FILE = os.path.join(PROJECT_ROOT, "docker-compose.dev.yml")
+TERRAFORM_DIR = os.path.join(PROJECT_ROOT, "deployment/terraform")
+KEY_FILE = os.path.join(TERRAFORM_DIR, "envscale_key.pem")
+PROD_COMPOSE_FILE = os.path.join(PROJECT_ROOT, "deployment/docker-compose.prod.yml")
+CLOUD_DOMAIN = os.environ.get("DUCKDNS_DOMAIN", "envscale") + ".duckdns.org"
 
 SHARED_JWT_SECRET = "342d2b89c945a82109fe28d7cfe42e9b53ff70d0ceff44316afe2250604d5a92"
 SHARED_ENCRYPTION_KEY = "dGhpcy1pcy1hLTMyLWJ5dGUtYmFzZTY0LWtleS0xMjM="

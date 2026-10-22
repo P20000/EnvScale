@@ -116,10 +116,17 @@ jobs:
           script: |
             set -e
             cd /opt/envscale
-            git fetch origin develop
-            git reset --hard origin/develop
+            if [ -d .git ]; then
+              git fetch origin "${{ github.sha }}" || git fetch origin develop
+              git checkout -f "${{ github.sha }}" || git checkout -f origin/develop
+            fi
             chmod +x ./envscale.sh
             
+            RELEASE_SHA="${{ github.sha }}" \
+            API_SERVER_IMAGE="ghcr.io/${{ env.OWNER_LC }}/envscale-api-server:${{ github.sha }}" \
+            STREAMER_IMAGE="ghcr.io/${{ env.OWNER_LC }}/envscale-k8s-streamer:${{ github.sha }}" \
+            WEB_IMAGE="ghcr.io/${{ env.OWNER_LC }}/envscale-web:${{ github.sha }}" \
+            OWNER_LC="${{ env.OWNER_LC }}" \
             DUCKDNS_DOMAIN="${DUCKDNS_DOMAIN}" \
             DUCKDNS_TOKEN="${DUCKDNS_TOKEN}" \
             BETTER_AUTH_SECRET="${BETTER_AUTH_SECRET}" \

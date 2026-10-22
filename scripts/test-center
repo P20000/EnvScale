@@ -8,7 +8,10 @@ os.chdir(PROJECT_ROOT)
 sys.path.insert(0, SCRIPT_DIR)
 
 def main():
-    cli_commands = {"status", "start", "stop", "restart", "logs", "test", "k8s", "chaos", "config", "--help", "-h", "--cli"}
+    cli_commands = {
+        "status", "start", "stop", "restart", "logs", "test",
+        "k8s", "chaos", "config", "infra", "deploy", "--help", "-h", "--cli"
+    }
     has_cli_arg = len(sys.argv) > 1 and any(arg in cli_commands for arg in sys.argv[1:])
 
     # Check for graphical display availability

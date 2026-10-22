@@ -9,7 +9,7 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean",
-    "localrun": "./scripts/localrun"
+    "test-center": "./scripts/test-center"
   },
   "devDependencies": {
     "prettier": "^3.3.3",
