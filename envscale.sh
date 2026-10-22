@@ -190,8 +190,25 @@ EOF"
         docker compose --env-file "$ROOT_DIR/.env" -f "$COMPOSE_FILE" up -d --remove-orphans
 
         # 10. Apply Schema Migrations
-        echo "[INFO] Applying database migrations..."
-        cat apps/api-server/src/db/migrations/*.sql 2>/dev/null | docker compose --env-file "$ROOT_DIR/.env" -f "$COMPOSE_FILE" exec -T postgres psql -U envscale -d envscale 2>/dev/null || true
+        echo "[INFO] Applying database migrations via Drizzle engine..."
+        if docker compose --env-file "$ROOT_DIR/.env" -f "$COMPOSE_FILE" exec -T api-server node -e 'require("./dist/db/migrate.js").runMigrations().then(() => process.exit(0)).catch((e) => { console.error(e); process.exit(1); })' 2>/dev/null; then
+            echo "[SUCCESS] Database migrations verified and applied."
+        else
+            echo "[INFO] Fallback: applying versioned migrations sequentially via psql..."
+            MIGRATION_ERROR=0
+            for sql_file in $(ls -1 apps/api-server/src/db/migrations/*.sql 2>/dev/null | sort); do
+                echo "[INFO] Executing migration: $(basename "$sql_file")"
+                if ! docker compose --env-file "$ROOT_DIR/.env" -f "$COMPOSE_FILE" exec -T postgres psql -U envscale -d envscale -v ON_ERROR_STOP=1 < "$sql_file"; then
+                    echo "[ERROR] Failed executing migration file: $sql_file" >&2
+                    MIGRATION_ERROR=1
+                    break
+                fi
+            done
+            if [ "$MIGRATION_ERROR" -ne 0 ]; then
+                echo "[FATAL] Migration failure encountered during deployment. Halting deployment." >&2
+                exit 1
+            fi
+        fi
 
         # 11. Restart application services to bind database cleanly
         docker compose --env-file "$ROOT_DIR/.env" -f "$COMPOSE_FILE" restart api-server k8s-streamer

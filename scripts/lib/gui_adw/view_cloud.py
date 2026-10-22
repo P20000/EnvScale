@@ -1,4 +1,5 @@
 import threading
+import traceback
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
@@ -50,9 +51,17 @@ class StepRow(Adw.ExpanderRow):
     def append_log(self, line: str):
         end = self.buffer.get_end_iter()
         self.buffer.insert(end, line + "\n")
-        adj = self.text_view.get_vadjustment()
-        if adj:
-            adj.set_value(adj.get_upper() - adj.get_page_size())
+        # Adjustment bounds update only after relayout, so scroll via a
+        # right-gravity end mark on the next idle cycle.
+        if not hasattr(self, "_end_mark"):
+            self._end_mark = self.buffer.create_mark("end", self.buffer.get_end_iter(), False)
+        else:
+            self.buffer.move_mark(self._end_mark, self.buffer.get_end_iter())
+        GLib.idle_add(self._scroll_to_end)
+
+    def _scroll_to_end(self):
+        self.text_view.scroll_to_mark(self._end_mark, 0.0, True, 0.0, 1.0)
+        return False
 
     def mark_success(self, detail: str = ""):
         self.spinner.stop()
@@ -193,41 +202,32 @@ class CloudView(Gtk.Box):
             self.step_rows.clear()
         GLib.idle_add(_do)
 
-    def _on_infra_up_clicked(self, _):
+    def _run_infra_op(self, op_id: str, title: str, method_name: str):
+        """Run a CloudDeployer lifecycle method off the UI thread, surfacing failures."""
         self._clear_steps()
         def _task():
             try:
                 deployer = CloudDeployer(step_fn=self._on_step_event)
-                deployer.infra_up()
+                getattr(deployer, method_name)()
             except Exception as e:
-                pass
+                err_id = f"{op_id}_error"
+                msg = f"{type(e).__name__}: {e}"
+                self._on_step_event(err_id, f"{title} failed", "start", msg)
+                self._on_step_event(err_id, f"{title} failed", "log", traceback.format_exc().rstrip())
+                self._on_step_event(err_id, f"{title} failed", "error", msg)
+                self.pm.emit_log("system", f"[cloud] {title} failed: {msg}")
             finally:
                 self._refresh_status()
         threading.Thread(target=_task, daemon=True).start()
+
+    def _on_infra_up_clicked(self, _):
+        self._run_infra_op("infra_up", "Provision Host", "infra_up")
 
     def _on_infra_stop_clicked(self, _):
-        self._clear_steps()
-        def _task():
-            try:
-                deployer = CloudDeployer(step_fn=self._on_step_event)
-                deployer.infra_stop()
-            except Exception as e:
-                pass
-            finally:
-                self._refresh_status()
-        threading.Thread(target=_task, daemon=True).start()
+        self._run_infra_op("infra_stop", "Pause Host", "infra_stop")
 
     def _on_infra_start_clicked(self, _):
-        self._clear_steps()
-        def _task():
-            try:
-                deployer = CloudDeployer(step_fn=self._on_step_event)
-                deployer.infra_start()
-            except Exception as e:
-                pass
-            finally:
-                self._refresh_status()
-        threading.Thread(target=_task, daemon=True).start()
+        self._run_infra_op("infra_start", "Resume Host", "infra_start")
 
     def _on_deploy_clicked(self, _):
         self._clear_steps()
@@ -245,13 +245,4 @@ class CloudView(Gtk.Box):
         threading.Thread(target=_task, daemon=True).start()
 
     def _on_destroy_clicked(self, _):
-        self._clear_steps()
-        def _task():
-            try:
-                deployer = CloudDeployer(step_fn=self._on_step_event)
-                deployer.infra_destroy()
-            except Exception as e:
-                pass
-            finally:
-                self._refresh_status()
-        threading.Thread(target=_task, daemon=True).start()
+        self._run_infra_op("infra_destroy", "Destroy Infrastructure", "infra_destroy")

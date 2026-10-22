@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import json
+import shlex
 import shutil
 import subprocess
 import urllib.request
@@ -37,14 +38,14 @@ class CloudDeployer:
         elif status == "error":
             self._log(f"Failed step: {title} - {detail}")
 
-    def _run_cmd(self, cmd: list, cwd: Optional[str] = None, check: bool = True, step_id: Optional[str] = None, step_title: Optional[str] = None) -> subprocess.CompletedProcess:
-        cmd_str = " ".join(cmd)
+    def _run_cmd(self, cmd: list, cwd: Optional[str] = None, check: bool = True, step_id: Optional[str] = None, step_title: Optional[str] = None, input_data: Optional[str] = None, display_cmd: Optional[str] = None) -> subprocess.CompletedProcess:
+        cmd_str = display_cmd if display_cmd is not None else " ".join(cmd)
         if step_id and step_title:
             self._emit_step(step_id, step_title, "log", f"$ {cmd_str}")
         else:
             self._log(f"Executing: {cmd_str}")
 
-        res = subprocess.run(cmd, cwd=cwd or PROJECT_ROOT, capture_output=True, text=True)
+        res = subprocess.run(cmd, cwd=cwd or PROJECT_ROOT, input=input_data, capture_output=True, text=True)
         if res.stdout:
             for line in res.stdout.strip().split("\n"):
                 if line:
@@ -378,8 +379,12 @@ class CloudDeployer:
 
         env = self.load_deployment_env()
 
-        # Strict Secret Validation: Refuse to proceed with empty secrets
-        missing = validate_deployment_secrets(env, require_duckdns=True)
+        # Strict Secret Validation: Refuse to proceed with empty secrets.
+        # DATABASE_URL / REDIS_URL are production-only: they live in the EC2 host's
+        # /opt/envscale/.env (provisioned by GitHub Actions) and are validated remotely
+        # by envscale.sh. Local dev values must never be forwarded.
+        missing = [k for k in validate_deployment_secrets(env, require_duckdns=True)
+                   if k not in ("DATABASE_URL", "REDIS_URL")]
         if missing:
             raise RuntimeError(f"Deployment halted: Required secret(s) missing or empty in .env: {', '.join(missing)}.")
 
@@ -419,20 +424,52 @@ class CloudDeployer:
                 self._run_cmd(["scp", "-o", "StrictHostKeyChecking=no", "-i", KEY_FILE, "-r", migrations_dir, f"ubuntu@{ip}:/opt/envscale/apps/api-server/src/db/"], step_id=s, step_title=t)
 
         self._emit_step(s, t, "log", f"Dispatching deployment ({sha[:7] if len(sha)>=7 else sha}) on EC2 host via SSH...")
+
+        # Build production .env configuration payload in memory.
+        # Transmitted securely via SSH stdin to prevent secrets leaking in `ps` process table
+        # or command line logs.
+        env_lines = [
+            f"RELEASE_SHA={sha}",
+            f"DUCKDNS_DOMAIN={env.get('DUCKDNS_DOMAIN', 'envscale')}",
+            f"DUCKDNS_TOKEN={env.get('DUCKDNS_TOKEN', '')}",
+            f"BETTER_AUTH_SECRET={env.get('BETTER_AUTH_SECRET', '')}",
+            f"JWT_ACCESS_SECRET={env.get('JWT_ACCESS_SECRET', '')}",
+            f"JWT_REFRESH_SECRET={env.get('JWT_REFRESH_SECRET', '')}",
+            f"KUBECONFIG_ENCRYPTION_KEY={env.get('KUBECONFIG_ENCRYPTION_KEY', '')}",
+            f"GOOGLE_CLIENT_ID={env.get('GOOGLE_CLIENT_ID', '')}",
+            f"GOOGLE_CLIENT_SECRET={env.get('GOOGLE_CLIENT_SECRET', '')}",
+        ]
+        for local_key, remote_key in (("PROD_DATABASE_URL", "DATABASE_URL"), ("PROD_REDIS_URL", "REDIS_URL")):
+            if env.get(local_key):
+                env_lines.append(f"{remote_key}={env[local_key]}")
+
+        provision_stdin = "\n".join(env_lines) + "\n"
+
+        # The remote command reads from stdin, writes atomically to .env with 0600 permissions, then invokes deploy
         remote_cmd = (
-            f"cd /opt/envscale && "
-            f"RELEASE_SHA='{sha}' "
-            f"DUCKDNS_DOMAIN='{env.get('DUCKDNS_DOMAIN', 'envscale')}' "
-            f"DUCKDNS_TOKEN='{env.get('DUCKDNS_TOKEN', '')}' "
-            f"BETTER_AUTH_SECRET='{env.get('BETTER_AUTH_SECRET', '')}' "
-            f"JWT_ACCESS_SECRET='{env.get('JWT_ACCESS_SECRET', '')}' "
-            f"JWT_REFRESH_SECRET='{env.get('JWT_REFRESH_SECRET', '')}' "
-            f"KUBECONFIG_ENCRYPTION_KEY='{env.get('KUBECONFIG_ENCRYPTION_KEY', '')}' "
-            f"GOOGLE_CLIENT_ID='{env.get('GOOGLE_CLIENT_ID', '')}' "
-            f"GOOGLE_CLIENT_SECRET='{env.get('GOOGLE_CLIENT_SECRET', '')}' "
-            f"./envscale.sh deploy"
+            "bash -c 'set -e; umask 077; "
+            "mkdir -p /opt/envscale && "
+            "cat > /opt/envscale/.env.tmp && "
+            "chmod 600 /opt/envscale/.env.tmp && "
+            "if [ -f /opt/envscale/.env ]; then "
+            "while IFS=\"=\" read -r k v || [ -n \"$k\" ]; do "
+            "[[ \"$k\" =~ ^[[:space:]]*# ]] && continue; "
+            "[ -z \"$k\" ] && continue; "
+            "if ! grep -q \"^${k}=\" /opt/envscale/.env.tmp; then echo \"$k=$v\" >> /opt/envscale/.env.tmp; fi; "
+            "done < /opt/envscale/.env; "
+            "fi && "
+            "mv -f /opt/envscale/.env.tmp /opt/envscale/.env && "
+            "cd /opt/envscale && ./envscale.sh deploy'"
         )
-        self._run_cmd(["ssh", "-o", "StrictHostKeyChecking=no", "-i", KEY_FILE, f"ubuntu@{ip}", remote_cmd], step_id=s, step_title=t)
+
+        display_ssh = f"ssh -i {KEY_FILE} ubuntu@{ip} \"[securely provision .env via stdin && ./envscale.sh deploy]\""
+        self._run_cmd(
+            ["ssh", "-o", "StrictHostKeyChecking=no", "-i", KEY_FILE, f"ubuntu@{ip}", remote_cmd],
+            step_id=s,
+            step_title=t,
+            input_data=provision_stdin,
+            display_cmd=display_ssh,
+        )
 
         # Post-deployment live verification suite
         time.sleep(3)

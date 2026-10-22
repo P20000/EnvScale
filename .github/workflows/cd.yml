@@ -82,6 +82,7 @@ jobs:
     name: Deploy to EC2 Integration Host
     needs: build-and-push
     runs-on: ubuntu-latest
+    environment: production
     steps:
       - name: Check Deployment Credentials
         id: check_creds
@@ -100,6 +101,8 @@ jobs:
         if: steps.check_creds.outputs.has_creds == 'true'
         uses: appleboy/ssh-action@v1.2.0
         env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
           DUCKDNS_DOMAIN: ${{ secrets.DUCKDNS_DOMAIN }}
           DUCKDNS_TOKEN: ${{ secrets.DUCKDNS_TOKEN }}
           BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
@@ -112,27 +115,43 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: "ubuntu"
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          envs: DUCKDNS_DOMAIN,DUCKDNS_TOKEN,BETTER_AUTH_SECRET,JWT_ACCESS_SECRET,JWT_REFRESH_SECRET,KUBECONFIG_ENCRYPTION_KEY,GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET
+          envs: DATABASE_URL,REDIS_URL,DUCKDNS_DOMAIN,DUCKDNS_TOKEN,BETTER_AUTH_SECRET,JWT_ACCESS_SECRET,JWT_REFRESH_SECRET,KUBECONFIG_ENCRYPTION_KEY,GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET
           script: |
             set -e
+            set +x
             cd /opt/envscale
             if [ -d .git ]; then
               git fetch origin "${{ github.sha }}" || git fetch origin develop
               git checkout -f "${{ github.sha }}" || git checkout -f origin/develop
             fi
             chmod +x ./envscale.sh
-            
+
+            # Provision production .env from GitHub 'production' Environment secrets.
+            # Written atomically with 0600 perms; values are never echoed to logs.
+            (
+              umask 077
+              {
+                printf 'DATABASE_URL=%s\n' "$DATABASE_URL"
+                printf 'REDIS_URL=%s\n' "$REDIS_URL"
+                printf 'DUCKDNS_DOMAIN=%s\n' "$DUCKDNS_DOMAIN"
+                printf 'DUCKDNS_TOKEN=%s\n' "$DUCKDNS_TOKEN"
+                printf 'BETTER_AUTH_SECRET=%s\n' "$BETTER_AUTH_SECRET"
+                printf 'JWT_ACCESS_SECRET=%s\n' "$JWT_ACCESS_SECRET"
+                printf 'JWT_REFRESH_SECRET=%s\n' "$JWT_REFRESH_SECRET"
+                printf 'KUBECONFIG_ENCRYPTION_KEY=%s\n' "$KUBECONFIG_ENCRYPTION_KEY"
+                printf 'GOOGLE_CLIENT_ID=%s\n' "$GOOGLE_CLIENT_ID"
+                printf 'GOOGLE_CLIENT_SECRET=%s\n' "$GOOGLE_CLIENT_SECRET"
+              } > /opt/envscale/.env.provision
+              chmod 600 /opt/envscale/.env.provision
+              [ -f /opt/envscale/.env ] && cp -f /opt/envscale/.env /opt/envscale/.env.prev && chmod 600 /opt/envscale/.env.prev
+              mv -f /opt/envscale/.env.provision /opt/envscale/.env
+            )
+            echo "[INFO] Production .env provisioned (0600)."
+
+            # envscale.sh loads .env, validates required secrets (fails if missing), then deploys.
             RELEASE_SHA="${{ github.sha }}" \
             API_SERVER_IMAGE="ghcr.io/${{ env.OWNER_LC }}/envscale-api-server:${{ github.sha }}" \
             STREAMER_IMAGE="ghcr.io/${{ env.OWNER_LC }}/envscale-k8s-streamer:${{ github.sha }}" \
             WEB_IMAGE="ghcr.io/${{ env.OWNER_LC }}/envscale-web:${{ github.sha }}" \
             OWNER_LC="${{ env.OWNER_LC }}" \
-            DUCKDNS_DOMAIN="${DUCKDNS_DOMAIN}" \
-            DUCKDNS_TOKEN="${DUCKDNS_TOKEN}" \
-            BETTER_AUTH_SECRET="${BETTER_AUTH_SECRET}" \
-            JWT_ACCESS_SECRET="${JWT_ACCESS_SECRET}" \
-            JWT_REFRESH_SECRET="${JWT_REFRESH_SECRET}" \
-            KUBECONFIG_ENCRYPTION_KEY="${KUBECONFIG_ENCRYPTION_KEY}" \
-            GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID}" \
-            GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET}" \
             ./envscale.sh deploy
