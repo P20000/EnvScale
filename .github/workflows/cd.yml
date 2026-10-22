@@ -18,6 +18,8 @@ jobs:
   build-and-push:
     name: Build & Push Images (GHCR)
     runs-on: ubuntu-latest
+    outputs:
+      owner_lc: ${{ steps.normalize_owner.outputs.owner_lc }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -33,8 +35,11 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Normalize Repository Owner Name
+        id: normalize_owner
         run: |
-          echo "OWNER_LC=${OWNER,,}" >> ${GITHUB_ENV}
+          OWNER_LOWER="${OWNER,,}"
+          echo "OWNER_LC=${OWNER_LOWER}" >> ${GITHUB_ENV}
+          echo "owner_lc=${OWNER_LOWER}" >> ${GITHUB_OUTPUT}
         env:
           OWNER: '${{ github.repository_owner }}'
 
@@ -83,6 +88,8 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     environment: production
+    env:
+      OWNER_LC: ${{ needs.build-and-push.outputs.owner_lc || 'p20000' }}
     steps:
       - name: Check Deployment Credentials
         id: check_creds
