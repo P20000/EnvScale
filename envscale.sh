@@ -84,6 +84,20 @@ if [ -d "/opt/envscale" ] && [ "$SCRIPT_DIR" = "/opt/envscale" ]; then
 
         # 5. Generate secure atomic .env (chmod 600)
         echo "[INFO] Generating secure production environment configuration..."
+        # Resolve repository owner and image tags
+        GHCR_OWNER="${OWNER_LC:-${REPO_OWNER:-p20000}}"
+        [ -z "$GHCR_OWNER" ] && GHCR_OWNER="p20000"
+        IMG_TAG="${RELEASE_SHA:-latest}"
+
+        RESOLVED_API_SERVER_IMAGE="${API_SERVER_IMAGE:-ghcr.io/${GHCR_OWNER}/envscale-api-server:${IMG_TAG}}"
+        RESOLVED_STREAMER_IMAGE="${STREAMER_IMAGE:-ghcr.io/${GHCR_OWNER}/envscale-k8s-streamer:${IMG_TAG}}"
+        RESOLVED_WEB_IMAGE="${WEB_IMAGE:-ghcr.io/${GHCR_OWNER}/envscale-web:${IMG_TAG}}"
+
+        # Sanitize any accidental double slashes (e.g., ghcr.io//...)
+        RESOLVED_API_SERVER_IMAGE=$(echo "$RESOLVED_API_SERVER_IMAGE" | sed 's|ghcr.io//*|ghcr.io/|g')
+        RESOLVED_STREAMER_IMAGE=$(echo "$RESOLVED_STREAMER_IMAGE" | sed 's|ghcr.io//*|ghcr.io/|g')
+        RESOLVED_WEB_IMAGE=$(echo "$RESOLVED_WEB_IMAGE" | sed 's|ghcr.io//*|ghcr.io/|g')
+
         (
             umask 077
             cat <<EOF > "$ROOT_DIR/.env.tmp"
@@ -91,9 +105,9 @@ NODE_ENV=production
 PORT=3000
 DATABASE_URL=${DATABASE_URL}
 REDIS_URL=${REDIS_URL}
-API_SERVER_IMAGE=${API_SERVER_IMAGE:-ghcr.io/p20000/envscale-api-server:${RELEASE_SHA:-latest}}
-STREAMER_IMAGE=${STREAMER_IMAGE:-ghcr.io/p20000/envscale-k8s-streamer:${RELEASE_SHA:-latest}}
-WEB_IMAGE=${WEB_IMAGE:-ghcr.io/p20000/envscale-web:${RELEASE_SHA:-latest}}
+API_SERVER_IMAGE=${RESOLVED_API_SERVER_IMAGE}
+STREAMER_IMAGE=${RESOLVED_STREAMER_IMAGE}
+WEB_IMAGE=${RESOLVED_WEB_IMAGE}
 DUCKDNS_DOMAIN=${DOMAIN}
 DUCKDNS_TOKEN=${DUCKDNS_TOKEN}
 BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
