@@ -20,6 +20,7 @@ import (
 
 	"github.com/EnvScale/k8s-streamer/pkg/types"
 	"github.com/EnvScale/k8s-streamer/pkg/websocket"
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
 )
 
 // InformerManager manages client-go SharedInformerFactory for Pods, Nodes, and Services
@@ -30,9 +31,11 @@ type InformerManager struct {
 	hub           *websocket.Hub
 	clusterID     string
 	stopCh        chan struct{}
-	running       bool
-	mu            sync.RWMutex
-	dedup         *DedupCache
+	running        bool
+	mu             sync.RWMutex
+	dedup          *DedupCache
+	metricsHistory []types.ClusterMetricPoint
+	metricsMu      sync.RWMutex
 }
 
 // NewInformerManager creates an InformerManager from raw Kubeconfig bytes

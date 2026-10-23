@@ -18,6 +18,7 @@ coverage/
 .env.local
 *.pem
 *.kubeconfig
+*kubeconfig*.yaml
 *.log
 
 # Temp / Cache
@@ -46,6 +47,8 @@ bin/
 *.tfstate.backup
 *.tfvars
 !*.tfvars.example
+tfplan
+*.tfplan
 # Backups & Dumps
 deployment/backups/
 *.sql.bak

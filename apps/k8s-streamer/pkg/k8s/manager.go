@@ -344,3 +344,16 @@ func (cm *ClusterManager) GetClientset(clusterID string) (kubernetes.Interface, 
 	}
 	return im.Clientset(), nil
 }
+
+// GetMetricsHistory returns the rolling cluster-level metrics history buffer for the cluster.
+func (cm *ClusterManager) GetMetricsHistory(clusterID string) []types.ClusterMetricPoint {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	im, ok := cm.resolveInformerManagerLocked(clusterID)
+	if !ok || im == nil {
+		return []types.ClusterMetricPoint{}
+	}
+	return im.GetMetricsHistory()
+}
+

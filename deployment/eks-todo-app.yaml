@@ -1,0 +1,167 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: testing-todo
+  labels:
+    app.kubernetes.io/name: testing-todo
+---
+# In-cluster Redis for Todo caching and storage
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: todo-redis
+  namespace: testing-todo
+  labels:
+    app: todo-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: todo-redis
+  template:
+    metadata:
+      labels:
+        app: todo-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+              name: redis
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: testing-todo
+spec:
+  selector:
+    app: todo-redis
+  ports:
+    - port: 6379
+      targetPort: 6379
+      name: redis
+---
+# Todo Backend API
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: todo-backend
+  namespace: testing-todo
+  labels:
+    app: todo-backend
+    tier: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: todo-backend
+  template:
+    metadata:
+      labels:
+        app: todo-backend
+        tier: api
+    spec:
+      containers:
+        - name: backend
+          image: 982534376726.dkr.ecr.ap-south-1.amazonaws.com/envscale-todo-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3001
+              name: http
+          env:
+            - name: REDIS_HOST
+              value: redis-service
+            - name: REDIS_PORT
+              value: "6379"
+            - name: PORT
+              value: "3001"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: todo-backend-service
+  namespace: testing-todo
+spec:
+  selector:
+    app: todo-backend
+  ports:
+    - port: 3001
+      targetPort: 3001
+      name: http
+---
+# Todo Web Frontend
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: todo-frontend
+  namespace: testing-todo
+  labels:
+    app: todo-frontend
+    tier: ui
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: todo-frontend
+  template:
+    metadata:
+      labels:
+        app: todo-frontend
+        tier: ui
+    spec:
+      containers:
+        - name: frontend
+          image: 982534376726.dkr.ecr.ap-south-1.amazonaws.com/envscale-todo-frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+              name: http
+          resources:
+            requests:
+              cpu: 30m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: todo-frontend-service
+  namespace: testing-todo
+spec:
+  type: LoadBalancer
+  selector:
+    app: todo-frontend
+  ports:
+    - port: 80
+      targetPort: 80
+      name: http

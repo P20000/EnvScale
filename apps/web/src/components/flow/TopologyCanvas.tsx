@@ -23,7 +23,6 @@ import type { K8sIngressData } from "../canvas/K8sIngress";
 import { useTopologyStore } from "../../store/useTopologyStore";
 import { useUIStore } from "../../store/useUIStore";
 import type { SelectedTarget } from "../drawer/InspectorDrawer";
-import { useK8sStream, type WsTopologyMessage } from "../../hooks/useK8sStream";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
 import { useClusterLayoutPersistence } from "../../hooks/useClusterLayoutPersistence";
 import { DeleteConfirmationModal } from "../modals/DeleteConfirmationModal";
@@ -64,9 +63,7 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
   const onEdgesChange = useTopologyStore((s) => s.onEdgesChange);
   const onConnect = useTopologyStore((s) => s.onConnect);
   const applyDagreLayout = useTopologyStore((s) => s.applyDagreLayout);
-  const applyDelta = useTopologyStore((s) => s.applyDelta);
   const setSelectedNode = useTopologyStore((s) => s.setSelectedNode);
-  const setWsStatus = useTopologyStore((s) => s.setWsStatus);
   const jobs = useTopologyStore((s) => s.jobs);
   const deleteModal = useUIStore((s) => s.deleteModal);
   const closeDeleteModal = useUIStore((s) => s.closeDeleteModal);
@@ -84,18 +81,6 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
 
   const { fitView } = useReactFlow();
 
-  const handleWsMessage = useCallback(
-    (msg: WsTopologyMessage) => {
-      applyDelta(msg);
-    },
-    [applyDelta]
-  );
-
-  const { status, latencyMs } = useK8sStream(handleWsMessage);
-
-  useEffect(() => {
-    setWsStatus(status, latencyMs);
-  }, [status, latencyMs, setWsStatus]);
 
   useEffect(() => {
     applyDagreLayout();

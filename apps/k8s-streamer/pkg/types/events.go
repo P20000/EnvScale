@@ -55,9 +55,17 @@ const (
 	EventResourceQuotaDeleted = "EVENT_RESOURCE_QUOTA_DELETED"
 	EventLimitRangeMutated    = "EVENT_LIMIT_RANGE_MUTATED"
 	EventLimitRangeDeleted    = "EVENT_LIMIT_RANGE_DELETED"
+	EventClusterMetrics       = "EVENT_CLUSTER_METRICS"
 
 	EventSnapshotSync = "EVENT_SNAPSHOT_SYNC"
 )
+
+// ClusterMetricPoint encapsulates real-time rolling cluster-level CPU and Memory telemetry
+type ClusterMetricPoint struct {
+	Timestamp int64   `json:"timestamp"`
+	CpuPct    float64 `json:"cpuPct"`
+	MemoryPct float64 `json:"memoryPct"`
+}
 
 // K8sIncidentEvent encapsulates authentic Kubernetes v1.Event telemetry
 type K8sIncidentEvent struct {

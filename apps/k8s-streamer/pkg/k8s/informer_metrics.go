@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -48,6 +49,28 @@ func (im *InformerManager) FetchPodMetricsMap() map[string]PodMetricData {
 	return metricsMap
 }
 
+// recordClusterMetric appends a new metric point to the rolling 60s history buffer
+func (im *InformerManager) recordClusterMetric(point types.ClusterMetricPoint) {
+	im.metricsMu.Lock()
+	defer im.metricsMu.Unlock()
+	im.metricsHistory = append(im.metricsHistory, point)
+	if len(im.metricsHistory) > 60 {
+		im.metricsHistory = im.metricsHistory[len(im.metricsHistory)-60:]
+	}
+}
+
+// GetMetricsHistory retrieves a copy of the rolling 60-second metric points
+func (im *InformerManager) GetMetricsHistory() []types.ClusterMetricPoint {
+	im.metricsMu.RLock()
+	defer im.metricsMu.RUnlock()
+	if len(im.metricsHistory) == 0 {
+		return []types.ClusterMetricPoint{}
+	}
+	res := make([]types.ClusterMetricPoint, len(im.metricsHistory))
+	copy(res, im.metricsHistory)
+	return res
+}
+
 // startMetricsPulse periodically refreshes pod telemetry and broadcasts updates
 func (im *InformerManager) startMetricsPulse(stopCh <-chan struct{}) {
 	ticker := time.NewTicker(1 * time.Second)
@@ -65,6 +88,39 @@ func (im *InformerManager) startMetricsPulse(stopCh <-chan struct{}) {
 			if len(metricsMap) == 0 {
 				continue
 			}
+
+			var clusterTotalMcores float64
+			var clusterTotalMemoryMb float64
+			for _, m := range metricsMap {
+				clusterTotalMcores += m.CPUUsagePct
+				clusterTotalMemoryMb += m.MemoryUsageMb
+			}
+
+			var totalCapMcores float64
+			var totalCapMemoryMb float64
+			nodeList := im.factory.Core().V1().Nodes().Informer().GetStore().List()
+			for _, obj := range nodeList {
+				if node, ok := obj.(*corev1.Node); ok {
+					totalCapMcores += float64(node.Status.Allocatable.Cpu().MilliValue())
+					totalCapMemoryMb += float64(node.Status.Allocatable.Memory().Value()) / (1024 * 1024)
+				}
+			}
+			if totalCapMcores == 0 {
+				totalCapMcores = 2000
+			}
+			if totalCapMemoryMb == 0 {
+				totalCapMemoryMb = 4096
+			}
+			cpuPct := math.Min(100, math.Max(0, (clusterTotalMcores/totalCapMcores)*100))
+			memPct := math.Min(100, math.Max(0, (clusterTotalMemoryMb/totalCapMemoryMb)*100))
+
+			metricPoint := types.ClusterMetricPoint{
+				Timestamp: time.Now().UnixMilli(),
+				CpuPct:    cpuPct,
+				MemoryPct: memPct,
+			}
+			im.recordClusterMetric(metricPoint)
+			im.hub.BroadcastEvent(types.EventClusterMetrics, im.clusterID, metricPoint)
 
 			podList := im.factory.Core().V1().Pods().Informer().GetStore().List()
 			for _, obj := range podList {

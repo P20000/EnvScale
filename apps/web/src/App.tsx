@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 
 import { TopNavbar } from "./components/layout/TopNavbar";
@@ -12,6 +12,8 @@ import { LeaderboardView } from "./components/views/LeaderboardView";
 import { SettingsView } from "./components/views/SettingsView";
 import { useTopologyStore } from "./store/useTopologyStore";
 import { useUIStore } from "./store/useUIStore";
+import { useMetricsStore } from "./store/useMetricsStore";
+import { useK8sStream, type WsTopologyMessage } from "./hooks/useK8sStream";
 import ConnectClusterWizard from "./components/onboarding/ConnectClusterWizard";
 import { ToastContainer } from "./components/ui/ToastContainer";
 import { apiMe, apiGetWorkspaceClusters } from "./config/api";
@@ -31,6 +33,8 @@ function AppContent() {
   const addCluster = useTopologyStore((s) => s.addCluster);
   const wsStatus = useTopologyStore((s) => s.wsStatus);
   const wsLatencyMs = useTopologyStore((s) => s.wsLatencyMs);
+  const setWsStatus = useTopologyStore((s) => s.setWsStatus);
+  const applyDelta = useTopologyStore((s) => s.applyDelta);
   const selectedNode = useTopologyStore((s) => s.selectedNode);
   const setSelectedNode = useTopologyStore((s) => s.setSelectedNode);
   const clearSelectedNode = useTopologyStore((s) => s.clearSelectedNode);
@@ -40,6 +44,36 @@ function AppContent() {
   const showSystemNamespaces = useUIStore((s) => s.showSystemNamespaces);
   const wsReconnectTick = useTopologyStore((s) => s.wsReconnectTick);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
+  const handleWsMessage = useCallback(
+    (msg: WsTopologyMessage) => {
+      const eventType = String(msg.event || msg.type || "");
+      if (eventType === "EVENT_CLUSTER_METRICS") {
+        const data = (msg.data !== undefined ? msg.data : msg.payload) as Record<string, unknown> | undefined;
+        if (data && typeof data.cpuPct === "number" && typeof data.memoryPct === "number") {
+          useMetricsStore.getState().appendMetricPoint({
+            timestamp: typeof data.timestamp === "number" ? data.timestamp : Date.now(),
+            cpuPct: data.cpuPct,
+            memoryPct: data.memoryPct,
+          });
+        }
+      }
+      applyDelta(msg);
+    },
+    [applyDelta]
+  );
+
+  const { status, latencyMs } = useK8sStream(handleWsMessage);
+
+  useEffect(() => {
+    setWsStatus(status, latencyMs);
+  }, [status, latencyMs, setWsStatus]);
+
+  useEffect(() => {
+    if (activeCluster) {
+      useMetricsStore.getState().fetchMetricsHistory(activeCluster);
+    }
+  }, [activeCluster]);
 
   useEffect(() => {
     useAuthStore.getState().checkAuth();

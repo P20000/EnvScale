@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Icon } from "../ui/Icon";
 import {
   mdiChartLine,
@@ -10,24 +10,8 @@ import {
 } from "@mdi/js";
 import { useTopologyStore } from "../../store/useTopologyStore";
 import { useUIStore } from "../../store/useUIStore";
+import { useMetricsStore, type TelemetryPoint } from "../../store/useMetricsStore";
 import { SYSTEM_NAMESPACES } from "../../store/helpers/topologyHelpers";
-
-export interface TelemetryPoint {
-  timestamp: number;
-  value: number;
-}
-
-const createInitialHistory = (): TelemetryPoint[] => {
-  const now = Date.now();
-  const points: TelemetryPoint[] = [];
-  for (let i = 59; i >= 0; i--) {
-    points.push({
-      timestamp: now - i * 1000,
-      value: 0,
-    });
-  }
-  return points;
-};
 
 function TelemetryAreaChart({
   data,
@@ -265,10 +249,6 @@ export function MetricsView() {
     });
   }, [pods, selectedNamespaces, showSystemNamespaces]);
 
-  // Dynamic telemetry stream data state (60s rolling window buffer with real timestamps)
-  const [cpuHistory, setCpuHistory] = useState<TelemetryPoint[]>(createInitialHistory);
-  const [memoryHistory, setMemoryHistory] = useState<TelemetryPoint[]>(createInitialHistory);
-
   // Compute live CPU & RAM usage from active pods streamed from metrics-server
   const totalCpuMcores = useMemo(() => {
     return filteredPods.reduce((sum, p) => sum + (p.cpuUsageMcores || 0), 0);
@@ -281,29 +261,16 @@ export function MetricsView() {
   const currentCpuCores = (totalCpuMcores / 1000).toFixed(2);
   const currentMemoryGB = (totalMemoryMiB / 1024).toFixed(1);
 
-  const metricsRef = useRef({ totalCpuMcores: 0, totalMemoryMiB: 0 });
+  // Live rolling telemetry stream subscribed directly to global background metrics store
+  const cpuHistory = useMetricsStore((s) => s.cpuHistory);
+  const memoryHistory = useMetricsStore((s) => s.memoryHistory);
 
+  // Sync latest rolling metrics history from streamer on view mount / cluster change
   useEffect(() => {
-    metricsRef.current = { totalCpuMcores, totalMemoryMiB };
-  }, [totalCpuMcores, totalMemoryMiB]);
-
-  // Live telemetry stream updates bound directly to real metrics-server aggregate fields
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const now = Date.now();
-      const maxMcores = displayCpuCores * 1000;
-      const maxMemoryMiB = displayMemoryGB * 1024;
-      const rawCpu = metricsRef.current.totalCpuMcores > 0 ? metricsRef.current.totalCpuMcores : (filteredPods.length > 0 ? filteredPods.length * 45 : 120);
-      const rawMem = metricsRef.current.totalMemoryMiB > 0 ? metricsRef.current.totalMemoryMiB : (filteredPods.length > 0 ? filteredPods.length * 128 : 512);
-      const cpuPct = Math.min(100, Math.max(0, (rawCpu / maxMcores) * 100));
-      const memPct = Math.min(100, Math.max(0, (rawMem / maxMemoryMiB) * 100));
-
-      setCpuHistory((prev) => [...prev.slice(1), { timestamp: now, value: cpuPct }]);
-      setMemoryHistory((prev) => [...prev.slice(1), { timestamp: now, value: memPct }]);
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [displayCpuCores, displayMemoryGB, cpuDetected, memoryDetected, filteredPods.length]);
+    if (activeCluster) {
+      useMetricsStore.getState().fetchMetricsHistory(activeCluster);
+    }
+  }, [activeCluster]);
 
   const podResourceMetrics = useMemo(() => {
     return filteredPods
@@ -344,15 +311,9 @@ export function MetricsView() {
           </div>
           <button
             onClick={() => {
-              const now = Date.now();
-              const maxMcores = displayCpuCores * 1000;
-              const maxMemoryMiB = displayMemoryGB * 1024;
-              const rawCpu = totalCpuMcores > 0 ? totalCpuMcores : (filteredPods.length > 0 ? filteredPods.length * 45 : 120);
-              const rawMem = totalMemoryMiB > 0 ? totalMemoryMiB : (filteredPods.length > 0 ? filteredPods.length * 128 : 512);
-              const cpuPct = Math.min(100, Math.max(0, (rawCpu / maxMcores) * 100));
-              const memPct = Math.min(100, Math.max(0, (rawMem / maxMemoryMiB) * 100));
-              setCpuHistory((prev) => [...prev.slice(1), { timestamp: now, value: cpuPct }]);
-              setMemoryHistory((prev) => [...prev.slice(1), { timestamp: now, value: memPct }]);
+              if (activeCluster) {
+                useMetricsStore.getState().fetchMetricsHistory(activeCluster);
+              }
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-surface border border-neutral-800 text-xs font-medium text-neutral-300 hover:text-neutral-100 hover:border-neutral-700 transition-colors"
             title="Refresh Telemetry Stream"
