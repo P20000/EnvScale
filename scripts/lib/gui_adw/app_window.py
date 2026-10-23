@@ -8,7 +8,7 @@ from gi.repository import Gtk, Adw, Gio, GLib
 from ..process_manager import ProcessManager
 from ..env_sync import ensure_env_files
 from .view_services import ServicesView
-from .view_logs import LogsView
+# Removed LogsView import; live logs tab obsolete
 from .view_k8s import K8sView
 from .view_chaos import ChaosView
 from .view_cloud import CloudView
@@ -46,13 +46,11 @@ class MainWindow(Adw.ApplicationWindow):
         self.view_stack.set_vexpand(True)
 
         self.services_view = ServicesView(self.pm)
-        self.logs_view = LogsView(self.pm)
         self.k8s_view = K8sView(self.pm)
         self.chaos_view = ChaosView(self.pm)
         self.cloud_view = CloudView(self.pm)
 
         self.view_stack.add_titled_with_icon(self.services_view, "services", "Services", "network-server-symbolic")
-        self.view_stack.add_titled_with_icon(self.logs_view, "logs", "Live Logs", "utilities-terminal-symbolic")
         self.view_stack.add_titled_with_icon(self.k8s_view, "k8s", "Kubernetes", "emblem-default-symbolic")
         self.view_stack.add_titled_with_icon(self.chaos_view, "chaos", "Chaos Lab", "dialog-warning-symbolic")
         self.view_stack.add_titled_with_icon(self.cloud_view, "cloud", "Cloud Ops", "cloud-symbolic")

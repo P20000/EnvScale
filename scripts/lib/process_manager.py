@@ -1,6 +1,7 @@
 import os
 import time
 import signal
+import shlex
 import subprocess
 import threading
 from collections import deque
@@ -92,14 +93,14 @@ class ProcessManager:
             self.emit_log("docker", "Redis is already online and responding on port 6379.")
         else:
             self.emit_log("docker", "Starting Redis container via Docker Compose...")
-            self.exec_command("docker", f"docker compose -f {DOCKER_COMPOSE_FILE} up -d redis")
+            self.exec_command("docker", f"docker compose -f {shlex.quote(DOCKER_COMPOSE_FILE)} up -d redis")
 
         # 2. PostgreSQL
         if check_port(5432):
             self.emit_log("docker", "PostgreSQL is already active on port 5432.")
         else:
             self.emit_log("docker", "Starting PostgreSQL container via Docker Compose...")
-            self.exec_command("docker", f"docker compose -f {DOCKER_COMPOSE_FILE} up -d postgres")
+            self.exec_command("docker", f"docker compose -f {shlex.quote(DOCKER_COMPOSE_FILE)} up -d postgres")
 
         # 3. Wait for PostgreSQL readiness
         attempts = 0
@@ -115,7 +116,7 @@ class ProcessManager:
 
     def stop_docker_infra(self):
         self.emit_log("docker", "Stopping Docker infrastructure containers...")
-        cmd = f"docker compose -f {DOCKER_COMPOSE_FILE} down --remove-orphans"
+        cmd = f"docker compose -f {shlex.quote(DOCKER_COMPOSE_FILE)} down --remove-orphans"
         self.exec_command("docker", cmd)
         self.emit_log("docker", "Docker containers stopped.")
 
@@ -131,7 +132,7 @@ class ProcessManager:
 
         if svc.get("category") == "database":
             d_name = svc.get("docker_service")
-            cmd = f"docker compose -f {DOCKER_COMPOSE_FILE} up -d {d_name}"
+            cmd = f"docker compose -f {shlex.quote(DOCKER_COMPOSE_FILE)} up -d {d_name}"
             code = self.exec_command("docker", cmd)
             if code == 0:
                 self.emit_log("docker", f"Started container for {svc['name']}")
@@ -184,7 +185,7 @@ class ProcessManager:
         if svc and svc.get("category") == "database":
             d_name = svc.get("docker_service")
             self.emit_log("docker", f"Stopping {svc['name']} container...")
-            self.exec_command("docker", f"docker compose -f {DOCKER_COMPOSE_FILE} stop {d_name}")
+            self.exec_command("docker", f"docker compose -f {shlex.quote(DOCKER_COMPOSE_FILE)} stop {d_name}")
             return
 
         proc = self.running_processes.pop(service_id, None)

@@ -49,3 +49,6 @@ bin/
 # Backups & Dumps
 deployment/backups/
 *.sql.bak
+
+# Test Center Logs
+.envscale_test_center_logs/

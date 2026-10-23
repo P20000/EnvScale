@@ -1,4 +1,5 @@
 import os
+import shlex
 import shutil
 import subprocess
 from typing import List, Dict, Optional, Tuple
@@ -108,14 +109,14 @@ class K8sManager:
             frontend_dir = os.path.join(PROJECT_ROOT, "testing/app/frontend")
             if os.path.exists(backend_dir):
                 self.log("Building todo-backend inside Minikube...")
-                self._run_stream(f"minikube image build -t todo-backend:latest {backend_dir}")
+                self._run_stream(f"minikube image build -t todo-backend:latest {shlex.quote(backend_dir)}")
             if os.path.exists(frontend_dir):
                 self.log("Building todo-frontend inside Minikube...")
-                self._run_stream(f"minikube image build -t todo-frontend:latest {frontend_dir}")
+                self._run_stream(f"minikube image build -t todo-frontend:latest {shlex.quote(frontend_dir)}")
 
         p("Applying 15 Kubernetes manifests in testing/k8s/...", 0.75)
         self.log(f"Applying manifests from {TESTING_K8S_DIR}...")
-        cmd = f"kubectl apply -f {TESTING_K8S_DIR}"
+        cmd = f"kubectl apply -f {shlex.quote(TESTING_K8S_DIR)}"
         code = self._run_stream(cmd)
         if code != 0:
             self.log("Admission webhook conflict detected. Removing conflicting ingress-nginx webhook...")
@@ -126,7 +127,7 @@ class K8sManager:
 
         p("Exporting portable kubeconfig...", 0.9)
         export_path = "/tmp/envscale-kubeconfig.yaml"
-        subprocess.run(f"kubectl config view --flatten > {export_path}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        subprocess.run(f"kubectl config view --flatten > {shlex.quote(export_path)}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         self.log(f"Exported portable kubeconfig to {export_path}")
 
         p("Test suite deployment complete!", 1.0)
@@ -137,7 +138,7 @@ class K8sManager:
         p = progress_cb or (lambda text, fraction: None)
         p("Tearing down testing workloads...", 0.5)
         self.log(f"Deleting manifests in {TESTING_K8S_DIR}...")
-        cmd = f"kubectl delete -f {TESTING_K8S_DIR} --ignore-not-found=true"
+        cmd = f"kubectl delete -f {shlex.quote(TESTING_K8S_DIR)} --ignore-not-found=true"
         code = self._run_stream(cmd)
         p("Teardown complete.", 1.0)
         self.log("Test suite resources removed.")
