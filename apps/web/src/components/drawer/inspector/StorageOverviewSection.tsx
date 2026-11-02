@@ -2,6 +2,7 @@ import { MdStorage as StorageIcon, MdLink as LinkIcon, MdInfoOutline as InfoIcon
 import type { K8sPVCData, K8sPVData } from "../../../store/types/topologyTypes";
 import type { K8sPodData } from "../../canvas/K8sPod";
 import { useTopologyStore } from "../../../store/useTopologyStore";
+import { VolumeSnapshotSection } from "./VolumeSnapshotSection";
 
 interface StorageOverviewSectionProps {
   pvc: K8sPVCData;
@@ -123,7 +124,10 @@ export function StorageOverviewSection({ pvc }: StorageOverviewSectionProps) {
         )}
       </div>
 
-      {/* 3. Active Workload Pod Mounts Card */}
+      {/* 3. Point-in-Time Volume Snapshots & Recovery */}
+      <VolumeSnapshotSection pvc={pvc} />
+
+      {/* 4. Active Workload Pod Mounts Card */}
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3.5 space-y-2.5">
         <div className="flex items-center justify-between">
           <h4 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">

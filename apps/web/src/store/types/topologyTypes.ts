@@ -121,6 +121,12 @@ export interface K8sPVCData extends Record<string, unknown> {
   volumeMode?: string;
   labels?: Record<string, string>;
   mountedByPods?: string[];
+  dataSource?: {
+    apiGroup?: string;
+    kind: string;
+    name: string;
+  };
+  snapshots?: K8sVolumeSnapshotData[];
   createdAt?: string;
 }
 
@@ -134,6 +140,33 @@ export interface K8sPVData extends Record<string, unknown> {
   claimRefName?: string;
   claimRefNs?: string;
   volumeSourceType?: string;
+  labels?: Record<string, string>;
+  createdAt?: string;
+}
+
+export interface K8sVolumeSnapshotData extends Record<string, unknown> {
+  name: string;
+  namespace: string;
+  readyToUse?: boolean;
+  restoreSize?: string;
+  pvcName?: string;
+  snapshotContentName?: string;
+  snapshotClassName?: string;
+  creationTime?: string;
+  error?: string;
+  labels?: Record<string, string>;
+  createdAt?: string;
+}
+
+export interface K8sVolumeSnapshotContentData extends Record<string, unknown> {
+  name: string;
+  snapshotHandle?: string;
+  driver?: string;
+  deletionPolicy?: string;
+  snapshotClassName?: string;
+  volumeSnapshotRef?: string;
+  readyToUse?: boolean;
+  restoreSize?: number;
   labels?: Record<string, string>;
   createdAt?: string;
 }
@@ -267,12 +300,36 @@ export interface K8sLimitRangeItemData {
   defaultRequest?: Record<string, string>;
   maxLimitRequestRatio?: Record<string, string>;
 }
-
 export interface K8sLimitRangeData extends Record<string, unknown> {
   name: string;
   namespace: string;
   limits: K8sLimitRangeItemData[];
   createdAt?: string;
 }
+
+export interface VolumeClaimTemplateInfo {
+  name: string;
+  storage?: string;
+  accessModes?: string;
+}
+
+export interface K8sStatefulSetData extends Record<string, unknown> {
+  name: string;
+  namespace: string;
+  replicas: number;
+  readyReplicas: number;
+  currentReplicas?: number;
+  updatedReplicas?: number;
+  serviceName?: string;
+  currentRevision?: string;
+  updateRevision?: string;
+  updateStrategy?: string;
+  partition?: number;
+  volumeClaimTemplates?: VolumeClaimTemplateInfo[];
+  selector?: Record<string, string>;
+  labels?: Record<string, string>;
+  createdAt?: string;
+}
+
 
 

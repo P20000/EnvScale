@@ -5,10 +5,10 @@ import type { K8sNodeData } from "../canvas/K8sNode";
 import type { K8sServiceData } from "../canvas/K8sService";
 import type { K8sIngressData } from "../canvas/K8sIngress";
 import type { K8sDaemonSetData, K8sCronJobData, K8sJobData, K8sPVCData } from "../../store/types/topologyTypes";
+import type { K8sStatefulSetNodeData } from "../canvas/K8sStatefulSet";
 import { useTopologyStore } from "../../store/useTopologyStore";
 import { useAuthStore } from "../../store/useAuthStore";
 import { OverviewTab } from "./inspector/OverviewTab";
-import { LogsTab } from "./inspector/LogsTab";
 import { MetricsTab } from "./inspector/MetricsTab";
 import { ChaosTab } from "./inspector/ChaosTab";
 import { STREAMER_BASE_URL, getStreamerToken } from "../../config/api";
@@ -22,6 +22,7 @@ export type SelectedTarget =
   | { type: "cronjob"; data: K8sCronJobData }
   | { type: "job"; data: K8sJobData }
   | { type: "pvc"; data: K8sPVCData }
+  | { type: "statefulset"; data: K8sStatefulSetNodeData }
   | null;
 
 
@@ -35,7 +36,7 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
   const clusterCpuCores = useTopologyStore((s) => s.clusterCpuCores);
   const clusterMemoryGB = useTopologyStore((s) => s.clusterMemoryGB);
 
-  const [activeTab, setActiveTab] = useState<"overview" | "logs" | "metrics" | "chaos">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "metrics" | "chaos">("overview");
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
@@ -44,7 +45,6 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
   }, []);
 
   const [chaosActionMsg, setChaosActionMsg] = useState<string | null>(null);
-  const [isEmbeddedLogOpen, setIsEmbeddedLogOpen] = useState(true);
 
   const triggerChaos = async (
     faultType: "crash" | "oom-pressure" | "scale-down",
@@ -170,6 +170,13 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
       const pvcData = target.data as K8sPVCData;
       return { label: `Storage (${pvcData.phase})`, pct: pvcData.phase === "Bound" ? 100 : 30 };
     }
+    if (target.type === "statefulset") {
+      const stsData = target.data as K8sStatefulSetNodeData;
+      const ready = stsData.readyReplicas ?? 0;
+      const total = stsData.replicas || 1;
+      const pct = Math.min(100, Math.round((ready / total) * 100));
+      return { label: `${ready}/${total} Replicas (${pct}%)`, pct };
+    }
     const podData = target.data as K8sPodData;
     const mcores = podData.cpuUsageMcores ?? 0;
     if (!clusterCpuCores || clusterCpuCores === 0) {
@@ -195,6 +202,12 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
       const pvcData = target.data as K8sPVCData;
       return { label: pvcData.capacity || pvcData.requestedSize || "Dynamic", pct: 100 };
     }
+    if (target.type === "statefulset") {
+      const stsData = target.data as K8sStatefulSetNodeData;
+      const vct = stsData.volumeClaimTemplates?.[0];
+      const cap = vct?.storage || "10 Gi";
+      return { label: `PVC Claim (${cap})`, pct: 100 };
+    }
     const podData = target.data as K8sPodData;
     const mib = podData.memoryUsageMiB ?? 0;
     if (!clusterMemoryGB || clusterMemoryGB === 0) {
@@ -212,6 +225,8 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
           <span className={`flex h-2.5 w-2.5 rounded-full shrink-0 ${
             target.type === "ingress"
               ? "bg-[#D0BCFF]"
+              : target.type === "statefulset"
+              ? "bg-purple-400"
               : target.type === "daemonset"
               ? "bg-[#D0BCFF]"
               : target.type === "pvc"
@@ -226,6 +241,11 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
             <h3 className="text-sm font-bold text-[#E6E1E5] truncate">{target.data.name}</h3>
             <p className="text-[11px] font-mono text-[#C4C7C5] capitalize flex items-center gap-1.5 flex-wrap">
               Type: {target.type}
+              {target.type === "statefulset" && (
+                <span className="rounded border border-purple-500/30 bg-purple-500/10 px-1.5 py-0.2 text-[10px] font-mono text-purple-300">
+                  STATEFULSET CONTROLLER
+                </span>
+              )}
               {target.type === "pvc" && (
                 <span className="rounded border border-[#80DEEA]/30 bg-[#80DEEA]/10 px-1.5 py-0.2 text-[10px] font-mono text-[#80DEEA]">
                   PERSISTENT VOLUME CLAIM
@@ -263,7 +283,7 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
       </div>
 
       <div className="flex border-b border-neutral-800 bg-neutral-950 p-1.5 gap-1 text-xs font-medium">
-        {(target.type === "pvc" ? (["overview"] as const) : (["overview", "logs", "metrics", "chaos"] as const)).map((tab) => (
+        {(target.type === "pvc" ? (["overview"] as const) : (["overview", "metrics", "chaos"] as const)).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -273,7 +293,7 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
                 : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900"
             }`}
           >
-            {tab === "overview" && target.type === "pvc" ? "Storage Spec" : tab === "metrics" ? "Usage" : tab === "logs" ? "Live Logs" : tab}
+            {tab === "overview" && target.type === "pvc" ? "Storage Spec" : tab === "metrics" ? "Usage" : tab}
           </button>
         ))}
       </div>
@@ -283,14 +303,6 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
           <OverviewTab
             target={target}
             nowMs={nowMs}
-            isEmbeddedLogOpen={isEmbeddedLogOpen}
-            setIsEmbeddedLogOpen={setIsEmbeddedLogOpen}
-            onOpenLogTerminal={onOpenLogTerminal}
-          />
-        )}
-        {activeTab === "logs" && (
-          <LogsTab
-            target={target}
             onOpenLogTerminal={onOpenLogTerminal}
           />
         )}

@@ -1,12 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import type { PodLogLine, LogLevel, LogStreamStatus } from "../types/logs";
+import type { PodLogLine, LogLevel, LogStreamStatus, StreamDiagnostic, StreamHealthSummary } from "../types/logs";
 import { parseLogPayload } from "../utils/logParser";
 import { useTopologyStore } from "../store/useTopologyStore";
 import { useUIStore } from "../store/useUIStore";
 import { getStreamerToken } from "../config/api";
-
-
-import { generateInitialFallbackLogs, generateNextFallbackLog } from "../utils/fallbackLogGenerator";
 
 interface UseResourceLogsOptions {
   name: string | null;
@@ -23,22 +20,28 @@ export function useResourceLogs({
   namespace = "default",
   clusterId,
   enabled = true,
-  maxLogs = 500,
+  maxLogs = 1000,
 }: UseResourceLogsOptions) {
   const [logs, setLogs] = useState<PodLogLine[]>([]);
+  const [diagnostics, setDiagnostics] = useState<StreamDiagnostic[]>([]);
+  const [healthSummary, setHealthSummary] = useState<StreamHealthSummary>({
+    totalStreams: 0,
+    activeStreams: 0,
+    retryingStreams: 0,
+    failedStreams: 0,
+  });
   const [isTailing, setIsTailing] = useState<boolean>(true);
   const [rawStatus, setRawStatus] = useState<LogStreamStatus>("offline");
-
-  const status: LogStreamStatus = !name || !enabled ? "offline" : rawStatus;
-
-  const wsRef = useRef<WebSocket | null>(null);
-  const fallbackIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const hasReceivedRealLogsRef = useRef<boolean>(false);
 
   const clusters = useTopologyStore((s) => s.clusters);
   const activeCluster = useTopologyStore((s) => s.activeCluster);
   const resolvedCluster = clusters.find((c) => c.id === activeCluster || c.name === activeCluster);
   const targetCluster = clusterId || resolvedCluster?.id || activeCluster;
+
+  const isTargetValid = Boolean(name && enabled && targetCluster);
+  const status: LogStreamStatus = !isTargetValid ? "offline" : rawStatus;
+
+  const wsRef = useRef<WebSocket | null>(null);
 
   const clearLogs = useCallback(() => {
     setLogs([]);
@@ -56,10 +59,10 @@ export function useResourceLogs({
       return;
     }
 
-    const targetNs =
-      namespace && namespace !== "default"
-        ? namespace
-        : useUIStore.getState().selectedNamespaces[0] || "default";
+    const isAllNs = namespace === "all" || namespace === "_all" || namespace === "";
+    const targetNs = isAllNs
+      ? "all"
+      : namespace || useUIStore.getState().selectedNamespaces[0] || "default";
 
     const isViteDev =
       typeof window !== "undefined" &&
@@ -87,34 +90,15 @@ export function useResourceLogs({
     const WS_BASE_URL = getWsBaseUrl();
     let isDisposed = false;
     let ws: WebSocket | null = null;
-    hasReceivedRealLogsRef.current = false;
-
-    const startFallbackStream = () => {
-      if (isDisposed || hasReceivedRealLogsRef.current || fallbackIntervalRef.current) return;
-      setRawStatus("streaming");
-      setLogs((prev) => {
-        if (prev.length > 0) return prev;
-        return generateInitialFallbackLogs({
-          resourceName: name,
-          kind,
-          namespace: targetNs,
-        });
-      });
-
-      fallbackIntervalRef.current = setInterval(() => {
-        if (isDisposed || hasReceivedRealLogsRef.current) return;
-        const nextLog = generateNextFallbackLog({
-          resourceName: name,
-          kind,
-          namespace: targetNs,
-        });
-        setLogs((prev) => [...prev.slice(-(maxLogs - 1)), nextLog]);
-      }, 1500);
-    };
 
     void (async () => {
       const token = await getStreamerToken();
       if (isDisposed) return;
+
+      setLogs([]);
+      setDiagnostics([]);
+      setHealthSummary({ totalStreams: 0, activeStreams: 0, retryingStreams: 0, failedStreams: 0 });
+      setRawStatus("connecting");
 
       let url = `${WS_BASE_URL}/api/v1/stream/logs?clusterId=${encodeURIComponent(
         targetCluster
@@ -131,19 +115,56 @@ export function useResourceLogs({
         wsRef.current = ws;
 
         ws.onopen = () => {
-          setRawStatus("streaming");
+          if (!isDisposed) {
+            setRawStatus("streaming");
+          }
         };
 
         ws.onmessage = (evt) => {
+          if (isDisposed) return;
           try {
             const data = JSON.parse(evt.data);
-            if (data && data.message) {
-              hasReceivedRealLogsRef.current = true;
-              if (fallbackIntervalRef.current) {
-                clearInterval(fallbackIntervalRef.current);
-                fallbackIntervalRef.current = null;
-              }
+            if (!data) return;
 
+            // 1. Separate Stream Diagnostic events from workload logs
+            if (data.type === "diagnostic") {
+              const diag: StreamDiagnostic = {
+                source: data.source || "system",
+                namespace: data.namespace,
+                pod: data.pod,
+                container: data.container,
+                status: data.status || "active",
+                reason: data.reason || "",
+                timestamp: data.timestamp || new Date().toISOString(),
+                retryCount: data.retryCount,
+                nextRetryMs: data.nextRetryMs,
+              };
+              setDiagnostics((prev) => {
+                const idx = prev.findIndex((d) => d.source === diag.source);
+                if (idx >= 0) {
+                  const copy = [...prev];
+                  copy[idx] = diag;
+                  return copy;
+                }
+                return [...prev, diag];
+              });
+              return;
+            }
+
+            // 2. Stream Aggregate Health Status
+            if (data.type === "status") {
+              setHealthSummary({
+                totalStreams: data.totalStreams || 0,
+                activeStreams: data.activeStreams || 0,
+                retryingStreams: data.retryingStreams || 0,
+                failedStreams: data.failedStreams || 0,
+                scope: data.scope,
+              });
+              return;
+            }
+
+            // 3. Genuine Workload Container Log Line
+            if (data.type === "log" || (data.message && !data.status)) {
               const fallbackLvl = (data.level as LogLevel) || "INFO";
               const parsed = parseLogPayload(data.message, fallbackLvl);
 
@@ -152,59 +173,41 @@ export function useResourceLogs({
                 timestamp: data.timestamp || parsed.timestamp || new Date().toISOString(),
                 level: parsed.level || fallbackLvl,
                 message: parsed.message || data.message,
-                podName: data.source || name,
-                namespace: targetNs,
-                container: "main",
-                stream: "stdout",
+                podName: data.pod || data.source || name,
+                namespace: data.namespace || targetNs,
+                container: data.container || "main",
+                stream: data.stream || "stdout",
                 source: data.source || name,
                 parsed,
               };
 
-              if (parsed.level === "ERROR" || parsed.level === "FATAL") {
-                const src = data.source || name || "workload";
-                useTopologyStore
-                  .getState()
-                  .addNotification(
-                    `Error Log Detected in ${src}`,
-                    parsed.message,
-                    "CRITICAL"
-                  );
-              }
-
               setLogs((prev) => [...prev.slice(-(maxLogs - 1)), newLogLine]);
             }
           } catch {
-            // Ignored
+            // Ignored malformed message
           }
         };
 
         ws.onerror = () => {
-          if (!hasReceivedRealLogsRef.current) {
-            // Fall back to simulated telemetry in dev or when backend stream fails
-            startFallbackStream();
-          } else {
+          if (!isDisposed) {
             setRawStatus("error");
           }
         };
 
         ws.onclose = () => {
-          if (!hasReceivedRealLogsRef.current) {
-            startFallbackStream();
-          } else {
+          if (!isDisposed) {
             setRawStatus("offline");
           }
         };
       } catch {
-        startFallbackStream();
+        if (!isDisposed) {
+          setRawStatus("error");
+        }
       }
     })();
 
     return () => {
       isDisposed = true;
-      if (fallbackIntervalRef.current) {
-        clearInterval(fallbackIntervalRef.current);
-        fallbackIntervalRef.current = null;
-      }
       if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
         ws.close();
       }
@@ -213,6 +216,8 @@ export function useResourceLogs({
 
   return {
     logs,
+    diagnostics,
+    healthSummary,
     status,
     isTailing,
     setIsTailing,

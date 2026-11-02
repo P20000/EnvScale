@@ -2,12 +2,18 @@ import React from "react";
 
 export type ToastVariant = "default" | "success" | "error" | "warning" | "info";
 
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 export interface ToastItem {
   id: string;
   title?: React.ReactNode;
   description?: React.ReactNode;
   variant?: ToastVariant;
   duration?: number;
+  action?: ToastAction;
 }
 
 type ToastListener = (toasts: ToastItem[]) => void;
@@ -32,7 +38,7 @@ class ToastManager {
 
   show(options: Omit<ToastItem, "id"> & { id?: string }): string {
     const id = options.id || `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const duration = options.duration ?? 4500;
+    const duration = options.duration ?? (options.variant === "error" ? 6000 : 4000);
 
     // Remove existing if any
     this.dismiss(id);
@@ -40,9 +46,10 @@ class ToastManager {
     const toastItem: ToastItem = {
       ...options,
       id,
+      duration,
     };
 
-    // Keep at most 5 active toasts
+    // Keep at most 5 active toasts in buffer
     this.toasts = [toastItem, ...this.toasts].slice(0, 5);
     this.notify();
 
@@ -54,6 +61,22 @@ class ToastManager {
     }
 
     return id;
+  }
+
+  pause(id: string) {
+    const timer = this.timers.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      this.timers.delete(id);
+    }
+  }
+
+  resume(id: string, remainingDuration = 3000) {
+    if (this.timers.has(id)) return;
+    const timer = setTimeout(() => {
+      this.dismiss(id);
+    }, remainingDuration);
+    this.timers.set(id, timer);
   }
 
   dismiss(id: string) {
@@ -69,20 +92,27 @@ class ToastManager {
     }
   }
 
-  success(title: React.ReactNode, description?: React.ReactNode, duration?: number) {
-    return this.show({ title, description, variant: "success", duration });
+  clear() {
+    this.timers.forEach((t) => clearTimeout(t));
+    this.timers.clear();
+    this.toasts = [];
+    this.notify();
   }
 
-  error(title: React.ReactNode, description?: React.ReactNode, duration?: number) {
-    return this.show({ title, description, variant: "error", duration });
+  success(title: React.ReactNode, description?: React.ReactNode, duration?: number, action?: ToastAction) {
+    return this.show({ title, description, variant: "success", duration, action });
   }
 
-  warning(title: React.ReactNode, description?: React.ReactNode, duration?: number) {
-    return this.show({ title, description, variant: "warning", duration });
+  error(title: React.ReactNode, description?: React.ReactNode, duration?: number, action?: ToastAction) {
+    return this.show({ title, description, variant: "error", duration, action });
   }
 
-  info(title: React.ReactNode, description?: React.ReactNode, duration?: number) {
-    return this.show({ title, description, variant: "info", duration });
+  warning(title: React.ReactNode, description?: React.ReactNode, duration?: number, action?: ToastAction) {
+    return this.show({ title, description, variant: "warning", duration, action });
+  }
+
+  info(title: React.ReactNode, description?: React.ReactNode, duration?: number, action?: ToastAction) {
+    return this.show({ title, description, variant: "info", duration, action });
   }
 }
 

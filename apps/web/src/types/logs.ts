@@ -16,3 +16,31 @@ export interface PodLogLine {
 }
 
 export type LogStreamStatus = "connecting" | "streaming" | "paused" | "offline" | "error";
+
+export type StreamDiagnosticStatus =
+  | "active"
+  | "retrying"
+  | "backoff"
+  | "failed"
+  | "terminated"
+  | "permission_denied";
+
+export interface StreamDiagnostic {
+  source: string;
+  namespace?: string;
+  pod?: string;
+  container?: string;
+  status: StreamDiagnosticStatus;
+  reason: string;
+  timestamp: string;
+  retryCount?: number;
+  nextRetryMs?: number;
+}
+
+export interface StreamHealthSummary {
+  totalStreams: number;
+  activeStreams: number;
+  retryingStreams: number;
+  failedStreams: number;
+  scope?: string;
+}

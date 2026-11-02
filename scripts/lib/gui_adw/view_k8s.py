@@ -40,6 +40,11 @@ class K8sView(Gtk.Box):
         if current in contexts:
             self.ctx_dropdown.set_selected(contexts.index(current))
         self.ctx_dropdown.connect("notify::selected-item", self._on_context_changed)
+        # Health status badge for active cluster context
+        self.badge_cluster = Gtk.Label(label="CHECKING...")
+        self.badge_cluster.add_css_class("dim-label")
+        self.ctx_row.add_suffix(self.badge_cluster)
+
         self.ctx_row.add_suffix(self.ctx_dropdown)
         ctx_group.add(self.ctx_row)
         self.append(ctx_group)
@@ -87,6 +92,29 @@ class K8sView(Gtk.Box):
         self.log_panel = HeadingLogPanel("k8s", self.log_storage)
         self.append(self.log_panel)
 
+        GLib.timeout_add(3000, self.update_cluster_health)
+        self.update_cluster_health()
+
+    def update_cluster_health(self):
+        def _bg_check():
+            info = self.km.get_cluster_status()
+            online = info.get("online", False)
+            def _apply():
+                if online:
+                    self.badge_cluster.set_text("ONLINE")
+                    self.badge_cluster.remove_css_class("error")
+                    self.badge_cluster.remove_css_class("dim-label")
+                    self.badge_cluster.add_css_class("success")
+                else:
+                    self.badge_cluster.set_text("OFFLINE")
+                    self.badge_cluster.remove_css_class("success")
+                    self.badge_cluster.remove_css_class("dim-label")
+                    self.badge_cluster.add_css_class("error")
+                return False
+            GLib.idle_add(_apply)
+        threading.Thread(target=_bg_check, daemon=True).start()
+        return True
+
     def _on_k8s_log(self, msg: str):
         self.pm.emit_log("k8s", msg)
         row = self.active_step_row
@@ -110,8 +138,10 @@ class K8sView(Gtk.Box):
             try:
                 ok = self.km.switch_context(ctx_name)
                 GLib.idle_add(lambda: self.log_panel.complete_step(step_id, ok, f"Switched to {ctx_name}" if ok else "Failed"))
+                GLib.idle_add(self.update_cluster_health)
             except Exception as e:
                 GLib.idle_add(lambda: self.log_panel.complete_step(step_id, False, str(e)))
+                GLib.idle_add(self.update_cluster_health)
             finally:
                 self.active_step_row = None
 

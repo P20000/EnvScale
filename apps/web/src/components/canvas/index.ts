@@ -9,5 +9,6 @@ export { K8sCronJobNode } from "./K8sCronJob";
 export { K8sJobNode } from "./K8sJob";
 export { K8sCompletedJobsNode } from "./K8sCompletedJobsNode";
 export { K8sPVCNode } from "./K8sPVC";
+export { K8sStatefulSetNode, type K8sStatefulSetNodeData } from "./K8sStatefulSet";
 export { K8sEdge, type K8sEdgeData } from "./K8sEdge";
 

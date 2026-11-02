@@ -106,7 +106,7 @@ export const generateDynamicEdges = (nodes: Node[], currentEdges: Edge[] = []): 
   const services = nodes.filter((n) => n.type === "k8sService");
   const ingresses = nodes.filter((n) => n.type === "k8sIngress");
 
-  const groups = nodes.filter((n) => n.type === "k8sGroup");
+  const groups = nodes.filter((n) => n.type === "k8sGroup" || n.type === "k8sStatefulSet");
   const allGroupPods = groups.flatMap((g) => ((g.data as Record<string, unknown>)?.pods as K8sPodData[]) || []);
 
   ingresses.forEach((ing) => {

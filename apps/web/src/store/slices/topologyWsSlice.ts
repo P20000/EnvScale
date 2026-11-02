@@ -14,11 +14,12 @@ import {
   calculateClusterCapacity,
 } from "../helpers/topologyHelpers";
 import { handleJobWsEvent } from "../helpers/wsEventHandlers";
-import { handlePVCWsEvent, handlePVWsEvent } from "../helpers/storageHelpers";
+import { handleStorageEventDispatch } from "../helpers/storageHelpers";
 import { handleConfigMapWsEvent, handleSecretWsEvent } from "../helpers/configHelpers";
 import { handleChaosWsEvent } from "../helpers/chaosHelpers";
 import { handlePolicyHpaWsEvent } from "../helpers/policyHpaHelpers";
 import { handleQuotaWsEvent } from "../helpers/quotaHelpers";
+import { handleStatefulSetWsEvent } from "../helpers/statefulSetHelpers";
 import { handleSnapshotSync } from "./topologySnapshotHandler";
 
 export function handleWsMessage(
@@ -436,25 +437,8 @@ export function handleWsMessage(
     const currentJobs = state.jobs || [];
     const updatedJobs = handleJobWsEvent(currentJobs, payloadData, true);
     set({ jobs: updatedJobs });
-    state.applyDagreLayout();
-  } else if (eventType === "EVENT_PVC_MUTATED" || eventType === "EVENT_PVC_ADDED") {
-    const currentPVCs = state.pvcs || [];
-    const updatedPVCs = handlePVCWsEvent(currentPVCs, payloadData, false);
-    set({ pvcs: updatedPVCs });
-    state.applyDagreLayout();
-  } else if (eventType === "EVENT_PVC_DELETED") {
-    const currentPVCs = state.pvcs || [];
-    const updatedPVCs = handlePVCWsEvent(currentPVCs, payloadData, true);
-    set({ pvcs: updatedPVCs });
-    state.applyDagreLayout();
-  } else if (eventType === "EVENT_PV_MUTATED" || eventType === "EVENT_PV_ADDED") {
-    const currentPVs = state.pvs || [];
-    const updatedPVs = handlePVWsEvent(currentPVs, payloadData, false);
-    set({ pvs: updatedPVs });
-  } else if (eventType === "EVENT_PV_DELETED") {
-    const currentPVs = state.pvs || [];
-    const updatedPVs = handlePVWsEvent(currentPVs, payloadData, true);
-    set({ pvs: updatedPVs });
+  } else if (handleStorageEventDispatch(eventType, payloadData, state, set)) {
+    // Handled in storageHelpers (PVC, PV, VolumeSnapshot, VolumeSnapshotContent)
   } else if (eventType === "EVENT_CONFIGMAP_MUTATED" || eventType === "EVENT_CONFIGMAP_ADDED") {
     const currentCMs = state.configMaps || [];
     const updatedCMs = handleConfigMapWsEvent(currentCMs, payloadData, false);
@@ -484,10 +468,9 @@ export function handleWsMessage(
     eventType.startsWith("EVENT_PDB_")
   ) {
     handlePolicyHpaWsEvent(state, set, eventType, payloadData);
-  } else if (
-    eventType.startsWith("EVENT_RESOURCE_QUOTA_") ||
-    eventType.startsWith("EVENT_LIMIT_RANGE_")
-  ) {
+  } else if (eventType.startsWith("EVENT_RESOURCE_QUOTA_") || eventType.startsWith("EVENT_LIMIT_RANGE_")) {
     handleQuotaWsEvent(state, set, eventType, payloadData);
+  } else if (eventType.startsWith("EVENT_STATEFUL_SET_")) {
+    handleStatefulSetWsEvent(state, set, eventType, payloadData || {});
   }
 }

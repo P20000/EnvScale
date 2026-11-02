@@ -15,7 +15,7 @@ import {
   mdiCrosshairsGps,
 } from "@mdi/js";
 
-import { K8sPodNode, K8sWorkerNode, K8sServiceNode, K8sWorkloadNode, K8sIngressNode, K8sGroupNode, K8sDaemonSetNode, K8sCronJobNode, K8sJobNode, K8sCompletedJobsNode, K8sPVCNode, K8sEdge } from "../canvas";
+import { K8sPodNode, K8sWorkerNode, K8sServiceNode, K8sWorkloadNode, K8sIngressNode, K8sGroupNode, K8sDaemonSetNode, K8sCronJobNode, K8sJobNode, K8sCompletedJobsNode, K8sPVCNode, K8sStatefulSetNode, K8sEdge } from "../canvas";
 import type { K8sPodData } from "../canvas/K8sPod";
 import type { K8sNodeData } from "../canvas/K8sNode";
 import type { K8sServiceData } from "../canvas/K8sService";
@@ -35,7 +35,7 @@ const nodeTypes = {
   k8sService: K8sServiceNode,
   k8sDeployment: K8sWorkloadNode,
   k8sReplicaSet: K8sWorkloadNode,
-  k8sStatefulSet: K8sWorkloadNode,
+  k8sStatefulSet: K8sStatefulSetNode,
   k8sDaemonSet: K8sDaemonSetNode,
   k8sCronJob: K8sCronJobNode,
   k8sJob: K8sJobNode,
@@ -105,6 +105,8 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         target = { type: "job", data: node.data as K8sJobData };
       } else if (node.type === "k8sPVC") {
         target = { type: "pvc", data: node.data as K8sPVCData };
+      } else if (node.type === "k8sStatefulSet") {
+        target = { type: "statefulset", data: node.data as unknown as import("../canvas/K8sStatefulSet").K8sStatefulSetNodeData };
       } else if (node.type === "k8sGroup") {
         const groupData = node.data as { name?: string; podSummaries?: Array<{ podData?: K8sPodData }>; pods?: K8sPodData[] };
         const firstPod = groupData.podSummaries?.[0]?.podData || groupData.pods?.[0];

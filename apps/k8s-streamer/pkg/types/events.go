@@ -17,6 +17,7 @@ const (
 	EventReplicaSetMutated  = "EVENT_REPLICA_SET_MUTATED"
 	EventReplicaSetDeleted  = "EVENT_REPLICA_SET_DELETED"
 	EventStatefulSetMutated = "EVENT_STATEFUL_SET_MUTATED"
+	EventStatefulSetDeleted = "EVENT_STATEFUL_SET_DELETED"
 	EventDaemonSetMutated   = "EVENT_DAEMONSET_MUTATED"
 	EventDaemonSetDeleted   = "EVENT_DAEMONSET_DELETED"
 	EventIngressMutated     = "EVENT_INGRESS_MUTATED"
@@ -37,6 +38,11 @@ const (
 	EventPVCDeleted = "EVENT_PVC_DELETED"
 	EventPVMutated  = "EVENT_PV_MUTATED"
 	EventPVDeleted  = "EVENT_PV_DELETED"
+
+	EventVolumeSnapshotMutated        = "EVENT_VOLUME_SNAPSHOT_MUTATED"
+	EventVolumeSnapshotDeleted        = "EVENT_VOLUME_SNAPSHOT_DELETED"
+	EventVolumeSnapshotContentMutated = "EVENT_VOLUME_SNAPSHOT_CONTENT_MUTATED"
+	EventVolumeSnapshotContentDeleted = "EVENT_VOLUME_SNAPSHOT_CONTENT_DELETED"
 
 	EventConfigMapMutated = "EVENT_CONFIGMAP_MUTATED"
 	EventConfigMapDeleted = "EVENT_CONFIGMAP_DELETED"
@@ -144,15 +150,6 @@ type ReplicaSetStatusDelta struct {
 	CreatedAt     time.Time         `json:"createdAt,omitempty"`
 }
 
-// StatefulSetStatusDelta encapsulates StatefulSet state updates
-type StatefulSetStatusDelta struct {
-	Name          string            `json:"name"`
-	Namespace     string            `json:"namespace"`
-	Replicas      int32             `json:"replicas"`
-	ReadyReplicas int32             `json:"readyReplicas"`
-	Selector      map[string]string `json:"selector"`
-	Labels        map[string]string `json:"labels"`
-}
 
 // DaemonSetStatusDelta encapsulates DaemonSet state updates
 type DaemonSetStatusDelta struct {
@@ -331,8 +328,9 @@ type PVCStatusDelta struct {
 	AccessModes      []string          `json:"accessModes,omitempty"`
 	VolumeMode       string            `json:"volumeMode,omitempty"`
 	Labels           map[string]string `json:"labels,omitempty"`
-	MountedByPods    []string          `json:"mountedByPods,omitempty"`
-	CreatedAt        time.Time         `json:"createdAt"`
+	MountedByPods    []string           `json:"mountedByPods,omitempty"`
+	DataSource       *PVCDataSourceInfo `json:"dataSource,omitempty"`
+	CreatedAt        time.Time          `json:"createdAt"`
 }
 
 // PVStatusDelta encapsulates cluster-scoped PersistentVolume states

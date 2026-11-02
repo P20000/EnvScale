@@ -17,6 +17,9 @@ import type {
   K8sPDBData,
   K8sResourceQuotaData,
   K8sLimitRangeData,
+  K8sStatefulSetData,
+  K8sVolumeSnapshotData,
+  K8sVolumeSnapshotContentData,
 } from "../types/topologyTypes";
 import type { TopologyState } from "../useTopologyStore";
 import { extractServices, extractPods, calculateClusterCapacity } from "../helpers/topologyHelpers";
@@ -132,6 +135,9 @@ export function handleSnapshotSync(
   const snapshotPDBs = Array.isArray(payloadData.pdbs) ? (payloadData.pdbs as K8sPDBData[]) : [];
   const snapshotQuotas = Array.isArray(payloadData.resourceQuotas) ? (payloadData.resourceQuotas as K8sResourceQuotaData[]) : [];
   const snapshotLimitRanges = Array.isArray(payloadData.limitRanges) ? (payloadData.limitRanges as K8sLimitRangeData[]) : [];
+  const snapshotStatefulSets = Array.isArray(payloadData.statefulSets) ? (payloadData.statefulSets as K8sStatefulSetData[]) : [];
+  const snapshotVS = Array.isArray(payloadData.volumeSnapshots) ? (payloadData.volumeSnapshots as K8sVolumeSnapshotData[]) : [];
+  const snapshotVSC = Array.isArray(payloadData.volumeSnapshotContents) ? (payloadData.volumeSnapshotContents as K8sVolumeSnapshotContentData[]) : [];
 
   const currentSelected = useUIStore.getState().selectedNamespaces;
   const nsSet = new Set<string>();
@@ -184,6 +190,9 @@ export function handleSnapshotSync(
     pdbs: snapshotPDBs,
     resourceQuotas: snapshotQuotas,
     limitRanges: snapshotLimitRanges,
+    statefulSets: snapshotStatefulSets,
+    volumeSnapshots: snapshotVS,
+    volumeSnapshotContents: snapshotVSC,
   });
   state.applyDagreLayout();
 }

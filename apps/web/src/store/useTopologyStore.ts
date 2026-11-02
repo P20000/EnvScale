@@ -37,7 +37,8 @@ import { handleAddToken, handleAddNotification } from "./slices/topologyNotifSli
 import {
   type ApiToken, type NotificationItem, type K8sIncidentEvent, type HistoryAction, type DeleteModalState,
   type Cluster, type K8sPVCData, type K8sPVData, type K8sConfigMapData, type K8sSecretData, type ChaosFaultEvent,
-  type K8sHPAData, type K8sNetworkPolicyData, type K8sPDBData, type K8sResourceQuotaData, type K8sLimitRangeData,
+  type K8sHPAData, type K8sNetworkPolicyData, type K8sPDBData, type K8sResourceQuotaData, type K8sLimitRangeData, type K8sStatefulSetData,
+  type K8sVolumeSnapshotData, type K8sVolumeSnapshotContentData,
 } from "./types/topologyTypes";
 import {
   extractServices,
@@ -70,8 +71,8 @@ export interface TopologyState {
   replicaSets: K8sReplicaSetData[];
   deployments: K8sDeploymentData[];
   daemonSets: K8sDaemonSetData[];
-  cronJobs: K8sCronJobData[]; jobs: K8sJobData[]; pvcs: K8sPVCData[];
-  pvs: K8sPVData[];
+  cronJobs: K8sCronJobData[]; jobs: K8sJobData[]; pvcs: K8sPVCData[]; statefulSets: K8sStatefulSetData[];
+  pvs: K8sPVData[]; volumeSnapshots: K8sVolumeSnapshotData[]; volumeSnapshotContents: K8sVolumeSnapshotContentData[];
   configMaps: K8sConfigMapData[];
   secrets: K8sSecretData[];
   hpas: K8sHPAData[];
@@ -168,7 +169,10 @@ export const useTopologyStore = create<TopologyState>()(
       cronJobs: [],
       jobs: [],
       pvcs: [],
+      statefulSets: [],
       pvs: [],
+      volumeSnapshots: [],
+      volumeSnapshotContents: [],
       configMaps: [],
       secrets: [],
       hpas: [],
@@ -463,7 +467,8 @@ export const useTopologyStore = create<TopologyState>()(
           replicaSets: [],
           deployments: [],
           daemonSets: [],
-          cronJobs: [], jobs: [], pvcs: [], hpas: [], networkPolicies: [], pdbs: [], resourceQuotas: [], limitRanges: [],
+          cronJobs: [], jobs: [], pvcs: [], statefulSets: [], hpas: [], networkPolicies: [], pdbs: [], resourceQuotas: [], limitRanges: [],
+          volumeSnapshots: [], volumeSnapshotContents: [],
           incidents: [], activeChaosFaults: {}, selectedNode: null, notifications: [],
           undoStack: [], redoStack: [], wsStatus: "DISCONNECTED", wsLatencyMs: 0,
         });

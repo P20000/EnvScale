@@ -5,7 +5,7 @@ import { TopNavbar } from "./components/layout/TopNavbar";
 import { LeftSidebar, type NavTab } from "./components/layout/LeftSidebar";
 import { TopologyCanvas } from "./components/flow/TopologyCanvas";
 import { InspectorDrawer } from "./components/drawer/InspectorDrawer";
-import { PodLogDrawer } from "./components/drawer/PodLogDrawer";
+import { LogsView } from "./components/views/LogsView";
 import { IncidentsView } from "./components/views/IncidentsView";
 import { MetricsView } from "./components/views/MetricsView";
 import { LeaderboardView } from "./components/views/LeaderboardView";
@@ -131,12 +131,10 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<NavTab>("topology");
   const [showConnectWizard, setShowConnectWizard] = useState(false);
 
-  const [logDrawerState, setLogDrawerState] = useState<{
-    isOpen: boolean;
+  const [logTarget, setLogTarget] = useState<{
     podName: string | null;
     namespace?: string;
   }>({
-    isOpen: false,
     podName: null,
   });
   const handleClusterConnected = (newCluster: { id: string, name: string }) => {
@@ -151,11 +149,12 @@ function AppContent() {
       namespace && namespace !== "default"
         ? namespace
         : useUIStore.getState().selectedNamespaces[0] || "default";
-    setLogDrawerState({
-      isOpen: true,
+    setLogTarget({
       podName,
       namespace: activeNs,
     });
+    setActiveTab("logs");
+    clearSelectedNode();
   };
 
   const selectedKey = selectedNode
@@ -229,6 +228,13 @@ function AppContent() {
           />
         )}
 
+        {activeTab === "logs" && (
+          <LogsView
+            initialPodName={logTarget.podName}
+            initialNamespace={logTarget.namespace}
+          />
+        )}
+
         {activeTab === "incidents" && <IncidentsView />}
 
         {activeTab === "metrics" && <MetricsView />}
@@ -258,19 +264,6 @@ function AppContent() {
         />
       )}
 
-      {/* Region 5: Pod Log Terminal Drawer */}
-      <PodLogDrawer
-        isOpen={logDrawerState.isOpen}
-        podName={logDrawerState.podName}
-        namespace={logDrawerState.namespace}
-        onClose={() =>
-          setLogDrawerState((prev) => ({
-            ...prev,
-            isOpen: false,
-          }))
-        }
-      />
-
       {/* ISH-01: Connect Cluster Onboarding Wizard */}
       {showConnectWizard && (
         <ConnectClusterWizard
@@ -279,8 +272,8 @@ function AppContent() {
         />
       )}
 
-      {/* Global Toast Notification System */}
-      <ToastContainer />
+      {/* Toast Notification System - displayed strictly on the canvas (topology) tab only */}
+      {activeTab === "topology" && <ToastContainer />}
     </div>
   );
 }

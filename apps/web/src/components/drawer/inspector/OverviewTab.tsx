@@ -11,11 +11,12 @@ import type { K8sNodeData } from "../../canvas/K8sNode";
 import type { K8sIngressData, IngressRuleData } from "../../canvas/K8sIngress";
 import type { K8sJobData, K8sDaemonSetData } from "../../../store/types/topologyTypes";
 
-import { useResourceLogs } from "../../../hooks/useResourceLogs";
-import { LogRow } from "../LogRow";
+
 import { ReplicasRevisionsSection } from "./ReplicasRevisionsSection";
 import { JobOverviewSection } from "./JobOverviewSection";
 import { DaemonSetOverviewSection } from "./DaemonSetOverviewSection";
+import { StatefulSetOverviewSection } from "./StatefulSetOverviewSection";
+import { StatefulPodDetailsSection } from "./StatefulPodDetailsSection";
 import { StorageOverviewSection } from "./StorageOverviewSection";
 import { ConfigOverviewSection } from "./ConfigOverviewSection";
 import { AutoscalingHPASection } from "./AutoscalingHPASection";
@@ -31,16 +32,12 @@ import { findNamespaceQuota, findNamespaceLimitRanges } from "../../../store/hel
 interface OverviewTabProps {
   target: NonNullable<SelectedTarget>;
   nowMs: number;
-  isEmbeddedLogOpen: boolean;
-  setIsEmbeddedLogOpen: (val: boolean) => void;
   onOpenLogTerminal?: (podName: string, namespace?: string) => void;
 }
 
 export function OverviewTab({
   target,
   nowMs,
-  isEmbeddedLogOpen,
-  setIsEmbeddedLogOpen,
   onOpenLogTerminal,
 }: OverviewTabProps) {
   const targetRecord = target.data as unknown as Record<string, unknown>;
@@ -72,12 +69,7 @@ export function OverviewTab({
     (d) => d.name.toLowerCase() === workloadName.toLowerCase() && (d.namespace === targetNs || !d.namespace)
   ) || null;
 
-  const { logs } = useResourceLogs({
-    name: target.data?.name || null,
-    kind: target.type === "pod" ? "Pod" : target.type === "service" ? "Service" : target.type === "ingress" ? "Ingress" : target.type === "daemonset" ? "DaemonSet" : "Workload",
-    namespace: String(targetRecord.namespace || "default"),
-    enabled: isEmbeddedLogOpen,
-  });
+
 
   const getNodeAssignment = () => {
     if (target.type === "node") return target.data.name;
@@ -200,6 +192,8 @@ export function OverviewTab({
         <JobOverviewSection data={target.data as K8sJobData} nowMs={nowMs} />
       ) : target.type === "daemonset" ? (
         <DaemonSetOverviewSection data={target.data as K8sDaemonSetData} />
+      ) : target.type === "statefulset" ? (
+        <StatefulSetOverviewSection data={target.data as unknown as import("../../canvas/K8sStatefulSet").K8sStatefulSetNodeData} onOpenLogTerminal={onOpenLogTerminal} />
       ) : (
         <>
           {target.type === "pod" && ((target.data as K8sPodData).isStaticPod || (target.data as K8sPodData).isControlPlane) && (
@@ -363,7 +357,10 @@ export function OverviewTab({
           )}
 
           {target.type === "pod" && (
-            <ConfigOverviewSection pod={target.data as K8sPodData} />
+            <>
+              <StatefulPodDetailsSection pod={target.data as K8sPodData} />
+              <ConfigOverviewSection pod={target.data as K8sPodData} />
+            </>
           )}
 
           {target.type === "pod" && (
@@ -403,55 +400,25 @@ export function OverviewTab({
         </>
       )}
 
-      {(target.type === "pod" || target.type === "job") && (
-        isEmbeddedLogOpen ? (
-          <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3.5 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Terminal className="h-3.5 w-3.5 text-blue-400" />
-                Live Log Terminal
-              </h4>
-              <div className="flex items-center gap-1.5">
-                {onOpenLogTerminal && (
-                  <button
-                    onClick={() =>
-                      onOpenLogTerminal(
-                        target.data.name,
-                        targetRecord.namespace ? String(targetRecord.namespace) : "default"
-                      )
-                    }
-                    className="rounded bg-blue-500/20 px-2 py-0.5 text-[10px] font-mono text-blue-300 hover:bg-blue-500/30 transition-colors border border-blue-500/30 cursor-pointer"
-                  >
-                    Expand Terminal ↗
-                  </button>
-                )}
-                <button
-                  onClick={() => setIsEmbeddedLogOpen(false)}
-                  className="rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-400 hover:bg-neutral-700 transition-colors"
-                >
-                  Minimize
-                </button>
-              </div>
-            </div>
-            <div className="rounded-lg bg-black/80 border border-neutral-800 p-1 font-mono text-[11px] h-32 overflow-y-auto space-y-0.5">
-              {logs.length === 0 ? (
-                <div className="text-neutral-500 italic p-2 text-center">Connecting live stdout/stderr stream...</div>
-              ) : (
-                logs.slice(-15).map((l, index) => (
-                  <LogRow key={l.id || index} log={l} index={index} showSource={false} />
-                ))
-              )}
-            </div>
-          </div>
-        ) : (
-          <button
-            onClick={() => setIsEmbeddedLogOpen(true)}
-            className="w-full rounded-xl border border-neutral-800 bg-neutral-900/40 p-2.5 text-xs text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/60 transition-colors flex items-center justify-center gap-2 font-mono"
-          >
-            <Terminal className="h-4 w-4 text-blue-400" />
-            Show Live Embedded Log Stream
-          </button>
-        )
+      {(target.type === "pod" || target.type === "job") && onOpenLogTerminal && (
+        <button
+          onClick={() =>
+            onOpenLogTerminal(
+              target.data.name,
+              targetRecord.namespace ? String(targetRecord.namespace) : "default"
+            )
+          }
+          className="w-full flex items-center justify-between rounded-xl border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 px-3.5 py-2.5 text-xs font-medium text-blue-300 hover:text-blue-200 transition-all group cursor-pointer"
+        >
+          <span className="flex items-center gap-2 font-mono">
+            <Terminal className="h-4 w-4 text-blue-400 group-hover:scale-110 transition-transform" />
+            <span>Open in Log Explorer</span>
+          </span>
+          <span className="text-[11px] font-mono text-blue-400 flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+            <span>Inspect Stream</span>
+            <span>→</span>
+          </span>
+        </button>
       )}
     </div>
   );
