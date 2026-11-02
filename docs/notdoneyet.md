@@ -56,8 +56,7 @@ Structured tracking matrix of completed capabilities vs. pending features across
 
 ## 6. 🏗️ Physical & Virtual Infrastructure Topology
 
-* **[x] Worker Node Cards & Placement:** Dedicated `K8sWorkerNode` cards, assigned Node placement calculator (`getNodeAssignment()`), pod IP inspector, and dynamic node uptime tracking.
-* **[ ] Kubernetes Node Boundary Boxes:** Pods show their host node as a string in the drawer, but the canvas lacks visual Node grouping bounding boxes, multi-zone boundaries (e.g., `us-east-1a`, `us-east-1b`), or rack layouts.
+* **[x] Kubernetes Node Boundary Boxes:** Dynamic React Flow container nodes (`K8sNodeBoundaryNode`), automatic bounding calculation around scheduled workloads (`calculateNodeBoundaries`), AWS multi-zone (`us-east-1a`, `us-east-1b`) and instance type (`t3.medium`) badge extraction, workload host placement badges (`NODE: ip-192-168-xx-xx` / `HA: 2 NODES`), and interactive host-hover highlighting.
 * **[ ] Taints & Tolerations:** No visual markers showing which nodes reject unscheduled workloads.
 * **[ ] Node Affinity / Anti-Affinity & Topology Spread:** No visual links representing pod co-location or anti-affinity distribution rules across zones.
 
@@ -66,9 +65,7 @@ Structured tracking matrix of completed capabilities vs. pending features across
 ## 7. 🔐 Identity, Access & Security (RBAC)
 
 * **[x] Workspace RBAC & Access Guards:** REST API JWT authentication middleware and Workspace Access Guards (`ADMIN`, `MEMBER`, `VIEWER`).
-* **[ ] Kubernetes ServiceAccounts:** No representation of in-cluster pod execution identity.
-* **[ ] Kubernetes Roles & ClusterRoles:** No visual mapping of API authorization permissions.
-* **[ ] Kubernetes RoleBindings & ClusterRoleBindings:** No link lines mapping identities to granted privileges.
+* **[x] Kubernetes In-Cluster RBAC (ServiceAccounts, Roles, RoleBindings, ClusterRoles, ClusterRoleBindings):** Dynamic `client-go` informers watching ServiceAccounts, Roles, RoleBindings, and ClusterRoleBindings (`apps/k8s-streamer/pkg/k8s/rbac_informer.go`), sub-200ms WebSocket streaming, custom canvas badges (`SA: <name>`) on pod and workload cards (`K8sPodNode`, `K8sGroupNode`), and dedicated Inspector Drawer authorization panel (`RBACAuthorizationSection`) detailing bound roles, effective API resources, color-coded verb matrices (`get`, `list`, `watch`, `create`, `delete`), automount token status, and privilege level classifications (`Cluster Admin`, `Elevated Write`, `Read-Only`, `Restricted Default`).
 
 ---
 

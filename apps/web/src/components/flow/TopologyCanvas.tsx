@@ -15,7 +15,7 @@ import {
   mdiCrosshairsGps,
 } from "@mdi/js";
 
-import { K8sPodNode, K8sWorkerNode, K8sServiceNode, K8sWorkloadNode, K8sIngressNode, K8sGroupNode, K8sDaemonSetNode, K8sCronJobNode, K8sJobNode, K8sCompletedJobsNode, K8sPVCNode, K8sStatefulSetNode, K8sEdge } from "../canvas";
+import { K8sPodNode, K8sWorkerNode, K8sServiceNode, K8sWorkloadNode, K8sIngressNode, K8sGroupNode, K8sDaemonSetNode, K8sCronJobNode, K8sJobNode, K8sCompletedJobsNode, K8sPVCNode, K8sStatefulSetNode, K8sNodeBoundaryNode, K8sEdge } from "../canvas";
 import type { K8sPodData } from "../canvas/K8sPod";
 import type { K8sNodeData } from "../canvas/K8sNode";
 import type { K8sServiceData } from "../canvas/K8sService";
@@ -44,6 +44,7 @@ const nodeTypes = {
   k8sWorkload: K8sWorkloadNode,
   k8sIngress: K8sIngressNode,
   k8sGroup: K8sGroupNode,
+  k8sNodeBoundary: K8sNodeBoundaryNode,
 };
 
 const edgeTypes = {
@@ -74,6 +75,8 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
   const setShowCompletedJobs = useUIStore((s) => s.setShowCompletedJobs);
   const showStorage = useUIStore((s) => s.showStorage);
   const setShowStorage = useUIStore((s) => s.setShowStorage);
+  const showNodeBoundaries = useUIStore((s) => s.showNodeBoundaries);
+  const setShowNodeBoundaries = useUIStore((s) => s.setShowNodeBoundaries);
 
   const completedJobsCount = (jobs || []).filter(
     (j) => (j.succeeded ?? 0) >= (j.completions ?? 1) || (j.active === 0 && (j.failed ?? 0) === 0)
@@ -281,6 +284,24 @@ function TopologyCanvasContent({ onSelectTarget }: TopologyCanvasProps) {
         >
           <span className={showStorage ? "text-cyan-400 font-bold" : "text-neutral-500"}>💾</span>
           <span>{showStorage ? "Storage Visible" : "Storage Hidden"}</span>
+        </button>
+
+        <button
+          onClick={() => setShowNodeBoundaries(!showNodeBoundaries)}
+          className={`flex items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors font-heading cursor-pointer ${
+            showNodeBoundaries
+              ? "border-emerald-500/50 bg-emerald-950/20 text-emerald-400"
+              : "bg-background border-neutral-800 text-neutral-400 hover:border-neutral-700 hover:text-neutral-200"
+          }`}
+          title={showNodeBoundaries ? "Hide Physical Worker Node Bounding Boxes" : "Show Physical Worker Node Bounding Boxes"}
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono font-bold">⬚</span>
+            <span>Node Boxes</span>
+          </div>
+          <span className={`text-[10px] font-mono px-1 py-0.2 rounded ${showNodeBoundaries ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "bg-neutral-800 text-neutral-400"}`}>
+            {showNodeBoundaries ? "ON" : "OFF"}
+          </span>
         </button>
 
         {completedJobsCount > 0 && (

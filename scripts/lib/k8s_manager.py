@@ -1,9 +1,9 @@
 import os
 import shlex
 import shutil
-import subprocess
 from typing import List, Dict, Optional, Tuple, Any
 from .config import TESTING_K8S_DIR, PROJECT_ROOT
+from .proc_utils import safe_run, safe_stream
 
 class K8sManager:
     def __init__(self, log_fn=None):
@@ -13,36 +13,18 @@ class K8sManager:
         self.log_fn(msg)
 
     def _run_stream(self, cmd: str, cwd: Optional[str] = None) -> int:
-        try:
-            proc = subprocess.Popen(
-                cmd,
-                shell=True,
-                cwd=cwd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-            )
-            if proc.stdout:
-                for line in iter(proc.stdout.readline, ""):
-                    clean = line.rstrip("\r\n")
-                    if clean:
-                        self.log(clean)
-            return proc.wait()
-        except Exception as e:
-            self.log(f"Execution failed for '{cmd}': {e}")
-            return 1
+        return safe_stream(cmd, cwd=cwd or PROJECT_ROOT, shell=True, on_line=self.log)
 
     def get_current_context(self) -> str:
         try:
-            res = subprocess.run("kubectl config current-context", shell=True, capture_output=True, text=True)
+            res = safe_run(["kubectl", "config", "current-context"], timeout=3.0)
             return res.stdout.strip()
         except Exception:
             return ""
 
     def get_available_contexts(self) -> List[str]:
         try:
-            res = subprocess.run("kubectl config get-contexts -o name", shell=True, capture_output=True, text=True)
+            res = safe_run(["kubectl", "config", "get-contexts", "-o", "name"], timeout=3.0)
             if res.returncode == 0:
                 return [c.strip() for c in res.stdout.splitlines() if c.strip()]
         except Exception:
@@ -51,7 +33,7 @@ class K8sManager:
 
     def switch_context(self, context_name: str) -> bool:
         self.log(f"Switching kubectl context to '{context_name}'...")
-        res = subprocess.run(f"kubectl config use-context {context_name}", shell=True, capture_output=True, text=True)
+        res = safe_run(["kubectl", "config", "use-context", context_name], timeout=5.0)
         if res.returncode == 0:
             self.log(f"Successfully switched context to '{context_name}'")
             return True
@@ -70,14 +52,11 @@ class K8sManager:
         current = self.get_current_context()
         if not current:
             return {"context": "none", "status": "No active Kubernetes context", "online": False}
-        try:
-            res = subprocess.run("kubectl cluster-info", shell=True, capture_output=True, text=True, timeout=3)
-            if res.returncode == 0:
-                return {"context": current, "status": "Cluster is reachably online", "online": True}
-            else:
-                return {"context": current, "status": "Cluster unreachable or offline", "online": False}
-        except Exception:
-            return {"context": current, "status": "Timeout checking cluster info", "online": False}
+        res = safe_run(["kubectl", "cluster-info", "--request-timeout=3s"], timeout=4.0)
+        if res.returncode == 0:
+            return {"context": current, "status": "Cluster is reachably online", "online": True}
+        else:
+            return {"context": current, "status": "Cluster unreachable or offline", "online": False}
 
     def deploy_test_suite(self, progress_cb=None) -> bool:
         p = progress_cb or (lambda text, fraction: None)
@@ -111,7 +90,7 @@ class K8sManager:
 
         if ctx == "minikube":
             p("Verifying Minikube status...", 0.2)
-            res = subprocess.run("minikube status", shell=True, capture_output=True, text=True)
+            res = safe_run(["minikube", "status"], timeout=6.0)
             if res.returncode != 0:
                 self.log("Minikube is not running. Starting cluster...")
                 p("Starting Minikube cluster...", 0.3)
@@ -146,7 +125,7 @@ class K8sManager:
 
         p("Exporting portable kubeconfig...", 0.9)
         export_path = "/tmp/envscale-kubeconfig.yaml"
-        subprocess.run(f"kubectl config view --flatten > {shlex.quote(export_path)}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        safe_run(f"kubectl config view --flatten > {shlex.quote(export_path)}", shell=True, timeout=5.0)
         self.log(f"Exported portable kubeconfig to {export_path}")
 
         p("Test suite deployment complete!", 1.0)
@@ -174,7 +153,7 @@ class K8sManager:
     def get_ingress_url(self) -> Optional[str]:
         ctx = self.get_current_context()
         if ctx == "minikube":
-            res = subprocess.run("minikube ip", shell=True, capture_output=True, text=True)
+            res = safe_run(["minikube", "ip"], timeout=4.0)
             ip = res.stdout.strip()
             if ip:
                 return f"http://{ip}/"

@@ -17,6 +17,59 @@ type PodMetricData struct {
 	MemoryUsageMb float64
 }
 
+type NodeMetricData struct {
+	CpuUsageMcores int64
+	MemoryUsageMiB int64
+	CpuPct         float64
+	MemoryPct      float64
+}
+
+// FetchNodeMetricsMap fetches real-time node metrics from metrics-server clientset
+func (im *InformerManager) FetchNodeMetricsMap() map[string]NodeMetricData {
+	metricsMap := make(map[string]NodeMetricData)
+	if im.metricsClient == nil {
+		return metricsMap
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	nodeMetricsList, err := im.metricsClient.MetricsV1beta1().NodeMetricses().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return metricsMap
+	}
+
+	for _, nm := range nodeMetricsList.Items {
+		cpuMilli := nm.Usage.Cpu().MilliValue()
+		memBytes := nm.Usage.Memory().Value()
+		memMiB := memBytes / (1024 * 1024)
+
+		var cpuPct float64 = 0
+		var memPct float64 = 0
+
+		if nodeObj, exists, _ := im.factory.Core().V1().Nodes().Informer().GetStore().GetByKey(nm.Name); exists {
+			if node, ok := nodeObj.(*corev1.Node); ok {
+				allocatableCpu := node.Status.Allocatable.Cpu().MilliValue()
+				if allocatableCpu > 0 {
+					cpuPct = math.Min(100, math.Max(0, (float64(cpuMilli)/float64(allocatableCpu))*100))
+				}
+				allocatableMem := node.Status.Allocatable.Memory().Value()
+				if allocatableMem > 0 {
+					memPct = math.Min(100, math.Max(0, (float64(memBytes)/float64(allocatableMem))*100))
+				}
+			}
+		}
+
+		metricsMap[nm.Name] = NodeMetricData{
+			CpuUsageMcores: cpuMilli,
+			MemoryUsageMiB: memMiB,
+			CpuPct:         math.Round(cpuPct*10) / 10,
+			MemoryPct:      math.Round(memPct*10) / 10,
+		}
+	}
+	return metricsMap
+}
+
 // FetchPodMetricsMap fetches real-time pod metrics from metrics-server clientset
 func (im *InformerManager) FetchPodMetricsMap() map[string]PodMetricData {
 	metricsMap := make(map[string]PodMetricData)
@@ -136,6 +189,43 @@ func (im *InformerManager) startMetricsPulse(stopCh <-chan struct{}) {
 						dedupKey := fmt.Sprintf("PodMetric/%s/%s", pod.Namespace, pod.Name)
 						if im.dedup.ShouldEmit(dedupKey, delta) {
 							im.hub.BroadcastEvent(types.EventPodStatusChanged, im.clusterID, delta)
+						}
+					}
+				}
+			}
+
+			// Broadcast live real node metrics
+			nodeMetricsMap := im.FetchNodeMetricsMap()
+			if len(nodeMetricsMap) > 0 {
+				for _, obj := range nodeList {
+					if node, ok := obj.(*corev1.Node); ok {
+						if nm, ok := nodeMetricsMap[node.Name]; ok {
+							status := "Unknown"
+							for _, cond := range node.Status.Conditions {
+								if cond.Type == corev1.NodeReady {
+									if cond.Status == corev1.ConditionTrue {
+										status = "Ready"
+									} else {
+										status = "NotReady"
+									}
+								}
+							}
+							delta := types.NodeStatusDelta{
+								Name:           node.Name,
+								Status:         status,
+								CPUCapacity:    node.Status.Capacity.Cpu().String(),
+								MemoryCapacity: node.Status.Capacity.Memory().String(),
+								PodCapacity:    node.Status.Capacity.Pods().Value(),
+								Labels:         node.Labels,
+								CpuUsageMcores: nm.CpuUsageMcores,
+								MemoryUsageMiB: nm.MemoryUsageMiB,
+								CpuPct:         nm.CpuPct,
+								MemoryPct:      nm.MemoryPct,
+							}
+							dedupKey := fmt.Sprintf("NodeMetric/%s", node.Name)
+							if im.dedup.ShouldEmit(dedupKey, delta) {
+								im.hub.BroadcastEvent(types.EventNodeMutated, im.clusterID, delta)
+							}
 						}
 					}
 				}

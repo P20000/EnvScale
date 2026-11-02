@@ -19,6 +19,7 @@ import { StatefulSetOverviewSection } from "./StatefulSetOverviewSection";
 import { StatefulPodDetailsSection } from "./StatefulPodDetailsSection";
 import { StorageOverviewSection } from "./StorageOverviewSection";
 import { ConfigOverviewSection } from "./ConfigOverviewSection";
+import { RBACAuthorizationSection } from "./RBACAuthorizationSection";
 import { AutoscalingHPASection } from "./AutoscalingHPASection";
 import { HealthProbesSection } from "./HealthProbesSection";
 import { NetworkPolicyRolloutSection } from "./NetworkPolicyRolloutSection";
@@ -360,6 +361,11 @@ export function OverviewTab({
             <>
               <StatefulPodDetailsSection pod={target.data as K8sPodData} />
               <ConfigOverviewSection pod={target.data as K8sPodData} />
+              <RBACAuthorizationSection
+                serviceAccountName={(target.data as K8sPodData).serviceAccountName || (target.data as K8sPodData).serviceAccount}
+                namespace={targetRecord.namespace ? String(targetRecord.namespace) : "default"}
+                automountToken={(target.data as K8sPodData).automountServiceAccountToken}
+              />
             </>
           )}
 

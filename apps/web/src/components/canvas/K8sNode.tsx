@@ -1,6 +1,7 @@
 import { Handle, Position } from '@xyflow/react';
 import { MdDns as Icon } from 'react-icons/md';
 import { useUIStore } from '../../store/useUIStore';
+import { formatNodeName } from '../../utils/nodeBoundaryHelpers';
 
 export interface DaemonAgentInfo {
   name: string;
@@ -16,6 +17,8 @@ export interface K8sNodeData extends Record<string, unknown> {
   memoryCapacity?: string;
   cpuPct: number;
   memoryPct: number;
+  cpuUsageMcores?: number;
+  memoryUsageMiB?: number;
   status: "Ready" | "NotReady" | "Running" | "Warning" | "Error" | "Inactive";
   daemonAgents?: DaemonAgentInfo[];
 }
@@ -48,8 +51,8 @@ export function K8sWorkerNode({ data }: { data: K8sNodeData }) {
           <div className="w-6 h-6 rounded-md bg-[#23262D] border border-[#30343B] flex items-center justify-center shrink-0 text-[#C4C7C5]">
             <Icon size={14} />
           </div>
-          <span className="text-xs font-semibold text-[#E6E1E5] tracking-tight truncate max-w-[120px]" title={data.name}>
-            {data.name}
+          <span className="text-xs font-semibold text-[#E6E1E5] tracking-tight truncate max-w-[130px]" title={data.name}>
+            {formatNodeName(data.name)}
           </span>
         </div>
 

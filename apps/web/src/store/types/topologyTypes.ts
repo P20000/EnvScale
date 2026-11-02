@@ -331,5 +331,62 @@ export interface K8sStatefulSetData extends Record<string, unknown> {
   createdAt?: string;
 }
 
+export interface RBACSubjectInfo {
+  kind: string;
+  name: string;
+  namespace?: string;
+}
 
+export interface RBACRoleRefInfo {
+  kind: "Role" | "ClusterRole" | string;
+  name: string;
+  apiGroup?: string;
+}
 
+export interface RBACPolicyRuleInfo {
+  verbs: string[];
+  apiGroups?: string[];
+  resources?: string[];
+  resourceNames?: string[];
+}
+
+export interface K8sServiceAccountData extends Record<string, unknown> {
+  name: string;
+  namespace: string;
+  automountServiceAccountToken?: boolean;
+  secrets?: string[];
+  labels?: Record<string, string>;
+  createdAt?: string;
+}
+
+export interface K8sRoleBindingData extends Record<string, unknown> {
+  name: string;
+  namespace: string;
+  roleRef: RBACRoleRefInfo;
+  subjects: RBACSubjectInfo[];
+  labels?: Record<string, string>;
+  createdAt?: string;
+}
+
+export interface K8sClusterRoleBindingData extends Record<string, unknown> {
+  name: string;
+  roleRef: RBACRoleRefInfo;
+  subjects: RBACSubjectInfo[];
+  labels?: Record<string, string>;
+  createdAt?: string;
+}
+
+export interface K8sRoleData extends Record<string, unknown> {
+  name: string;
+  namespace: string;
+  rules: RBACPolicyRuleInfo[];
+  labels?: Record<string, string>;
+  createdAt?: string;
+}
+
+export interface K8sClusterRoleData extends Record<string, unknown> {
+  name: string;
+  rules: RBACPolicyRuleInfo[];
+  labels?: Record<string, string>;
+  createdAt?: string;
+}

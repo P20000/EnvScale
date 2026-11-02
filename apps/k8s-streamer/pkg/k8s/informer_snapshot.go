@@ -47,6 +47,7 @@ func (im *InformerManager) GetSnapshot() (
 		}
 	}
 
+	nodeMetricsMap := im.FetchNodeMetricsMap()
 	nodeList := im.factory.Core().V1().Nodes().Informer().GetStore().List()
 	for _, obj := range nodeList {
 		if node, ok := obj.(*corev1.Node); ok {
@@ -60,14 +61,21 @@ func (im *InformerManager) GetSnapshot() (
 					}
 				}
 			}
-			nodes = append(nodes, types.NodeStatusDelta{
+			delta := types.NodeStatusDelta{
 				Name:           node.Name,
 				Status:         status,
 				CPUCapacity:    node.Status.Capacity.Cpu().String(),
 				MemoryCapacity: node.Status.Capacity.Memory().String(),
 				PodCapacity:    node.Status.Capacity.Pods().Value(),
 				Labels:         node.Labels,
-			})
+			}
+			if nm, ok := nodeMetricsMap[node.Name]; ok {
+				delta.CpuUsageMcores = nm.CpuUsageMcores
+				delta.MemoryUsageMiB = nm.MemoryUsageMiB
+				delta.CpuPct = nm.CpuPct
+				delta.MemoryPct = nm.MemoryPct
+			}
+			nodes = append(nodes, delta)
 		}
 	}
 

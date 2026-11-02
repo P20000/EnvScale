@@ -59,7 +59,7 @@ export function K8sServiceNode({ data }: { data: K8sServiceData }) {
           }`}>
             {isHeadless ? <HubIcon size={14} /> : <Icon size={14} />}
           </div>
-          <span className="text-xs font-semibold text-[#E6E1E5] tracking-tight truncate max-w-[125px]" title={data.name}>
+          <span className="text-xs font-semibold text-[#E6E1E5] tracking-tight truncate max-w-[145px]" title={data.name}>
             {data.name}
           </span>
         </div>

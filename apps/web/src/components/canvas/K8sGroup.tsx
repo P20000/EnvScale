@@ -16,6 +16,7 @@ import {
   MdShield as ShieldIcon,
 } from "react-icons/md";
 import { findNamespaceQuota, getQuotaUtilizationSummary } from "../../store/helpers/quotaHelpers";
+import { getWorkloadNodePlacement, formatNodeName } from "../../utils/nodeBoundaryHelpers";
 
 export interface PodSummary {
   name: string;
@@ -45,6 +46,7 @@ export interface K8sGroupData extends Record<string, unknown> {
 
 export function K8sGroupNode({ data }: { data: K8sGroupData }) {
   const layoutDirection = useUIStore((s) => s.layoutDirection);
+  const hoveredNodeName = useUIStore((s) => s.hoveredNodeName);
   const setSelectedNode = useTopologyStore((s) => s.setSelectedNode);
   const activeChaosFaults = useTopologyStore((s) => s.activeChaosFaults);
   const isTB = layoutDirection === "TB";
@@ -54,6 +56,9 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
   const isStandalone = Boolean(rollout?.isStandaloneReplicaSet);
 
   const rawPods = (data.pods || []) as K8sPodData[];
+  const nodePlacement = getWorkloadNodePlacement(rawPods);
+  const isHostHovered = Boolean(hoveredNodeName && nodePlacement.nodes.includes(hoveredNodeName));
+  const isOtherNodeHovered = Boolean(hoveredNodeName && nodePlacement.nodes.length > 0 && !nodePlacement.nodes.includes(hoveredNodeName));
   const summaries: PodSummary[] = (data.podSummaries as PodSummary[]) || rawPods.map((p) => {
     const ph = String(p.phase || p.status || "Running").toLowerCase();
     const isTerminating = Boolean(p.isTerminating || ph === "terminating");
@@ -84,6 +89,10 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
 
   const distinctSecretNames = Array.from(
     new Set(rawPods.flatMap((p) => p.secrets?.map((s) => s.name) || []))
+  ).filter(Boolean);
+
+  const distinctServiceAccounts = Array.from(
+    new Set(rawPods.map((p) => p.serviceAccountName || p.serviceAccount || "default"))
   ).filter(Boolean);
 
   const totalReplicas = data.replicas ?? (summaries.length > 0 ? summaries.length : 1);
@@ -164,6 +173,8 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
     <div
       onClick={handleCardClick}
       className={`group relative flex flex-col justify-between w-[295px] min-h-[90px] rounded-xl p-2.5 border transition-all duration-200 cursor-pointer select-none ${
+        isHostHovered ? "!border-emerald-500 !ring-2 !ring-emerald-500/80 !shadow-[0_0_15px_rgba(16,185,129,0.3)]" : ""
+      } ${isOtherNodeHovered ? "opacity-35" : "opacity-100"} ${
         isChaosActive
           ? "bg-[#191B20] border-[#30343B] hover:bg-[#23262D] hover:border-[#424750]"
           : isRolling
@@ -226,9 +237,27 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
             >
               {data.name}
             </span>
-            <span className="text-[9px] font-mono text-[#92959D] truncate leading-tight mt-0.5">
-              {isStatefulSet ? "StatefulSet" : "Deployment"} • {data.namespace || "default"}
-            </span>
+            <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
+              <span className="text-[9px] font-mono text-[#92959D] truncate leading-tight">
+                {isStatefulSet ? "StatefulSet" : "Deployment"} • {data.namespace || "default"}
+              </span>
+              {nodePlacement.nodes.length > 0 && (
+                <span
+                  className={`text-[8px] font-mono px-1 py-[0.5px] rounded border shrink-0 font-medium truncate max-w-[105px] inline-block ${
+                    nodePlacement.isMultiNode
+                      ? "bg-purple-500/15 border-purple-500/30 text-purple-300"
+                      : "bg-blue-500/10 border-blue-500/25 text-blue-300"
+                  }`}
+                  title={
+                    nodePlacement.isMultiNode
+                      ? `Multi-Node Spread: ${nodePlacement.nodes.join(", ")}`
+                      : `Worker Node: ${nodePlacement.primaryNode}`
+                  }
+                >
+                  {nodePlacement.isMultiNode ? `HA: ${nodePlacement.nodes.length} NODES` : formatNodeName(nodePlacement.primaryNode)}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -360,6 +389,21 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
               </span>
             </span>
           )}
+
+          {/* In-Cluster ServiceAccount Badge */}
+          {distinctServiceAccounts.length > 0 && distinctServiceAccounts[0] !== "default" && (
+            <span
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-violet-500/15 text-violet-300 shrink-0 border border-violet-500/20"
+              title={`In-Cluster ServiceAccount: ${distinctServiceAccounts.join(", ")}`}
+            >
+              <span className="text-[7.5px] font-extrabold uppercase px-1 py-[0.5px] rounded bg-violet-500/25 text-violet-300 tracking-wider">
+                SA
+              </span>
+              <span className="text-[9px] font-mono font-medium truncate max-w-[70px]">
+                {distinctServiceAccounts[0]}
+              </span>
+            </span>
+          )}
         </div>
 
         {/* Right: Ambient CPU Load with integrated micro-meter */}
@@ -405,9 +449,10 @@ export function K8sGroupNode({ data }: { data: K8sGroupData }) {
                   ? "bg-[#F4C26B]"
                   : "bg-[#6DD6A8]";
 
+                const podHost = pod.podData?.nodeName || nodePlacement.primaryNode;
                 const tooltip = isChaosImpacted
-                  ? `⚡ CHAOS FAULT ACTIVE (${podFault?.faultType || workloadFault?.faultType}): ${pod.name} (${pod.phase})`
-                  : `${pod.name} (${pod.phase}${pod.restarts > 0 ? `, ${pod.restarts} restarts` : ""})`;
+                  ? `⚡ CHAOS FAULT ACTIVE (${podFault?.faultType || workloadFault?.faultType}): ${pod.name} • Host: ${podHost} (${pod.phase})`
+                  : `${pod.name} • Host: ${podHost} (${pod.phase}${pod.restarts > 0 ? `, ${pod.restarts} restarts` : ""})`;
 
                 return (
                   <button

@@ -22,6 +22,7 @@ export function AgentInstallStep({ clusterId, clusterName, onConnected }: AgentI
   const [copied, setCopied] = useState(false);
   const [status, setStatus] = useState<"waiting" | "connected">("waiting");
   const [isChecking, setIsChecking] = useState(false);
+  const [tunnelUrl, setTunnelUrl] = useState("");
 
   // Retrieve user JWT token
   const token =
@@ -40,7 +41,9 @@ export function AgentInstallStep({ clusterId, clusterName, onConnected }: AgentI
       ? (isLocalhost ? "http://localhost:3000" : window.location.origin)
       : "http://localhost:3000";
 
-  const manifestUrl = `${hostUrl}/api/v1/clusters/${clusterId}/agent.yaml?token=${token}`;
+  const manifestUrl = `${hostUrl}/api/v1/clusters/${clusterId}/agent.yaml?token=${token}${
+    tunnelUrl.trim() ? `&serverUrl=${encodeURIComponent(tunnelUrl.trim())}` : ""
+  }`;
   const installCmd = `kubectl apply -f "${manifestUrl}"`;
 
   const copyToClipboard = () => {
@@ -153,6 +156,22 @@ export function AgentInstallStep({ clusterId, clusterName, onConnected }: AgentI
         <div className="relative rounded-xl border border-zinc-800 bg-black/60 p-3.5 font-mono text-xs text-neutral-200">
           <p className="break-all select-all text-emerald-400/90 leading-relaxed">{installCmd}</p>
         </div>
+
+        {isLocalhost && (
+          <div className="mt-2.5 rounded-xl border border-blue-500/25 bg-blue-500/5 p-3 text-[11px] text-neutral-300 space-y-2">
+            <div>
+              <span className="font-semibold text-blue-400">Remote Cloud Notice (AWS EKS / GKE): </span>
+              Cloud pods cannot reach <code>localhost</code>. For cloud clusters, we recommend the <strong>Kubeconfig File</strong> mode, or specify a public tunnel URL (e.g. Cloudflare / ngrok) below:
+            </div>
+            <input
+              type="text"
+              placeholder="e.g. wss://your-tunnel.ngrok-free.app/ws/agent"
+              value={tunnelUrl}
+              onChange={(e) => setTunnelUrl(e.target.value)}
+              className="w-full bg-[#111318] border border-zinc-700/60 rounded-lg px-2.5 py-1.5 text-xs font-mono text-neutral-200 placeholder:text-neutral-500 focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+        )}
       </div>
 
       <div className="rounded-xl border border-zinc-800/80 bg-[#14161C] p-3 text-xs text-neutral-400 space-y-2">

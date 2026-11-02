@@ -160,7 +160,8 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
       const nodeData = target.data as K8sNodeData;
       const pct = nodeData.cpuPct ?? 0;
       const capStr = nodeData.cpuCapacity || (clusterCpuCores ? `${clusterCpuCores} cores` : "Allocating");
-      return { label: `${pct}% (${capStr})`, pct: Math.min(100, Math.max(0, pct)) };
+      const mcoresDetail = nodeData.cpuUsageMcores ? `${nodeData.cpuUsageMcores}m / ` : "";
+      return { label: `${pct}% (${mcoresDetail}${capStr})`, pct: Math.min(100, Math.max(0, pct)) };
     }
     if (target.type === "job") {
       const jobData = target.data as K8sJobData;
@@ -192,7 +193,8 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
       const nodeData = target.data as K8sNodeData;
       const pct = nodeData.memoryPct ?? 0;
       const capStr = nodeData.memoryCapacity || (clusterMemoryGB ? `${clusterMemoryGB.toFixed(1)} GiB` : "Allocating");
-      return { label: `${pct}% (${capStr})`, pct: Math.min(100, Math.max(0, pct)) };
+      const memDetail = nodeData.memoryUsageMiB ? `${(nodeData.memoryUsageMiB / 1024).toFixed(1)} GiB / ` : "";
+      return { label: `${pct}% (${memDetail}${capStr})`, pct: Math.min(100, Math.max(0, pct)) };
     }
     if (target.type === "job") {
       const jobData = target.data as K8sJobData;
