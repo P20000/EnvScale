@@ -20,6 +20,11 @@ import type {
   K8sStatefulSetData,
   K8sVolumeSnapshotData,
   K8sVolumeSnapshotContentData,
+  K8sServiceAccountData,
+  K8sRoleBindingData,
+  K8sClusterRoleBindingData,
+  K8sRoleData,
+  K8sClusterRoleData,
 } from "../types/topologyTypes";
 import type { TopologyState } from "../useTopologyStore";
 import { extractServices, extractPods, calculateClusterCapacity } from "../helpers/topologyHelpers";
@@ -90,8 +95,8 @@ export function handleSnapshotSync(
       data: {
         name,
         status: String(n.status || "Ready"),
-        cpuPct: Number(n.cpuPct ?? 30),
-        memoryPct: Number(n.memoryPct ?? 45),
+        cpuPct: Number(n.cpuPct ?? 0),
+        memoryPct: Number(n.memoryPct ?? 0),
         ...n,
       } as K8sNodeData,
     });
@@ -138,6 +143,11 @@ export function handleSnapshotSync(
   const snapshotStatefulSets = Array.isArray(payloadData.statefulSets) ? (payloadData.statefulSets as K8sStatefulSetData[]) : [];
   const snapshotVS = Array.isArray(payloadData.volumeSnapshots) ? (payloadData.volumeSnapshots as K8sVolumeSnapshotData[]) : [];
   const snapshotVSC = Array.isArray(payloadData.volumeSnapshotContents) ? (payloadData.volumeSnapshotContents as K8sVolumeSnapshotContentData[]) : [];
+  const snapshotSAs = Array.isArray(payloadData.serviceAccounts) ? (payloadData.serviceAccounts as K8sServiceAccountData[]) : [];
+  const snapshotRBs = Array.isArray(payloadData.roleBindings) ? (payloadData.roleBindings as K8sRoleBindingData[]) : [];
+  const snapshotCRBs = Array.isArray(payloadData.clusterRoleBindings) ? (payloadData.clusterRoleBindings as K8sClusterRoleBindingData[]) : [];
+  const snapshotRoles = Array.isArray(payloadData.roles) ? (payloadData.roles as K8sRoleData[]) : [];
+  const snapshotCRoles = Array.isArray(payloadData.clusterRoles) ? (payloadData.clusterRoles as K8sClusterRoleData[]) : [];
 
   const currentSelected = useUIStore.getState().selectedNamespaces;
   const nsSet = new Set<string>();
@@ -193,6 +203,11 @@ export function handleSnapshotSync(
     statefulSets: snapshotStatefulSets,
     volumeSnapshots: snapshotVS,
     volumeSnapshotContents: snapshotVSC,
+    serviceAccounts: snapshotSAs,
+    roleBindings: snapshotRBs,
+    clusterRoleBindings: snapshotCRBs,
+    roles: snapshotRoles,
+    clusterRoles: snapshotCRoles,
   });
   state.applyDagreLayout();
 }

@@ -89,33 +89,41 @@ class ServicesView(Gtk.Box):
         self.log_panel = HeadingLogPanel("services", self.log_storage)
         self.append(self.log_panel)
 
-        GLib.timeout_add(2500, self.update_health)
+        self._is_checking = False
+        GLib.timeout_add(4000, self.update_health)
         self.update_health()
 
     def update_health(self):
+        if self._is_checking:
+            return True
+        self._is_checking = True
+
         def _bg_check():
-            statuses = {}
-            for sid in SERVICE_ORDER:
-                statuses[sid] = check_service_health(sid)
+            try:
+                statuses = {}
+                for sid in SERVICE_ORDER:
+                    statuses[sid] = check_service_health(sid)
 
-            def _apply():
-                for sid, h in statuses.items():
-                    data = self.service_rows.get(sid)
-                    if not data:
-                        continue
-                    badge = data["badge"]
-                    online = h.get("online", False)
-                    if online:
-                        badge.set_text(f"ONLINE ({h.get('latency_ms', 0)}ms)")
-                        badge.remove_css_class("error")
-                        badge.add_css_class("success")
-                    else:
-                        badge.set_text("OFFLINE")
-                        badge.remove_css_class("success")
-                        badge.add_css_class("error")
-                return False
+                def _apply():
+                    for sid, h in statuses.items():
+                        data = self.service_rows.get(sid)
+                        if not data:
+                            continue
+                        badge = data["badge"]
+                        online = h.get("online", False)
+                        if online:
+                            badge.set_text(f"ONLINE ({h.get('latency_ms', 0)}ms)")
+                            badge.remove_css_class("error")
+                            badge.add_css_class("success")
+                        else:
+                            badge.set_text("OFFLINE")
+                            badge.remove_css_class("success")
+                            badge.add_css_class("error")
+                    return False
 
-            GLib.idle_add(_apply)
+                GLib.idle_add(_apply)
+            finally:
+                self._is_checking = False
 
         threading.Thread(target=_bg_check, daemon=True).start()
         return True

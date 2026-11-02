@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Callable, Tuple
 from .config import SERVICES, PROJECT_ROOT, DOCKER_COMPOSE_FILE
 from .env_sync import parse_dotenv
+from .proc_utils import safe_stream
 
 LogCallback = Callable[[str, str, str], None]  # (service, timestamp, message)
 
@@ -64,25 +65,7 @@ class ProcessManager:
                     b.clear()
 
     def exec_command(self, service: str, cmd: str, cwd: str = PROJECT_ROOT) -> int:
-        try:
-            proc = subprocess.Popen(
-                cmd,
-                shell=True,
-                cwd=cwd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-            )
-            if proc.stdout:
-                for line in iter(proc.stdout.readline, ""):
-                    clean = line.rstrip("\r\n")
-                    if clean:
-                        self.emit_log(service, clean)
-            return proc.wait()
-        except Exception as e:
-            self.emit_log(service, f"Execution failed for '{cmd}': {e}")
-            return 1
+        return safe_stream(cmd, cwd=cwd, shell=True, on_line=lambda line: self.emit_log(service, line))
 
     def start_docker_infra(self) -> bool:
         from .health_checker import check_port, check_redis

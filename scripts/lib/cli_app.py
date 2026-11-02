@@ -284,4 +284,46 @@ def rollback_cmd():
     deployer.rollback()
     console.print("[bold green]✔ Rollback Complete & Verified![/bold green]")
 
+@cli.group()
+def eks():
+    """AWS EKS Managed Kubernetes Lifecycle (status, up, destroy, deploy)."""
+    pass
+
+@eks.command("status")
+def eks_status():
+    """Check AWS EKS cluster status and API endpoint."""
+    from .eks_deployer import EKSDeployer
+    deployer = EKSDeployer()
+    st = deployer.get_cluster_status()
+    if st.get("provisioned", False):
+        console.print(f"[bold green]EKS Cluster Online:[/bold green] {deployer.cluster_name} | [bold]Status:[/bold] {st['status']} | [bold]Endpoint:[/bold] {st['endpoint']}")
+    else:
+        console.print(f"[dim]EKS Cluster: {st.get('status', 'NOT PROVISIONED')} (Region: {deployer.region})[/dim]")
+
+@eks.command("up")
+def eks_up():
+    """Provision AWS EKS cluster, spot worker nodes, and todo benchmark workloads."""
+    from .eks_deployer import EKSDeployer
+    deployer = EKSDeployer(log_fn=lambda m: console.print(f"[blue]{m}[/blue]"))
+    deployer.eks_up()
+    console.print("[bold green]✔ AWS EKS Cluster Provisioned & Workloads Deployed![/bold green]")
+
+@eks.command("destroy")
+def eks_destroy():
+    """Tear down AWS EKS cluster, worker nodes, and clean up dead kubeconfig context."""
+    if Confirm.ask("[bold red]Are you sure you want to destroy the AWS EKS cluster?[/bold red]"):
+        from .eks_deployer import EKSDeployer
+        deployer = EKSDeployer(log_fn=lambda m: console.print(f"[red]{m}[/red]"))
+        deployer.eks_destroy()
+        console.print("[bold green]✔ EKS Cluster Destroyed & Kubeconfig Context Cleaned.[/bold green]")
+
+@eks.command("deploy")
+def eks_deploy():
+    """Deploy multi-tier Todo application workloads to active EKS cluster."""
+    from .eks_deployer import EKSDeployer
+    deployer = EKSDeployer(log_fn=lambda m: console.print(f"[cyan]{m}[/cyan]"))
+    deployer.deploy_workloads()
+    console.print("[bold green]✔ Todo workloads deployed to EKS![/bold green]")
+
+
 

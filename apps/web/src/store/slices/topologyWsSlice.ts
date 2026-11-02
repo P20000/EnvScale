@@ -20,6 +20,7 @@ import { handleChaosWsEvent } from "../helpers/chaosHelpers";
 import { handlePolicyHpaWsEvent } from "../helpers/policyHpaHelpers";
 import { handleQuotaWsEvent } from "../helpers/quotaHelpers";
 import { handleStatefulSetWsEvent } from "../helpers/statefulSetHelpers";
+import { handleRBACWsEvent } from "../helpers/rbacWsHelpers";
 import { handleSnapshotSync } from "./topologySnapshotHandler";
 
 export function handleWsMessage(
@@ -169,8 +170,8 @@ export function handleWsMessage(
         data: {
           name: nodeName,
           status: String(payloadData.status || "Ready"),
-          cpuPct: Number(payloadData.cpuPct ?? 30),
-          memoryPct: Number(payloadData.memoryPct ?? 45),
+          cpuPct: Number(payloadData.cpuPct ?? 0),
+          memoryPct: Number(payloadData.memoryPct ?? 0),
           ...payloadData,
         } as K8sNodeData,
       };
@@ -472,5 +473,13 @@ export function handleWsMessage(
     handleQuotaWsEvent(state, set, eventType, payloadData);
   } else if (eventType.startsWith("EVENT_STATEFUL_SET_")) {
     handleStatefulSetWsEvent(state, set, eventType, payloadData || {});
+  } else if (
+    eventType.startsWith("EVENT_SERVICEACCOUNT_") ||
+    eventType.startsWith("EVENT_ROLEBINDING_") ||
+    eventType.startsWith("EVENT_CLUSTERROLEBINDING_") ||
+    eventType.startsWith("EVENT_ROLE_") ||
+    eventType.startsWith("EVENT_CLUSTERROLE_")
+  ) {
+    handleRBACWsEvent(state, set, eventType, payloadData || {});
   }
 }

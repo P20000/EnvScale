@@ -279,6 +279,56 @@ func (cm *ClusterManager) GetLimitRangeSnapshot(clusterID string) []types.LimitR
 	return nil
 }
 
+// GetServiceAccountsSnapshot retrieves all cached ServiceAccounts for a cluster
+func (cm *ClusterManager) GetServiceAccountsSnapshot(clusterID string) []types.ServiceAccountDelta {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	if im, ok := cm.resolveInformerManagerLocked(clusterID); ok && im != nil {
+		return im.GetServiceAccountsSnapshot()
+	}
+	return nil
+}
+
+// GetRoleBindingsSnapshot retrieves all cached RoleBindings for a cluster
+func (cm *ClusterManager) GetRoleBindingsSnapshot(clusterID string) []types.RoleBindingDelta {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	if im, ok := cm.resolveInformerManagerLocked(clusterID); ok && im != nil {
+		return im.GetRoleBindingsSnapshot()
+	}
+	return nil
+}
+
+// GetClusterRoleBindingsSnapshot retrieves all cached ClusterRoleBindings for a cluster
+func (cm *ClusterManager) GetClusterRoleBindingsSnapshot(clusterID string) []types.ClusterRoleBindingDelta {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	if im, ok := cm.resolveInformerManagerLocked(clusterID); ok && im != nil {
+		return im.GetClusterRoleBindingsSnapshot()
+	}
+	return nil
+}
+
+// GetRolesSnapshot retrieves all cached Roles for a cluster
+func (cm *ClusterManager) GetRolesSnapshot(clusterID string) []types.RoleDelta {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	if im, ok := cm.resolveInformerManagerLocked(clusterID); ok && im != nil {
+		return im.GetRolesSnapshot()
+	}
+	return nil
+}
+
+// GetClusterRolesSnapshot retrieves all cached ClusterRoles for a cluster
+func (cm *ClusterManager) GetClusterRolesSnapshot(clusterID string) []types.ClusterRoleDelta {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	if im, ok := cm.resolveInformerManagerLocked(clusterID); ok && im != nil {
+		return im.GetClusterRolesSnapshot()
+	}
+	return nil
+}
+
 // CheckPDBSafety checks if a workload is protected by a PDB and whether disruptions are allowed
 func (cm *ClusterManager) CheckPDBSafety(clusterID, namespace, workloadName string, labels map[string]string) (*types.PDBStatusDelta, bool) {
 	cm.mu.RLock()

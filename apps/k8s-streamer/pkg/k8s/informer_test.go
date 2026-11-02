@@ -180,3 +180,16 @@ func TestClusterManagerLifecycle(t *testing.T) {
 		t.Errorf("Expected informer manager to be stopped after unregistering")
 	}
 }
+
+func TestFetchNodeMetricsMap_NilClient(t *testing.T) {
+	hub := websocket.NewHub()
+	im := NewInformerManagerWithClientset(fake.NewSimpleClientset(), hub, "test-cluster-nil-metrics")
+
+	metrics := im.FetchNodeMetricsMap()
+	if metrics == nil {
+		t.Fatalf("expected non-nil map from FetchNodeMetricsMap even when metricsClient is nil")
+	}
+	if len(metrics) != 0 {
+		t.Errorf("expected empty map for nil metrics client, got %d items", len(metrics))
+	}
+}

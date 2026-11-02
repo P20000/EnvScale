@@ -39,6 +39,7 @@ import {
   type Cluster, type K8sPVCData, type K8sPVData, type K8sConfigMapData, type K8sSecretData, type ChaosFaultEvent,
   type K8sHPAData, type K8sNetworkPolicyData, type K8sPDBData, type K8sResourceQuotaData, type K8sLimitRangeData, type K8sStatefulSetData,
   type K8sVolumeSnapshotData, type K8sVolumeSnapshotContentData,
+  type K8sServiceAccountData, type K8sRoleBindingData, type K8sClusterRoleBindingData, type K8sRoleData, type K8sClusterRoleData,
 } from "./types/topologyTypes";
 import {
   extractServices,
@@ -52,9 +53,7 @@ import {
 
 export type { ApiToken, NotificationItem, K8sIncidentEvent, HistoryAction, DeleteModalState, ChaosFaultEvent };
 export { extractServices, extractPods, getPodPrefix, generateDynamicEdges, syncSelectedNode, aggregateNodesWithWorkloads, sanitizeManifestSnapshot };
-
-export const defaultInitialNodes: Node[] = [];
-export const defaultInitialEdges: Edge[] = [];
+export const defaultInitialNodes: Node[] = [], defaultInitialEdges: Edge[] = [];
 const defaultClusters: Cluster[] = [], defaultInitialTokens: ApiToken[] = [], defaultInitialNotifications: NotificationItem[] = [];
 
 export interface TopologyState {
@@ -78,6 +77,7 @@ export interface TopologyState {
   hpas: K8sHPAData[];
   networkPolicies: K8sNetworkPolicyData[];
   pdbs: K8sPDBData[]; resourceQuotas: K8sResourceQuotaData[]; limitRanges: K8sLimitRangeData[];
+  serviceAccounts: K8sServiceAccountData[]; roleBindings: K8sRoleBindingData[]; clusterRoleBindings: K8sClusterRoleBindingData[]; roles: K8sRoleData[]; clusterRoles: K8sClusterRoleData[];
   incidents: K8sIncidentEvent[];
   activeChaosFaults: Record<string, ChaosFaultEvent>;
   selectedNode: SelectedTarget;
@@ -178,6 +178,7 @@ export const useTopologyStore = create<TopologyState>()(
       hpas: [],
       networkPolicies: [],
       pdbs: [], resourceQuotas: [], limitRanges: [],
+      serviceAccounts: [], roleBindings: [], clusterRoleBindings: [], roles: [], clusterRoles: [],
       incidents: [],
       activeChaosFaults: {},
       selectedNode: null,
@@ -468,6 +469,7 @@ export const useTopologyStore = create<TopologyState>()(
           deployments: [],
           daemonSets: [],
           cronJobs: [], jobs: [], pvcs: [], statefulSets: [], hpas: [], networkPolicies: [], pdbs: [], resourceQuotas: [], limitRanges: [],
+          serviceAccounts: [], roleBindings: [], clusterRoleBindings: [], roles: [], clusterRoles: [],
           volumeSnapshots: [], volumeSnapshotContents: [],
           incidents: [], activeChaosFaults: {}, selectedNode: null, notifications: [],
           undoStack: [], redoStack: [], wsStatus: "DISCONNECTED", wsLatencyMs: 0,

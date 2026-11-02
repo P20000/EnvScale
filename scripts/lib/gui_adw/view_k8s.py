@@ -92,26 +92,35 @@ class K8sView(Gtk.Box):
         self.log_panel = HeadingLogPanel("k8s", self.log_storage)
         self.append(self.log_panel)
 
-        GLib.timeout_add(3000, self.update_cluster_health)
+        self._is_checking = False
+        GLib.timeout_add(8000, self.update_cluster_health)
         self.update_cluster_health()
 
     def update_cluster_health(self):
+        if self._is_checking:
+            return True
+        self._is_checking = True
+
         def _bg_check():
-            info = self.km.get_cluster_status()
-            online = info.get("online", False)
-            def _apply():
-                if online:
-                    self.badge_cluster.set_text("ONLINE")
-                    self.badge_cluster.remove_css_class("error")
-                    self.badge_cluster.remove_css_class("dim-label")
-                    self.badge_cluster.add_css_class("success")
-                else:
-                    self.badge_cluster.set_text("OFFLINE")
-                    self.badge_cluster.remove_css_class("success")
-                    self.badge_cluster.remove_css_class("dim-label")
-                    self.badge_cluster.add_css_class("error")
-                return False
-            GLib.idle_add(_apply)
+            try:
+                info = self.km.get_cluster_status()
+                online = info.get("online", False)
+                def _apply():
+                    if online:
+                        self.badge_cluster.set_text("ONLINE")
+                        self.badge_cluster.remove_css_class("error")
+                        self.badge_cluster.remove_css_class("dim-label")
+                        self.badge_cluster.add_css_class("success")
+                    else:
+                        self.badge_cluster.set_text("OFFLINE")
+                        self.badge_cluster.remove_css_class("success")
+                        self.badge_cluster.remove_css_class("dim-label")
+                        self.badge_cluster.add_css_class("error")
+                    return False
+                GLib.idle_add(_apply)
+            finally:
+                self._is_checking = False
+
         threading.Thread(target=_bg_check, daemon=True).start()
         return True
 

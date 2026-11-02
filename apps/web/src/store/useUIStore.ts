@@ -32,6 +32,12 @@ export interface UIState {
   logBufferLimit: number;
   setLogBufferLimit: (limit: number) => void;
 
+  showNodeBoundaries: boolean;
+  setShowNodeBoundaries: (show: boolean) => void;
+
+  hoveredNodeName: string | null;
+  setHoveredNodeName: (name: string | null) => void;
+
   alertWebhookUrl: string;
   setAlertWebhookUrl: (url: string) => void;
 
@@ -57,8 +63,16 @@ export const useUIStore = create<UIState>()(
         namespace: "default",
       },
       logBufferLimit: 500,
+      showNodeBoundaries: true,
+      hoveredNodeName: null,
       alertWebhookUrl: "",
       alertWebhookCriticalOnly: false,
+
+      setShowNodeBoundaries: (show) => {
+        set({ showNodeBoundaries: show });
+        useTopologyStore.getState().applyDagreLayout();
+      },
+      setHoveredNodeName: (name) => set({ hoveredNodeName: name }),
 
       setShowCompletedPods: (show) => {
         set({ showCompletedPods: show });
@@ -133,6 +147,7 @@ export const useUIStore = create<UIState>()(
         showSystemNamespaces: state.showSystemNamespaces,
         layoutDirection: state.layoutDirection,
         logBufferLimit: state.logBufferLimit,
+        showNodeBoundaries: state.showNodeBoundaries,
         alertWebhookUrl: state.alertWebhookUrl,
         alertWebhookCriticalOnly: state.alertWebhookCriticalOnly,
       }),

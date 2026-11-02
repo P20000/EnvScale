@@ -116,10 +116,13 @@ type PodStatusDelta struct {
 	TerminationReason string               `json:"terminationReason,omitempty"`
 	LivenessProbe     *ProbeSpecInfo       `json:"livenessProbe,omitempty"`
 	ReadinessProbe    *ProbeSpecInfo       `json:"readinessProbe,omitempty"`
-	Volumes        []PodVolumeMountInfo `json:"volumes,omitempty"`
-	ConfigMaps     []PodConfigRef       `json:"configMaps,omitempty"`
-	Secrets        []PodSecretRef       `json:"secrets,omitempty"`
-	CreatedAt      time.Time            `json:"createdAt"`
+	Volumes                      []PodVolumeMountInfo `json:"volumes,omitempty"`
+	ConfigMaps                   []PodConfigRef       `json:"configMaps,omitempty"`
+	Secrets                      []PodSecretRef       `json:"secrets,omitempty"`
+	ServiceAccount               string               `json:"serviceAccount,omitempty"`
+	ServiceAccountName           string               `json:"serviceAccountName,omitempty"`
+	AutomountServiceAccountToken *bool                `json:"automountServiceAccountToken,omitempty"`
+	CreatedAt                    time.Time            `json:"createdAt"`
 }
 
 // DeploymentStatusDelta encapsulates Deployment state updates
@@ -203,6 +206,10 @@ type NodeStatusDelta struct {
 	MemoryCapacity string            `json:"memoryCapacity"`
 	PodCapacity    int64             `json:"podCapacity"`
 	Labels         map[string]string `json:"labels"`
+	CpuUsageMcores int64             `json:"cpuUsageMcores,omitempty"`
+	MemoryUsageMiB int64             `json:"memoryUsageMiB,omitempty"`
+	CpuPct         float64           `json:"cpuPct,omitempty"`
+	MemoryPct      float64           `json:"memoryPct,omitempty"`
 }
 
 // ServiceStatusDelta encapsulates K8s Service state updates

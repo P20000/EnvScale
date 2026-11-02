@@ -1,11 +1,8 @@
 import os
 import shlex
-import json
-import urllib.request
-import urllib.error
-import subprocess
 from typing import Dict, Any, Tuple
 from .config import TESTING_K8S_DIR
+from .proc_utils import safe_run
 
 CHAOS_SCENARIOS = {
     "crashloop": {
@@ -46,7 +43,7 @@ class ChaosRunner:
         if scenario_id in ("crashloop", "oom"):
             manifest_path = os.path.join(TESTING_K8S_DIR, scenario["manifest"])
             cmd = f"kubectl apply -f {shlex.quote(manifest_path)}"
-            res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            res = safe_run(cmd, shell=True, timeout=8.0)
             if res.returncode == 0:
                 self.log(f"Scenario '{scenario_id}' injected! Observe status in EnvScale UI.")
                 return (True, f"Injected {scenario['name']}")
@@ -57,13 +54,13 @@ class ChaosRunner:
         elif scenario_id == "pod_kill":
             ns = scenario["namespace"]
             get_cmd = f"kubectl get pods -n {ns} -o jsonpath='{{.items[0].metadata.name}}'"
-            res = subprocess.run(get_cmd, shell=True, capture_output=True, text=True)
+            res = safe_run(get_cmd, shell=True, timeout=5.0)
             pod_name = res.stdout.strip()
             if not pod_name:
                 self.log(f"No pods found in namespace '{ns}' to terminate.")
                 return (False, f"No pods in {ns}")
             del_cmd = f"kubectl delete pod {pod_name} -n {ns} --now"
-            res = subprocess.run(del_cmd, shell=True, capture_output=True, text=True)
+            res = safe_run(del_cmd, shell=True, timeout=8.0)
             self.log(f"Terminated pod '{pod_name}' in namespace '{ns}'. Rescheduling initiated.")
             return (True, f"Killed pod {pod_name}")
 
@@ -79,7 +76,7 @@ class ChaosRunner:
             dep = scenario["deployment"]
             ns = scenario["namespace"]
             cmd = f"kubectl delete deployment {dep} -n {ns} --ignore-not-found=true"
-            res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            res = safe_run(cmd, shell=True, timeout=10.0)
             self.log(f"Cleared deployment '{dep}'.")
             return (True, f"Cleared {dep}")
 

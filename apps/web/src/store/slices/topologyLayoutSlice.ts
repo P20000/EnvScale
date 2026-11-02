@@ -1,8 +1,10 @@
+import type { Node } from "@xyflow/react";
 import type { TopologyState } from "../useTopologyStore";
 import { useUIStore } from "../useUIStore";
 import { getLayoutedElements } from "../../utils/layout";
 import { aggregateNodesWithWorkloads, generateDynamicEdges } from "../helpers/topologyHelpers";
 import { filterPVCsForDisplay, createPVCReactFlowNodes } from "../helpers/storageHelpers";
+import { calculateNodeBoundaries } from "../../utils/nodeBoundaryHelpers";
 
 export function handleApplyDagreLayout(
   get: () => TopologyState,
@@ -21,6 +23,7 @@ export function handleApplyDagreLayout(
     showStorage,
     showSystemNamespaces,
     selectedNamespaces,
+    showNodeBoundaries,
   } = useUIStore.getState();
 
   const targetDir = direction || layoutDirection || "TB";
@@ -95,5 +98,12 @@ export function handleApplyDagreLayout(
     effectivePositions
   );
 
-  set({ nodes: layoutedNodes, edges: layoutedEdges });
+  let finalNodes: Node[] = layoutedNodes;
+  if (showNodeBoundaries) {
+    const workerNodes = (baseNodes || []).filter((n) => n.type === "k8sWorker");
+    const boundaryNodes = calculateNodeBoundaries(layoutedNodes, workerNodes);
+    finalNodes = [...boundaryNodes, ...layoutedNodes];
+  }
+
+  set({ nodes: finalNodes, edges: layoutedEdges });
 }

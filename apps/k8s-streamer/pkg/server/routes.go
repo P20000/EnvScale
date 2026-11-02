@@ -161,30 +161,40 @@ func SetupRoutes(
 		pdbs := clusterManager.GetPDBSnapshot(clusterID)
 		resourceQuotas := clusterManager.GetResourceQuotaSnapshot(clusterID)
 		limitRanges := clusterManager.GetLimitRangeSnapshot(clusterID)
+		serviceAccounts := clusterManager.GetServiceAccountsSnapshot(clusterID)
+		roleBindings := clusterManager.GetRoleBindingsSnapshot(clusterID)
+		clusterRoleBindings := clusterManager.GetClusterRoleBindingsSnapshot(clusterID)
+		roles := clusterManager.GetRolesSnapshot(clusterID)
+		clusterRoles := clusterManager.GetClusterRolesSnapshot(clusterID)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"pods":            pods,
-			"nodes":           nodes,
-			"services":        services,
-			"deployments":     deployments,
-			"replicaSets":     replicaSets,
-			"statefulSets":    statefulSets,
-			"daemonSets":      daemonSets,
-			"ingresses":       ingresses,
-			"incidents":       incidents,
-			"cronJobs":        cronJobs,
-			"jobs":            jobs,
-			"pvcs":            pvcs,
-			"pvs":             pvs,
-			"configMaps":      configMaps,
-			"secrets":         secrets,
-			"hpas":            hpas,
-			"networkPolicies": networkPolicies,
-			"pdbs":            pdbs,
-			"resourceQuotas":  resourceQuotas,
-			"limitRanges":     limitRanges,
-			"metricsHistory":  clusterManager.GetMetricsHistory(clusterID),
+			"pods":                pods,
+			"nodes":               nodes,
+			"services":            services,
+			"deployments":         deployments,
+			"replicaSets":         replicaSets,
+			"statefulSets":        statefulSets,
+			"daemonSets":          daemonSets,
+			"ingresses":           ingresses,
+			"incidents":           incidents,
+			"cronJobs":            cronJobs,
+			"jobs":                jobs,
+			"pvcs":                pvcs,
+			"pvs":                 pvs,
+			"configMaps":          configMaps,
+			"secrets":             secrets,
+			"hpas":                hpas,
+			"networkPolicies":     networkPolicies,
+			"pdbs":                pdbs,
+			"resourceQuotas":      resourceQuotas,
+			"limitRanges":         limitRanges,
+			"serviceAccounts":     serviceAccounts,
+			"roleBindings":        roleBindings,
+			"clusterRoleBindings": clusterRoleBindings,
+			"roles":               roles,
+			"clusterRoles":        clusterRoles,
+			"metricsHistory":      clusterManager.GetMetricsHistory(clusterID),
 		})
 	}))
 

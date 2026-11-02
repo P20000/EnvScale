@@ -32,6 +32,9 @@ export interface K8sPodData extends Record<string, unknown> {
   volumes?: PodVolumeInfo[];
   configMaps?: PodConfigReference[];
   secrets?: PodSecretReference[];
+  serviceAccount?: string;
+  serviceAccountName?: string;
+  automountServiceAccountToken?: boolean;
   exitCode?: number;
   terminationReason?: string;
   ready?: boolean;
@@ -157,6 +160,11 @@ export function K8sPodNode({ data }: { data: K8sPodData }) {
         {data.volumes && data.volumes.length > 0 && !isTerminating && (
           <span className="text-[8.5px] font-mono font-bold text-cyan-300 bg-cyan-500/10 border border-cyan-500/20 px-1 rounded uppercase tracking-wider" title={`Mounted Storage: ${data.volumes.map(v => v.pvcName || v.name).join(', ')}`}>
             PVC
+          </span>
+        )}
+        {((data.serviceAccountName && data.serviceAccountName !== "default") || (data.serviceAccount && data.serviceAccount !== "default")) && !isTerminating && (
+          <span className="text-[8px] font-mono font-bold text-violet-300 bg-violet-500/10 border border-violet-500/20 px-1 rounded uppercase tracking-wider" title={`ServiceAccount: ${data.serviceAccountName || data.serviceAccount}`}>
+            SA:{(data.serviceAccountName || data.serviceAccount || "").length > 8 ? `${(data.serviceAccountName || data.serviceAccount || "").slice(0, 7)}…` : (data.serviceAccountName || data.serviceAccount)}
           </span>
         )}
         {restarts > 0 && !isTerminating && (

@@ -52,17 +52,28 @@ export function MetricsTab({ target, cpuTelemetry, memoryTelemetry }: MetricsTab
           Network & Storage Metrics
         </h4>
         <div className="space-y-2 text-xs font-mono">
-          <div className="flex justify-between text-neutral-400">
+          <div className="flex justify-between text-neutral-400 items-center">
             <span>Network RX / TX:</span>
             <span className="text-neutral-200">
-              {targetRecord.rxBytes !== undefined ? String(targetRecord.rxBytes) : "1.2 MB/s"}{" "}
-              / {targetRecord.txBytes !== undefined ? String(targetRecord.txBytes) : "840 KB/s"}
+              {targetRecord.rxBytes !== undefined ? (
+                `${String(targetRecord.rxBytes)} / ${String(targetRecord.txBytes ?? "0")}`
+              ) : (
+                <span className="text-neutral-400 font-sans text-[11px] italic">
+                  Requires Prometheus / cAdvisor
+                </span>
+              )}
             </span>
           </div>
-          <div className="flex justify-between text-neutral-400">
+          <div className="flex justify-between text-neutral-400 items-center">
             <span>Storage IOPS:</span>
             <span className="text-neutral-200">
-              {targetRecord.iops !== undefined ? String(targetRecord.iops) : "340 IOPS"}
+              {targetRecord.iops !== undefined ? (
+                String(targetRecord.iops)
+              ) : (
+                <span className="text-neutral-400 font-sans text-[11px] italic">
+                  Requires Node Exporter
+                </span>
+              )}
             </span>
           </div>
         </div>

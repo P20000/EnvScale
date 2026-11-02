@@ -98,28 +98,39 @@ func (im *InformerManager) extractPodDelta(pod *corev1.Pod) types.PodStatusDelta
 	cms, secs := ExtractPodConfigReferences(pod)
 	liv, read := ExtractPodProbes(pod)
 
+	saName := pod.Spec.ServiceAccountName
+	if saName == "" {
+		saName = pod.Spec.DeprecatedServiceAccount
+	}
+	if saName == "" {
+		saName = "default"
+	}
+
 	return types.PodStatusDelta{
-		Name:              pod.Name,
-		Namespace:         pod.Namespace,
-		NodeName:          pod.Spec.NodeName,
-		PodIP:             pod.Status.PodIP,
-		Phase:             phase,
-		ExitCode:          exitCode,
-		TerminationReason: termReason,
-		IsTerminating:     isTerminating,
-		RestartCount:      totalRestarts,
-		Labels:            pod.Labels,
-		OwnerUID:          ownerUID,
-		OwnerName:         ownerName,
-		OwnerKind:         ownerKind,
-		IsStaticPod:       isStaticPod,
-		IsControlPlane:    isControlPlane,
-		LivenessProbe:     liv,
-		ReadinessProbe:    read,
-		Volumes:           ExtractPodVolumeClaims(pod),
-		ConfigMaps:        cms,
-		Secrets:           secs,
-		CreatedAt:         pod.CreationTimestamp.Time.UTC(),
+		Name:                         pod.Name,
+		Namespace:                    pod.Namespace,
+		NodeName:                     pod.Spec.NodeName,
+		PodIP:                        pod.Status.PodIP,
+		Phase:                        phase,
+		ExitCode:                     exitCode,
+		TerminationReason:            termReason,
+		IsTerminating:                isTerminating,
+		RestartCount:                 totalRestarts,
+		Labels:                       pod.Labels,
+		OwnerUID:                     ownerUID,
+		OwnerName:                    ownerName,
+		OwnerKind:                    ownerKind,
+		IsStaticPod:                  isStaticPod,
+		IsControlPlane:               isControlPlane,
+		LivenessProbe:                liv,
+		ReadinessProbe:               read,
+		Volumes:                      ExtractPodVolumeClaims(pod),
+		ConfigMaps:                   cms,
+		Secrets:                      secs,
+		ServiceAccount:               saName,
+		ServiceAccountName:           saName,
+		AutomountServiceAccountToken: pod.Spec.AutomountServiceAccountToken,
+		CreatedAt:                    pod.CreationTimestamp.Time.UTC(),
 	}
 }
 

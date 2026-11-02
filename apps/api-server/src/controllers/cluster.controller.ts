@@ -134,9 +134,10 @@ export const getAgentManifest = async (request: Request, response: Response) => 
       return;
     }
 
+    const customServerUrl = typeof request.query.serverUrl === "string" && request.query.serverUrl.trim() ? request.query.serverUrl.trim() : undefined;
     const host = request.get("host") || "envscale.duckdns.org";
     const protocol = request.protocol === "https" || host.includes("envscale.duckdns.org") ? "wss" : "ws";
-    const serverUrl = process.env.STREAMER_WS_URL || `${protocol}://${host}/ws/agent`;
+    const serverUrl = customServerUrl || process.env.STREAMER_WS_URL || `${protocol}://${host}/ws/agent`;
 
     const manifest = generateAgentManifest({
       clusterId: cluster.id,
