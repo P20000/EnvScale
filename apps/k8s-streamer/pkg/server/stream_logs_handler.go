@@ -1,11 +1,9 @@
 package server
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,14 +17,6 @@ import (
 	"github.com/EnvScale/k8s-streamer/pkg/k8s"
 	envws "github.com/EnvScale/k8s-streamer/pkg/websocket"
 )
-
-type StreamLogMessage struct {
-	Timestamp string `json:"timestamp"`
-	Source    string `json:"source"`
-	Level     string `json:"level"`
-	Message   string `json:"message"`
-	Kind      string `json:"kind"`
-}
 
 var logUpgrader = websocket.Upgrader{
 	CheckOrigin: envws.IsOriginAllowed,
@@ -54,7 +44,6 @@ func HandleUniversalLogStream(
 		return
 	}
 
-
 	conn, err := logUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		http.Error(w, "Failed to upgrade to WebSocket", http.StatusBadRequest)
@@ -62,17 +51,16 @@ func HandleUniversalLogStream(
 	}
 	defer conn.Close()
 
-
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	logChan := make(chan StreamLogMessage, 200)
+	outChan := make(chan interface{}, 2000)
 	var wg sync.WaitGroup
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for msg := range logChan {
+		for msg := range outChan {
 			conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 			if err := conn.WriteJSON(msg); err != nil {
 				cancel()
@@ -90,11 +78,7 @@ func HandleUniversalLogStream(
 		}
 	}()
 
-	namespace := r.URL.Query().Get("namespace")
-	if namespace == "" {
-		namespace = "default"
-	}
-
+	rawNs := strings.TrimSpace(r.URL.Query().Get("namespace"))
 	kind := strings.TrimSpace(r.URL.Query().Get("kind"))
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
 	tailLinesStr := r.URL.Query().Get("tailLines")
@@ -106,239 +90,67 @@ func HandleUniversalLogStream(
 		}
 	}
 
-	clientset, err := clusterManager.GetClientset(clusterID)
+	// Use stream clientset configured with Timeout=0 for persistent connections
+	clientset, err := clusterManager.GetStreamClientset(clusterID)
 	if err != nil {
-		isDevMode := os.Getenv("ALLOW_ANONYMOUS_WS") == "true" || os.Getenv("ENVSCALE_DEV_MODE") == "true" || os.Getenv("NODE_ENV") != "production"
-		if isDevMode {
-			streamFallbackTelemetry(ctx, namespace, name, kind, logChan)
-			<-ctx.Done()
-			close(logChan)
-			wg.Wait()
-			return
-		}
-
 		select {
-		case logChan <- StreamLogMessage{
+		case outChan <- StreamDiagnosticMessage{
+			Type:      "diagnostic",
 			Timestamp: time.Now().UTC().Format(time.RFC3339),
 			Source:    "system",
-			Level:     "ERROR",
-			Message:   fmt.Sprintf("Failed to get clientset for cluster %s: %v", clusterID, err),
-			Kind:      kind,
+			Status:    "failed",
+			Reason:    fmt.Sprintf("Failed to get clientset for cluster %s: %v", clusterID, err),
 		}:
 		case <-ctx.Done():
 		}
-		close(logChan)
+		close(outChan)
 		wg.Wait()
 		return
 	}
 
 	normalizedKind := strings.ToLower(kind)
 	switch normalizedKind {
-	case "pod":
-		streamPodLogs(ctx, clientset, namespace, name, tailLines, logChan)
-	case "deployment", "statefulset", "replicaset", "workload", "group":
-		streamWorkloadLogs(ctx, clientset, namespace, name, kind, tailLines, logChan)
 	case "service", "ingress", "node":
-		streamResourceEvents(ctx, clientset, namespace, name, kind, logChan)
+		targetNs := rawNs
+		if targetNs == "" || strings.EqualFold(targetNs, "all") || strings.EqualFold(targetNs, "_all") {
+			targetNs = "default"
+		}
+		streamResourceEvents(ctx, clientset, targetNs, name, kind, outChan)
 	default:
-		streamPodLogs(ctx, clientset, namespace, name, tailLines, logChan)
+		// Workload and pod log streaming with cluster-wide or namespace scope
+		mgr := NewLogStreamManager(clientset, outChan)
+		targets, err := mgr.DiscoverContainers(ctx, rawNs, name, kind)
+		if err != nil {
+			select {
+			case outChan <- StreamDiagnosticMessage{
+				Type:      "diagnostic",
+				Timestamp: time.Now().UTC().Format(time.RFC3339),
+				Source:    "system",
+				Namespace: rawNs,
+				Status:    "failed",
+				Reason:    err.Error(),
+			}:
+			case <-ctx.Done():
+			}
+		} else {
+			scope := rawNs
+			if scope == "" || strings.EqualFold(scope, "all") || strings.EqualFold(scope, "_all") {
+				scope = "all"
+			}
+			mgr.StartStreams(ctx, targets, tailLines, scope)
+		}
 	}
 
 	<-ctx.Done()
-	close(logChan)
+	close(outChan)
 	wg.Wait()
-}
-
-func streamPodLogs(
-	ctx context.Context,
-	clientset kubernetes.Interface,
-	namespace, podName string,
-	tailLines int64,
-	logChan chan<- StreamLogMessage,
-) {
-	pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
-	if err != nil {
-		isDevMode := os.Getenv("ALLOW_ANONYMOUS_WS") == "true" || os.Getenv("ENVSCALE_DEV_MODE") == "true" || os.Getenv("NODE_ENV") != "production"
-		if isDevMode {
-			streamFallbackTelemetry(ctx, namespace, podName, "Pod", logChan)
-			return
-		}
-
-		select {
-		case logChan <- StreamLogMessage{
-			Timestamp: time.Now().UTC().Format(time.RFC3339),
-			Source:    podName,
-			Level:     "ERROR",
-			Message:   fmt.Sprintf("Failed to get pod %s/%s: %v", namespace, podName, err),
-			Kind:      "Pod",
-		}:
-		case <-ctx.Done():
-		}
-		return
-	}
-
-	var containers []string
-	for _, c := range pod.Spec.Containers {
-		containers = append(containers, c.Name)
-	}
-
-	if len(containers) == 0 {
-		select {
-		case logChan <- StreamLogMessage{
-			Timestamp: time.Now().UTC().Format(time.RFC3339),
-			Source:    podName,
-			Level:     "WARN",
-			Message:   fmt.Sprintf("No containers found in pod spec for %s", podName),
-			Kind:      "Pod",
-		}:
-		case <-ctx.Done():
-		}
-		return
-	}
-
-	var containerWg sync.WaitGroup
-	for _, cName := range containers {
-		containerWg.Add(1)
-		go func(c string) {
-			defer containerWg.Done()
-
-			req := clientset.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
-				Container:  c,
-				Follow:     true,
-				TailLines:  &tailLines,
-				Timestamps: true,
-			})
-
-			stream, err := req.Stream(ctx)
-			if err != nil {
-				select {
-				case logChan <- StreamLogMessage{
-					Timestamp: time.Now().UTC().Format(time.RFC3339),
-					Source:    fmt.Sprintf("%s/%s", podName, c),
-					Level:     "WARN",
-					Message:   fmt.Sprintf("Could not stream logs for container %s: %v", c, err),
-					Kind:      "Pod",
-				}:
-				case <-ctx.Done():
-				}
-				return
-			}
-			defer stream.Close()
-
-			scanner := bufio.NewScanner(stream)
-			// Expand buffer capacity from 64KB up to 1MB to handle large stack traces and JSON logs
-			scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-
-			for scanner.Scan() {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					line := scanner.Text()
-					ts, level, msg := parseLogLine(line)
-					select {
-					case logChan <- StreamLogMessage{
-						Timestamp: ts,
-						Source:    fmt.Sprintf("%s/%s", podName, c),
-						Level:     level,
-						Message:   msg,
-						Kind:      "Pod",
-					}:
-					case <-ctx.Done():
-						return
-					}
-				}
-			}
-
-			// Surface any scanning error (e.g. token too long or stream disconnect)
-			if err := scanner.Err(); err != nil && ctx.Err() == nil {
-				select {
-				case logChan <- StreamLogMessage{
-					Timestamp: time.Now().UTC().Format(time.RFC3339),
-					Source:    fmt.Sprintf("%s/%s", podName, c),
-					Level:     "WARN",
-					Message:   fmt.Sprintf("Log stream ended with error: %v", err),
-					Kind:      "Pod",
-				}:
-				case <-ctx.Done():
-				}
-			}
-		}(cName)
-	}
-
-	containerWg.Wait()
-}
-
-func streamWorkloadLogs(
-	ctx context.Context,
-	clientset kubernetes.Interface,
-	namespace, name, kind string,
-	tailLines int64,
-	logChan chan<- StreamLogMessage,
-) {
-	podList, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		select {
-		case logChan <- StreamLogMessage{
-			Timestamp: time.Now().UTC().Format(time.RFC3339),
-			Source:    name,
-			Level:     "ERROR",
-			Message:   fmt.Sprintf("Failed to list pods for workload %s: %v", name, err),
-			Kind:      kind,
-		}:
-		case <-ctx.Done():
-		}
-		return
-	}
-
-	var matchingPods []string
-	cleanName := strings.ToLower(name)
-	for _, p := range podList.Items {
-		pName := strings.ToLower(p.Name)
-		if strings.HasPrefix(pName, cleanName) || strings.Contains(pName, cleanName) {
-			if p.Status.Phase == corev1.PodRunning || p.Status.Phase == corev1.PodPending {
-				matchingPods = append(matchingPods, p.Name)
-			}
-		}
-	}
-
-	if len(matchingPods) == 0 {
-		isDevMode := os.Getenv("ALLOW_ANONYMOUS_WS") == "true" || os.Getenv("ENVSCALE_DEV_MODE") == "true" || os.Getenv("NODE_ENV") != "production"
-		if isDevMode {
-			streamFallbackTelemetry(ctx, namespace, name, kind, logChan)
-			return
-		}
-
-		select {
-		case logChan <- StreamLogMessage{
-			Timestamp: time.Now().UTC().Format(time.RFC3339),
-			Source:    name,
-			Level:     "WARN",
-			Message:   fmt.Sprintf("No active running pods found matching workload '%s'", name),
-			Kind:      kind,
-		}:
-		case <-ctx.Done():
-		}
-		return
-	}
-
-	var podWg sync.WaitGroup
-	for _, pName := range matchingPods {
-		podWg.Add(1)
-		go func(p string) {
-			defer podWg.Done()
-			streamPodLogs(ctx, clientset, namespace, p, tailLines, logChan)
-		}(pName)
-	}
-
-	podWg.Wait()
 }
 
 func streamResourceEvents(
 	ctx context.Context,
 	clientset kubernetes.Interface,
 	namespace, name, kind string,
-	logChan chan<- StreamLogMessage,
+	outChan chan<- interface{},
 ) {
 	events, err := clientset.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{})
 	if err == nil {
@@ -349,11 +161,16 @@ func streamResourceEvents(
 					lvl = "WARN"
 				}
 				select {
-				case logChan <- StreamLogMessage{
+				case outChan <- StreamLogMessage{
+					Type:      "log",
 					Timestamp: evt.LastTimestamp.Time.UTC().Format(time.RFC3339),
-					Source:    fmt.Sprintf("%s/%s", evt.InvolvedObject.Kind, evt.InvolvedObject.Name),
+					Namespace: namespace,
+					Pod:       evt.InvolvedObject.Name,
+					Container: evt.InvolvedObject.Kind,
+					Source:    fmt.Sprintf("%s/%s/%s", namespace, evt.InvolvedObject.Kind, evt.InvolvedObject.Name),
 					Level:     lvl,
 					Message:   fmt.Sprintf("[EVENT] Reason: %s | Message: %s", evt.Reason, evt.Message),
+					Stream:    "stdout",
 					Kind:      kind,
 				}:
 				case <-ctx.Done():
@@ -384,11 +201,16 @@ func streamResourceEvents(
 						lvl = "WARN"
 					}
 					select {
-					case logChan <- StreamLogMessage{
+					case outChan <- StreamLogMessage{
+						Type:      "log",
 						Timestamp: evt.LastTimestamp.Time.UTC().Format(time.RFC3339),
-						Source:    fmt.Sprintf("%s/%s", evt.InvolvedObject.Kind, evt.InvolvedObject.Name),
+						Namespace: namespace,
+						Pod:       evt.InvolvedObject.Name,
+						Container: evt.InvolvedObject.Kind,
+						Source:    fmt.Sprintf("%s/%s/%s", namespace, evt.InvolvedObject.Kind, evt.InvolvedObject.Name),
 						Level:     lvl,
 						Message:   fmt.Sprintf("[EVENT] Reason: %s | Message: %s", evt.Reason, evt.Message),
+						Stream:    "stdout",
 						Kind:      kind,
 					}:
 					case <-ctx.Done():
@@ -401,32 +223,10 @@ func streamResourceEvents(
 }
 
 func matchesResource(evt corev1.Event, name string) bool {
+	if name == "" || strings.EqualFold(name, "all") || strings.EqualFold(name, "all-resources") {
+		return true
+	}
 	cleanName := strings.ToLower(name)
 	targetName := strings.ToLower(evt.InvolvedObject.Name)
 	return strings.EqualFold(targetName, cleanName) || strings.Contains(targetName, cleanName)
-}
-
-func parseLogLine(raw string) (string, string, string) {
-	parts := strings.SplitN(raw, " ", 2)
-	ts := time.Now().UTC().Format(time.RFC3339)
-	msg := raw
-
-	if len(parts) == 2 {
-		if _, err := time.Parse(time.RFC3339, parts[0]); err == nil || strings.Contains(parts[0], "T") {
-			ts = parts[0]
-			msg = parts[1]
-		}
-	}
-
-	upper := strings.ToUpper(msg)
-	lvl := "INFO"
-	if strings.Contains(upper, "ERROR") || strings.Contains(upper, "FAIL") || strings.Contains(upper, "FATAL") {
-		lvl = "ERROR"
-	} else if strings.Contains(upper, "WARN") {
-		lvl = "WARN"
-	} else if strings.Contains(upper, "DEBUG") || strings.Contains(upper, "TRACE") {
-		lvl = "DEBUG"
-	}
-
-	return ts, lvl, msg
 }

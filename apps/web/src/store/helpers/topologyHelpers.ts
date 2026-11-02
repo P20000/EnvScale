@@ -3,11 +3,14 @@ import type { K8sPodData } from "../../components/canvas/K8sPod";
 import type { K8sNodeData } from "../../components/canvas/K8sNode";
 import type { K8sServiceData } from "../../components/canvas/K8sService";
 import type { K8sIngressData } from "../../components/canvas/K8sIngress";
-import type { K8sDaemonSetData, K8sCronJobData, K8sJobData, K8sPVCData, K8sHPAData, K8sNetworkPolicyData, K8sPDBData } from "../types/topologyTypes";
+import type { K8sDaemonSetData, K8sCronJobData, K8sJobData, K8sPVCData, K8sHPAData, K8sNetworkPolicyData, K8sPDBData, K8sStatefulSetData } from "../types/topologyTypes";
 import type { SelectedTarget } from "../../components/drawer/InspectorDrawer";
+import type { K8sStatefulSetNodeData } from "../../components/canvas/K8sStatefulSet";
 import { calculateRolloutInfo, type K8sDeploymentData, type K8sReplicaSetData } from "./rolloutHelpers";
 import { findWorkloadHPA, findWorkloadNetworkPolicies, findWorkloadPDB, calculateWorkloadCpuUsage } from "./policyHpaHelpers";
+import { findWorkloadStatefulSet, buildStatefulSetNode } from "./statefulSetHelpers";
 export { type EdgeHealthStatus, isPodReady, extractPodList, calculateEdgeHealth, getEdgeHealth, generateDynamicEdges } from "./edgeHelpers";
+export { parseK8sCpuCapacity, parseK8sMemoryCapacity, calculateClusterCapacity } from "./capacityHelpers";
 
 export const SYSTEM_NAMESPACES = new Set(["kube-system", "kube-public", "kube-node-lease", "ingress-nginx"]);
 
@@ -70,6 +73,8 @@ export const syncSelectedNode = (nodes: Node[], currentSelected: SelectedTarget)
       return { type: "cronjob", data: matched.data as K8sCronJobData };
     } else if (matched.type === "k8sPVC") {
       return { type: "pvc", data: matched.data as K8sPVCData };
+    } else if (matched.type === "k8sStatefulSet") {
+      return { type: "statefulset", data: matched.data as K8sStatefulSetNodeData };
     }
   }
   return currentSelected;
@@ -96,11 +101,9 @@ export const aggregateNodesWithWorkloads = (
   replicaSets: K8sReplicaSetData[] = [],
   daemonSets: K8sDaemonSetData[] = [],
   cronJobs: K8sCronJobData[] = [],
-  jobs: K8sJobData[] = [],
-  showCompletedJobs: boolean = false,
-  hpas: K8sHPAData[] = [],
-  networkPolicies: K8sNetworkPolicyData[] = [],
-  pdbs: K8sPDBData[] = []
+  jobs: K8sJobData[] = [], showCompletedJobs: boolean = false,
+  hpas: K8sHPAData[] = [], networkPolicies: K8sNetworkPolicyData[] = [], pdbs: K8sPDBData[] = [],
+  statefulSets: K8sStatefulSetData[] = []
 ): Node[] => {
   const appNodes = nodes.filter((n) => {
     const d = n.data as Record<string, unknown> | undefined;
@@ -262,43 +265,49 @@ export const aggregateNodesWithWorkloads = (
     const rolloutInfo = calculateRolloutInfo(prefix, ns, deployments, replicaSets);
     const podsData = groupPods.map((p) => p.data as K8sPodData);
 
-    const isStateful = prefix.toLowerCase().includes("db") || prefix.toLowerCase().includes("redis") || prefix.toLowerCase().includes("stateful");
-    const workloadType = isStateful ? "StatefulSet" : "Deployment";
-
     const matchedHPA = findWorkloadHPA(hpas, prefix, ns);
     const podLabels = firstPodData?.labels || {};
     const matchedNetPols = findWorkloadNetworkPolicies(networkPolicies, podLabels, prefix, ns);
     const hasNetworkPolicy = matchedNetPols.length > 0;
     const matchedPDB = findWorkloadPDB(pdbs, prefix, ns, podLabels);
-
     const hasProbeWarning = groupPods.some((p) => {
       const pd = p.data as K8sPodData;
       const ph = String(pd?.phase || pd?.status || "").toLowerCase();
       return (ph === "running" || ph === "ready") && pd?.ready === false;
     });
-
     const cpuUsagePct = calculateWorkloadCpuUsage(groupPods, readyPods.length, matchedHPA);
 
-    processedNodes.push({
-      id: groupId,
-      type: "k8sGroup",
-      position: { x: 0, y: 0 },
-      data: {
-        name: prefix,
-        namespace: ns,
-        workloadType,
-        rolloutInfo,
-        pods: podsData,
-        replicas: groupPods.length,
-        readyReplicas: readyPods.length,
-        hpa: matchedHPA,
-        hasNetworkPolicy,
-        networkPolicies: matchedNetPols,
-        pdb: matchedPDB,
-        hasProbeWarning,
-        cpuUsagePct,
-      },
-    });
+    const matchedSts = findWorkloadStatefulSet(statefulSets, prefix, ns);
+    const isStateful = Boolean(matchedSts) ||
+      prefix.toLowerCase().includes("db") ||
+      prefix.toLowerCase().includes("redis") ||
+      prefix.toLowerCase().includes("stateful") ||
+      groupPods.some((p) => (p.data as K8sPodData)?.ownerKind === "StatefulSet");
+
+    if (isStateful) {
+      processedNodes.push(buildStatefulSetNode(prefix, ns, groupPods, podsData, readyPods.length, statefulSets, cpuUsagePct));
+    } else {
+      processedNodes.push({
+        id: groupId,
+        type: "k8sGroup",
+        position: { x: 0, y: 0 },
+        data: {
+          name: prefix,
+          namespace: ns,
+          workloadType: "Deployment",
+          rolloutInfo,
+          pods: podsData,
+          replicas: groupPods.length,
+          readyReplicas: readyPods.length,
+          hpa: matchedHPA,
+          hasNetworkPolicy,
+          networkPolicies: matchedNetPols,
+          pdb: matchedPDB,
+          hasProbeWarning,
+          cpuUsagePct,
+        },
+      });
+    }
   });
 
   const dsNodes: Node[] = (daemonSets || [])
@@ -425,69 +434,4 @@ export const sanitizeManifestSnapshot = (node: Node): Record<string, unknown> =>
   delete manifest.status;
   return manifest;
 };
-
-export function parseK8sCpuCapacity(cpuVal?: string | number): number {
-  if (!cpuVal) return 0;
-  const str = String(cpuVal).trim();
-  if (str.endsWith("m")) {
-    const m = parseFloat(str.slice(0, -1));
-    return isNaN(m) ? 0 : m / 1000;
-  }
-  const n = parseFloat(str);
-  return isNaN(n) ? 0 : n;
-}
-
-export function parseK8sMemoryCapacity(memVal?: string | number): number {
-  if (!memVal) return 0;
-  const str = String(memVal).trim();
-  if (str.endsWith("Ki") || str.endsWith("ki")) {
-    const ki = parseFloat(str.slice(0, -2));
-    return isNaN(ki) ? 0 : ki / (1024 * 1024);
-  }
-  if (str.endsWith("Mi") || str.endsWith("mi")) {
-    const mi = parseFloat(str.slice(0, -2));
-    return isNaN(mi) ? 0 : mi / 1024;
-  }
-  if (str.endsWith("Gi") || str.endsWith("gi")) {
-    const gi = parseFloat(str.slice(0, -2));
-    return isNaN(gi) ? 0 : gi;
-  }
-  if (str.endsWith("Ti") || str.endsWith("ti")) {
-    const ti = parseFloat(str.slice(0, -2));
-    return isNaN(ti) ? 0 : ti * 1024;
-  }
-  if (str.endsWith("K") || str.endsWith("k")) {
-    const k = parseFloat(str.slice(0, -1));
-    return isNaN(k) ? 0 : (k * 1000) / (1024 * 1024 * 1024);
-  }
-  if (str.endsWith("M") || str.endsWith("m")) {
-    const m = parseFloat(str.slice(0, -1));
-    return isNaN(m) ? 0 : (m * 1000 * 1000) / (1024 * 1024 * 1024);
-  }
-  if (str.endsWith("G") || str.endsWith("g")) {
-    const g = parseFloat(str.slice(0, -1));
-    return isNaN(g) ? 0 : (g * 1000 * 1000 * 1000) / (1024 * 1024 * 1024);
-  }
-  const bytes = parseFloat(str);
-  if (!isNaN(bytes) && bytes > 0) {
-    return bytes / (1024 * 1024 * 1024);
-  }
-  return 0;
-}
-
-export function calculateClusterCapacity(nodes: Node[]): { clusterCpuCores: number; clusterMemoryGB: number } {
-  let totalCpu = 0;
-  let totalMemGB = 0;
-  for (const n of nodes) {
-    if (n.type === "k8sWorker" && n.data) {
-      const data = n.data as K8sNodeData;
-      totalCpu += parseK8sCpuCapacity(data.cpuCapacity);
-      totalMemGB += parseK8sMemoryCapacity(data.memoryCapacity);
-    }
-  }
-  return {
-    clusterCpuCores: totalCpu,
-    clusterMemoryGB: parseFloat(totalMemGB.toFixed(1)),
-  };
-}
 

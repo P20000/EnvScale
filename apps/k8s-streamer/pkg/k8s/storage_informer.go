@@ -152,6 +152,19 @@ func (im *InformerManager) extractPVCDelta(pvc *corev1.PersistentVolumeClaim) ty
 		volumeMode = string(*pvc.Spec.VolumeMode)
 	}
 
+	var dataSource *types.PVCDataSourceInfo
+	if pvc.Spec.DataSource != nil {
+		var apiGroup string
+		if pvc.Spec.DataSource.APIGroup != nil {
+			apiGroup = *pvc.Spec.DataSource.APIGroup
+		}
+		dataSource = &types.PVCDataSourceInfo{
+			APIGroup: apiGroup,
+			Kind:     pvc.Spec.DataSource.Kind,
+			Name:     pvc.Spec.DataSource.Name,
+		}
+	}
+
 	return types.PVCStatusDelta{
 		Name:             pvc.Name,
 		Namespace:        pvc.Namespace,
@@ -163,6 +176,7 @@ func (im *InformerManager) extractPVCDelta(pvc *corev1.PersistentVolumeClaim) ty
 		AccessModes:      accessModes,
 		VolumeMode:       volumeMode,
 		Labels:           pvc.Labels,
+		DataSource:       dataSource,
 		CreatedAt:        pvc.CreationTimestamp.Time.UTC(),
 	}
 }

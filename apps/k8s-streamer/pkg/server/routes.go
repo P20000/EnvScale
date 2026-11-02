@@ -184,6 +184,26 @@ func SetupRoutes(
 			"pdbs":            pdbs,
 			"resourceQuotas":  resourceQuotas,
 			"limitRanges":     limitRanges,
+			"metricsHistory":  clusterManager.GetMetricsHistory(clusterID),
+		})
+	}))
+
+	mux.HandleFunc("/api/v1/clusters/metrics/history", RequireClusterAuth(func(r *http.Request) string {
+		return r.URL.Query().Get("clusterId")
+	}, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		clusterID := r.URL.Query().Get("clusterId")
+		if clusterID == "" {
+			http.Error(w, "clusterId query parameter is required", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"clusterId": clusterID,
+			"history":   clusterManager.GetMetricsHistory(clusterID),
 		})
 	}))
 

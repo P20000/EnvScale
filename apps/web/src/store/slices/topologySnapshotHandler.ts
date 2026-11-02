@@ -17,16 +17,24 @@ import type {
   K8sPDBData,
   K8sResourceQuotaData,
   K8sLimitRangeData,
+  K8sStatefulSetData,
+  K8sVolumeSnapshotData,
+  K8sVolumeSnapshotContentData,
 } from "../types/topologyTypes";
 import type { TopologyState } from "../useTopologyStore";
 import { extractServices, extractPods, calculateClusterCapacity } from "../helpers/topologyHelpers";
 import { useUIStore } from "../useUIStore";
+import { useMetricsStore } from "../useMetricsStore";
 
 export function handleSnapshotSync(
   state: TopologyState,
   set: (partial: Partial<TopologyState>) => void,
   payloadData: Record<string, unknown>
 ) {
+  if (Array.isArray(payloadData.metricsHistory) && payloadData.metricsHistory.length > 0) {
+    useMetricsStore.getState().setMetricsHistory(payloadData.metricsHistory);
+  }
+
   const snapshotPods = Array.isArray(payloadData.pods) ? (payloadData.pods as Record<string, unknown>[]) : [];
   const snapshotNodes = Array.isArray(payloadData.nodes) ? (payloadData.nodes as Record<string, unknown>[]) : [];
   const snapshotServices = Array.isArray(payloadData.services) ? (payloadData.services as Record<string, unknown>[]) : [];
@@ -127,20 +135,36 @@ export function handleSnapshotSync(
   const snapshotPDBs = Array.isArray(payloadData.pdbs) ? (payloadData.pdbs as K8sPDBData[]) : [];
   const snapshotQuotas = Array.isArray(payloadData.resourceQuotas) ? (payloadData.resourceQuotas as K8sResourceQuotaData[]) : [];
   const snapshotLimitRanges = Array.isArray(payloadData.limitRanges) ? (payloadData.limitRanges as K8sLimitRangeData[]) : [];
+  const snapshotStatefulSets = Array.isArray(payloadData.statefulSets) ? (payloadData.statefulSets as K8sStatefulSetData[]) : [];
+  const snapshotVS = Array.isArray(payloadData.volumeSnapshots) ? (payloadData.volumeSnapshots as K8sVolumeSnapshotData[]) : [];
+  const snapshotVSC = Array.isArray(payloadData.volumeSnapshotContents) ? (payloadData.volumeSnapshotContents as K8sVolumeSnapshotContentData[]) : [];
 
-  let updatedNamespaces = useUIStore.getState().selectedNamespaces;
-  if (updatedNamespaces.length === 0) {
-    const nsSet = new Set<string>();
-    newRawNodes.forEach((n) => {
-      const d = n.data as Record<string, unknown> | undefined;
-      if (d?.namespace && typeof d.namespace === "string") {
-        nsSet.add(d.namespace);
+  const currentSelected = useUIStore.getState().selectedNamespaces;
+  const nsSet = new Set<string>();
+  newRawNodes.forEach((n) => {
+    const d = n.data as Record<string, unknown> | undefined;
+    if (d?.namespace && typeof d.namespace === "string") {
+      nsSet.add(d.namespace);
+    }
+  });
+  const sysNs = new Set(["kube-system", "ingress-nginx", "local-path-storage", "kube-public", "kube-node-lease"]);
+  const nonSys = Array.from(nsSet).filter((ns) => !sysNs.has(ns));
+  const activeClusterNonSys = nonSys.length > 0 ? nonSys : Array.from(nsSet);
+
+  if (currentSelected.length === 0) {
+    useUIStore.getState().setSelectedNamespaces(activeClusterNonSys);
+  } else if (!currentSelected.includes("__NONE__")) {
+    // If the currently selected namespaces don't contain any namespaces from this cluster,
+    // or if this cluster has new non-system application namespaces (e.g. testing-todo), merge them in
+    const clusterMatchingSelected = currentSelected.filter((ns) => nsSet.has(ns));
+    if (clusterMatchingSelected.length === 0) {
+      useUIStore.getState().setSelectedNamespaces(activeClusterNonSys);
+    } else {
+      const merged = Array.from(new Set([...clusterMatchingSelected, ...activeClusterNonSys]));
+      if (merged.length !== currentSelected.length || !merged.every((ns) => currentSelected.includes(ns))) {
+        useUIStore.getState().setSelectedNamespaces(merged);
       }
-    });
-    const sysNs = new Set(["kube-system", "ingress-nginx", "local-path-storage", "kube-public", "kube-node-lease"]);
-    const nonSys = Array.from(nsSet).filter((ns) => !sysNs.has(ns));
-    updatedNamespaces = nonSys.length > 0 ? nonSys : Array.from(nsSet);
-    useUIStore.getState().setSelectedNamespaces(updatedNamespaces);
+    }
   }
 
     const { clusterCpuCores, clusterMemoryGB } = calculateClusterCapacity(newRawNodes);
@@ -166,6 +190,9 @@ export function handleSnapshotSync(
     pdbs: snapshotPDBs,
     resourceQuotas: snapshotQuotas,
     limitRanges: snapshotLimitRanges,
+    statefulSets: snapshotStatefulSets,
+    volumeSnapshots: snapshotVS,
+    volumeSnapshotContents: snapshotVSC,
   });
   state.applyDagreLayout();
 }

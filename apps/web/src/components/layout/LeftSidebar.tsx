@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Icon } from "../ui/Icon";
 import {
   mdiHub,
+  mdiConsole,
   mdiAlertOctagon,
   mdiChartLine,
   mdiTrophy,
@@ -12,7 +13,7 @@ import { EnvScaleLogo } from "../ui/EnvScaleLogo";
 import { UserProfileMenu } from "./UserProfileMenu";
 import { useAuthStore } from "../../store/useAuthStore";
 
-export type NavTab = "topology" | "incidents" | "metrics" | "leaderboard" | "settings";
+export type NavTab = "topology" | "logs" | "incidents" | "metrics" | "leaderboard" | "settings";
 
 interface LeftSidebarProps {
   activeTab: NavTab;
@@ -60,6 +61,11 @@ export function LeftSidebar({
       id: "topology" as NavTab,
       label: "Topology Graph",
       iconPath: mdiHub,
+    },
+    {
+      id: "logs" as NavTab,
+      label: "Log Explorer",
+      iconPath: mdiConsole,
     },
     {
       id: "incidents" as NavTab,

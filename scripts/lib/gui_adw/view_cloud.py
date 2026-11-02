@@ -4,97 +4,23 @@ import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 from gi.repository import Gtk, Adw, GLib
+
 from ..cloud_deployer import CloudDeployer
 from ..browser_utils import open_browser_url
-
-class StepRow(Adw.ExpanderRow):
-    def __init__(self, step_id: str, title: str, command: str = ""):
-        super().__init__()
-        self.step_id = step_id
-        self.set_title(title)
-        self.set_subtitle(command if command else "Executing...")
-        self.set_expanded(True)
-
-        # Status spinner or badge
-        self.suffix_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        self.spinner = Gtk.Spinner()
-        self.spinner.start()
-        self.suffix_box.append(self.spinner)
-
-        self.badge = Gtk.Label(label="RUNNING")
-        self.badge.add_css_class("accent")
-        self.suffix_box.append(self.badge)
-        self.add_suffix(self.suffix_box)
-
-        # Dropdown sub-log viewer
-        log_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        log_box.set_margin_top(8)
-        log_box.set_margin_bottom(8)
-        log_box.set_margin_start(16)
-        log_box.set_margin_end(16)
-
-        scroller = Gtk.ScrolledWindow()
-        scroller.set_min_content_height(140)
-        scroller.set_max_content_height(300)
-
-        self.text_view = Gtk.TextView()
-        self.text_view.set_editable(False)
-        self.text_view.set_cursor_visible(False)
-        self.text_view.set_monospace(True)
-        self.text_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
-        self.buffer = self.text_view.get_buffer()
-
-        scroller.set_child(self.text_view)
-        log_box.append(scroller)
-        self.add_row(log_box)
-
-    def append_log(self, line: str):
-        end = self.buffer.get_end_iter()
-        self.buffer.insert(end, line + "\n")
-        # Adjustment bounds update only after relayout, so scroll via a
-        # right-gravity end mark on the next idle cycle.
-        if not hasattr(self, "_end_mark"):
-            self._end_mark = self.buffer.create_mark("end", self.buffer.get_end_iter(), False)
-        else:
-            self.buffer.move_mark(self._end_mark, self.buffer.get_end_iter())
-        GLib.idle_add(self._scroll_to_end)
-
-    def _scroll_to_end(self):
-        self.text_view.scroll_to_mark(self._end_mark, 0.0, True, 0.0, 1.0)
-        return False
-
-    def mark_success(self, detail: str = ""):
-        self.spinner.stop()
-        self.suffix_box.remove(self.spinner)
-        self.badge.set_text("✔ Completed")
-        self.badge.remove_css_class("accent")
-        self.badge.add_css_class("success")
-        if detail:
-            self.set_subtitle(detail)
-        self.set_expanded(False)
-
-    def mark_error(self, err_msg: str):
-        self.spinner.stop()
-        self.suffix_box.remove(self.spinner)
-        self.badge.set_text("✘ Failed")
-        self.badge.remove_css_class("accent")
-        self.badge.add_css_class("error")
-        if err_msg:
-            self.set_subtitle(err_msg)
-        self.set_expanded(True)
-
+from .log_storage import LogStorage
+from .step_row import HeadingLogPanel
 
 class CloudView(Gtk.Box):
     def __init__(self, process_manager):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         self.pm = process_manager
-        self.set_margin_top(16)
-        self.set_margin_bottom(16)
-        self.set_margin_start(24)
-        self.set_margin_end(24)
+        self.set_margin_top(12)
+        self.set_margin_bottom(12)
+        self.set_margin_start(16)
+        self.set_margin_end(16)
 
         # Quick Actions Bar
-        actions_card = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        actions_card = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
 
         self.btn_up = Gtk.Button(label="Provision Host")
         self.btn_up.add_css_class("suggested-action")
@@ -147,29 +73,23 @@ class CloudView(Gtk.Box):
         self.row_dns.add_suffix(self.badge_dns)
         self.pref_group.add(self.row_dns)
 
-        # Step Showcase Section
-        self.step_group = Adw.PreferencesGroup()
-        self.step_group.set_title("Cloud Operations Step Showcase")
-        self.step_group.set_description("Live tracking of real-time cloud commands, dynamic dot-loader execution, and expandable logs.")
-        self.append(self.step_group)
+        # Dedicated Heading-Based Terminal Log Panel with persistent JSON storage
+        self.log_storage = LogStorage()
+        self.log_panel = HeadingLogPanel("cloud", self.log_storage)
+        self.append(self.log_panel)
 
-        self.step_rows = {}
         self._refresh_status()
 
     def _on_step_event(self, step_id: str, title: str, status: str, detail: str):
         def _apply():
             if status == "start":
-                row = StepRow(step_id, title, command=detail)
-                self.step_rows[step_id] = row
-                self.step_group.add(row)
-            elif step_id in self.step_rows:
-                row = self.step_rows[step_id]
-                if status == "log":
-                    row.append_log(detail)
-                elif status == "success":
-                    row.mark_success(detail)
-                elif status == "error":
-                    row.mark_error(detail)
+                self.log_panel.create_step(step_id, title, command=detail)
+            elif status == "log":
+                self.log_panel.append_log(step_id, detail)
+            elif status == "success":
+                self.log_panel.complete_step(step_id, True, detail)
+            elif status == "error":
+                self.log_panel.complete_step(step_id, False, detail)
         GLib.idle_add(_apply)
 
     def _log(self, text: str):
@@ -195,16 +115,8 @@ class CloudView(Gtk.Box):
             GLib.idle_add(_update)
         threading.Thread(target=_task, daemon=True).start()
 
-    def _clear_steps(self):
-        def _do():
-            for row in self.step_rows.values():
-                self.step_group.remove(row)
-            self.step_rows.clear()
-        GLib.idle_add(_do)
-
     def _run_infra_op(self, op_id: str, title: str, method_name: str):
-        """Run a CloudDeployer lifecycle method off the UI thread, surfacing failures."""
-        self._clear_steps()
+        """Run a CloudDeployer lifecycle method off the UI thread, preserving history."""
         def _task():
             try:
                 deployer = CloudDeployer(step_fn=self._on_step_event)
@@ -230,7 +142,6 @@ class CloudView(Gtk.Box):
         self._run_infra_op("infra_start", "Resume Host", "infra_start")
 
     def _on_deploy_clicked(self, _):
-        self._clear_steps()
         def _task():
             try:
                 s1, t1 = "deploy_dispatch", "Dispatching Deployment to Cloud Host"

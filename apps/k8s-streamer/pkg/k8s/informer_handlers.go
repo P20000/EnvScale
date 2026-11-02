@@ -292,25 +292,6 @@ func (im *InformerManager) emitReplicaSetDeleted(rs *appsv1.ReplicaSet) {
 	im.hub.BroadcastEvent(types.EventReplicaSetDeleted, im.clusterID, delta)
 }
 
-func (im *InformerManager) extractStatefulSetDelta(sts *appsv1.StatefulSet) types.StatefulSetStatusDelta {
-	return types.StatefulSetStatusDelta{
-		Name:          sts.Name,
-		Namespace:     sts.Namespace,
-		Replicas:      *sts.Spec.Replicas,
-		ReadyReplicas: sts.Status.ReadyReplicas,
-		Selector:      sts.Spec.Selector.MatchLabels,
-		Labels:        sts.Labels,
-	}
-}
-
-func (im *InformerManager) emitStatefulSetDelta(sts *appsv1.StatefulSet) {
-	delta := im.extractStatefulSetDelta(sts)
-	key := fmt.Sprintf("StatefulSet/%s/%s", sts.Namespace, sts.Name)
-	if !im.dedup.ShouldEmit(key, delta) {
-		return
-	}
-	im.hub.BroadcastEvent(types.EventStatefulSetMutated, im.clusterID, delta)
-}
 
 func (im *InformerManager) extractIngressDelta(ing *networkingv1.Ingress) types.IngressStatusDelta {
 	rules := make([]types.IngressRuleStatus, 0)

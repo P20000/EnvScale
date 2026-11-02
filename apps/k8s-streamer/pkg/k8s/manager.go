@@ -344,3 +344,28 @@ func (cm *ClusterManager) GetClientset(clusterID string) (kubernetes.Interface, 
 	}
 	return im.Clientset(), nil
 }
+
+// GetStreamClientset returns the kubernetes.Interface configured with Timeout=0 for persistent streaming
+func (cm *ClusterManager) GetStreamClientset(clusterID string) (kubernetes.Interface, error) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	im, ok := cm.resolveInformerManagerLocked(clusterID)
+	if !ok || im == nil {
+		return nil, fmt.Errorf("cluster %q is not registered", clusterID)
+	}
+	return im.StreamClientset(), nil
+}
+
+// GetMetricsHistory returns the rolling cluster-level metrics history buffer for the cluster.
+func (cm *ClusterManager) GetMetricsHistory(clusterID string) []types.ClusterMetricPoint {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	im, ok := cm.resolveInformerManagerLocked(clusterID)
+	if !ok || im == nil {
+		return []types.ClusterMetricPoint{}
+	}
+	return im.GetMetricsHistory()
+}
+

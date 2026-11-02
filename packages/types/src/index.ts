@@ -58,6 +58,10 @@ export const WS_EVENTS = {
   RESOURCE_QUOTA_DELETED: 'EVENT_RESOURCE_QUOTA_DELETED',
   LIMIT_RANGE_MUTATED: 'EVENT_LIMIT_RANGE_MUTATED',
   LIMIT_RANGE_DELETED: 'EVENT_LIMIT_RANGE_DELETED',
+  VOLUME_SNAPSHOT_MUTATED: 'EVENT_VOLUME_SNAPSHOT_MUTATED',
+  VOLUME_SNAPSHOT_DELETED: 'EVENT_VOLUME_SNAPSHOT_DELETED',
+  VOLUME_SNAPSHOT_CONTENT_MUTATED: 'EVENT_VOLUME_SNAPSHOT_CONTENT_MUTATED',
+  VOLUME_SNAPSHOT_CONTENT_DELETED: 'EVENT_VOLUME_SNAPSHOT_CONTENT_DELETED',
 } as const;
 
 export type WSEventType = typeof WS_EVENTS[keyof typeof WS_EVENTS];
@@ -271,5 +275,35 @@ export interface LimitRangeTopologyData {
   limits: LimitRangeItemData[];
   createdAt?: string;
 }
+
+// VolumeSnapshot State Payload for Topology Engine
+export interface VolumeSnapshotTopologyData {
+  name: string;
+  namespace: string;
+  readyToUse?: boolean;
+  restoreSize?: string;
+  pvcName?: string;
+  snapshotContentName?: string;
+  snapshotClassName?: string;
+  creationTime?: string;
+  error?: string;
+  labels?: Record<string, string>;
+  createdAt?: string;
+}
+
+// VolumeSnapshotContent State Payload for Topology Engine
+export interface VolumeSnapshotContentTopologyData {
+  name: string;
+  snapshotHandle?: string;
+  driver?: string;
+  deletionPolicy?: string;
+  snapshotClassName?: string;
+  volumeSnapshotRef?: string;
+  readyToUse?: boolean;
+  restoreSize?: number;
+  labels?: Record<string, string>;
+  createdAt?: string;
+}
+
 
 

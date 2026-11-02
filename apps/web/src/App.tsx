@@ -1,17 +1,19 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 
 import { TopNavbar } from "./components/layout/TopNavbar";
 import { LeftSidebar, type NavTab } from "./components/layout/LeftSidebar";
 import { TopologyCanvas } from "./components/flow/TopologyCanvas";
 import { InspectorDrawer } from "./components/drawer/InspectorDrawer";
-import { PodLogDrawer } from "./components/drawer/PodLogDrawer";
+import { LogsView } from "./components/views/LogsView";
 import { IncidentsView } from "./components/views/IncidentsView";
 import { MetricsView } from "./components/views/MetricsView";
 import { LeaderboardView } from "./components/views/LeaderboardView";
 import { SettingsView } from "./components/views/SettingsView";
 import { useTopologyStore } from "./store/useTopologyStore";
 import { useUIStore } from "./store/useUIStore";
+import { useMetricsStore } from "./store/useMetricsStore";
+import { useK8sStream, type WsTopologyMessage } from "./hooks/useK8sStream";
 import ConnectClusterWizard from "./components/onboarding/ConnectClusterWizard";
 import { ToastContainer } from "./components/ui/ToastContainer";
 import { apiMe, apiGetWorkspaceClusters } from "./config/api";
@@ -31,6 +33,8 @@ function AppContent() {
   const addCluster = useTopologyStore((s) => s.addCluster);
   const wsStatus = useTopologyStore((s) => s.wsStatus);
   const wsLatencyMs = useTopologyStore((s) => s.wsLatencyMs);
+  const setWsStatus = useTopologyStore((s) => s.setWsStatus);
+  const applyDelta = useTopologyStore((s) => s.applyDelta);
   const selectedNode = useTopologyStore((s) => s.selectedNode);
   const setSelectedNode = useTopologyStore((s) => s.setSelectedNode);
   const clearSelectedNode = useTopologyStore((s) => s.clearSelectedNode);
@@ -40,6 +44,36 @@ function AppContent() {
   const showSystemNamespaces = useUIStore((s) => s.showSystemNamespaces);
   const wsReconnectTick = useTopologyStore((s) => s.wsReconnectTick);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
+  const handleWsMessage = useCallback(
+    (msg: WsTopologyMessage) => {
+      const eventType = String(msg.event || msg.type || "");
+      if (eventType === "EVENT_CLUSTER_METRICS") {
+        const data = (msg.data !== undefined ? msg.data : msg.payload) as Record<string, unknown> | undefined;
+        if (data && typeof data.cpuPct === "number" && typeof data.memoryPct === "number") {
+          useMetricsStore.getState().appendMetricPoint({
+            timestamp: typeof data.timestamp === "number" ? data.timestamp : Date.now(),
+            cpuPct: data.cpuPct,
+            memoryPct: data.memoryPct,
+          });
+        }
+      }
+      applyDelta(msg);
+    },
+    [applyDelta]
+  );
+
+  const { status, latencyMs } = useK8sStream(handleWsMessage);
+
+  useEffect(() => {
+    setWsStatus(status, latencyMs);
+  }, [status, latencyMs, setWsStatus]);
+
+  useEffect(() => {
+    if (activeCluster) {
+      useMetricsStore.getState().fetchMetricsHistory(activeCluster);
+    }
+  }, [activeCluster]);
 
   useEffect(() => {
     useAuthStore.getState().checkAuth();
@@ -97,12 +131,10 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<NavTab>("topology");
   const [showConnectWizard, setShowConnectWizard] = useState(false);
 
-  const [logDrawerState, setLogDrawerState] = useState<{
-    isOpen: boolean;
+  const [logTarget, setLogTarget] = useState<{
     podName: string | null;
     namespace?: string;
   }>({
-    isOpen: false,
     podName: null,
   });
   const handleClusterConnected = (newCluster: { id: string, name: string }) => {
@@ -117,11 +149,12 @@ function AppContent() {
       namespace && namespace !== "default"
         ? namespace
         : useUIStore.getState().selectedNamespaces[0] || "default";
-    setLogDrawerState({
-      isOpen: true,
+    setLogTarget({
       podName,
       namespace: activeNs,
     });
+    setActiveTab("logs");
+    clearSelectedNode();
   };
 
   const selectedKey = selectedNode
@@ -195,6 +228,13 @@ function AppContent() {
           />
         )}
 
+        {activeTab === "logs" && (
+          <LogsView
+            initialPodName={logTarget.podName}
+            initialNamespace={logTarget.namespace}
+          />
+        )}
+
         {activeTab === "incidents" && <IncidentsView />}
 
         {activeTab === "metrics" && <MetricsView />}
@@ -224,19 +264,6 @@ function AppContent() {
         />
       )}
 
-      {/* Region 5: Pod Log Terminal Drawer */}
-      <PodLogDrawer
-        isOpen={logDrawerState.isOpen}
-        podName={logDrawerState.podName}
-        namespace={logDrawerState.namespace}
-        onClose={() =>
-          setLogDrawerState((prev) => ({
-            ...prev,
-            isOpen: false,
-          }))
-        }
-      />
-
       {/* ISH-01: Connect Cluster Onboarding Wizard */}
       {showConnectWizard && (
         <ConnectClusterWizard
@@ -245,8 +272,8 @@ function AppContent() {
         />
       )}
 
-      {/* Global Toast Notification System */}
-      <ToastContainer />
+      {/* Toast Notification System - displayed strictly on the canvas (topology) tab only */}
+      {activeTab === "topology" && <ToastContainer />}
     </div>
   );
 }

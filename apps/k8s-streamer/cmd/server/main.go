@@ -17,6 +17,7 @@ import (
 	envredis "github.com/EnvScale/k8s-streamer/pkg/redis"
 	"github.com/EnvScale/k8s-streamer/pkg/server"
 	"github.com/EnvScale/k8s-streamer/pkg/websocket"
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
 )
 
 func main() {

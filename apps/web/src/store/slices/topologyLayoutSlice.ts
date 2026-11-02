@@ -37,6 +37,7 @@ export function handleApplyDagreLayout(
     hpas,
     networkPolicies,
     pdbs,
+    statefulSets,
   } = get();
 
   const baseNodes = rawNodes && rawNodes.length > 0 ? rawNodes : nodes;
@@ -63,7 +64,8 @@ export function handleApplyDagreLayout(
     showCompletedJobs,
     hpas,
     networkPolicies,
-    pdbs
+    pdbs,
+    statefulSets
   );
 
   const visiblePVCs = filterPVCsForDisplay(pvcs, showStorage, showSystemNamespaces, selectedNamespaces);

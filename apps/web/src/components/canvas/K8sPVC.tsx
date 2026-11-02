@@ -1,10 +1,12 @@
 import { Handle, Position } from "@xyflow/react";
-import { MdStorage as StorageIcon } from "react-icons/md";
+import { MdStorage as StorageIcon, MdCameraAlt as SnapshotIcon } from "react-icons/md";
 import { useUIStore } from "../../store/useUIStore";
+import { useTopologyStore } from "../../store/useTopologyStore";
 import type { K8sPVCData } from "../../store/types/topologyTypes";
 
 export function K8sPVCNode({ data }: { data: K8sPVCData }) {
   const layoutDirection = useUIStore((s) => s.layoutDirection);
+  const volumeSnapshots = useTopologyStore((s) => s.volumeSnapshots);
   const isTB = layoutDirection === "TB";
 
   const phase = data.phase || "Bound";
@@ -15,6 +17,11 @@ export function K8sPVCNode({ data }: { data: K8sPVCData }) {
   const accessMode = (data.accessModes && data.accessModes[0])
     ? data.accessModes[0].replace("ReadWriteOnce", "RWO").replace("ReadOnlyMany", "ROX").replace("ReadWriteMany", "RWX")
     : "RWO";
+
+  const pvcSnapshots = (volumeSnapshots || []).filter(
+    (s) => s.pvcName === data.name && (s.namespace === data.namespace || !data.namespace)
+  );
+  const readySnaps = pvcSnapshots.filter((s) => s.readyToUse).length;
 
   return (
     <div
@@ -74,6 +81,16 @@ export function K8sPVCNode({ data }: { data: K8sPVCData }) {
         </span>
       </div>
 
+      {data.dataSource && (
+        <div
+          className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-950/40 border border-purple-800/40 text-[8.5px] font-mono text-purple-300 truncate"
+          title={`Restored from dataSource: ${data.dataSource.kind}/${data.dataSource.name}`}
+        >
+          <span className="text-purple-400">🌱</span>
+          <span className="truncate">Cloned: {data.dataSource.name}</span>
+        </div>
+      )}
+
       <div className="flex items-center gap-1.5 pt-1.5 border-t border-[#30343B] text-[9px] font-mono text-[#9AA0AA]">
         <span className="px-1.5 py-0.5 rounded-md bg-[#23262D] text-[#80DEEA] font-semibold" title="Allocated Storage Capacity">
           💾 {capacityLabel}
@@ -81,6 +98,19 @@ export function K8sPVCNode({ data }: { data: K8sPVCData }) {
         <span className="px-1.5 py-0.5 rounded-md bg-[#23262D] text-[#9AA0AA]" title="Access Mode">
           {accessMode}
         </span>
+        {pvcSnapshots.length > 0 && (
+          <span
+            className={`px-1.5 py-0.5 rounded-md font-mono text-[9px] font-semibold flex items-center gap-0.5 ${
+              readySnaps === pvcSnapshots.length
+                ? "bg-purple-500/15 text-purple-300 border border-purple-500/30"
+                : "bg-amber-500/15 text-amber-300 border border-amber-500/30"
+            }`}
+            title={`${pvcSnapshots.length} VolumeSnapshot(s) available (${readySnaps} Ready)`}
+          >
+            <SnapshotIcon className="text-[10px]" />
+            {pvcSnapshots.length}
+          </span>
+        )}
         {data.storageClassName && (
           <span className="px-1.5 py-0.5 rounded-md bg-[#23262D]/60 text-[#777D87] truncate max-w-[65px]" title={`StorageClass: ${data.storageClassName}`}>
             {data.storageClassName}

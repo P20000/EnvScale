@@ -22,6 +22,12 @@ export const getLayoutedElements = (
 
   // Helper to determine node dimensions
   const getNodeDimensions = (node: Node) => {
+    if (node.type === "k8sStatefulSet") {
+      const data = node.data as { replicas?: number; pods?: unknown[] };
+      const count = Math.max(data?.replicas || 0, (data?.pods || []).length, 1);
+      const width = Math.max(260, count * 125 + 20);
+      return { width, height: 132 };
+    }
     if (node.type === "k8sGroup") {
       return { width: 295, height: 90 };
     }
@@ -68,7 +74,7 @@ export const getLayoutedElements = (
   // Add DAG nodes to dagre graph
   dagNodes.forEach((node) => {
     const dims = getNodeDimensions(node);
-    if (node.type === "k8sGroup") {
+    if (node.type === "k8sGroup" || node.type === "k8sStatefulSet") {
       node.style = { ...node.style, width: dims.width, height: dims.height };
     }
     dagreGraph.setNode(node.id, { width: dims.width, height: dims.height });
@@ -87,7 +93,7 @@ export const getLayoutedElements = (
 
   const tier0 = dagNodes.filter((n) => n.type === "k8sIngress");
   const tier1 = dagNodes.filter((n) => n.type === "k8sService");
-  const tier2 = dagNodes.filter((n) => n.type === "k8sGroup");
+  const tier2 = dagNodes.filter((n) => n.type === "k8sGroup" || n.type === "k8sStatefulSet");
   const tier3 = dagNodes.filter((n) => n.type === "k8sPVC");
 
   const unroutedWorkloads = tier2
@@ -108,7 +114,7 @@ export const getLayoutedElements = (
   // Add routed DAG nodes to dagre graph
   routedDagNodes.forEach((node) => {
     const dims = getNodeDimensions(node);
-    if (node.type === "k8sGroup") {
+    if (node.type === "k8sGroup" || node.type === "k8sStatefulSet") {
       node.style = { ...node.style, width: dims.width, height: dims.height };
     }
     dagreGraph.setNode(node.id, { width: dims.width, height: dims.height });
@@ -163,7 +169,8 @@ export const getLayoutedElements = (
     // 3. Database / Storage targets (e.g. redis-db) sit adjacent to and below the backend services consuming them.
     // This guarantees that dashed dependency edges never pass behind or intersect frontend workloads.
     if (isLR && routedWorkloadIds.size > 0) {
-      const isDataResource = (id: string, name?: string) => {
+      const isDataResource = (id: string, name?: string, type?: string) => {
+        if (type === "k8sStatefulSet") return true;
         const s = `${id} ${name || ""}`.toLowerCase();
         return (
           s.includes("redis") ||
@@ -175,10 +182,12 @@ export const getLayoutedElements = (
         );
       };
 
-      const routedWorkloads = routedDagNodes.filter((n) => n.type === "k8sGroup");
+      const routedWorkloads = routedDagNodes.filter(
+        (n) => n.type === "k8sGroup" || n.type === "k8sStatefulSet"
+      );
       const sortedRoutedWorkloads = [...routedWorkloads].sort((a, b) => {
-        const aIsDb = isDataResource(a.id, (a.data as { name?: string })?.name);
-        const bIsDb = isDataResource(b.id, (b.data as { name?: string })?.name);
+        const aIsDb = isDataResource(a.id, (a.data as { name?: string })?.name, a.type);
+        const bIsDb = isDataResource(b.id, (b.data as { name?: string })?.name, b.type);
         if (aIsDb !== bIsDb) return aIsDb ? 1 : -1;
 
         const aName = `${a.id} ${(a.data as { name?: string })?.name || ""}`.toLowerCase();
@@ -190,11 +199,25 @@ export const getLayoutedElements = (
         return a.id.localeCompare(b.id);
       });
 
+      // Align Column 3 workloads along a unified left edge so all cards start cleanly at the same X
+      const columnWorkloadLeftX = Math.min(
+        ...sortedRoutedWorkloads
+          .map((w) => {
+            const gn = dagreGraph.node(w.id);
+            const dims = getNodeDimensions(w);
+            return gn ? gn.x - dims.width / 2 : Infinity;
+          })
+          .filter((x) => x !== Infinity)
+      );
+
       let curWorkloadY = Math.max(minRoutedY, 40);
       sortedRoutedWorkloads.forEach((w) => {
         const gNode = dagreGraph.node(w.id);
         if (gNode) {
           const dims = getNodeDimensions(w);
+          if (columnWorkloadLeftX !== Infinity) {
+            gNode.x = columnWorkloadLeftX + dims.width / 2;
+          }
           gNode.y = curWorkloadY + dims.height / 2;
           curWorkloadY += dims.height + 25;
         }
@@ -257,7 +280,7 @@ export const getLayoutedElements = (
 
     unroutedWorkloads.forEach((u) => {
       const dims = getNodeDimensions(u);
-      if (u.type === "k8sGroup") {
+      if (u.type === "k8sGroup" || u.type === "k8sStatefulSet") {
         u.style = { ...u.style, width: dims.width, height: dims.height };
       }
 
@@ -296,7 +319,7 @@ export const getLayoutedElements = (
 
     unroutedWorkloads.forEach((u) => {
       const dims = getNodeDimensions(u);
-      if (u.type === "k8sGroup") {
+      if (u.type === "k8sGroup" || u.type === "k8sStatefulSet") {
         u.style = { ...u.style, width: dims.width, height: dims.height };
       }
       customPosMap.set(u.id, { x: currentUnroutedX, y: tier3Y });

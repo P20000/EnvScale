@@ -1,4 +1,5 @@
 import os
+import shlex
 import json
 import urllib.request
 import urllib.error
@@ -44,7 +45,7 @@ class ChaosRunner:
 
         if scenario_id in ("crashloop", "oom"):
             manifest_path = os.path.join(TESTING_K8S_DIR, scenario["manifest"])
-            cmd = f"kubectl apply -f {manifest_path}"
+            cmd = f"kubectl apply -f {shlex.quote(manifest_path)}"
             res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
             if res.returncode == 0:
                 self.log(f"Scenario '{scenario_id}' injected! Observe status in EnvScale UI.")

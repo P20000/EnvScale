@@ -11,6 +11,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -20,19 +21,24 @@ import (
 
 	"github.com/EnvScale/k8s-streamer/pkg/types"
 	"github.com/EnvScale/k8s-streamer/pkg/websocket"
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
 )
 
 // InformerManager manages client-go SharedInformerFactory for Pods, Nodes, and Services
 type InformerManager struct {
-	clientset     kubernetes.Interface
-	metricsClient metricsv.Interface
-	factory       informers.SharedInformerFactory
-	hub           *websocket.Hub
-	clusterID     string
-	stopCh        chan struct{}
-	running       bool
-	mu            sync.RWMutex
-	dedup         *DedupCache
+	clientset       kubernetes.Interface
+	streamClientset kubernetes.Interface
+	metricsClient   metricsv.Interface
+	dynamicClient   dynamic.Interface
+	factory         informers.SharedInformerFactory
+	hub             *websocket.Hub
+	clusterID       string
+	stopCh          chan struct{}
+	running         bool
+	mu              sync.RWMutex
+	dedup           *DedupCache
+	metricsHistory  []types.ClusterMetricPoint
+	metricsMu       sync.RWMutex
 }
 
 // NewInformerManager creates an InformerManager from raw Kubeconfig bytes
@@ -78,7 +84,19 @@ func NewInformerManager(kubeconfigBytes []byte, hub *websocket.Hub, clusterID st
 		log.Printf("[K8s Informer] Warning: failed to initialize versioned K8s metrics clientset for %s: %v", clusterID, err)
 	}
 
-	return NewInformerManagerWithClientsets(clientset, metricsClient, hub, clusterID), nil
+	dynClient, err := dynamic.NewForConfig(restConfig)
+	if err != nil {
+		log.Printf("[K8s Informer] Warning: failed to initialize dynamic clientset for %s: %v", clusterID, err)
+	}
+
+	streamConfig := rest.CopyConfig(restConfig)
+	streamConfig.Timeout = 0
+	streamClientset, _ := kubernetes.NewForConfig(streamConfig)
+
+	mgr := NewInformerManagerWithClientsets(clientset, metricsClient, hub, clusterID)
+	mgr.dynamicClient = dynClient
+	mgr.streamClientset = streamClientset
+	return mgr, nil
 }
 
 // NewInformerManagerInCluster creates an InformerManager using in-cluster ServiceAccount config
@@ -98,12 +116,29 @@ func NewInformerManagerInCluster(hub *websocket.Hub, clusterID string) (*Informe
 		log.Printf("[K8s Informer] Warning: failed to initialize versioned K8s metrics clientset for %s: %v", clusterID, err)
 	}
 
-	return NewInformerManagerWithClientsets(clientset, metricsClient, hub, clusterID), nil
+	dynClient, err := dynamic.NewForConfig(restConfig)
+	if err != nil {
+		log.Printf("[K8s Informer] Warning: failed to initialize dynamic clientset for %s: %v", clusterID, err)
+	}
+
+	streamConfig := rest.CopyConfig(restConfig)
+	streamConfig.Timeout = 0
+	streamClientset, _ := kubernetes.NewForConfig(streamConfig)
+
+	mgr := NewInformerManagerWithClientsets(clientset, metricsClient, hub, clusterID)
+	mgr.dynamicClient = dynClient
+	mgr.streamClientset = streamClientset
+	return mgr, nil
 }
 
 // NewInformerManagerWithClientset creates an InformerManager using an explicit kubernetes.Interface
 func NewInformerManagerWithClientset(clientset kubernetes.Interface, hub *websocket.Hub, clusterID string) *InformerManager {
 	return NewInformerManagerWithClientsets(clientset, nil, hub, clusterID)
+}
+
+// SetDynamicClient injects an explicit dynamic.Interface (used for testing and dynamic CRD mocks)
+func (im *InformerManager) SetDynamicClient(dyn dynamic.Interface) {
+	im.dynamicClient = dyn
 }
 
 // NewInformerManagerWithClientsets creates an InformerManager using explicit kubernetes and metrics clientsets
@@ -241,6 +276,11 @@ func (im *InformerManager) Start(stopCh <-chan struct{}) {
 				im.emitStatefulSetDelta(sts)
 			}
 		},
+		DeleteFunc: func(obj interface{}) {
+			if sts, ok := obj.(*appsv1.StatefulSet); ok {
+				im.emitStatefulSetDeleted(sts)
+			}
+		},
 	})
 
 	ingressInformer := im.factory.Networking().V1().Ingresses().Informer()
@@ -315,6 +355,7 @@ func (im *InformerManager) Start(stopCh <-chan struct{}) {
 	im.setupPolicyHPAInformers()
 	im.setupPDBInformers()
 	im.setupQuotaInformers()
+	im.setupSnapshotInformers()
 
 	im.factory.Start(stopCh)
 	go im.startMetricsPulse(stopCh)
@@ -354,137 +395,11 @@ func (im *InformerManager) Clientset() kubernetes.Interface {
 	return im.clientset
 }
 
-func (im *InformerManager) GetSnapshot() (
-	pods []types.PodStatusDelta,
-	nodes []types.NodeStatusDelta,
-	services []types.ServiceStatusDelta,
-	deployments []types.DeploymentStatusDelta,
-	replicaSets []types.ReplicaSetStatusDelta,
-	statefulSets []types.StatefulSetStatusDelta,
-	daemonSets []types.DaemonSetStatusDelta,
-	ingresses []types.IngressStatusDelta,
-	incidents []types.K8sIncidentEvent,
-	cronJobs []types.CronJobStatusDelta,
-	jobs []types.JobStatusDelta,
-	pvcs []types.PVCStatusDelta,
-	pvs []types.PVStatusDelta,
-	configMaps []types.ConfigMapStatusDelta,
-	secrets []types.SecretStatusDelta,
-) {
-	im.factory.WaitForCacheSync(im.stopCh)
-	metricsMap := im.FetchPodMetricsMap()
-
-	podList := im.factory.Core().V1().Pods().Informer().GetStore().List()
-	for _, obj := range podList {
-		if pod, ok := obj.(*corev1.Pod); ok {
-			delta := im.extractPodDelta(pod)
-			key := fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)
-			if m, ok := metricsMap[key]; ok {
-				delta.CpuUsageMcores = int64(m.CPUUsagePct)
-				delta.MemoryUsageMiB = int64(m.MemoryUsageMb)
-				delta.CPUUsagePct = m.CPUUsagePct
-				delta.MemoryUsageMb = m.MemoryUsageMb
-			}
-			pods = append(pods, delta)
-		}
+// StreamClientset returns a Kubernetes clientset configured with Timeout=0 for persistent streaming
+func (im *InformerManager) StreamClientset() kubernetes.Interface {
+	if im.streamClientset != nil {
+		return im.streamClientset
 	}
-
-	nodeList := im.factory.Core().V1().Nodes().Informer().GetStore().List()
-	for _, obj := range nodeList {
-		if node, ok := obj.(*corev1.Node); ok {
-			status := "Unknown"
-			for _, cond := range node.Status.Conditions {
-				if cond.Type == corev1.NodeReady {
-					if cond.Status == corev1.ConditionTrue {
-						status = "Ready"
-					} else {
-						status = "NotReady"
-					}
-				}
-			}
-			nodes = append(nodes, types.NodeStatusDelta{
-				Name:           node.Name,
-				Status:         status,
-				CPUCapacity:    node.Status.Capacity.Cpu().String(),
-				MemoryCapacity: node.Status.Capacity.Memory().String(),
-				PodCapacity:    node.Status.Capacity.Pods().Value(),
-				Labels:         node.Labels,
-			})
-		}
-	}
-
-	svcList := im.factory.Core().V1().Services().Informer().GetStore().List()
-	for _, obj := range svcList {
-		if svc, ok := obj.(*corev1.Service); ok {
-			ports := make([]int32, len(svc.Spec.Ports))
-			for i, p := range svc.Spec.Ports {
-				ports[i] = p.Port
-			}
-			services = append(services, types.ServiceStatusDelta{
-				Name:        svc.Name,
-				Namespace:   svc.Namespace,
-				Type:        string(svc.Spec.Type),
-				ClusterIP:   svc.Spec.ClusterIP,
-				Selector:    svc.Spec.Selector,
-				TargetPorts: ports,
-			})
-		}
-	}
-
-	depList := im.factory.Apps().V1().Deployments().Informer().GetStore().List()
-	for _, obj := range depList {
-		if dep, ok := obj.(*appsv1.Deployment); ok {
-			deployments = append(deployments, im.extractDeploymentDelta(dep))
-		}
-	}
-
-	rsList := im.factory.Apps().V1().ReplicaSets().Informer().GetStore().List()
-	for _, obj := range rsList {
-		if rs, ok := obj.(*appsv1.ReplicaSet); ok {
-			replicaSets = append(replicaSets, im.extractReplicaSetDelta(rs))
-		}
-	}
-
-	stsList := im.factory.Apps().V1().StatefulSets().Informer().GetStore().List()
-	for _, obj := range stsList {
-		if sts, ok := obj.(*appsv1.StatefulSet); ok {
-			statefulSets = append(statefulSets, im.extractStatefulSetDelta(sts))
-		}
-	}
-
-	dsList := im.factory.Apps().V1().DaemonSets().Informer().GetStore().List()
-	for _, obj := range dsList {
-		if ds, ok := obj.(*appsv1.DaemonSet); ok {
-			daemonSets = append(daemonSets, im.extractDaemonSetDelta(ds))
-		}
-	}
-
-	ingressList := im.factory.Networking().V1().Ingresses().Informer().GetStore().List()
-	for _, obj := range ingressList {
-		if ing, ok := obj.(*networkingv1.Ingress); ok {
-			ingresses = append(ingresses, im.extractIngressDelta(ing))
-		}
-	}
-
-	evtList := im.factory.Core().V1().Events().Informer().GetStore().List()
-	for _, obj := range evtList {
-		if evt, ok := obj.(*corev1.Event); ok {
-			incidents = append(incidents, im.extractK8sIncidentEvent(evt))
-		}
-	}
-
-	cjList := im.factory.Batch().V1().CronJobs().Informer().GetStore().List()
-	for _, obj := range cjList {
-		if cj, ok := obj.(*batchv1.CronJob); ok {
-			cronJobs = append(cronJobs, im.extractCronJobDelta(cj))
-		}
-	}
-
-	jobs = im.getJobsSnapshot()
-	pvcs = im.getPVCSnapshot()
-	pvs = im.getPVSnapshot()
-	configMaps = im.getConfigMapsSnapshot()
-	secrets = im.getSecretsSnapshot()
-
-	return pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, cronJobs, jobs, pvcs, pvs, configMaps, secrets
+	return im.clientset
 }
+

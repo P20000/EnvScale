@@ -27,17 +27,18 @@ export function LogRow({ log, index, showSource = true }: LogRowProps) {
   const parsed = log.parsed || parseLogPayload(log.message, log.level);
   const { level, message, attributes, rawJson, isJson } = parsed;
 
-  const isErr = level === "ERROR";
+  const isErr = level === "ERROR" || level === "FATAL";
   const isWarn = level === "WARN";
   const isEvt = message.startsWith("[EVENT]");
 
-  const badgeBg = isErr
-    ? "bg-rose-500/10 text-rose-400 border-rose-500/30"
+  // Strict adherence to EnvScale design system palette (no neon fonts)
+  const badgeClass = isErr
+    ? "bg-[#F2B8B5]/10 text-[#F2B8B5] border-[#F2B8B5]/25"
     : isWarn
-    ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
+    ? "bg-[#F4C26B]/10 text-[#F4C26B] border-[#F4C26B]/25"
     : isEvt
-    ? "bg-purple-500/10 text-purple-300 border-purple-500/30"
-    : "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
+    ? "bg-[#D0BCFF]/10 text-[#D0BCFF] border-[#D0BCFF]/25"
+    : "bg-[#6DD6A8]/10 text-[#6DD6A8] border-[#6DD6A8]/25";
 
   const handleCopyJson = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -52,95 +53,75 @@ export function LogRow({ log, index, showSource = true }: LogRowProps) {
       ? `[${firstTs.slice(11, 19)} – ${lastTs.slice(11, 19)}]`
       : `[${(log.timestamp || new Date().toISOString()).slice(11, 23)}]`;
 
-  let podTag = log.source || log.podName || "";
-  if (podTag.includes("/")) {
-    podTag = podTag.split("/")[0];
-  }
-  if (podTag.length > 20) {
-    const parts = podTag.split("-");
-    if (parts.length > 2) {
-      podTag = `${parts[0]}-${parts[parts.length - 2] || ""}-${parts[parts.length - 1]}`;
-    }
-  }
-
-  const attrEntries = Object.entries(attributes);
+  // Full name of the component without any truncation or slicing
+  const componentName = log.source || log.podName || "";
+  const hasExpandableContent = isJson || Object.keys(attributes).length > 0;
 
   return (
-    <div className="border-b border-neutral-900/60 font-mono text-xs hover:bg-neutral-900/40 transition-colors">
-      <div
-        onClick={() => setIsExpanded((prev) => !prev)}
-        className="flex items-center gap-2 py-1 px-2 cursor-pointer select-none min-w-0"
-      >
-        <span className="text-neutral-600 text-[10px] w-6 shrink-0 text-right select-none">
+    <div className="border-b border-[#23262D] font-mono text-xs hover:bg-[#16181D] transition-colors py-1.5 px-3 select-text">
+      <div className="flex items-start gap-2.5 min-w-0">
+        {/* Line Number */}
+        <span className="text-[#5C616B] text-[11px] w-7 shrink-0 text-right select-none pt-0.5">
           {index + 1}
         </span>
 
-        <span className="text-neutral-500 text-[10px] shrink-0">{tsDisplay}</span>
+        {/* Timestamp */}
+        <span className="text-[#777D87] text-[11px] w-24 shrink-0 pt-0.5 select-text font-mono truncate">
+          {tsDisplay}
+        </span>
 
+        {/* Level Badge */}
         <span
-          className={`shrink-0 rounded px-1.5 py-0.2 text-[10px] font-bold border uppercase tracking-wider ${badgeBg}`}
+          className={`shrink-0 w-14 text-center rounded px-1 py-0.5 text-[10px] font-bold border uppercase tracking-wider select-none ${badgeClass}`}
         >
           {level}
         </span>
 
-        {showSource && podTag && (
-          <span className="shrink-0 rounded bg-cyan-950/60 border border-cyan-800/40 px-1.5 py-0.2 text-[10px] text-cyan-300 truncate max-w-[140px]">
-            [{podTag}]
+        {/* Full Component / Pod Name */}
+        {showSource && componentName && (
+          <span className="shrink-0 rounded bg-[#1E2127] border border-[#30343B] px-2 py-0.5 text-[11px] font-mono text-[#C4C7C5] select-text">
+            {componentName}
           </span>
         )}
 
-        <span className="text-neutral-200 font-medium truncate shrink min-w-0 flex-1 flex items-center gap-2">
+        {/* Message with full text wrapping and cursor selection */}
+        <div className="flex-1 min-w-0 text-[#E6E1E5] font-mono text-xs whitespace-pre-wrap break-words leading-relaxed select-text pt-0.5">
           <span>{message}</span>
           {count > 1 && (
-            <span className="shrink-0 rounded-full bg-amber-500/20 border border-amber-500/40 px-1.5 py-0.2 text-[10px] font-bold text-amber-300">
+            <span className="ml-2 inline-block rounded bg-[#F4C26B]/15 border border-[#F4C26B]/30 px-1 py-0.2 text-[10px] font-bold text-[#F4C26B] select-none">
               x{count}
             </span>
           )}
-        </span>
+        </div>
 
-        {attrEntries.length > 0 && (
-          <div className="hidden md:flex items-center gap-1.5 shrink-0 overflow-hidden max-w-[300px]">
-            {attrEntries.slice(0, 3).map(([k, v]) => (
-              <span
-                key={k}
-                className="rounded bg-neutral-900 border border-neutral-800 px-1.5 py-0.2 text-[10px] text-neutral-400 truncate max-w-[120px]"
-              >
-                <span className="text-neutral-500">{k}=</span>
-                <span className="text-neutral-300">{String(v)}</span>
-              </span>
-            ))}
-            {attrEntries.length > 3 && (
-              <span className="text-[10px] text-neutral-500 font-bold">
-                +{attrEntries.length - 3}
-              </span>
-            )}
-          </div>
+        {/* Expandable attributes button */}
+        {hasExpandableContent && (
+          <button
+            onClick={() => setIsExpanded((prev) => !prev)}
+            className="text-[#92959D] hover:text-[#E6E1E5] shrink-0 p-0.5 rounded hover:bg-[#23262D] transition-colors cursor-pointer select-none"
+            title={isExpanded ? "Collapse attributes" : "Expand structured JSON attributes"}
+          >
+            {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </button>
         )}
-
-        <button className="text-neutral-500 hover:text-neutral-300 shrink-0 ml-1 cursor-pointer">
-          {isExpanded ? (
-            <ChevronDown className="h-4 w-4 text-blue-400" />
-          ) : (
-            <ChevronRight className="h-4 w-4" />
-          )}
-        </button>
       </div>
 
+      {/* Expanded JSON Inspector */}
       {isExpanded && (
-        <div className="bg-black/95 border-t border-b border-neutral-800 p-3 my-1 ml-8 mr-2 rounded-lg space-y-2">
+        <div className="bg-[#0F1014] border border-[#30343B] p-3 my-2 ml-9 mr-2 rounded-lg space-y-2 select-text">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">
-              {isJson ? `Structured JSON Payload (Repeated ${count}x)` : `Raw Console Output (Repeated ${count}x)`}
+            <span className="text-[10px] uppercase font-bold text-[#92959D] tracking-wider select-none">
+              {isJson ? `Structured Payload (${count}x)` : "Raw Log Payload"}
             </span>
             <button
               onClick={handleCopyJson}
-              className="flex items-center gap-1 rounded bg-neutral-800 px-2 py-0.5 text-[10px] text-neutral-300 hover:bg-neutral-700 transition-colors border border-neutral-700 cursor-pointer"
+              className="flex items-center gap-1 rounded bg-[#1E2127] px-2 py-0.5 text-[11px] text-[#C4C7C5] hover:text-[#E6E1E5] hover:bg-[#282C34] transition-colors border border-[#30343B] cursor-pointer"
             >
-              {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
-              {copied ? "Copied" : "Copy JSON"}
+              {copied ? <Check className="h-3 w-3 text-[#6DD6A8]" /> : <Copy className="h-3 w-3" />}
+              <span>{copied ? "Copied" : "Copy Payload"}</span>
             </button>
           </div>
-          <pre className="text-[11px] text-emerald-400/90 font-mono whitespace-pre-wrap break-all overflow-x-auto max-h-60 p-2 bg-neutral-950 rounded border border-neutral-900 leading-relaxed">
+          <pre className="text-[11px] text-[#C4C7C5] font-mono whitespace-pre-wrap break-words overflow-x-auto max-h-60 p-2.5 bg-[#16181D] rounded border border-[#23262D] leading-relaxed select-text">
             {rawJson ? JSON.stringify(rawJson, null, 2) : log.message}
           </pre>
         </div>

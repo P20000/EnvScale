@@ -10,20 +10,23 @@ import {
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
+import type { ToastAction } from "@/lib/toast"
 
 const toastVariants = cva(
-  "group pointer-events-auto relative flex w-full items-center justify-between gap-4 rounded-xl border p-4 transition-all",
+  "group pointer-events-auto relative flex items-center justify-between gap-3.5 rounded-2xl border px-4 py-2.5 select-none shadow-2xl backdrop-blur-xl transition-all duration-200",
   {
     variants: {
       variant: {
-        default: "border-neutral-800 bg-surface text-foreground",
+        default:
+          "border-[#30343B] bg-[#1E2025]/95 text-neutral-200 shadow-black/60",
         success:
-          "border-emerald-500/30 bg-emerald-500/10 text-emerald-400",
+          "border-emerald-500/30 bg-[#1E2025]/95 text-emerald-300 shadow-[0_8px_30px_rgba(16,185,129,0.12)]",
         error:
-          "border-red-500/30 bg-red-500/10 text-red-400",
+          "border-red-500/40 bg-[#1E2025]/95 text-red-300 shadow-[0_8px_30px_rgba(239,68,68,0.18)]",
         warning:
-          "border-amber-500/30 bg-amber-500/10 text-amber-400",
-        info: "border-blue-500/30 bg-blue-500/10 text-blue-400",
+          "border-amber-500/30 bg-[#1E2025]/95 text-amber-300 shadow-[0_8px_30px_rgba(245,158,11,0.12)]",
+        info:
+          "border-blue-500/30 bg-[#1E2025]/95 text-blue-300 shadow-[0_8px_30px_rgba(59,130,246,0.12)]",
       },
     },
     defaultVariants: {
@@ -40,6 +43,7 @@ export interface ToastProps
   icon?: React.ReactNode
   title?: React.ReactNode
   description?: React.ReactNode
+  action?: ToastAction
 }
 
 const iconMap = {
@@ -50,6 +54,14 @@ const iconMap = {
   default: null,
 }
 
+const iconBadgeMap = {
+  success: "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30",
+  error: "bg-red-500/15 text-red-400 border border-red-500/30",
+  warning: "bg-amber-500/15 text-amber-400 border border-amber-500/30",
+  info: "bg-blue-500/15 text-blue-400 border border-blue-500/30",
+  default: "bg-neutral-800 text-neutral-300 border border-neutral-700",
+}
+
 function Toast({
   className,
   variant = "default",
@@ -58,6 +70,7 @@ function Toast({
   icon,
   title,
   description,
+  action,
   children,
   ...props
 }: ToastProps) {
@@ -68,7 +81,9 @@ function Toast({
 
   const displayIcon =
     icon ||
-    (iconPath ? <Icon path={iconPath} size={0.83} className="shrink-0" /> : null)
+    (iconPath ? <Icon path={iconPath} size={0.78} className="shrink-0" /> : null)
+
+  const badgeStyle = iconBadgeMap[variant as keyof typeof iconBadgeMap] || iconBadgeMap.default
 
   return (
     <div
@@ -77,34 +92,56 @@ function Toast({
       role="alert"
       {...props}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-center gap-3 min-w-0">
         {displayIcon && (
-          <div className="shrink-0 pt-0.5">{displayIcon}</div>
+          <div className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-xl shadow-xs", badgeStyle)}>
+            {displayIcon}
+          </div>
         )}
 
-        <div className="flex flex-col gap-1">
-          {title && <div className="text-sm font-medium">{title}</div>}
+        <div className="flex flex-col min-w-0">
+          {title && (
+            <div className="text-xs sm:text-[13px] font-semibold text-neutral-100 truncate tracking-tight font-heading">
+              {title}
+            </div>
+          )}
 
           {description && (
-            <div className="text-sm opacity-90">{description}</div>
+            <div className="text-[11px] sm:text-xs text-neutral-400 font-normal leading-tight break-words line-clamp-2">
+              {description}
+            </div>
           )}
 
           {children && !description && (
-            <div className="text-sm">{children}</div>
+            <div className="text-[11px] sm:text-xs text-neutral-400 font-normal leading-tight">
+              {children}
+            </div>
           )}
         </div>
       </div>
 
-      {closeable && onClose && (
-        <button
-          type="button"
-          onClick={onClose}
-          className="shrink-0 rounded-md p-1 opacity-70 outline-none transition-opacity hover:opacity-100 focus-visible:opacity-100"
-          aria-label="Close notification"
-        >
-          <Icon path={mdiClose} size={0.7} />
-        </button>
-      )}
+      <div className="flex items-center gap-2 shrink-0 ml-3">
+        {action && (
+          <button
+            type="button"
+            onClick={action.onClick}
+            className="rounded-lg px-2.5 py-1 text-xs font-bold uppercase tracking-wider text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 active:scale-95 transition-all font-mono"
+          >
+            {action.label}
+          </button>
+        )}
+
+        {closeable && onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1 text-neutral-400 hover:text-neutral-100 hover:bg-white/10 outline-none transition-colors"
+            aria-label="Dismiss snackbar"
+          >
+            <Icon path={mdiClose} size={0.65} />
+          </button>
+        )}
+      </div>
     </div>
   )
 }
