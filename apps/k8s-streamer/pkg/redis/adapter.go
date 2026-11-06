@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/url"
 	"sync"
 	"time"
 
@@ -75,6 +76,15 @@ type Config struct {
 	InstanceID string
 }
 
+// redactRedisURL strips user/password credentials from a Redis URL before logging.
+func redactRedisURL(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "<invalid-redis-url>"
+	}
+	return parsed.Redacted()
+}
+
 // NewAdapter creates a new Redis Pub/Sub adapter and verifies the connection
 // with a PING. Returns an error if Redis is unreachable — the caller should
 // treat this as optional and fall back to single-instance mode gracefully.
@@ -83,9 +93,11 @@ func NewAdapter(cfg Config, hub HubPublisher) (*Adapter, error) {
 		cfg.InstanceID = fmt.Sprintf("streamer-%d", time.Now().UnixNano())
 	}
 
+	safeURL := redactRedisURL(cfg.URL)
+
 	opts, err := goredis.ParseURL(cfg.URL)
 	if err != nil {
-		return nil, fmt.Errorf("invalid Redis URL %q: %w", cfg.URL, err)
+		return nil, fmt.Errorf("invalid Redis URL %q: %w", safeURL, err)
 	}
 
 	client := goredis.NewClient(opts)
@@ -95,10 +107,10 @@ func NewAdapter(cfg Config, hub HubPublisher) (*Adapter, error) {
 
 	if err := client.Ping(ctx).Err(); err != nil {
 		_ = client.Close()
-		return nil, fmt.Errorf("Redis PING failed — is Redis reachable at %q? error: %w", cfg.URL, err)
+		return nil, fmt.Errorf("Redis PING failed — is Redis reachable at %q? error: %w", safeURL, err)
 	}
 
-	log.Printf("[Redis Adapter] Connected to Redis at %s (instanceId: %s)", cfg.URL, cfg.InstanceID)
+	log.Printf("[Redis Adapter] Connected to Redis at %s (instanceId: %s)", safeURL, cfg.InstanceID)
 
 	return &Adapter{
 		client:     client,

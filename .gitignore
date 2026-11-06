@@ -45,13 +45,24 @@ bin/
 *.tfstate
 *.tfstate.*
 *.tfstate.backup
+*.tflock
 *.tfvars
 !*.tfvars.example
+backend.hcl
+deployment/**/backend.hcl
 tfplan
 *.tfplan
-# Backups & Dumps
+*.tfplan.json
+*plan.json
+remote.tfplan
+remote_plan.json
+
+# Backups, Dumps & Temporary Release Manifests
+backups/
 deployment/backups/
 *.sql.bak
+*.dump
+.release-manifest*.json
 
 # Test Center Logs
 .envscale_test_center_logs/

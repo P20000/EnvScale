@@ -1,0 +1,89 @@
+{
+  "schema_version": "1.0",
+  "manifest_kind": "example",
+  "release_id": "rel-20261106T064500Z-4a8c91f2",
+  "git": {
+    "repository": "P20000/EnvScale",
+    "branch": "develop",
+    "commit_sha": "4a8c91f27b30d9e81c6a54f2b890e7d6c5b4a321",
+    "tree_clean": true
+  },
+  "build": {
+    "built_at_utc": "2026-11-06T06:45:00Z",
+    "workflow_name": "Release Manifest & Digest Publisher",
+    "workflow_run_id": "19184265109",
+    "workflow_run_attempt": 1,
+    "builder_identity": "P20000/EnvScale/.github/workflows/release.yml@refs/heads/develop"
+  },
+  "images": {
+    "api_server": {
+      "repository": "ghcr.io/p20000/envscale-api-server",
+      "commit_tag": "sha-4a8c91f27b30d9e81c6a54f2b890e7d6c5b4a321",
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "pinned_ref": "ghcr.io/p20000/envscale-api-server@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "platform": "linux/amd64"
+    },
+    "k8s_streamer": {
+      "repository": "ghcr.io/p20000/envscale-k8s-streamer",
+      "commit_tag": "sha-4a8c91f27b30d9e81c6a54f2b890e7d6c5b4a321",
+      "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "pinned_ref": "ghcr.io/p20000/envscale-k8s-streamer@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "platform": "linux/amd64"
+    },
+    "web": {
+      "repository": "ghcr.io/p20000/envscale-web",
+      "commit_tag": "sha-4a8c91f27b30d9e81c6a54f2b890e7d6c5b4a321",
+      "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "pinned_ref": "ghcr.io/p20000/envscale-web@sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "platform": "linux/amd64"
+    }
+  },
+  "compatibility": {
+    "compose_contract_version": "2.0",
+    "postgres_major": 16,
+    "redis_major": 7,
+    "drizzle_journal_entries": 6,
+    "latest_migration_tag": "0005_reflective_the_spike",
+    "drizzle_migrations_bundle_sha256": "af520501b1a9c534e2cbe61beb5fac6d5c40c285e17efda0de614f2569757b80",
+    "drizzle_migrations": [
+      {
+        "idx": 0,
+        "tag": "0000_harsh_phil_sheldon",
+        "when": 1787058926592,
+        "sql_sha256": "7df5f9345f153ed3695a1a83ceff29847c3d33d4929db73e469cea1a3d28c90f"
+      },
+      {
+        "idx": 1,
+        "tag": "0001_dashing_expediter",
+        "when": 1787061073527,
+        "sql_sha256": "f8ad6f5ee9c4e5f1f6d919daef0d553ebbaf2d6df1731a873223e82ef1258b3e"
+      },
+      {
+        "idx": 2,
+        "tag": "0002_auth_refresh_tokens",
+        "when": 1787130000000,
+        "sql_sha256": "b9d0a627787ab548264be412a23968b74de69e6f4959eafb20e0519b83fae5ab"
+      },
+      {
+        "idx": 3,
+        "tag": "0003_bright_leper_queen",
+        "when": 1787135064579,
+        "sql_sha256": "b7c5626cd7f46922b7afa4f067edec484b03b0600fe829c635cdf6c0f8cc1615"
+      },
+      {
+        "idx": 4,
+        "tag": "0004_elite_colleen_wing",
+        "when": 1787332471392,
+        "sql_sha256": "8c9c0403a7cc898d6825705023b29fadaafc9f22049e1bef343ccbda364caffb"
+      },
+      {
+        "idx": 5,
+        "tag": "0005_reflective_the_spike",
+        "when": 1792429866067,
+        "sql_sha256": "67422396f6d2d3c6bd9b2a3619bb0d2b6b1ee6ef7a243f0e55be6abbc59a5477"
+      }
+    ],
+    "backward_compatible_db": true,
+    "requires_pre_deploy_backup": false
+  }
+}

@@ -1,0 +1,23 @@
+# ==============================================================================
+# EnvScale Persistent Foundation — Example Non-Secret Inputs
+# ==============================================================================
+# Copy to `terraform.tfvars` (gitignored) only if overriding non-secret defaults.
+# NEVER place secrets, tokens, or passwords in any `.tfvars` file.
+# ==============================================================================
+
+aws_account_id              = "982534376726"
+aws_region                  = "ap-south-1"
+environment                 = "production"
+github_repository           = "P20000/EnvScale"
+release_branch              = "develop"
+production_environment_name = "production"
+recovery_environment_name   = "recovery"
+create_oidc_provider        = false
+retain_static_eip           = false
+duckdns_domain                          = "envscale"
+google_client_id                        = "DISABLED"
+github_client_id                        = "DISABLED"
+approved_ami_owner_ids                  = ["099720109477"]
+create_foundation_admin_role            = true
+foundation_admin_trusted_principal_arns = ["arn:aws:iam::982534376726:user/DEV-user-alpha"]
+
