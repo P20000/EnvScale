@@ -1,26 +1,34 @@
-import os
-import sys
-import time
+"""Cloud deployment orchestration over AWS SSM (zero SSH)."""
+
+import base64
 import json
-import shlex
+import os
 import shutil
 import subprocess
-import urllib.request
+import time
 import urllib.error
-from typing import Callable, Optional, Dict, Any
+import urllib.request
+from typing import Any, Callable, Dict, Optional
 
-from .config import PROJECT_ROOT, TERRAFORM_DIR, KEY_FILE, PROD_COMPOSE_FILE
 from .cloud_host_runner import (
-    execute_remote_host_deploy,
     load_deployment_env,
     validate_deployment_secrets,
     verify_deployment_health,
 )
+from .config import PROJECT_ROOT, TERRAFORM_DIR
+from .ssm_deployer import (
+    DEFAULT_SECRETS_FILE,
+    build_remote_deploy_commands,
+    cleanup_external_references,
+    resolve_and_validate_manifest,
+    run_ssm_command,
+    verify_runtime_instance_profile,
+    wait_for_ssm_online,
+)
 
 LogCallback = Callable[[str], None]
-# StepCallback signature: (step_id: str, title: str, status: str, detail: str) -> None
-# status: "start", "log", "success", "error"
 StepCallback = Callable[[str, str, str, str], None]
+
 
 class CloudDeployer:
     def __init__(self, log_fn: Optional[LogCallback] = None, step_fn: Optional[StepCallback] = None):
@@ -79,44 +87,38 @@ class CloudDeployer:
         region = ctx["region"]
         check = subprocess.run(["aws", "s3", "ls", f"s3://{bucket}"], capture_output=True, text=True)
         if check.returncode != 0:
-            msg = f"Creating permanent S3 Vault bucket: s3://{bucket}..."
             if step_id and step_title:
-                self._emit_step(step_id, step_title, "log", msg)
+                self._emit_step(step_id, step_title, "log", f"Creating permanent S3 Vault bucket: s3://{bucket}...")
             if region == "us-east-1":
                 self._run_cmd(["aws", "s3api", "create-bucket", "--bucket", bucket, "--region", region], step_id=step_id, step_title=step_title)
             else:
                 self._run_cmd([
                     "aws", "s3api", "create-bucket", "--bucket", bucket, "--region", region,
-                    "--create-bucket-configuration", f"LocationConstraint={region}"
+                    "--create-bucket-configuration", f"LocationConstraint={region}",
                 ], step_id=step_id, step_title=step_title)
             self._run_cmd([
                 "aws", "s3api", "put-bucket-versioning", "--bucket", bucket,
-                "--versioning-configuration", "Status=Enabled"
+                "--versioning-configuration", "Status=Enabled",
             ], step_id=step_id, step_title=step_title)
-        else:
-            if step_id and step_title:
-                self._emit_step(step_id, step_title, "log", f"Verified S3 Vault bucket: s3://{bucket}")
+        elif step_id and step_title:
+            self._emit_step(step_id, step_title, "log", f"Verified S3 Vault bucket: s3://{bucket}")
 
     def backup_to_s3(self, step_id: Optional[str] = None, step_title: Optional[str] = None):
+        """Back up Terraform state only (no SSH private key persistence)."""
         ctx = self.get_aws_context()
         bucket = ctx["s3_bucket"]
         tf_state = os.path.join(TERRAFORM_DIR, "terraform.tfstate")
         if os.path.exists(tf_state):
             self._run_cmd(["aws", "s3", "cp", tf_state, f"s3://{bucket}/state/terraform.tfstate"], step_id=step_id, step_title=step_title)
-        if os.path.exists(KEY_FILE):
-            self._run_cmd(["aws", "s3", "cp", KEY_FILE, f"s3://{bucket}/secrets/envscale_key.pem"], step_id=step_id, step_title=step_title)
 
     def restore_from_s3(self, step_id: Optional[str] = None, step_title: Optional[str] = None):
+        """Restore Terraform state only (zero SSH private key downloads)."""
         ctx = self.get_aws_context()
         bucket = ctx["s3_bucket"]
         tf_state = os.path.join(TERRAFORM_DIR, "terraform.tfstate")
         check_state = subprocess.run(["aws", "s3", "ls", f"s3://{bucket}/state/terraform.tfstate"], capture_output=True)
         if check_state.returncode == 0:
             self._run_cmd(["aws", "s3", "cp", f"s3://{bucket}/state/terraform.tfstate", tf_state], step_id=step_id, step_title=step_title)
-        check_key = subprocess.run(["aws", "s3", "ls", f"s3://{bucket}/secrets/envscale_key.pem"], capture_output=True)
-        if check_key.returncode == 0:
-            self._run_cmd(["aws", "s3", "cp", f"s3://{bucket}/secrets/envscale_key.pem", KEY_FILE], step_id=step_id, step_title=step_title)
-            os.chmod(KEY_FILE, 0o600)
 
     def _get_tf_outputs(self) -> Dict[str, Any]:
         tf_state = os.path.join(TERRAFORM_DIR, "terraform.tfstate")
@@ -131,13 +133,11 @@ class CloudDeployer:
         return {}
 
     def get_public_ip(self) -> str:
-        outputs = self._get_tf_outputs()
-        val = outputs.get("public_ip", {}).get("value")
+        val = self._get_tf_outputs().get("public_ip", {}).get("value")
         return str(val).strip() if val else ""
 
     def get_instance_id(self) -> str:
-        outputs = self._get_tf_outputs()
-        val = outputs.get("instance_id", {}).get("value")
+        val = self._get_tf_outputs().get("instance_id", {}).get("value")
         return str(val).strip() if val else ""
 
     def load_deployment_env(self) -> Dict[str, str]:
@@ -155,48 +155,41 @@ class CloudDeployer:
                 self._log(msg)
             return False
         url = f"https://www.duckdns.org/update?domains={domain}&token={token}&ip={target_ip}"
-        msg = f"Updating DuckDNS record: {domain}.duckdns.org -> {target_ip}..."
         if step_id and step_title:
-            self._emit_step(step_id, step_title, "log", msg)
+            self._emit_step(step_id, step_title, "log", f"Updating DuckDNS record: {domain}.duckdns.org -> {target_ip}...")
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "EnvScale-TestCenter/1.0"})
             with urllib.request.urlopen(req, timeout=10) as resp:
                 content = resp.read().decode("utf-8").strip()
                 if content == "OK":
-                    ok_msg = f"DuckDNS record updated to {target_ip} (OK)."
                     if step_id and step_title:
-                        self._emit_step(step_id, step_title, "log", ok_msg)
+                        self._emit_step(step_id, step_title, "log", f"DuckDNS record updated to {target_ip} (OK).")
                     return True
-                else:
-                    warn_msg = f"DuckDNS response: {content}"
-                    if step_id and step_title:
-                        self._emit_step(step_id, step_title, "log", warn_msg)
-                    return False
+                if step_id and step_title:
+                    self._emit_step(step_id, step_title, "log", f"DuckDNS response: {content}")
+                return False
         except Exception as e:
-            err_msg = f"DuckDNS update request failed: {e}"
             if step_id and step_title:
-                self._emit_step(step_id, step_title, "log", err_msg)
+                self._emit_step(step_id, step_title, "log", f"DuckDNS update request failed: {e}")
             return False
 
-    def sync_github_secrets(self, ip: str, step_id: Optional[str] = None, step_title: Optional[str] = None):
+    def sync_github_secrets(self, ip: str, instance_id: Optional[str] = None, step_id: Optional[str] = None, step_title: Optional[str] = None):
+        """Sync non-SSH host target secrets (EC2_HOST, EC2_INSTANCE_ID) to GitHub."""
         if shutil.which("gh"):
             auth_check = subprocess.run(["gh", "auth", "status"], capture_output=True)
             if auth_check.returncode == 0:
                 if step_id and step_title:
                     self._emit_step(step_id, step_title, "log", f"Synchronizing EC2_HOST ({ip}) to GitHub Secrets...")
                 self._run_cmd(["gh", "secret", "set", "EC2_HOST", "--body", ip], step_id=step_id, step_title=step_title)
-                if os.path.exists(KEY_FILE):
-                    with open(KEY_FILE, "r") as f:
-                        subprocess.run(["gh", "secret", "set", "SSH_PRIVATE_KEY"], input=f.read(), text=True, check=True)
+                if instance_id:
+                    self._run_cmd(["gh", "secret", "set", "EC2_INSTANCE_ID", "--body", instance_id], step_id=step_id, step_title=step_title)
                 if step_id and step_title:
                     self._emit_step(step_id, step_title, "log", "GitHub Actions secrets updated successfully.")
                 return
-        msg = "GitHub CLI not authenticated; remember to update EC2_HOST secret manually if changed."
         if step_id and step_title:
-            self._emit_step(step_id, step_title, "log", msg)
+            self._emit_step(step_id, step_title, "log", "GitHub CLI not authenticated; remember to update EC2_HOST/EC2_INSTANCE_ID secrets manually.")
 
     def infra_up(self):
-        # Step 1: AWS Credentials & S3 State Vault
         s1, t1 = "s1_vault", "Verifying AWS Credentials & S3 State Vault"
         self._emit_step(s1, t1, "start", "aws sts get-caller-identity && s3 vault sync")
         try:
@@ -207,58 +200,57 @@ class CloudDeployer:
             self._emit_step(s1, t1, "error", str(e))
             raise
 
-        # Step 2: Terraform Init & Apply
         s2, t2 = "s2_terraform", "Provisioning AWS Cloud Resources (Terraform Apply)"
         self._emit_step(s2, t2, "start", "terraform apply -auto-approve")
         try:
+            verify_runtime_instance_profile(emit_fn=self._step_fn, step_id=s2, step_title=t2)
             self._run_cmd(["terraform", "init"], cwd=TERRAFORM_DIR, step_id=s2, step_title=t2)
             self._run_cmd(["terraform", "apply", "-auto-approve"], cwd=TERRAFORM_DIR, step_id=s2, step_title=t2)
             ip = self.get_public_ip()
-            if not ip:
-                raise RuntimeError("Failed to retrieve public IP from Terraform outputs.")
-            if os.path.exists(KEY_FILE):
-                os.chmod(KEY_FILE, 0o600)
+            instance_id = self.get_instance_id()
+            if not ip or not instance_id:
+                raise RuntimeError("Failed to retrieve public_ip or instance_id from Terraform outputs.")
             self.backup_to_s3(step_id=s2, step_title=t2)
-            self._emit_step(s2, t2, "success", f"Host Public IP: {ip}")
+            self._emit_step(s2, t2, "success", f"Host Public IP: {ip} (Instance: {instance_id})")
         except Exception as e:
             self._emit_step(s2, t2, "error", str(e))
             raise
 
-        # Step 3: Dynamic DNS & CI/CD Synchronization
         s3, t3 = "s3_dns", "Routing DuckDNS & Updating GitHub Secrets"
         self._emit_step(s3, t3, "start", f"envscale.duckdns.org -> {ip}")
         try:
             self.sync_duckdns(ip, step_id=s3, step_title=t3)
-            self.sync_github_secrets(ip, step_id=s3, step_title=t3)
+            self.sync_github_secrets(ip, instance_id=instance_id, step_id=s3, step_title=t3)
             self._emit_step(s3, t3, "success")
         except Exception as e:
             self._emit_step(s3, t3, "error", str(e))
             raise
 
-        # Step 4: Host Bootstrap & Dependency Verification
-        s4, t4 = "s4_bootstrap", "Waiting for EC2 Host Bootstrap & Cloud-Init"
-        self._emit_step(s4, t4, "start", f"ssh ubuntu@{ip} /var/log/user_data.log")
+        s4, t4 = "s4_bootstrap", "Waiting for EC2 Host SSM Online & Cloud-Init"
+        self._emit_step(s4, t4, "start", f"aws ssm wait {instance_id} /var/log/user_data.log")
         try:
-            self._emit_step(s4, t4, "log", f"Checking SSH availability on {ip}:22...")
-            for _ in range(30):
-                res = subprocess.run(["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5", "-i", KEY_FILE, f"ubuntu@{ip}", "uptime"], capture_output=True)
-                if res.returncode == 0:
-                    break
-                time.sleep(5)
-            self._emit_step(s4, t4, "log", "SSH connection established. Waiting for cloud-init dependencies...")
-            for _ in range(40):
-                res = subprocess.run(["ssh", "-o", "StrictHostKeyChecking=no", "-i", KEY_FILE, f"ubuntu@{ip}", "grep -q 'EC2 Setup Completed Successfully' /var/log/user_data.log 2>/dev/null"], capture_output=True)
-                if res.returncode == 0:
-                    break
-                time.sleep(10)
+            region = self.get_aws_context()["region"]
+            wait_for_ssm_online(instance_id, region=region, emit_fn=self._step_fn, step_id=s4, step_title=t4)
+            run_ssm_command(
+                instance_id,
+                [
+                    "for i in $(seq 1 40); do "
+                    "grep -q 'EC2 Setup Completed Successfully' /var/log/user_data.log 2>/dev/null && exit 0; "
+                    "sleep 10; done; echo 'Cloud-init did not complete within timeout' >&2; exit 1"
+                ],
+                region=region,
+                comment="Wait for cloud-init completion",
+                emit_fn=self._step_fn,
+                step_id=s4,
+                step_title=t4,
+            )
             self._emit_step(s4, t4, "success")
         except Exception as e:
             self._emit_step(s4, t4, "error", str(e))
             raise
 
-        # Step 5: Application Deployment & Verification
         s5, t5 = "s5_deploy", "Deploying Containers & Verifying Health Endpoints"
-        self._emit_step(s5, t5, "start", "docker compose pull && up")
+        self._emit_step(s5, t5, "start", "ssm host-runtime.sh deploy")
         try:
             self.deploy(step_id=s5, step_title=t5)
             self._emit_step(s5, t5, "success", f"ONLINE at https://{ip}.sslip.io (http://{ip})")
@@ -287,23 +279,19 @@ class CloudDeployer:
         self._emit_step(s1, t1, "start", f"aws ec2 start-instances --instance-ids {instance_id}")
         try:
             self._run_cmd(["aws", "ec2", "start-instances", "--instance-ids", instance_id], step_id=s1, step_title=t1)
+            region = self.get_aws_context()["region"]
+            wait_for_ssm_online(instance_id, region=region, emit_fn=self._step_fn, step_id=s1, step_title=t1)
             ip = self.get_public_ip()
-            self._emit_step(s1, t1, "log", f"Waiting for SSH availability at {ip}...")
-            for _ in range(25):
-                res = subprocess.run(["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5", "-i", KEY_FILE, f"ubuntu@{ip}", "uptime"], capture_output=True)
-                if res.returncode == 0:
-                    break
-                time.sleep(5)
-            self._emit_step(s1, t1, "success", f"Host back online at {ip}")
+            self._emit_step(s1, t1, "success", f"Host back online at {ip} ({instance_id})")
         except Exception as e:
             self._emit_step(s1, t1, "error", str(e))
             raise
 
         s2, t2 = "resume_sync", "Syncing DNS & Redeploying Stack"
-        self._emit_step(s2, t2, "start", "Updating DuckDNS and restarting containers")
+        self._emit_step(s2, t2, "start", "Updating DuckDNS and redeploying via SSM")
         try:
             self.sync_duckdns(ip, step_id=s2, step_title=t2)
-            self.sync_github_secrets(ip, step_id=s2, step_title=t2)
+            self.sync_github_secrets(ip, instance_id=instance_id, step_id=s2, step_title=t2)
             self.deploy(step_id=s2, step_title=t2)
             self._emit_step(s2, t2, "success")
         except Exception as e:
@@ -312,21 +300,31 @@ class CloudDeployer:
 
     def infra_destroy(self):
         s1, t1 = "destroy_archive", "Archiving PostgreSQL Database to S3 Vault"
-        self._emit_step(s1, t1, "start", "docker exec envscale-postgres pg_dump")
+        self._emit_step(s1, t1, "start", "ssm pg_dump archive")
         try:
             self.ensure_s3_vault(step_id=s1, step_title=t1)
-            ip = self.get_public_ip()
-            if ip and os.path.exists(KEY_FILE):
-                ssh_check = subprocess.run(["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5", "-i", KEY_FILE, f"ubuntu@{ip}", "uptime"], capture_output=True)
-                if ssh_check.returncode == 0:
-                    dump_res = subprocess.run(["ssh", "-o", "StrictHostKeyChecking=no", "-i", KEY_FILE, f"ubuntu@{ip}", "docker exec envscale-postgres pg_dump -U envscale envscale 2>/dev/null"], capture_output=True)
-                    if dump_res.returncode == 0 and len(dump_res.stdout) > 50:
-                        ctx = self.get_aws_context()
-                        stamp = time.strftime("%Y%m%d_%H%M%S")
-                        s3_path = f"s3://{ctx['s3_bucket']}/database/backup_{stamp}.sql"
-                        p = subprocess.Popen(["aws", "s3", "cp", "-", s3_path], stdin=subprocess.PIPE)
-                        p.communicate(input=dump_res.stdout.encode("utf-8"))
-                        self._emit_step(s1, t1, "log", f"Archived database dump to {s3_path}")
+            instance_id = self.get_instance_id()
+            if instance_id:
+                ctx = self.get_aws_context()
+                stamp = time.strftime("%Y%m%d_%H%M%S")
+                s3_path = f"s3://{ctx['s3_bucket']}/database/backup_{stamp}.sql"
+                try:
+                    run_ssm_command(
+                        instance_id,
+                        [
+                            "if docker ps --format '{{.Names}}' | grep -q '^envscale-postgres$'; then "
+                            f"docker exec envscale-postgres pg_dump -U envscale envscale | aws s3 cp - {s3_path}; "
+                            "fi"
+                        ],
+                        region=ctx["region"],
+                        comment="Archive postgres before destroy",
+                        emit_fn=self._step_fn,
+                        step_id=s1,
+                        step_title=t1,
+                        check=False,
+                    )
+                except Exception:
+                    pass
             self.backup_to_s3(step_id=s1, step_title=t1)
             self._emit_step(s1, t1, "success")
         except Exception as e:
@@ -338,140 +336,94 @@ class CloudDeployer:
         try:
             self._run_cmd(["terraform", "destroy", "-auto-approve"], cwd=TERRAFORM_DIR, step_id=s2, step_title=t2)
             self.backup_to_s3(step_id=s2, step_title=t2)
-            self._emit_step(s2, t2, "success", "All AWS cloud resources destroyed. AWS credits preserved.")
+            env = self.load_deployment_env()
+            cleanup_external_references(
+                domain=env.get("DUCKDNS_DOMAIN"),
+                token=env.get("DUCKDNS_TOKEN"),
+                emit_fn=self._step_fn,
+                step_id=s2,
+                step_title=t2,
+            )
+            self._emit_step(s2, t2, "success", "All AWS cloud resources destroyed and external DNS/secrets cleaned.")
         except Exception as e:
             self._emit_step(s2, t2, "error", str(e))
             raise
 
-    def deploy_remote_host(self, step_id: Optional[str] = None, step_title: Optional[str] = None):
-        """Executed directly on the remote EC2 host."""
-        execute_remote_host_deploy(self._step_fn, step_id=step_id, step_title=step_title)
-
     def rollback(self, step_id: Optional[str] = None, step_title: Optional[str] = None):
-        """Revert EC2 host to previous stable release image."""
-        ip = self.get_public_ip()
-        if not ip or not os.path.exists(KEY_FILE):
-            raise RuntimeError("No active AWS host found. Run 'infra up' first.")
+        """Revert EC2 host to previous stable release via SSM."""
+        instance_id = self.get_instance_id()
+        if not instance_id:
+            raise RuntimeError("No active AWS instance found. Run 'infra up' first.")
         s = step_id or "rollback"
         t = step_title or "Rollback Stack on AWS"
-        self._emit_step(s, t, "start", f"Rolling back EC2 host {ip} to previous container release...")
-        cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-i", KEY_FILE, f"ubuntu@{ip}", "cd /opt/envscale && ./envscale.sh rollback"]
-        self._run_cmd(cmd, step_id=s, step_title=t)
-        self._emit_step(s, t, "success", f"EC2 host {ip} successfully rolled back.")
+        region = self.get_aws_context()["region"]
+        self._emit_step(s, t, "start", f"Rolling back EC2 instance {instance_id} via SSM...")
+        run_ssm_command(
+            instance_id,
+            [
+                "set -euo pipefail",
+                "cd /opt/envscale",
+                f"ENVSCALE_SECRETS_FILE={DEFAULT_SECRETS_FILE} ./envscale.sh rollback",
+            ],
+            region=region,
+            comment="EnvScale SSM rollback",
+            emit_fn=self._step_fn,
+            step_id=s,
+            step_title=t,
+        )
+        self._emit_step(s, t, "success", f"EC2 instance {instance_id} successfully rolled back.")
 
-    def deploy(self, release_sha: Optional[str] = None, mode: str = "prod", step_id: Optional[str] = None, step_title: Optional[str] = None):
-        if os.path.exists("/opt/envscale") and os.path.abspath(PROJECT_ROOT) == "/opt/envscale":
-            return self.deploy_remote_host(step_id=step_id, step_title=step_title)
-
+    def deploy(
+        self,
+        release_sha: Optional[str] = None,
+        manifest_path: Optional[str] = None,
+        mode: str = "prod",
+        step_id: Optional[str] = None,
+        step_title: Optional[str] = None,
+    ):
+        instance_id = self.get_instance_id()
         ip = self.get_public_ip()
-        if not ip or not os.path.exists(KEY_FILE):
-            raise RuntimeError("No active AWS host found. Run 'infra up' first.")
+        if not instance_id:
+            raise RuntimeError("No active AWS instance found. Run 'infra up' first.")
         s = step_id or "deploy"
         t = step_title or "Deploying Application Stack to AWS"
 
-        # Resolve immutable release SHA
         sha = release_sha
         if not sha:
-            try:
-                sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=PROJECT_ROOT, text=True).strip()
-            except Exception:
-                sha = os.environ.get("RELEASE_SHA", "latest")
+            sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=PROJECT_ROOT, text=True).strip()
 
         env = self.load_deployment_env()
-
-        # Strict Secret Validation: Refuse to proceed with empty secrets.
-        # DATABASE_URL / REDIS_URL are production-only: they live in the EC2 host's
-        # /opt/envscale/.env (provisioned by GitHub Actions) and are validated remotely
-        # by envscale.sh. Local dev values must never be forwarded.
-        missing = [k for k in validate_deployment_secrets(env, require_duckdns=True)
-                   if k not in ("DATABASE_URL", "REDIS_URL")]
+        missing = [
+            k for k in validate_deployment_secrets(env, require_duckdns=True)
+            if k not in ("DATABASE_URL", "REDIS_URL")
+        ]
         if missing:
             raise RuntimeError(f"Deployment halted: Required secret(s) missing or empty in .env: {', '.join(missing)}.")
 
-        if env.get("DUCKDNS_TOKEN"):
+        if ip and env.get("DUCKDNS_TOKEN"):
             self.sync_duckdns(ip, domain=env.get("DUCKDNS_DOMAIN"), token=env.get("DUCKDNS_TOKEN"), step_id=s, step_title=t)
 
-        if mode == "dev":
-            self._emit_step(s, t, "log", f"[DEV MODE] Syncing local workspace snapshot to {ip}:/opt/envscale/ via rsync...")
-            rsync_cmd = [
-                "rsync", "-avz",
-                "--exclude", "node_modules",
-                "--exclude", "**/node_modules",
-                "--exclude", ".turbo",
-                "--exclude", "**/.turbo",
-                "--exclude", ".git",
-                "--exclude", "dist",
-                "--exclude", "**/dist",
-                "--exclude", ".terraform",
-                "--exclude", "**/.terraform",
-                "--exclude", "apps/k8s-streamer/k8s-streamer-bin",
-                "--exclude", "apps/k8s-streamer/main",
-                "--exclude", ".playwright-mcp",
-                "--exclude", ".codegraph",
-                "-e", f'ssh -i "{KEY_FILE}" -o StrictHostKeyChecking=no',
-                f"{PROJECT_ROOT}/",
-                f"ubuntu@{ip}:/opt/envscale/"
-            ]
-            self._run_cmd(rsync_cmd, step_id=s, step_title=t)
-        else:
-            self._emit_step(s, t, "log", f"[PROD MODE] Committed release ({sha[:7] if len(sha)>=7 else sha}): skipping local source tree rsync.")
-            # Sync only minimal compose & migration manifests
-            self._run_cmd(["ssh", "-o", "StrictHostKeyChecking=no", "-i", KEY_FILE, f"ubuntu@{ip}", "mkdir -p /opt/envscale/deployment /opt/envscale/apps/api-server/src/db"], step_id=s, step_title=t)
-            self._run_cmd(["scp", "-o", "StrictHostKeyChecking=no", "-i", KEY_FILE, f"{PROJECT_ROOT}/deployment/docker-compose.prod.yml", f"ubuntu@{ip}:/opt/envscale/deployment/docker-compose.prod.yml"], step_id=s, step_title=t)
-            self._run_cmd(["scp", "-o", "StrictHostKeyChecking=no", "-i", KEY_FILE, f"{PROJECT_ROOT}/envscale.sh", f"ubuntu@{ip}:/opt/envscale/envscale.sh"], step_id=s, step_title=t)
-            migrations_dir = f"{PROJECT_ROOT}/apps/api-server/src/db/migrations"
-            if os.path.exists(migrations_dir):
-                self._run_cmd(["scp", "-o", "StrictHostKeyChecking=no", "-i", KEY_FILE, "-r", migrations_dir, f"ubuntu@{ip}:/opt/envscale/apps/api-server/src/db/"], step_id=s, step_title=t)
-
-        self._emit_step(s, t, "log", f"Dispatching deployment ({sha[:7] if len(sha)>=7 else sha}) on EC2 host via SSH...")
-
-        # Build production .env configuration payload in memory.
-        # Transmitted securely via SSH stdin to prevent secrets leaking in `ps` process table
-        # or command line logs.
-        env_lines = [
-            f"RELEASE_SHA={sha}",
-            f"DUCKDNS_DOMAIN={env.get('DUCKDNS_DOMAIN', 'envscale')}",
-            f"DUCKDNS_TOKEN={env.get('DUCKDNS_TOKEN', '')}",
-            f"BETTER_AUTH_SECRET={env.get('BETTER_AUTH_SECRET', '')}",
-            f"JWT_ACCESS_SECRET={env.get('JWT_ACCESS_SECRET', '')}",
-            f"JWT_REFRESH_SECRET={env.get('JWT_REFRESH_SECRET', '')}",
-            f"KUBECONFIG_ENCRYPTION_KEY={env.get('KUBECONFIG_ENCRYPTION_KEY', '')}",
-            f"GOOGLE_CLIENT_ID={env.get('GOOGLE_CLIENT_ID', '')}",
-            f"GOOGLE_CLIENT_SECRET={env.get('GOOGLE_CLIENT_SECRET', '')}",
-        ]
-        for local_key, remote_key in (("PROD_DATABASE_URL", "DATABASE_URL"), ("PROD_REDIS_URL", "REDIS_URL")):
-            if env.get(local_key):
-                env_lines.append(f"{remote_key}={env[local_key]}")
-
-        provision_stdin = "\n".join(env_lines) + "\n"
-
-        # The remote command reads from stdin, writes atomically to .env with 0600 permissions, then invokes deploy
-        remote_cmd = (
-            "bash -c 'set -e; umask 077; "
-            "mkdir -p /opt/envscale && "
-            "cat > /opt/envscale/.env.tmp && "
-            "chmod 600 /opt/envscale/.env.tmp && "
-            "if [ -f /opt/envscale/.env ]; then "
-            "while IFS=\"=\" read -r k v || [ -n \"$k\" ]; do "
-            "[[ \"$k\" =~ ^[[:space:]]*# ]] && continue; "
-            "[ -z \"$k\" ] && continue; "
-            "if ! grep -q \"^${k}=\" /opt/envscale/.env.tmp; then echo \"$k=$v\" >> /opt/envscale/.env.tmp; fi; "
-            "done < /opt/envscale/.env; "
-            "fi && "
-            "mv -f /opt/envscale/.env.tmp /opt/envscale/.env && "
-            "cd /opt/envscale && ./envscale.sh deploy'"
+        region = self.get_aws_context()["region"]
+        manifest_file = resolve_and_validate_manifest(
+            commit_sha=sha,
+            manifest_path=manifest_path,
+            recovery_bucket=env.get("RECOVERY_BUCKET") or os.environ.get("RECOVERY_BUCKET"),
+            region=region,
         )
+        manifest_b64 = base64.b64encode(manifest_file.read_bytes()).decode("ascii")
+        commands = build_remote_deploy_commands(commit_sha=sha, manifest_b64=manifest_b64)
 
-        display_ssh = f"ssh -i {KEY_FILE} ubuntu@{ip} \"[securely provision .env via stdin && ./envscale.sh deploy]\""
-        self._run_cmd(
-            ["ssh", "-o", "StrictHostKeyChecking=no", "-i", KEY_FILE, f"ubuntu@{ip}", remote_cmd],
+        self._emit_step(s, t, "log", f"Dispatching exact-SHA SSM deployment ({sha[:7]}) on {instance_id}...")
+        run_ssm_command(
+            instance_id,
+            commands,
+            region=region,
+            comment=f"EnvScale SSM deploy {sha[:12]}",
+            emit_fn=self._step_fn,
             step_id=s,
             step_title=t,
-            input_data=provision_stdin,
-            display_cmd=display_ssh,
         )
 
-        # Post-deployment live verification suite
         time.sleep(3)
         target = f"{env.get('DUCKDNS_DOMAIN')}.duckdns.org" if env.get("DUCKDNS_TOKEN") else f"{ip}.sslip.io"
         ok, errors = verify_deployment_health(target, emit=self._step_fn, step_id=s, step_title=t)
@@ -481,4 +433,4 @@ class CloudDeployer:
             self.rollback(step_id=s, step_title=t)
             raise RuntimeError(f"Deployment post-verification failed on https://{target}: {'; '.join(errors)}. Stack was automatically rolled back.")
 
-        self._emit_step(s, t, "success", f"ONLINE at https://{target} (http://{ip})")
+        self._emit_step(s, t, "success", f"ONLINE at https://{target} ({instance_id})")

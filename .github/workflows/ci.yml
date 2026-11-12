@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - develop
+      - 'feature/**'
   pull_request:
     branches:
       - main
@@ -116,3 +117,29 @@ jobs:
         run: |
           test -d src/db/migrations
           echo "Schema migrations verified successfully."
+
+  # ----------------------------------------------------------------------------
+  # Job 4: Deployment Contract, Manifest & SSM Orchestration Tests (Offline)
+  # ----------------------------------------------------------------------------
+  deployment-contract-checks:
+    name: Deployment Contract & SSM Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate Example Release Manifest Against Schema
+        run: |
+          python3 deployment/scripts/validate-release-manifest.py \
+            --manifest deployment/release/release-manifest.example.json \
+            --allow-example
+
+      - name: Run Offline Deployment Contract Test Suite
+        run: |
+          python3 -m unittest discover -s testing/deployment -p "test_*.py" -v

@@ -22,10 +22,10 @@ variable "volume_size_gb" {
   default     = 30
 }
 
-variable "allowed_ssh_cidr" {
-  description = "CIDR block permitted to SSH into the instance (use your public IP /32 for security, e.g. 103.21.24.5/32, or 0.0.0.0/0)"
+variable "ec2_instance_profile_name" {
+  description = "Existing IAM Instance Profile name granting SSM Session Manager and Parameter Store access (zero SSH)"
   type        = string
-  default     = "0.0.0.0/0"
+  default     = "envscale-ec2-runtime-profile"
 }
 
 variable "domain_or_duckdns" {
