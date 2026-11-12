@@ -11,7 +11,6 @@ DOCKER_COMPOSE_FILE = os.path.join(PROJECT_ROOT, "docker-compose.dev.yml")
 TERRAFORM_DIR = os.path.join(PROJECT_ROOT, "deployment/terraform")
 TERRAFORM_EKS_DIR = os.path.join(PROJECT_ROOT, "deployment/terraform-eks")
 EKS_TODO_APP_YAML = os.path.join(PROJECT_ROOT, "deployment/eks-todo-app.yaml")
-KEY_FILE = os.path.join(TERRAFORM_DIR, "envscale_key.pem")
 PROD_COMPOSE_FILE = os.path.join(PROJECT_ROOT, "deployment/docker-compose.prod.yml")
 CLOUD_DOMAIN = os.environ.get("DUCKDNS_DOMAIN", "envscale") + ".duckdns.org"
 

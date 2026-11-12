@@ -8,9 +8,14 @@ output "public_ip" {
   value       = aws_eip.envscale_eip.public_ip
 }
 
-output "ssh_connection_command" {
-  description = "Command to SSH into the provisioned host"
-  value       = "ssh -i envscale_key.pem ubuntu@${aws_eip.envscale_eip.public_ip}"
+output "ssm_session_command" {
+  description = "Command to start an AWS SSM Session on the provisioned host (zero SSH)"
+  value       = "aws ssm start-session --target ${aws_instance.envscale_host.id}"
+}
+
+output "iam_instance_profile" {
+  description = "IAM Instance Profile attached to the EC2 runtime host"
+  value       = aws_instance.envscale_host.iam_instance_profile
 }
 
 output "app_url" {

@@ -12,7 +12,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get upgrade -y
 
-# Install essential dependencies, Docker, Docker Compose, Git, Caddy
+# Install essential dependencies, Docker, Docker Compose, Git, Caddy, AWS CLI
 apt-get install -y \
     ca-certificates \
     curl \
@@ -21,9 +21,13 @@ apt-get install -y \
     git \
     make \
     jq \
+    awscli \
     debian-keyring \
     debian-archive-keyring \
     apt-transport-https
+
+# Ensure SSM agent is active on Canonical Ubuntu AMIs
+systemctl enable --now snap.amazon-ssm-agent.amazon-ssm-agent.service 2>/dev/null || true
 
 # Add Docker Official GPG Key & Repo
 install -m 0755 -d /etc/apt/keyrings

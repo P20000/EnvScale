@@ -3,15 +3,6 @@ resource "aws_security_group" "envscale_sg" {
   description = "Security group for EnvScale all-in-one demo host"
   vpc_id      = aws_vpc.envscale_vpc.id
 
-  # SSH
-  ingress {
-    description = "SSH Access"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [var.allowed_ssh_cidr]
-  }
-
   # HTTP
   ingress {
     description = "HTTP Web Traffic"

@@ -1,20 +1,3 @@
-# Generate SSH Key Pair automatically so the user doesn't need to manually create one
-resource "tls_private_key" "envscale_ssh_key" {
-  algorithm = "ED25519"
-}
-
-resource "aws_key_pair" "envscale_keypair" {
-  key_name   = "envscale-demo-key"
-  public_key = tls_private_key.envscale_ssh_key.public_key_openssh
-}
-
-# Save the private key locally with 0600 permissions
-resource "local_sensitive_file" "ssh_private_key" {
-  content         = tls_private_key.envscale_ssh_key.private_key_openssh
-  filename        = "${path.module}/envscale_key.pem"
-  file_permission = "0600"
-}
-
 # Find latest official Ubuntu 22.04 LTS AMI for current region & architecture
 data "aws_ami" "ubuntu" {
   most_recent = true
@@ -31,13 +14,18 @@ data "aws_ami" "ubuntu" {
   }
 }
 
-# EC2 Instance
+# Verify persistent foundation instance profile exists before creating resources
+data "aws_iam_instance_profile" "runtime" {
+  name = var.ec2_instance_profile_name
+}
+
+# EC2 Instance (Zero SSH — managed strictly via AWS SSM Session Manager)
 resource "aws_instance" "envscale_host" {
   ami                         = data.aws_ami.ubuntu.id
   instance_type               = var.instance_type
   subnet_id                   = aws_subnet.envscale_public_subnet.id
   vpc_security_group_ids      = [aws_security_group.envscale_sg.id]
-  key_name                    = aws_key_pair.envscale_keypair.key_name
+  iam_instance_profile        = data.aws_iam_instance_profile.runtime.name
   associate_public_ip_address = true
 
   root_block_device {
