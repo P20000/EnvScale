@@ -13,11 +13,13 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import pathlib
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 BOOTSTRAP_DIR = REPO_ROOT / "deployment" / "bootstrap"
@@ -40,6 +42,11 @@ def _load_plan_validator():
 
 
 class TestFoundationHardening(unittest.TestCase):
+    def setUp(self) -> None:
+        self._env_patch = mock.patch.dict(os.environ, {"GITHUB_ACTIONS": "", "CI": ""}, clear=False)
+        self._env_patch.start()
+        self.addCleanup(self._env_patch.stop)
+
     def test_authorized_and_unauthorized_workflow_branches(self):
         self.assertEqual(foundation_workflow_guard.check_authorized_branch("refs/heads/develop"), "refs/heads/develop")
         self.assertEqual(foundation_workflow_guard.check_authorized_branch("refs/heads/main"), "refs/heads/main")
@@ -438,15 +445,9 @@ class TestFoundationHardening(unittest.TestCase):
             ("foreign account initial seal", {"Account": "111122223333", "Arn": "arn:aws:iam::111122223333:user/envscale-day0-initial-seal"}),
         ]:
             with self.subTest(label=label), self.assertRaises(SystemExit):
-                day0_identity_guard.verify_initial_seal_attached_boundary_and_policies(
-                    bad_sts, seal_id_path, seal_pb_path, iam_caller=make_caller()
-                )
-
-        # Initial-seal identity cannot impersonate steady-state Day-0 --apply either.
+                day0_identity_guard.verify_initial_seal_attached_boundary_and_policies(bad_sts, seal_id_path, seal_pb_path, iam_caller=make_caller())
         with self.assertRaises(SystemExit):
-            day0_identity_guard.verify_day0_attached_boundary_and_policies(
-                sts_seal, day0_id_path, day0_pb_path, iam_caller=make_caller()
-            )
+            day0_identity_guard.verify_day0_attached_boundary_and_policies(sts_seal, day0_id_path, day0_pb_path, iam_caller=make_caller())
 
         # Fail closed on missing/wrong/drifted boundary, inline policy, extra attached policy, or drifted seal policy.
         drifted_pb = json.loads(json.dumps(seal_pb_doc))
@@ -466,9 +467,8 @@ class TestFoundationHardening(unittest.TestCase):
                 day0_identity_guard.verify_initial_seal_attached_boundary_and_policies(sts_seal, seal_id_path, seal_pb_path, iam_caller=bad_caller)
         script_text = (BOOTSTRAP_DIR / "bootstrap-state.sh").read_text(encoding="utf-8")
         init_block = script_text[script_text.index('if [[ "$MODE" == "init-bucket-policy" ]]; then'):script_text.index('if [[ "$MODE" == "reconcile-bucket-policy" ]]; then')]
-        self.assertLess(init_block.index("check-initial-seal-sts"), init_block.index("ensure_bucket_exists"))
-        self.assertLess(init_block.index("check-initial-seal-boundary"), init_block.index("ensure_bucket_exists"))
-        self.assertLess(init_block.index("ensure_bucket_exists"), init_block.index("put-bucket-policy"))
+        for s1, s2 in [("check-initial-seal-sts", "ensure_bucket_exists"), ("check-initial-seal-boundary", "ensure_bucket_exists"), ("ensure_bucket_exists", "put-bucket-policy")]:
+            self.assertLess(init_block.index(s1), init_block.index(s2))
 
     def test_persistent_recovery_and_runtime_destroy_isolation_guarantees(self):
         import iam_policy_simulator as sim

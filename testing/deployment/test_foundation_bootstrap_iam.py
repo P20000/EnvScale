@@ -33,6 +33,9 @@ WB_ARN = f"arn:aws:iam::{ACCOUNT}:policy/envscale-workload-permissions-boundary"
 
 class TestFoundationBootstrapIam(unittest.TestCase):
     def setUp(self) -> None:
+        self.env_patcher = mock.patch.dict(os.environ, {"GITHUB_ACTIONS": "", "CI": ""}, clear=False)
+        self.env_patcher.start()
+        self.addCleanup(self.env_patcher.stop)
         self.pols = sim.build_rendered_foundation_policies(FOUNDATION_DIR)
         self.bootstrap_doc = json.loads(BOOTSTRAP_POL_PATH.read_text(encoding="utf-8"))
         self.operator_sts = {"Account": ACCOUNT, "Arn": OPERATOR_ARN}
