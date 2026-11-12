@@ -83,6 +83,37 @@ variable "recovery_environment_name" {
   }
 }
 
+variable "foundation_environment_name" {
+  description = "GitHub Environment name scoped to envscale-github-foundation-role (protected apply environment)."
+  type        = string
+  default     = "foundation"
+
+  validation {
+    condition = (
+      can(regex("^[a-z0-9_-]+$", var.foundation_environment_name)) &&
+      var.foundation_environment_name != "production" &&
+      var.foundation_environment_name != "recovery"
+    )
+    error_message = "foundation_environment_name must match ^[a-z0-9_-]+$ and differ from 'production' and 'recovery'."
+  }
+}
+
+variable "foundation_plan_environment_name" {
+  description = "GitHub Environment name scoped to read-only envscale-github-foundation-plan-role."
+  type        = string
+  default     = "foundation-plan"
+
+  validation {
+    condition = (
+      can(regex("^[a-z0-9_-]+$", var.foundation_plan_environment_name)) &&
+      var.foundation_plan_environment_name != "production" &&
+      var.foundation_plan_environment_name != "recovery" &&
+      var.foundation_plan_environment_name != var.foundation_environment_name
+    )
+    error_message = "foundation_plan_environment_name must match ^[a-z0-9_-]+$ and differ from production, recovery, and foundation."
+  }
+}
+
 variable "create_oidc_provider" {
   description = "Whether to create token.actions.githubusercontent.com OIDC provider (false when pre-existing in account)."
   type        = bool

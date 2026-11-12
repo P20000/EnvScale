@@ -2,20 +2,61 @@
 # EnvScale Persistent Foundation — Shared Tag-Scoped IAM Statement Locals
 # ==============================================================================
 # Modular IAM layout (< 500 lines per file):
-#   - iam_locals.tf : Shared ARNs, native S3 .tflock statements, tag-enforced EC2
-#                     provisioning, AMI/snapshot RunInstances scoping, & tag Denies
-#   - iam.tf        : Principal 1 (EC2 Runtime) + Principal 2 (GitHub Release)
-#   - iam_cicd.tf   : Principal 3 (GitHub Deploy) + Principal 4 (GitHub Recovery)
-#   - iam_admin.tf  : Principal 5 (MFA-enforced Human Foundation Admin Role)
+#   - iam_locals.tf     : Shared ARNs, native S3 .tflock statements, tag-enforced EC2
+#                         provisioning, AMI/snapshot RunInstances scoping, & tag Denies
+#   - iam.tf            : Principal 1 (EC2 Runtime) + Principal 2 (GitHub Release)
+#   - iam_cicd.tf       : Principal 3 (GitHub Deploy) + Principal 4 (GitHub Recovery)
+#   - iam_admin.tf      : Principal 5 (MFA-enforced Human Break-Glass Admin Role)
+#   - iam_foundation.tf : Principal 6 (GitHub OIDC Automated Foundation Provisioner)
 # ZERO DynamoDB actions or resources exist anywhere in this module.
 # ==============================================================================
 
 locals {
   tfstate_bucket_arn      = "arn:aws:s3:::${local.tfstate_bucket_name}"
   legacy_vault_bucket_arn = "arn:aws:s3:::${local.legacy_vault_bucket_name}"
-  recovery_bucket_arn     = aws_s3_bucket.recovery.arn
+  recovery_bucket_arn     = "arn:aws:s3:::${local.recovery_bucket_name}"
   ssm_prod_param_arn      = "arn:aws:ssm:${var.aws_region}:${var.aws_account_id}:parameter${local.ssm_prefix}/*"
   ssm_all_param_arn       = "arn:aws:ssm:${var.aws_region}:${var.aws_account_id}:parameter/*"
+
+  ssm_non_secret_param_arns = [
+    for k in [
+      "aws_region", "better_auth_url", "cors_origin", "duckdns_domain",
+      "github_client_id", "google_client_id", "postgres_db", "postgres_user", "recovery_bucket",
+    ] : "arn:aws:ssm:${var.aws_region}:${var.aws_account_id}:parameter${local.ssm_prefix}/${k}"
+  ]
+
+  ssm_securestring_param_arns = [
+    for k in [
+      "postgres_password", "redis_password", "jwt_access_secret", "jwt_refresh_secret",
+      "better_auth_secret", "kubeconfig_encryption_key", "duckdns_token",
+      "google_client_secret", "github_client_secret",
+    ] : "arn:aws:ssm:${var.aws_region}:${var.aws_account_id}:parameter${local.ssm_prefix}/${k}"
+  ]
+
+  ec2_runtime_role_arn         = "arn:aws:iam::${var.aws_account_id}:role/envscale-ec2-runtime-role"
+  ec2_runtime_profile_arn      = "arn:aws:iam::${var.aws_account_id}:instance-profile/envscale-ec2-runtime-profile"
+  workload_boundary_policy_arn = "arn:aws:iam::${var.aws_account_id}:policy/envscale-workload-permissions-boundary"
+  ssm_managed_core_policy_arn  = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+  workload_managed_role_arns = [
+    "arn:aws:iam::${var.aws_account_id}:role/envscale-ec2-runtime-role",
+    "arn:aws:iam::${var.aws_account_id}:role/envscale-github-release-role",
+    "arn:aws:iam::${var.aws_account_id}:role/envscale-github-deploy-role",
+    "arn:aws:iam::${var.aws_account_id}:role/envscale-github-recovery-role",
+  ]
+  foundation_protected_role_arns = [
+    "arn:aws:iam::${var.aws_account_id}:role/envscale-github-foundation-role",
+    "arn:aws:iam::${var.aws_account_id}:role/envscale-github-foundation-plan-role",
+    "arn:aws:iam::${var.aws_account_id}:role/envscale-foundation-admin-role",
+  ]
+  foundation_enumerated_iam_read_arns = concat(
+    local.workload_managed_role_arns,
+    local.foundation_protected_role_arns,
+    [
+      local.ec2_runtime_profile_arn,
+      local.github_oidc_provider_arn,
+      local.workload_boundary_policy_arn,
+    ]
+  )
 
   ec2_runtime_tagged_arns = [
     "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:vpc/*",

@@ -1,0 +1,335 @@
+name: EnvScale Foundation - Hardened OIDC Plan & Apply
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Lifecycle operation (plan-only performs zero AWS mutations)"
+        type: choice
+        required: true
+        default: "plan-only"
+        options:
+          - plan-only
+          - plan-and-apply
+      plan_mode:
+        description: "Allowlist validation mode passed to validate-foundation-plan.py"
+        type: choice
+        required: true
+        default: "auto"
+        options:
+          - auto
+          - initial
+          - update
+      apply_confirmation:
+        description: "Type APPLY-FOUNDATION to authorize protected apply job (ignored for plan-only)"
+        type: string
+        required: false
+        default: ""
+      tfstate_bucket:
+        description: "Day-0 Terraform state bucket"
+        type: string
+        required: false
+        default: "envscale-tfstate-982534376726-ap-south-1"
+      duckdns_domain:
+        description: "Non-secret DuckDNS subdomain label (e.g. envscale)"
+        type: string
+        required: false
+        default: "envscale"
+      retain_static_eip:
+        description: "Provision opt-in persistent Elastic IP ($0/mo when false)"
+        type: boolean
+        required: false
+        default: false
+      create_oidc_provider:
+        description: "Create token.actions.githubusercontent.com OIDC provider (greenfield DR/test account)"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: envscale-foundation-${{ inputs.tfstate_bucket || vars.TFSTATE_BUCKET || 'envscale-tfstate-982534376726-ap-south-1' }}-foundation/terraform.tfstate
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+  TFSTATE_BUCKET: ${{ inputs.tfstate_bucket || vars.TFSTATE_BUCKET || 'envscale-tfstate-982534376726-ap-south-1' }}
+  STATE_KEY: "foundation/terraform.tfstate"
+  TF_IN_AUTOMATION: "true"
+  TF_VAR_aws_region: ${{ vars.AWS_REGION || 'ap-south-1' }}
+  TF_VAR_github_repository: ${{ github.repository }}
+  TF_VAR_duckdns_domain: ${{ inputs.duckdns_domain || 'envscale' }}
+  TF_VAR_retain_static_eip: ${{ inputs.retain_static_eip }}
+  TF_VAR_create_oidc_provider: ${{ inputs.create_oidc_provider }}
+  TF_VAR_google_client_id: ${{ vars.GOOGLE_CLIENT_ID || 'DISABLED' }}
+  TF_VAR_github_client_id: ${{ vars.GITHUB_CLIENT_ID || 'DISABLED' }}
+
+jobs:
+  plan:
+    name: Foundation Plan (Read-Only OIDC)
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: foundation-plan
+    outputs:
+      has_changes: ${{ steps.tf_plan.outputs.has_changes }}
+      plan_artifact_name: foundation-plan-${{ github.run_id }}-${{ github.run_attempt }}
+
+    steps:
+      - name: Checkout Exact Commit
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify Authorized Branch, Confirmation & OIDC Preflight
+        env:
+          ACTION: ${{ inputs.action }}
+          APPLY_CONFIRMATION: ${{ inputs.apply_confirmation }}
+          PLAN_ROLE_ARN: ${{ vars.AWS_FOUNDATION_PLAN_ROLE_ARN || secrets.AWS_FOUNDATION_PLAN_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          python3 deployment/bootstrap/foundation_workflow_guard.py check-branch --ref "${GITHUB_REF}"
+          python3 deployment/bootstrap/foundation_workflow_guard.py check-concurrency --workflow .github/workflows/foundation.yml
+          TF_VER="$(tr -d '[:space:]' < .terraform-version)"
+          test "${TF_VER}" = "1.14.9" || { echo "[FATAL] Expected Terraform 1.14.9, got '${TF_VER}'." >&2; exit 1; }
+          test -n "${PLAN_ROLE_ARN}" || { echo "[FATAL] AWS_FOUNDATION_PLAN_ROLE_ARN is required." >&2; exit 1; }
+          if [ "${ACTION}" = "plan-and-apply" ] && [ "${APPLY_CONFIRMATION}" != "APPLY-FOUNDATION" ]; then
+            echo "[FATAL] plan-and-apply requires apply_confirmation == 'APPLY-FOUNDATION'." >&2
+            exit 1
+          fi
+          case "${TFSTATE_BUCKET}" in
+            envscale-recovery-*|envscale-cloud-vault-*|"")
+              echo "[FATAL] Invalid tfstate_bucket '${TFSTATE_BUCKET}'." >&2; exit 1 ;;
+          esac
+          test "${STATE_KEY}" = "foundation/terraform.tfstate" || {
+            echo "[FATAL] STATE_KEY '${STATE_KEY}' must equal fixed 'foundation/terraform.tfstate'." >&2
+            exit 1
+          }
+          python3 deployment/bootstrap/day0_identity_guard.py check-policies \
+            --identity-policy deployment/bootstrap/day0-bootstrap-policy.json \
+            --boundary-policy deployment/bootstrap/day0-bootstrap-permissions-boundary.json \
+            --seal-policy deployment/bootstrap/day0-initial-policy-seal.json \
+            --seal-boundary deployment/bootstrap/day0-initial-seal-permissions-boundary.json
+          python3 deployment/bootstrap/validate-foundation-plan.py --self-test
+          bash deployment/bootstrap/bootstrap-state.sh --dry-run >/dev/null
+
+      - name: Setup Terraform 1.14.9
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.9"
+          terraform_wrapper: false
+
+      - name: Verify Foundation Formatting
+        run: terraform fmt -check deployment/foundation
+
+      - name: Configure AWS OIDC Credentials (Read-Only Plan Role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_FOUNDATION_PLAN_ROLE_ARN || secrets.AWS_FOUNDATION_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'ap-south-1' }}
+          role-session-name: gha-foundation-plan-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Verify Read-Only OIDC Session & Day-0 State Bucket
+        id: plan_identity
+        run: |
+          set -euo pipefail
+          CALLER_ARN="$(aws sts get-caller-identity --query 'Arn' --output text)"
+          echo "caller_arn=${CALLER_ARN}" >> "${GITHUB_OUTPUT}"
+          case "${CALLER_ARN}" in
+            arn:aws:sts::*:assumed-role/*) ;;
+            *) echo "[FATAL] Expected STS assumed-role OIDC session, got '${CALLER_ARN}'." >&2; exit 1 ;;
+          esac
+          aws s3api get-bucket-location --bucket "${TFSTATE_BUCKET}" >/dev/null
+
+      - name: Initialize & Plan Foundation (Saved Plan + JSON, -lock=false)
+        id: tf_plan
+        working-directory: deployment/foundation
+        env:
+          PLAN_MODE: ${{ inputs.plan_mode }}
+        run: |
+          set -euo pipefail
+          umask 077
+          cat > backend.hcl <<EOF
+          bucket       = "${TFSTATE_BUCKET}"
+          key          = "${STATE_KEY}"
+          region       = "${AWS_REGION}"
+          encrypt      = true
+          use_lockfile = true
+          EOF
+          chmod 600 backend.hcl
+          terraform init -input=false -backend-config=backend.hcl
+          terraform validate
+          STATE_FP_PRE="$(aws s3api head-object --bucket "${TFSTATE_BUCKET}" --key "${STATE_KEY}" --query 'join(`|`, [ETag, to_string(VersionId)])' --output text 2>/dev/null || echo 'ABSENT')"
+          set +e
+          terraform plan -input=false -lock=false -detailed-exitcode -out=tfplan.bin
+          PLAN_RC=$?
+          set -e
+          STATE_FP_POST="$(aws s3api head-object --bucket "${TFSTATE_BUCKET}" --key "${STATE_KEY}" --query 'join(`|`, [ETag, to_string(VersionId)])' --output text 2>/dev/null || echo 'ABSENT')"
+          if [ "${STATE_FP_PRE}" != "${STATE_FP_POST}" ]; then
+            echo "[FATAL] Remote S3 state mutated during -lock=false plan (${STATE_FP_PRE} -> ${STATE_FP_POST}); aborting stale plan." >&2
+            exit 1
+          fi
+          if [ "${PLAN_RC}" -eq 0 ]; then
+            HAS_CHANGES="false"
+          elif [ "${PLAN_RC}" -eq 2 ]; then
+            HAS_CHANGES="true"
+          else
+            echo "[FATAL] terraform plan failed with exit code ${PLAN_RC}." >&2
+            exit "${PLAN_RC}"
+          fi
+          echo "has_changes=${HAS_CHANGES}" >> "${GITHUB_OUTPUT}"
+          terraform show -json tfplan.bin > tfplan.json
+          chmod 600 tfplan.bin tfplan.json
+          python3 ../bootstrap/validate-foundation-plan.py --mode "${PLAN_MODE}" tfplan.json
+          python3 ../bootstrap/foundation_workflow_guard.py write-attestation \
+            --bin tfplan.bin --json tfplan.json \
+            --sums SHA256SUMS --attestation plan-attestation.json \
+            --repository "${{ github.repository }}" \
+            --commit-sha "${{ github.sha }}" --ref "${{ github.ref }}" \
+            --run-id "${{ github.run_id }}" --run-attempt "${{ github.run_attempt }}" \
+            --tfstate-bucket "${TFSTATE_BUCKET}" --state-key "${STATE_KEY}" \
+            --state-fingerprint "${STATE_FP_PRE}" \
+            --plan-mode "${PLAN_MODE}" --has-changes "${HAS_CHANGES}"
+          chmod 600 SHA256SUMS plan-attestation.json
+
+      - name: Publish Validated Plan & Attestation Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: foundation-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            deployment/foundation/tfplan.bin
+            deployment/foundation/tfplan.json
+            deployment/foundation/plan-attestation.json
+            deployment/foundation/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Cleanup Temporary Plan Files
+        if: always()
+        working-directory: deployment/foundation
+        run: rm -f backend.hcl tfplan.bin tfplan.json plan-attestation.json SHA256SUMS
+
+  apply:
+    name: Foundation Apply (Protected Environment Approval Required)
+    needs: plan
+    if: >-
+      (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') &&
+      inputs.action == 'plan-and-apply' &&
+      inputs.apply_confirmation == 'APPLY-FOUNDATION' &&
+      needs.plan.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    environment: foundation
+
+    steps:
+      - name: Checkout Exact Commit
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify Authorized Branch & Apply Credentials Config
+        env:
+          APPLY_ROLE_ARN: ${{ vars.AWS_FOUNDATION_ROLE_ARN || secrets.AWS_FOUNDATION_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          python3 deployment/bootstrap/foundation_workflow_guard.py check-branch --ref "${GITHUB_REF}"
+          python3 deployment/bootstrap/foundation_workflow_guard.py check-concurrency --workflow .github/workflows/foundation.yml
+          test -n "${APPLY_ROLE_ARN}" || { echo "[FATAL] AWS_FOUNDATION_ROLE_ARN is required." >&2; exit 1; }
+
+      - name: Setup Terraform 1.14.9
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.9"
+          terraform_wrapper: false
+
+      - name: Download Reviewed Foundation Plan Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.plan.outputs.plan_artifact_name }}
+          path: deployment/foundation
+
+      - name: Configure AWS OIDC Credentials (Protected Foundation Apply Role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_FOUNDATION_ROLE_ARN || secrets.AWS_FOUNDATION_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'ap-south-1' }}
+          role-session-name: gha-foundation-apply-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Verify OIDC Apply Identity & Revalidate Artifact Before Apply
+        id: revalidate
+        working-directory: deployment/foundation
+        env:
+          PLAN_MODE: ${{ inputs.plan_mode }}
+        run: |
+          set -euo pipefail
+          umask 077
+          CALLER_ARN="$(aws sts get-caller-identity --query 'Arn' --output text)"
+          echo "caller_arn=${CALLER_ARN}" >> "${GITHUB_OUTPUT}"
+          case "${CALLER_ARN}" in
+            arn:aws:sts::*:assumed-role/*) ;;
+            *) echo "[FATAL] Expected STS assumed-role OIDC session, got '${CALLER_ARN}'." >&2; exit 1 ;;
+          esac
+          chmod 600 tfplan.bin tfplan.json plan-attestation.json SHA256SUMS
+          cat > backend.hcl <<EOF
+          bucket       = "${TFSTATE_BUCKET}"
+          key          = "${STATE_KEY}"
+          region       = "${AWS_REGION}"
+          encrypt      = true
+          use_lockfile = true
+          EOF
+          chmod 600 backend.hcl
+          terraform init -input=false -backend-config=backend.hcl
+          terraform show -json tfplan.bin > tfplan.recheck.json
+          chmod 600 tfplan.recheck.json
+          CURRENT_STATE_FP="$(aws s3api head-object --bucket "${TFSTATE_BUCKET}" --key "${STATE_KEY}" --query 'join(`|`, [ETag, to_string(VersionId)])' --output text 2>/dev/null || echo 'ABSENT')"
+          python3 ../bootstrap/foundation_workflow_guard.py verify-attestation \
+            --bin tfplan.bin --json tfplan.json --recheck-json tfplan.recheck.json \
+            --sums SHA256SUMS --attestation plan-attestation.json \
+            --repository "${{ github.repository }}" \
+            --commit-sha "${{ github.sha }}" --ref "${{ github.ref }}" \
+            --run-id "${{ github.run_id }}" --run-attempt "${{ github.run_attempt }}" \
+            --tfstate-bucket "${TFSTATE_BUCKET}" --state-key "${STATE_KEY}" \
+            --current-state-fingerprint "${CURRENT_STATE_FP}"
+          python3 ../bootstrap/validate-foundation-plan.py --mode "${PLAN_MODE}" tfplan.json
+
+      - name: Apply Exact Reviewed Terraform Plan Artifact
+        working-directory: deployment/foundation
+        run: terraform apply -input=false -auto-approve tfplan.bin
+
+      - name: Verify Post-Apply Idempotency (Expect 0 Changes)
+        id: idempotency
+        working-directory: deployment/foundation
+        run: |
+          set -euo pipefail
+          set +e
+          terraform plan -input=false -lock=true -detailed-exitcode
+          IDEM_RC=$?
+          set -e
+          if [ "${IDEM_RC}" -eq 0 ]; then
+            echo "verified=true" >> "${GITHUB_OUTPUT}"
+            echo "[PASS] Post-apply idempotency check confirmed 0 pending changes."
+          else
+            echo "verified=false" >> "${GITHUB_OUTPUT}"
+            echo "[FATAL] Post-apply idempotency check failed (exit=${IDEM_RC}; expected 0)." >&2
+            exit 1
+          fi
+
+      - name: Cleanup & Summarize
+        if: always()
+        working-directory: deployment/foundation
+        run: |
+          set -euo pipefail
+          rm -f backend.hcl tfplan.bin tfplan.json tfplan.recheck.json plan-attestation.json SHA256SUMS
+          {
+            echo "## EnvScale Foundation Apply Summary"
+            echo "- **Apply Caller ARN:** \`${{ steps.revalidate.outputs.caller_arn || 'not-assumed' }}\`"
+            echo "- **Target State:** \`s3://${TFSTATE_BUCKET}/${STATE_KEY}\`"
+            echo "- **Post-Apply Idempotency (0 changes):** \`${{ steps.idempotency.outputs.verified || 'false' }}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"

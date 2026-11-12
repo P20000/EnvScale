@@ -231,6 +231,26 @@ class TestRepoInfrastructureContracts(unittest.TestCase):
         self.assertIn("aws ssm send-command", cd_yml)
         self.assertIn("--manifest", cd_yml)
 
+    def test_foundation_workflow_uses_oidc_plan_validator_and_idempotency(self):
+        foundation_yml = (REPO_ROOT / ".github/workflows/foundation.yml").read_text(encoding="utf-8")
+        self.assertIn("workflow_dispatch:", foundation_yml)
+        self.assertIn('default: "plan-only"', foundation_yml)
+        self.assertIn("environment: foundation", foundation_yml)
+        self.assertIn("id-token: write", foundation_yml)
+        self.assertIn("aws-actions/configure-aws-credentials@v4", foundation_yml)
+        self.assertIn("AWS_FOUNDATION_ROLE_ARN", foundation_yml)
+        self.assertNotIn("AWS_ACCESS_KEY_ID", foundation_yml)
+        self.assertNotIn("AWS_SECRET_ACCESS_KEY", foundation_yml)
+        self.assertNotIn("dynamodb", foundation_yml.lower())
+        self.assertIn("use_lockfile = true", foundation_yml)
+        self.assertIn("validate-foundation-plan.py", foundation_yml)
+        self.assertIn("APPLY-FOUNDATION", foundation_yml)
+        self.assertLess(
+            foundation_yml.index("validate-foundation-plan.py --mode"),
+            foundation_yml.index("terraform apply -input=false -auto-approve tfplan.bin"),
+        )
+        self.assertIn("Verify Post-Apply Idempotency", foundation_yml)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -144,6 +144,7 @@ data "aws_iam_policy_document" "recovery_bucket_policy" {
     actions = [
       "s3:DeleteBucket",
       "s3:DeleteObjectVersion",
+      "s3:DeleteBucketPolicy",
     ]
 
     principals {
@@ -155,6 +156,33 @@ data "aws_iam_policy_document" "recovery_bucket_policy" {
       aws_s3_bucket.recovery.arn,
       "${aws_s3_bucket.recovery.arn}/*",
     ]
+  }
+
+  statement {
+    sid     = "DenyUnauthorizedBucketPolicyMutation"
+    effect  = "Deny"
+    actions = ["s3:PutBucketPolicy"]
+
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+
+    resources = [
+      aws_s3_bucket.recovery.arn,
+      "${aws_s3_bucket.recovery.arn}/*",
+    ]
+
+    condition {
+      test     = "ArnNotLike"
+      variable = "aws:PrincipalArn"
+      values = [
+        "arn:aws:sts::${var.aws_account_id}:assumed-role/envscale-github-foundation-role/*",
+        "arn:aws:iam::${var.aws_account_id}:role/envscale-github-foundation-role",
+        "arn:aws:sts::${var.aws_account_id}:assumed-role/envscale-foundation-admin-role/*",
+        "arn:aws:iam::${var.aws_account_id}:role/envscale-foundation-admin-role",
+      ]
+    }
   }
 
   statement {

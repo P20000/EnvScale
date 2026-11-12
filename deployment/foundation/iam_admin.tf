@@ -1,17 +1,20 @@
 # ==============================================================================
-# EnvScale Persistent Foundation — Dedicated MFA-Enforced Foundation Admin Role
+# EnvScale Persistent Foundation — Human Break-Glass Foundation Admin Role
 # ==============================================================================
 # Principal 5: `envscale-foundation-admin-role`
 # Security Guarantees:
-#   1. NEVER assumable via GitHub Actions OIDC or EC2 instance profiles; trusts
-#      ONLY validated account 982534376726 IAM principals (`var.foundation_admin_trusted_principal_arns`).
-#   2. Enforces hardware/virtual MFA at BOTH layers:
+#   1. NEVER used by automated CI/CD or Day-0 bootstrap; trusts ONLY validated
+#      account 982534376726 human IAM principals (`var.foundation_admin_trusted_principal_arns`).
+#      Automated foundation provisioning uses `envscale-github-foundation-role` via OIDC.
+#   2. Enforces hardware/virtual MFA at role assumption time for human operators:
 #      - Trust Policy: `Bool aws:MultiFactorAuthPresent = "true"` AND
-#        `NumericLessThan aws:MultiFactorAuthAge = "3600"` (<= 1 hour).
-#      - Permission Policy: Explicit `Deny` (`BoolIfExists aws:MultiFactorAuthPresent = "false"`)
-#        plus `max_session_duration = 3600`.
-#   3. Required by `bootstrap-state.sh --apply`, `seed-parameters.sh --apply`,
-#      and `migrate-legacy-vault.sh --upload` (`arn:aws:sts::982534376726:assumed-role/envscale-foundation-admin-role/*`).
+#        `NumericLessThan aws:MultiFactorAuthAge = "3600"` (<= 1 hour), plus
+#        `max_session_duration = 3600`.
+#      - Do NOT duplicate `aws:MultiFactorAuthPresent` in the role permission policy:
+#        AWS `AssumeRole` credentials do not retain `aws:MultiFactorAuthPresent`
+#        across subsequent role API calls.
+#   3. Reserved for out-of-band human operations (`seed-parameters.sh --apply`,
+#      `migrate-legacy-vault.sh --upload`, and manual break-glass administration).
 # ==============================================================================
 
 resource "aws_iam_role" "foundation_admin" {
@@ -110,6 +113,7 @@ resource "aws_iam_role_policy" "foundation_admin" {
           "iam:CreateRole",
           "iam:UpdateRole",
           "iam:UpdateAssumeRolePolicy",
+          "iam:PutRolePermissionsBoundary",
           "iam:TagRole",
           "iam:UntagRole",
           "iam:PutRolePolicy",
@@ -129,6 +133,31 @@ resource "aws_iam_role_policy" "foundation_admin" {
           "arn:aws:iam::${var.aws_account_id}:instance-profile/envscale-*",
           "arn:aws:iam::${var.aws_account_id}:oidc-provider/token.actions.githubusercontent.com",
         ]
+      },
+      {
+        Sid      = "AllowOidcProviderDiscovery"
+        Effect   = "Allow"
+        Action   = ["iam:ListOpenIDConnectProviders"]
+        Resource = "*"
+      },
+      {
+        Sid    = "AllowWorkloadBoundaryPolicyAdministration"
+        Effect = "Allow"
+        Action = [
+          "iam:GetPolicy",
+          "iam:GetPolicyVersion",
+          "iam:ListPolicyVersions",
+          "iam:ListPolicyTags",
+          "iam:ListEntitiesForPolicy",
+          "iam:CreatePolicy",
+          "iam:CreatePolicyVersion",
+          "iam:DeletePolicy",
+          "iam:DeletePolicyVersion",
+          "iam:SetDefaultPolicyVersion",
+          "iam:TagPolicy",
+          "iam:UntagPolicy",
+        ]
+        Resource = local.workload_boundary_policy_arn
       },
       {
         Sid    = "AllowOutOfBandSSMParameterSeeding"
@@ -155,11 +184,17 @@ resource "aws_iam_role_policy" "foundation_admin" {
       {
         Sid      = "AllowSSMKmsViaServiceOnly"
         Effect   = "Allow"
-        Action   = ["kms:Encrypt", "kms:Decrypt", "kms:DescribeKey"]
+        Action   = ["kms:Encrypt", "kms:Decrypt"]
         Resource = "arn:aws:kms:${var.aws_region}:${var.aws_account_id}:key/*"
         Condition = {
           StringEquals = { "kms:ViaService" = "ssm.${var.aws_region}.amazonaws.com" }
         }
+      },
+      {
+        Sid      = "AllowSSMKmsKeyDescribe"
+        Effect   = "Allow"
+        Action   = ["kms:DescribeKey"]
+        Resource = "arn:aws:kms:${var.aws_region}:${var.aws_account_id}:key/*"
       },
       {
         Sid      = "AllowOptionalStaticFoundationEipProvisioning"
@@ -168,17 +203,6 @@ resource "aws_iam_role_policy" "foundation_admin" {
         Resource = "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:elastic-ip/*"
         Condition = {
           StringEquals = { "aws:RequestTag/Project" = "EnvScale" }
-        }
-      },
-      {
-        Sid      = "DenyAllActionsWithoutMFA"
-        Effect   = "Deny"
-        Action   = "*"
-        Resource = "*"
-        Condition = {
-          BoolIfExists = {
-            "aws:MultiFactorAuthPresent" = "false"
-          }
         }
       },
       {

@@ -1,0 +1,197 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowBootstrapCallerSelfInspection",
+      "Effect": "Allow",
+      "Action": [
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowBootstrapOperatorPolicySelfInspection",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetUser",
+        "iam:ListAttachedUserPolicies",
+        "iam:ListUserPolicies"
+      ],
+      "Resource": "arn:aws:iam::982534376726:user/DEV-user-alpha"
+    },
+    {
+      "Sid": "AllowBootstrapOwnPolicyDocumentRead",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetPolicy",
+        "iam:GetPolicyVersion"
+      ],
+      "Resource": "arn:aws:iam::982534376726:policy/envscale-foundation-iam-bootstrap-policy"
+    },
+    {
+      "Sid": "AllowBootstrapTfstateMetadataRead",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketPolicy",
+        "s3:GetBucketLocation"
+      ],
+      "Resource": "arn:aws:s3:::envscale-tfstate-982534376726-ap-south-1"
+    },
+    {
+      "Sid": "AllowBootstrapFoundationTfstatePrefixList",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Resource": "arn:aws:s3:::envscale-tfstate-982534376726-ap-south-1",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "foundation/*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "AllowBootstrapFoundationStateReadWrite",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject"
+      ],
+      "Resource": "arn:aws:s3:::envscale-tfstate-982534376726-ap-south-1/foundation/terraform.tfstate"
+    },
+    {
+      "Sid": "AllowBootstrapFoundationNativeLock",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::envscale-tfstate-982534376726-ap-south-1/foundation/terraform.tfstate.tflock"
+    },
+    {
+      "Sid": "AllowBootstrapProtectedRolesLifecycle",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetRole",
+        "iam:GetRolePolicy",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListInstanceProfilesForRole",
+        "iam:ListRoleTags",
+        "iam:CreateRole",
+        "iam:UpdateRole",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:PutRolePolicy",
+        "iam:TagRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::982534376726:role/envscale-foundation-admin-role",
+        "arn:aws:iam::982534376726:role/envscale-github-foundation-plan-role",
+        "arn:aws:iam::982534376726:role/envscale-github-foundation-role"
+      ]
+    },
+    {
+      "Sid": "AllowBootstrapWorkloadBoundaryPolicyLifecycle",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetPolicy",
+        "iam:GetPolicyVersion",
+        "iam:ListPolicyVersions",
+        "iam:ListPolicyTags",
+        "iam:ListEntitiesForPolicy",
+        "iam:CreatePolicy",
+        "iam:CreatePolicyVersion",
+        "iam:DeletePolicyVersion",
+        "iam:SetDefaultPolicyVersion",
+        "iam:TagPolicy"
+      ],
+      "Resource": "arn:aws:iam::982534376726:policy/envscale-workload-permissions-boundary"
+    },
+    {
+      "Sid": "AllowBootstrapOidcProviderDiscovery",
+      "Effect": "Allow",
+      "Action": [
+        "iam:ListOpenIDConnectProviders"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowBootstrapOidcProviderRead",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetOpenIDConnectProvider",
+        "iam:ListOpenIDConnectProviderTags"
+      ],
+      "Resource": "arn:aws:iam::982534376726:oidc-provider/token.actions.githubusercontent.com"
+    },
+    {
+      "Sid": "DenyBootstrapDestructiveStateAndBucketPolicyChanges",
+      "Effect": "Deny",
+      "Action": [
+        "s3:DeleteBucket",
+        "s3:DeleteObjectVersion",
+        "s3:DeleteBucketPolicy",
+        "s3:PutBucketPolicy"
+      ],
+      "Resource": [
+        "arn:aws:s3:::envscale-tfstate-982534376726-ap-south-1",
+        "arn:aws:s3:::envscale-tfstate-982534376726-ap-south-1/*"
+      ]
+    },
+    {
+      "Sid": "DenyBootstrapNonFoundationStateAndRecoveryOrLegacyBuckets",
+      "Effect": "Deny",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::envscale-tfstate-982534376726-ap-south-1/runtime/*",
+        "arn:aws:s3:::envscale-tfstate-982534376726-ap-south-1/eks/*",
+        "arn:aws:s3:::envscale-recovery-982534376726-ap-south-1",
+        "arn:aws:s3:::envscale-recovery-982534376726-ap-south-1/*",
+        "arn:aws:s3:::envscale-cloud-vault-982534376726-ap-south-1",
+        "arn:aws:s3:::envscale-cloud-vault-982534376726-ap-south-1/*"
+      ]
+    },
+    {
+      "Sid": "DenyBootstrapTfstateFileDeletion",
+      "Effect": "Deny",
+      "Action": "s3:DeleteObject",
+      "Resource": "arn:aws:s3:::envscale-tfstate-982534376726-ap-south-1/*.tfstate"
+    },
+    {
+      "Sid": "DenyBootstrapBroadIamUserEscalationAndRuntimeServices",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreateUser",
+        "iam:DeleteUser",
+        "iam:CreateAccessKey",
+        "iam:PutUserPolicy",
+        "iam:AttachUserPolicy",
+        "iam:DeleteRole",
+        "iam:DeletePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:PutRolePermissionsBoundary",
+        "iam:DeleteRolePermissionsBoundary",
+        "iam:CreateOpenIDConnectProvider",
+        "iam:DeleteOpenIDConnectProvider",
+        "iam:PassRole",
+        "ec2:*",
+        "ssm:*",
+        "kms:*",
+        "eks:*",
+        "organizations:*",
+        "account:*"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+
