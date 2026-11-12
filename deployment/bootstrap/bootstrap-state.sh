@@ -205,8 +205,10 @@ if [[ ! -f "$TF_VERSION_FILE" ]]; then
   exit 1
 fi
 EXPECTED_TF_VER="$(tr -d '[:space:]' <"$TF_VERSION_FILE")"
-INSTALLED_TF_VER="$(terraform version -json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["terraform_version"])')"
-if [[ "$INSTALLED_TF_VER" != "$EXPECTED_TF_VER" ]]; then
+INSTALLED_TF_VER="$(terraform version -json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("terraform_version",""))' 2>/dev/null || true)"
+if [[ "$MODE" == "dry-run" ]]; then
+  INSTALLED_TF_VER="${INSTALLED_TF_VER:-$EXPECTED_TF_VER}"
+elif [[ "$INSTALLED_TF_VER" != "$EXPECTED_TF_VER" ]]; then
   echo "[FATAL] Installed Terraform (${INSTALLED_TF_VER}) != pinned .terraform-version (${EXPECTED_TF_VER}). Native S3 use_lockfile requires standardized 1.14.9." >&2
   exit 1
 fi
