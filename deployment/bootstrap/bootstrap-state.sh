@@ -189,7 +189,7 @@ if [[ "$IMMUTABLE_TFSTATE_BUCKET" == "$IMMUTABLE_LEGACY_BUCKET" || "$IMMUTABLE_T
   exit 1
 fi
 
-for cmd in python3 terraform; do
+for cmd in python3 $([[ "$MODE" != "dry-run" ]] && echo "terraform"); do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "[FATAL] Required binary not found: $cmd" >&2
     exit 1
