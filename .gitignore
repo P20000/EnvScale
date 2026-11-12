@@ -54,6 +54,7 @@ tfplan
 *.tfplan
 *.tfplan.json
 *plan.json
+*plan*.bin
 remote.tfplan
 remote_plan.json
 

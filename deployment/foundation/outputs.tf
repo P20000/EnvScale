@@ -70,13 +70,28 @@ output "github_recovery_role_arn" {
   value       = aws_iam_role.github_recovery.arn
 }
 
+output "github_foundation_role_arn" {
+  description = "IAM role ARN for automated GitHub Actions OIDC foundation apply (protected foundation env)."
+  value       = aws_iam_role.github_foundation.arn
+}
+
+output "github_foundation_plan_role_arn" {
+  description = "Read-only IAM role ARN for automated GitHub Actions OIDC foundation plan generation (foundation-plan env)."
+  value       = aws_iam_role.github_foundation_plan.arn
+}
+
+output "workload_permissions_boundary_arn" {
+  description = "IAM Permissions Boundary policy ARN attached to workload and runtime CI/CD roles."
+  value       = aws_iam_policy.workload_permissions_boundary.arn
+}
+
 output "foundation_admin_role_name" {
-  description = "Dedicated MFA-enforced IAM role name required for out-of-band bootstrap, SSM seeding, and historical archive upload."
+  description = "Dedicated MFA-enforced human break-glass IAM role name for out-of-band SSM seeding and historical archive upload."
   value       = var.create_foundation_admin_role ? aws_iam_role.foundation_admin[0].name : null
 }
 
 output "foundation_admin_role_arn" {
-  description = "Dedicated MFA-enforced IAM role ARN required for out-of-band bootstrap, SSM seeding, and historical archive upload."
+  description = "Dedicated MFA-enforced human break-glass IAM role ARN for out-of-band SSM seeding and historical archive upload."
   value       = var.create_foundation_admin_role ? aws_iam_role.foundation_admin[0].arn : null
 }
 

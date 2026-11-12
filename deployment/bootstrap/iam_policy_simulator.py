@@ -8,11 +8,11 @@ Provides three distinct, non-conflated verification layers (100% read-only):
      BoolIfExists, Null, NumericLessThan, and ForAnyValue:StringEquals.
   2. `run_live_aws_iam_simulation()`: Invokes AWS's authoritative read-only
      `aws iam simulate-custom-policy` engine to verify real AWS IAM condition
-     handling, tag scoping, foreign-account/TLS bucket policies, MFA enforcement,
-     real Ubuntu 22.04 LTS AMI/snapshot RunInstances evaluation, and unsupported
-     action/resource-ARN combinations.
+     handling, tag scoping, foreign-account/TLS bucket policies, Day-0 & OIDC
+     least-privilege boundaries, human break-glass MFA enforcement, and real
+     Ubuntu 22.04 LTS AMI/snapshot RunInstances evaluation.
   3. `run_access_analyzer_validation()`: Invokes stateless `aws accessanalyzer validate-policy`
-     across all identity, trust, and S3 bucket policies.
+     across all identity, trust, Day-0, and S3 bucket policies.
 """
 
 from __future__ import annotations
@@ -22,6 +22,13 @@ import json
 import pathlib
 import re
 import subprocess
+import sys
+
+_SCRIPT_DIR = str(pathlib.Path(__file__).resolve().parent)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+
+from iam_boundary_policies import build_hardened_foundation_and_boundary_policies  # noqa: E402
 
 ACCOUNT = "982534376726"
 REGION = "ap-south-1"
@@ -30,7 +37,6 @@ RECOVERY_BUCKET = f"envscale-recovery-{ACCOUNT}-{REGION}"
 LEGACY_BUCKET = f"envscale-cloud-vault-{ACCOUNT}-{REGION}"
 OIDC_ARN = f"arn:aws:iam::{ACCOUNT}:oidc-provider/token.actions.githubusercontent.com"
 APPROVED_AMI_OWNERS = ["099720109477"]
-# Live Canonical Ubuntu 22.04 LTS AMI & backing root EBS snapshot verified in ap-south-1
 LIVE_UBUNTU_AMI_ARN = f"arn:aws:ec2:{REGION}::image/ami-082a1ff88c78c6290"
 LIVE_UBUNTU_SNAP_ARN = f"arn:aws:ec2:{REGION}::snapshot/snap-09eeb6885e00b8443"
 LIVE_COEXISTING_EKS_ARN = f"arn:aws:eks:{REGION}:{ACCOUNT}:cluster/relmonition-cluster-cluster-20260611160523037300000001"
@@ -47,12 +53,20 @@ def build_rendered_foundation_policies(foundation_dir: pathlib.Path) -> dict[str
     leg_arn = f"arn:aws:s3:::{LEGACY_BUCKET}"
     ssm_prod = f"arn:aws:ssm:{REGION}:{ACCOUNT}:parameter/envscale/prod/*"
     ssm_all = f"arn:aws:ssm:{REGION}:{ACCOUNT}:parameter/*"
+    ssm_non_secret = [
+        f"arn:aws:ssm:{REGION}:{ACCOUNT}:parameter/envscale/prod/{k}"
+        for k in ("aws_region", "better_auth_url", "cors_origin", "duckdns_domain", "github_client_id", "google_client_id", "postgres_db", "postgres_user", "recovery_bucket")
+    ]
+    ssm_securestrings = [
+        f"arn:aws:ssm:{REGION}:{ACCOUNT}:parameter/envscale/prod/{k}"
+        for k in ("postgres_password", "redis_password", "jwt_access_secret", "jwt_refresh_secret", "better_auth_secret", "kubeconfig_encryption_key", "duckdns_token", "google_client_secret", "github_client_secret")
+    ]
     ec2_role_arn = f"arn:aws:iam::{ACCOUNT}:role/envscale-ec2-runtime-role"
     ec2_prof_arn = f"arn:aws:iam::{ACCOUNT}:instance-profile/envscale-ec2-runtime-profile"
 
     hcl_parts = [
         (foundation_dir / name).read_text(encoding="utf-8")
-        for name in ("iam_locals.tf", "iam.tf", "iam_cicd.tf", "iam_admin.tf", "storage.tf")
+        for name in ("iam_locals.tf", "iam_boundary.tf", "iam.tf", "iam_cicd.tf", "iam_admin.tf", "iam_foundation.tf", "iam_foundation_plan.tf", "storage.tf")
     ]
     combined_hcl = "\n".join(hcl_parts)
 
@@ -60,6 +74,11 @@ def build_rendered_foundation_policies(foundation_dir: pathlib.Path) -> dict[str
         '"repo:${var.github_repository}:ref:refs/heads/${var.release_branch}"',
         '"repo:${var.github_repository}:environment:${var.production_environment_name}"',
         '"repo:${var.github_repository}:environment:${var.recovery_environment_name}"',
+        '"repo:${var.github_repository}:environment:${var.foundation_environment_name}"',
+        '"repo:${var.github_repository}:environment:${var.foundation_plan_environment_name}"',
+        '"iam:PermissionsBoundary" = local.workload_boundary_policy_arn',
+        '"iam:PolicyARN" = local.ssm_managed_core_policy_arn',
+        "permissions_boundary = aws_iam_policy.workload_permissions_boundary.arn",
         '"aws:MultiFactorAuthPresent" = "true"',
         '"aws:MultiFactorAuthAge" = "3600"',
         '"arn:aws:ec2:${var.aws_region}::snapshot/*"',
@@ -70,6 +89,9 @@ def build_rendered_foundation_policies(foundation_dir: pathlib.Path) -> dict[str
         '"aws:ResourceTag/Project" = "EnvScale"',
         '"iam:PassedToService" = "ec2.amazonaws.com"',
         '"iam:PassedToService" = "eks.amazonaws.com"',
+        "AllowBoundedPassEc2AndNodeRolesToEc2Only",
+        "AllowBoundedPassEksClusterRoleToEksOnly",
+        "DenyUnauthorizedBucketPolicyMutation",
         "prevent_destroy = true",
     ]
     for snip in required_snippets:
@@ -78,10 +100,24 @@ def build_rendered_foundation_policies(foundation_dir: pathlib.Path) -> dict[str
 
     if "bucket_key_enabled" in (foundation_dir / "storage.tf").read_text(encoding="utf-8"):
         _fail("Regression: bucket_key_enabled found in storage.tf SSE-S3 configuration!")
+    admin_hcl = (foundation_dir / "iam_admin.tf").read_text(encoding="utf-8")
+    if "DenyAllActionsWithoutMFA" in admin_hcl:
+        _fail("Regression: DenyAllActionsWithoutMFA must not exist on AssumeRole permissions policy in iam_admin.tf!")
+    if "AllowSSMKmsKeyDescribe" not in admin_hcl:
+        _fail("Missing direct scoped AllowSSMKmsKeyDescribe statement in iam_admin.tf!")
+    found_hcl = (foundation_dir / "iam_foundation.tf").read_text(encoding="utf-8")
+    found_code = "\n".join(ln for ln in found_hcl.splitlines() if not ln.lstrip().startswith("#"))
+    if "MultiFactorAuthPresent" in found_code:
+        _fail("Automated OIDC role iam_foundation.tf must NOT require aws:MultiFactorAuthPresent!")
+    if "role/envscale-*" in found_code or "instance-profile/envscale-*" in found_code:
+        _fail("iam_foundation.tf must enumerate explicit IAM resources instead of role/envscale-* wildcards!")
 
     for m in re.finditer(r"assume_role_policy\s*=\s*jsonencode\(\{(.*?)\n  \}\)", combined_hcl, flags=re.S):
         if "StringLike" in m.group(1):
             _fail("assume_role_policy must never use StringLike!")
+
+    day0_policy_path = foundation_dir.parent / "bootstrap" / "day0-bootstrap-policy.json"
+    day0_policy = json.loads(day0_policy_path.read_text(encoding="utf-8"))
 
     ec2_tagged_arns = [
         f"arn:aws:ec2:{REGION}:{ACCOUNT}:{rt}/*"
@@ -125,13 +161,15 @@ def build_rendered_foundation_policies(foundation_dir: pathlib.Path) -> dict[str
         {"Sid": "DenyMutatingLayerTagValue", "Effect": "Deny", "Action": ["ec2:CreateTags", "eks:TagResource"], "Resource": "*", "Condition": {"Null": {"aws:RequestTag/Layer": "false"}, "StringNotEquals": {"aws:RequestTag/Layer": "DisposableRuntime"}}},
     ]
 
-    return {
+    policies = {
+        "day0_bootstrap": day0_policy,
         "recovery_bucket_policy": {
             "Version": "2012-10-17",
             "Statement": [
                 {"Sid": "DenyInsecureTransport", "Effect": "Deny", "Principal": "*", "Action": ["s3:*"], "Resource": [rec_arn, f"{rec_arn}/*"], "Condition": {"Bool": {"aws:SecureTransport": "false"}}},
                 {"Sid": "DenyForeignAccountPrincipals", "Effect": "Deny", "Principal": "*", "Action": ["s3:*"], "Resource": [rec_arn, f"{rec_arn}/*"], "Condition": {"Null": {"aws:PrincipalAccount": "false"}, "StringNotEquals": {"aws:PrincipalAccount": ACCOUNT}}},
-                {"Sid": "DenyBucketAndObjectVersionDestruction", "Effect": "Deny", "Principal": "*", "Action": ["s3:DeleteBucket", "s3:DeleteObjectVersion"], "Resource": [rec_arn, f"{rec_arn}/*"]},
+                {"Sid": "DenyBucketAndObjectVersionDestruction", "Effect": "Deny", "Principal": "*", "Action": ["s3:DeleteBucket", "s3:DeleteObjectVersion", "s3:DeleteBucketPolicy"], "Resource": [rec_arn, f"{rec_arn}/*"]},
+                {"Sid": "DenyUnauthorizedBucketPolicyMutation", "Effect": "Deny", "Principal": "*", "Action": ["s3:PutBucketPolicy"], "Resource": [rec_arn, f"{rec_arn}/*"], "Condition": {"ArnNotLike": {"aws:PrincipalArn": [f"arn:aws:sts::{ACCOUNT}:assumed-role/envscale-github-foundation-role/*", f"arn:aws:iam::{ACCOUNT}:role/envscale-github-foundation-role", f"arn:aws:sts::{ACCOUNT}:assumed-role/envscale-foundation-admin-role/*", f"arn:aws:iam::{ACCOUNT}:role/envscale-foundation-admin-role"]}}},
                 {"Sid": "DenyBackupAndReleaseObjectDeletion", "Effect": "Deny", "Principal": "*", "Action": ["s3:DeleteObject"], "Resource": [f"{rec_arn}/backups/*", f"{rec_arn}/releases/*"]},
             ],
         },
@@ -139,6 +177,7 @@ def build_rendered_foundation_policies(foundation_dir: pathlib.Path) -> dict[str
         "trust_github_release": {"Version": "2012-10-17", "Statement": [{"Sid": "AllowGitHubDevelopBranchOIDC", "Effect": "Allow", "Principal": {"Federated": OIDC_ARN}, "Action": "sts:AssumeRoleWithWebIdentity", "Condition": {"StringEquals": {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": "repo:P20000/EnvScale:ref:refs/heads/develop"}}}]},
         "trust_github_deploy": {"Version": "2012-10-17", "Statement": [{"Sid": "AllowGitHubProductionEnvironmentOIDC", "Effect": "Allow", "Principal": {"Federated": OIDC_ARN}, "Action": "sts:AssumeRoleWithWebIdentity", "Condition": {"StringEquals": {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": "repo:P20000/EnvScale:environment:production"}}}]},
         "trust_github_recovery": {"Version": "2012-10-17", "Statement": [{"Sid": "AllowGitHubRecoveryEnvironmentOIDC", "Effect": "Allow", "Principal": {"Federated": OIDC_ARN}, "Action": "sts:AssumeRoleWithWebIdentity", "Condition": {"StringEquals": {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": "repo:P20000/EnvScale:environment:recovery"}}}]},
+        "trust_github_foundation": {"Version": "2012-10-17", "Statement": [{"Sid": "AllowGitHubFoundationEnvironmentOIDC", "Effect": "Allow", "Principal": {"Federated": OIDC_ARN}, "Action": "sts:AssumeRoleWithWebIdentity", "Condition": {"StringEquals": {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": "repo:P20000/EnvScale:environment:foundation"}}}]},
         "trust_foundation_admin": {"Version": "2012-10-17", "Statement": [{"Sid": "AllowSameAccountHumanOperatorsWithRecentMFAOnly", "Effect": "Allow", "Principal": {"AWS": [f"arn:aws:iam::{ACCOUNT}:user/DEV-user-alpha"]}, "Action": "sts:AssumeRole", "Condition": {"Bool": {"aws:MultiFactorAuthPresent": "true"}, "NumericLessThan": {"aws:MultiFactorAuthAge": "3600"}}}]},
         "role_ec2_runtime": {
             "Version": "2012-10-17",
@@ -193,7 +232,7 @@ def build_rendered_foundation_policies(foundation_dir: pathlib.Path) -> dict[str
                 {"Sid": "AllowRecoveryListScoped", "Effect": "Allow", "Action": ["s3:ListBucket"], "Resource": rec_arn, "Condition": {"StringLike": {"s3:prefix": ["backups/*", "releases/*", "lifecycle/*"]}}},
                 {"Sid": "AllowRecoveryBucketLocation", "Effect": "Allow", "Action": ["s3:GetBucketLocation"], "Resource": rec_arn},
                 {"Sid": "AllowRecoveryBackupsAndReleasesReadOnly", "Effect": "Allow", "Action": ["s3:GetObject", "s3:GetObjectVersion"], "Resource": [f"{rec_arn}/backups/*", f"{rec_arn}/releases/*"]},
-                {"Sid": "AllowRecoveryLifecycleAndPointerWrite", "Effect": "Allow", "Action": ["s3:PutObject"], "Resource": [f"{rec_arn}/lifecycle/*", f"{rec_arn}/releases/latest-known-good.json", f"{rec_arn}/releases/previous-known-good.json"]},
+                {"Sid": "AllowRecoveryLifecycleAndPointerWrite", "Effect": "Allow", "Action": ["s3:PutObject"], "Resource": [f"{rec_arn}/lifecycle/*", f"{rec_arn}/releases/latest-known-good.json", f"{rec_arn}/releases/previous-known-good.json", f"{rec_arn}/backups/postgres/latest-valid.json"]},
                 {"Sid": "AllowRecoveryLifecycleLockRelease", "Effect": "Allow", "Action": ["s3:DeleteObject"], "Resource": f"{rec_arn}/lifecycle/active-op.lock"},
                 {"Sid": "AllowRegionalMetadataDescribeOnly", "Effect": "Allow", "Action": ["ec2:Describe*", "eks:DescribeCluster", "eks:DescribeNodegroup", "eks:ListClusters", "eks:ListNodegroups", "ssm:DescribeParameters", "ssm:DescribeInstanceInformation", "ssm:ListCommandInvocations", "ssm:GetCommandInvocation"], "Resource": "*", "Condition": {"StringEquals": {"aws:RequestedRegion": REGION}}},
                 {"Sid": "AllowTaggedRuntimeDestruction", "Effect": "Allow", "Action": ["ec2:TerminateInstances", "ec2:DetachVolume", "ec2:DeleteVolume", "ec2:DeleteSecurityGroup", "ec2:DisassociateRouteTable", "ec2:DeleteRoute", "ec2:DeleteRouteTable", "ec2:DetachInternetGateway", "ec2:DeleteInternetGateway", "ec2:DeleteSubnet", "ec2:DeleteVpc"], "Resource": ec2_tagged_arns, "Condition": res_envscale},
@@ -209,30 +248,21 @@ def build_rendered_foundation_policies(foundation_dir: pathlib.Path) -> dict[str
                 {"Sid": "DenyFoundationStateMutation", "Effect": "Deny", "Action": ["s3:PutObject", "s3:DeleteObject", "s3:DeleteObjectVersion"], "Resource": f"{tfstate_arn}/foundation/*"},
                 {"Sid": "DenyTfstateObjectDeletion", "Effect": "Deny", "Action": ["s3:DeleteObject", "s3:DeleteObjectVersion"], "Resource": f"{tfstate_arn}/*.tfstate"},
                 {"Sid": "DenyBucketAndVersionDestruction", "Effect": "Deny", "Action": ["s3:DeleteBucket", "s3:DeleteBucketPolicy", "s3:PutBucketPolicy", "s3:DeleteObjectVersion"], "Resource": [tfstate_arn, f"{tfstate_arn}/*", rec_arn, f"{rec_arn}/*"]},
-                {"Sid": "DenyBackupWritesAndDeletions", "Effect": "Deny", "Action": ["s3:PutObject", "s3:DeleteObject"], "Resource": f"{rec_arn}/backups/*"},
+                {"Sid": "DenyBackupArchiveWritesAndAllBackupDeletions", "Effect": "Deny", "Action": ["s3:PutObject"], "Resource": [f"{rec_arn}/backups/historical/*", f"{rec_arn}/backups/postgres/archive/*"]},
+                {"Sid": "DenyBackupDeletions", "Effect": "Deny", "Action": ["s3:DeleteObject"], "Resource": f"{rec_arn}/backups/*"},
                 {"Sid": "DenyReleaseArtifactDeletion", "Effect": "Deny", "Action": ["s3:DeleteObject"], "Resource": f"{rec_arn}/releases/*"},
                 {"Sid": "DenyLegacyVaultAccess", "Effect": "Deny", "Action": ["s3:*"], "Resource": [leg_arn, f"{leg_arn}/*"]},
                 {"Sid": "DenySSMParameterValuesAndMutations", "Effect": "Deny", "Action": ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath", "ssm:PutParameter", "ssm:DeleteParameter", "ssm:DeleteParameters"], "Resource": ssm_all},
                 {"Sid": "DenyFoundationIAMMutations", "Effect": "Deny", "Action": ["iam:Delete*", "iam:PutRolePolicy", "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:UpdateAssumeRolePolicy"], "Resource": [f"arn:aws:iam::{ACCOUNT}:role/envscale-ec2-runtime-role", f"arn:aws:iam::{ACCOUNT}:role/envscale-foundation-admin-role", f"arn:aws:iam::{ACCOUNT}:role/envscale-github-*", f"arn:aws:iam::{ACCOUNT}:instance-profile/envscale-*", f"arn:aws:iam::{ACCOUNT}:oidc-provider/*"]},
             ],
         },
-        "role_foundation_admin": {
-            "Version": "2012-10-17",
-            "Statement": [
-                {"Sid": "AllowFoundationBucketsAndStateAdministration", "Effect": "Allow", "Action": ["s3:CreateBucket", "s3:ListBucket", "s3:ListBucketVersions", "s3:GetBucket*", "s3:PutBucketPublicAccessBlock", "s3:GetBucketPublicAccessBlock", "s3:PutBucketOwnershipControls", "s3:PutBucketVersioning", "s3:PutEncryptionConfiguration", "s3:GetEncryptionConfiguration", "s3:PutLifecycleConfiguration", "s3:GetLifecycleConfiguration", "s3:PutBucketTagging", "s3:PutBucketPolicy", "s3:GetObject", "s3:GetObjectVersion", "s3:PutObject"], "Resource": [tfstate_arn, f"{tfstate_arn}/*", rec_arn, f"{rec_arn}/*"]},
-                {"Sid": "AllowFoundationNativeStateLockRelease", "Effect": "Allow", "Action": ["s3:DeleteObject"], "Resource": f"{tfstate_arn}/foundation/terraform.tfstate.tflock"},
-                {"Sid": "AllowLegacyVaultReadOnlyForHistoricalMigration", "Effect": "Allow", "Action": ["s3:ListBucket", "s3:ListBucketVersions", "s3:GetBucketLocation", "s3:GetObject", "s3:GetObjectVersion"], "Resource": [leg_arn, f"{leg_arn}/*"]},
-                {"Sid": "AllowFoundationIAMAndOidcAdministration", "Effect": "Allow", "Action": ["iam:Get*", "iam:List*", "iam:CreateRole", "iam:UpdateRole", "iam:UpdateAssumeRolePolicy", "iam:TagRole", "iam:UntagRole", "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:CreateInstanceProfile", "iam:AddRoleToInstanceProfile", "iam:RemoveRoleFromInstanceProfile", "iam:TagInstanceProfile", "iam:CreateOpenIDConnectProvider", "iam:UpdateOpenIDConnectProviderThumbprint", "iam:TagOpenIDConnectProvider"], "Resource": [f"arn:aws:iam::{ACCOUNT}:role/envscale-*", f"arn:aws:iam::{ACCOUNT}:instance-profile/envscale-*", OIDC_ARN]},
-                {"Sid": "AllowOutOfBandSSMParameterSeeding", "Effect": "Allow", "Action": ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath", "ssm:PutParameter", "ssm:AddTagsToResource", "ssm:ListTagsForResource"], "Resource": ssm_prod},
-                {"Sid": "AllowSSMDescribeAndFoundationEipDescribe", "Effect": "Allow", "Action": ["ssm:DescribeParameters", "ec2:DescribeAddresses", "ec2:DescribeAddressesAttribute"], "Resource": "*", "Condition": {"StringEquals": {"aws:RequestedRegion": REGION}}},
-                {"Sid": "AllowSSMKmsViaServiceOnly", "Effect": "Allow", "Action": ["kms:Encrypt", "kms:Decrypt", "kms:DescribeKey"], "Resource": f"arn:aws:kms:{REGION}:{ACCOUNT}:key/*", "Condition": {"StringEquals": {"kms:ViaService": f"ssm.{REGION}.amazonaws.com"}}},
-                {"Sid": "AllowOptionalStaticFoundationEipProvisioning", "Effect": "Allow", "Action": ["ec2:AllocateAddress", "ec2:CreateTags"], "Resource": f"arn:aws:ec2:{REGION}:{ACCOUNT}:elastic-ip/*", "Condition": {"StringEquals": {"aws:RequestTag/Project": "EnvScale"}}},
-                {"Sid": "DenyAllActionsWithoutMFA", "Effect": "Deny", "Action": "*", "Resource": "*", "Condition": {"BoolIfExists": {"aws:MultiFactorAuthPresent": "false"}}},
-                {"Sid": "DenyLegacyVaultMutations", "Effect": "Deny", "Action": ["s3:PutObject", "s3:DeleteObject", "s3:DeleteObjectVersion", "s3:DeleteBucket", "s3:PutBucketPolicy", "s3:DeleteBucketPolicy"], "Resource": [leg_arn, f"{leg_arn}/*"]},
-                {"Sid": "DenyStateAndRecoveryBucketOrVersionDeletion", "Effect": "Deny", "Action": ["s3:DeleteBucket", "s3:DeleteObjectVersion"], "Resource": [tfstate_arn, f"{tfstate_arn}/*", rec_arn, f"{rec_arn}/*"]},
-            ],
-        },
     }
+    policies.update(
+        build_hardened_foundation_and_boundary_policies(
+            foundation_dir, tfstate_arn, rec_arn, leg_arn, ssm_prod, ssm_non_secret, ssm_securestrings
+        )
+    )
+    return policies
 
 
 def _eval_condition_block(cond_block: dict, ctx: dict[str, object]) -> bool:
@@ -251,14 +281,16 @@ def _eval_condition_block(cond_block: dict, ctx: dict[str, object]) -> bool:
             elif op == "BoolIfExists":
                 if present and str(actual).lower() not in [str(v).lower() for v in vals]:
                     return False
-            elif op in ("StringEquals", "StringEqualsIfExists"):
-                if op == "StringEquals" and not present:
+            elif op in ("StringEquals", "StringEqualsIfExists", "ArnEquals", "ArnEqualsIfExists"):
+                if op in ("StringEquals", "ArnEquals") and not present:
                     return False
                 if present and str(actual) not in [str(v) for v in vals]:
                     return False
             elif op in ("StringNotEquals", "StringNotEqualsIfExists"):
-                # AWS IAM native semantics: negated operator evaluates to True when context key is absent
                 if present and any(str(actual) == str(v) for v in vals):
+                    return False
+            elif op in ("ArnNotEquals", "ArnNotLike", "StringNotLike"):
+                if present and any(fnmatch.fnmatchcase(str(actual), str(p)) for p in vals):
                     return False
             elif op == "StringLike":
                 if not present or not any(fnmatch.fnmatchcase(str(actual), str(p)) for p in vals):
@@ -275,27 +307,12 @@ def _eval_condition_block(cond_block: dict, ctx: dict[str, object]) -> bool:
     return True
 
 
-def eval_iam_policy_local_harness(
-    identity_policy: dict,
-    action: str,
-    resource: str,
-    ctx: dict[str, object] | None = None,
-    resource_policy: dict | None = None,
-) -> str:
-    """Explicitly labeled LOCAL test harness (offline companion to live `aws iam simulate-custom-policy`)."""
-    ctx = ctx or {}
-    if resource_policy:
-        for stmt in resource_policy["Statement"]:
-            acts = stmt["Action"] if isinstance(stmt["Action"], list) else [stmt["Action"]]
-            ress = stmt["Resource"] if isinstance(stmt["Resource"], list) else [stmt["Resource"]]
-            if any(fnmatch.fnmatchcase(action.lower(), a.lower()) for a in acts) and any(fnmatch.fnmatchcase(resource, r) for r in ress):
-                if stmt["Effect"] == "Deny" and _eval_condition_block(stmt.get("Condition", {}), ctx):
-                    return "explicitDeny"
-
+def _eval_identity_doc(policy_doc: dict, action: str, resource: str, ctx: dict[str, object]) -> str:
     matched_allow = False
-    for stmt in identity_policy["Statement"]:
+    for stmt in policy_doc["Statement"]:
         acts = stmt["Action"] if isinstance(stmt["Action"], list) else [stmt["Action"]]
-        ress = stmt["Resource"] if isinstance(stmt["Resource"], list) else [stmt["Resource"]]
+        raw_res = stmt.get("Resource", "*")
+        ress = raw_res if isinstance(raw_res, list) else [raw_res]
         if not any(fnmatch.fnmatchcase(action.lower(), a.lower()) for a in acts):
             continue
         if not any(fnmatch.fnmatchcase(resource, r) for r in ress):
@@ -307,6 +324,36 @@ def eval_iam_policy_local_harness(
         if stmt["Effect"] == "Allow":
             matched_allow = True
     return "allowed" if matched_allow else "implicitDeny"
+
+
+def eval_iam_policy_local_harness(
+    identity_policy: dict,
+    action: str,
+    resource: str,
+    ctx: dict[str, object] | None = None,
+    resource_policy: dict | None = None,
+    permissions_boundary: dict | None = None,
+) -> str:
+    """Explicitly labeled LOCAL test harness (offline companion to live `aws iam simulate-custom-policy`)."""
+    ctx = ctx or {}
+    if resource_policy:
+        for stmt in resource_policy["Statement"]:
+            acts = stmt["Action"] if isinstance(stmt["Action"], list) else [stmt["Action"]]
+            ress = stmt["Resource"] if isinstance(stmt["Resource"], list) else [stmt["Resource"]]
+            if any(fnmatch.fnmatchcase(action.lower(), a.lower()) for a in acts) and any(fnmatch.fnmatchcase(resource, r) for r in ress):
+                if stmt["Effect"] == "Deny" and _eval_condition_block(stmt.get("Condition", {}), ctx):
+                    return "explicitDeny"
+
+    id_dec = _eval_identity_doc(identity_policy, action, resource, ctx)
+    if id_dec == "explicitDeny":
+        return "explicitDeny"
+    if permissions_boundary is not None:
+        pb_dec = _eval_identity_doc(permissions_boundary, action, resource, ctx)
+        if pb_dec == "explicitDeny":
+            return "explicitDeny"
+        if pb_dec != "allowed":
+            return "implicitDeny"
+    return id_dec
 
 
 def _ctx_to_aws_entries(ctx: dict[str, object]) -> list[dict]:
@@ -329,16 +376,12 @@ def simulate_via_aws_iam(
     resource: str,
     ctx: dict[str, object] | None = None,
     resource_policy: dict | None = None,
+    permissions_boundary: dict | None = None,
 ) -> str:
     """Authoritative read-only AWS IAM evaluation via `aws iam simulate-custom-policy`."""
-    cmd = [
-        "aws", "iam", "simulate-custom-policy",
-        "--policy-input-list", json.dumps(identity_policy),
-        "--action-names", action,
-        "--resource-arns", resource,
-        "--caller-arn", f"arn:aws:iam::{ACCOUNT}:user/DEV-user-alpha",
-        "--output", "json",
-    ]
+    cmd = ["aws", "iam", "simulate-custom-policy", "--policy-input-list", json.dumps(identity_policy), "--action-names", action, "--resource-arns", resource, "--caller-arn", f"arn:aws:iam::{ACCOUNT}:user/DEV-user-alpha", "--output", "json"]
+    if permissions_boundary is not None:
+        cmd.extend(["--permissions-boundary-policy-input-list", json.dumps(permissions_boundary)])
     if resource_policy is not None:
         cmd.extend(["--resource-policy", json.dumps(resource_policy)])
     entries = _ctx_to_aws_entries(ctx or {})
@@ -356,13 +399,7 @@ def simulate_via_aws_iam(
 def run_access_analyzer_validation(policies: dict[str, dict]) -> None:
     for name, doc in policies.items():
         ptype = "RESOURCE_POLICY" if name.endswith("_bucket_policy") or name.startswith("trust_") else "IDENTITY_POLICY"
-        cmd = [
-            "aws", "accessanalyzer", "validate-policy",
-            "--region", REGION,
-            "--policy-type", ptype,
-            "--policy-document", json.dumps(doc),
-            "--output", "json",
-        ]
+        cmd = ["aws", "accessanalyzer", "validate-policy", "--region", REGION, "--policy-type", ptype, "--policy-document", json.dumps(doc), "--output", "json"]
         if name.endswith("_bucket_policy"):
             cmd.extend(["--validate-policy-resource-type", "AWS::S3::Bucket"])
         elif name.startswith("trust_"):
@@ -377,41 +414,14 @@ def run_access_analyzer_validation(policies: dict[str, dict]) -> None:
         print(f"  [PASS] aws accessanalyzer validate-policy ({ptype}): {name} -> 0 ERROR / 0 SECURITY_WARNING (total={len(findings)})")
 
 
-def verify_existing_ssm_parameter_record(
-    name: str,
-    p_meta: dict,
-    valid_kms_keys: set[str],
-    tag_map: dict[str, str] | None = None,
-    tag_lookup_error: str | None = None,
-) -> None:
+def verify_existing_ssm_parameter_record(name: str, p_meta: dict, valid_kms_keys: set[str], tag_map: dict[str, str] | None = None, tag_lookup_error: str | None = None) -> None:
     """Verifies that an existing SSM parameter strictly belongs to EnvScale and uses approved KMS encryption."""
-    p_type = p_meta.get("Type")
-    p_key = p_meta.get("KeyId") or ""
+    p_type, p_key = p_meta.get("Type"), p_meta.get("KeyId") or ""
     if p_type != "SecureString":
-        _fail(
-            f"Existing parameter '{name}' has Type='{p_type}' (expected SecureString). "
-            "Seeder refuses to skip insecure or conflicting plain String parameter!"
-        )
-    if not p_key:
-        _fail(
-            f"Existing parameter '{name}' has missing or empty KeyId. "
-            "Seeder refuses to skip parameter with unknown encryption key!"
-        )
-    if p_key not in valid_kms_keys:
-        _fail(
-            f"Existing parameter '{name}' has KeyId='{p_key}' "
-            f"(expected one of {sorted(valid_kms_keys)}). "
-            "Seeder refuses to skip parameter encrypted with unexpected customer-managed key!"
-        )
+        _fail(f"Existing parameter '{name}' has Type='{p_type}' (expected SecureString).")
+    if not p_key or p_key not in valid_kms_keys:
+        _fail(f"Existing parameter '{name}' has invalid KeyId='{p_key}' (expected {sorted(valid_kms_keys)}).")
     if tag_lookup_error:
-        _fail(
-            f"Failed retrieving tags for existing parameter '{name}' ({tag_lookup_error}). "
-            "Tag lookup failure is fatal; refusing to verify parameter ownership!"
-        )
+        _fail(f"Failed retrieving tags for existing parameter '{name}' ({tag_lookup_error}).")
     if not tag_map or tag_map.get("Project") != "EnvScale":
-        _fail(
-            f"Existing parameter '{name}' has Project tag '{tag_map.get('Project') if tag_map else None}' "
-            "(strictly requires 'EnvScale')! Seeder refuses to adopt untagged or non-EnvScale parameter."
-        )
-
-
+        _fail(f"Existing parameter '{name}' has Project tag '{tag_map.get('Project') if tag_map else None}' (requires 'EnvScale').")

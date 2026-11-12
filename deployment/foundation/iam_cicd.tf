@@ -14,6 +14,7 @@
 resource "aws_iam_role" "github_deploy" {
   name                 = "envscale-github-deploy-role"
   max_session_duration = 3600
+  permissions_boundary = aws_iam_policy.workload_permissions_boundary.arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -189,6 +190,7 @@ resource "aws_iam_role_policy" "github_deploy" {
 resource "aws_iam_role" "github_recovery" {
   name                 = "envscale-github-recovery-role"
   max_session_duration = 3600
+  permissions_boundary = aws_iam_policy.workload_permissions_boundary.arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -250,6 +252,7 @@ resource "aws_iam_role_policy" "github_recovery" {
             "${local.recovery_bucket_arn}/lifecycle/*",
             "${local.recovery_bucket_arn}/releases/latest-known-good.json",
             "${local.recovery_bucket_arn}/releases/previous-known-good.json",
+            "${local.recovery_bucket_arn}/backups/postgres/latest-valid.json",
           ]
         },
         {
@@ -432,9 +435,18 @@ resource "aws_iam_role_policy" "github_recovery" {
           ]
         },
         {
-          Sid      = "DenyBackupWritesAndDeletions"
+          Sid    = "DenyBackupArchiveWritesAndAllBackupDeletions"
+          Effect = "Deny"
+          Action = ["s3:PutObject"]
+          Resource = [
+            "${local.recovery_bucket_arn}/backups/historical/*",
+            "${local.recovery_bucket_arn}/backups/postgres/archive/*",
+          ]
+        },
+        {
+          Sid      = "DenyBackupDeletions"
           Effect   = "Deny"
-          Action   = ["s3:PutObject", "s3:DeleteObject"]
+          Action   = ["s3:DeleteObject"]
           Resource = "${local.recovery_bucket_arn}/backups/*"
         },
         {

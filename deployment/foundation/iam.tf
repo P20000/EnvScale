@@ -10,7 +10,8 @@
 # Principal 1: envscale-ec2-runtime-role (EC2 Instance Profile — Zero SSH)
 # ------------------------------------------------------------------------------
 resource "aws_iam_role" "ec2_runtime" {
-  name = "envscale-ec2-runtime-role"
+  name                 = "envscale-ec2-runtime-role"
+  permissions_boundary = aws_iam_policy.workload_permissions_boundary.arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -140,6 +141,7 @@ resource "aws_iam_role_policy" "ec2_runtime" {
 resource "aws_iam_role" "github_release" {
   name                 = "envscale-github-release-role"
   max_session_duration = 3600
+  permissions_boundary = aws_iam_policy.workload_permissions_boundary.arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
