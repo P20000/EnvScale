@@ -308,7 +308,17 @@ def make_valid_plan_doc(mode: str = "initial") -> dict[str, Any]:
 def run_self_tests() -> None:
     """Run comprehensive negative, positive, and integration tests for bootstrap, initial, and update plan validation."""
     print("=== [Plan Validator] Running Negative, Positive & Integration Self-Tests ===")
-    assert not validate_plan_doc(make_valid_plan_doc("bootstrap"), mode="bootstrap", allow_protected_iam_updates=True)
+    old_ci_env = {k: os.environ.get(k) for k in ("GITHUB_ACTIONS", "CI")}
+    try:
+        os.environ.pop("GITHUB_ACTIONS", None)
+        os.environ.pop("CI", None)
+        assert not validate_plan_doc(make_valid_plan_doc("bootstrap"), mode="bootstrap", allow_protected_iam_updates=True)
+    finally:
+        for k, v in old_ci_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
     assert validate_plan_doc(make_valid_plan_doc("bootstrap"), mode="bootstrap", allow_protected_iam_updates=False)
     print("  [PASS] Golden 7-resource one-time bootstrap plan accepted with break-glass flag and rejected without it")
 
