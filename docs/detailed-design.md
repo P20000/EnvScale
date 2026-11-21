@@ -2,13 +2,13 @@
 
 > **Document Purpose:** Detailed technical design specification for **EnvScale**, presenting formal Entity-Relationship (ER) diagrams, UML class and sequence models, statecharts, and algorithmic flowcharts.  
 > **Audience:** Core System Developers (Pranav, Vinit, Neha, Ishika), Technical Leads, and System Evaluators.  
-> **Traceability:** Aligns with [`docs/system-architecture.md`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/docs/system-architecture.md), [`apps/api-server/src/db/schema.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/db/schema.ts), and [`packages/types/src/index.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/packages/types/src/index.ts).
+> **Traceability:** Aligns with [`docs/system-architecture.md`](system-architecture.md), [`apps/api-server/src/db/schema.ts`](../apps/api-server/src/db/schema.ts), and [`packages/types/src/index.ts`](../packages/types/src/index.ts).
 
 ---
 
 ## 1. Entity-Relationship (ER) Architecture
 
-The database persistence layer is implemented in PostgreSQL via Drizzle ORM ([`apps/api-server/src/db/schema/`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/db/schema)). The following diagram illustrates all relational entities, column types, primary/foreign keys, and constraints.
+The database persistence layer is implemented in PostgreSQL via Drizzle ORM ([`apps/api-server/src/db/schema/`](../apps/api-server/src/db/schema)). The following diagram illustrates all relational entities, column types, primary/foreign keys, and constraints.
 
 ```mermaid
 erDiagram
@@ -146,6 +146,23 @@ erDiagram
         timestamp created_at
         timestamp updated_at
     }
+    verifications {
+        text id PK
+        text identifier
+        text value
+        timestamp expires_at
+        timestamp created_at
+        timestamp updated_at
+    }
+    jwks {
+        text id PK
+        text public_key
+        text private_key
+        timestamp created_at
+        timestamp expires_at
+        text alg
+        text crv
+    }
 
     users ||--o{ refresh_tokens : "owns"
     users ||--o{ sessions : "establishes"
@@ -260,17 +277,19 @@ classDiagram
         -hub: *Hub
         +StreamLogs(ctx: Context, clusterID: string, podName: string, ns: string): error
     }
-    class ChaosManager {
-        +SimulatePodCrash(clusterID: string, podName: string, ns: string): error
-        +InjectNetworkLatency(clusterID: string, podName: string, delayMs: int): error
-        +TriggerOOM(clusterID: string, podName: string): error
+    class Injector {
+        -activeFaults: map[string]*activeFault
+        -mu: sync.RWMutex
+        +InjectFault(ctx: Context, clusterID: string, ns: string, name: string, faultType: FaultType, force: bool): (string, error)
+        +ClearFault(ctx: Context, faultID: string): error
+        +ListActiveFaults(clusterID: string): []ActiveFaultInfo
     }
 
     Hub "1" *-- "many" Client : manages
     ClusterManager "1" *-- "many" InformerManager : registers
     InformerManager ..> Hub : emits state deltas
     PodLogStreamer ..> Hub : pipes log lines
-    ChaosManager ..> ClusterManager : targets clusters
+    Injector ..> ClusterManager : targets clusters
 ```
 
 ---
@@ -305,14 +324,9 @@ sequenceDiagram
         Hub->>Web: Alert Toast & Sound Notification
     end
 
-    Admin->>Web: Click "Acknowledge Incident" in Drawer
-    Web->>API: PATCH /api/v1/incidents/:id/ack (Bearer JWT)
-    API->>DB: UPDATE incidents SET status = "acknowledged", acknowledged_by = userId
-    API-->>Web: 200 OK (Status Updated)
-
     Admin->>Web: Resolve & Provide Root Cause
-    Web->>API: PATCH /api/v1/incidents/:id/resolve
-    API->>DB: UPDATE incidents SET status = "resolved", root_cause = "Memory leak fixed"
+    Web->>API: PATCH /api/v1/incidents/:incidentId/resolve (Bearer JWT)
+    API->>DB: UPDATE incidents SET status = "resolved", resolved_by = userId, resolution = "..."
     API-->>Web: 200 OK (Incident Cleared)
 ```
 
@@ -322,28 +336,27 @@ sequenceDiagram
 sequenceDiagram
     autonumber
     actor Operator as Platform Engineer
-    participant UI as Terminal Drawer (apps/web)
-    participant WS as WebSocket Client
-    participant Hub as Go Streamer Hub (:8080)
-    participant Streamer as PodLogStreamer Engine
-    participant Kubelet as K8s Kubelet API (/logs)
+    participant UI as LogsView / Inspector (apps/web)
+    participant WS as useResourceLogs / usePodLogs
+    participant MUX as Universal Log Multiplexer (:8080)
+    participant Kubelet as K8s API (Timeout=0 Clientset)
 
-    Operator->>UI: Select Pod -> Click "View Logs"
-    UI->>WS: Send WS Message: { action: "TAIL_LOGS", pod: "auth-svc-9b", ns: "default" }
-    WS->>Hub: Forward WebSocket Frame
-    Hub->>Streamer: StreamLogs(clusterId, "auth-svc-9b", "default")
-    Streamer->>Kubelet: GET /api/v1/namespaces/default/pods/auth-svc-9b/log?follow=true
-    
+    Operator->>UI: Open Logs Tab or LogsView -> Select Target
+    UI->>WS: Open WS /ws/logs (or /api/v1/stream/logs)?clusterId=...&namespace=...&kind=...&name=...&token=JWT
+    WS->>MUX: AuthenticateHandshake() & CheckClusterAuthorization()
+    MUX->>Kubelet: CoreV1().Pods(ns).GetLogs(Follow: true, Timestamps: true)
+
     loop Real-Time Log Pipeline
-        Kubelet-->>Streamer: stdout/stderr Chunk [200 OK]
-        Streamer->>Hub: Encode EVENT_LOG_LINE { line: "INFO: Connection accepted" }
-        Hub-->>WS: WS Frame (< 50ms latency)
-        WS-->>UI: Append to Virtualized ANSI Terminal
+        Kubelet-->>MUX: stdout/stderr Chunk [200 OK]
+        MUX-->>WS: StreamLogMessage { type: "log", level, message, pod, container }
+        WS-->>UI: Parse ANSI/JSON & Deduplicate into Terminal
     end
 
-    Operator->>UI: Close Drawer / Switch Pod
-    UI->>WS: Send WS Message: { action: "STOP_LOGS" }
-    Streamer->>Kubelet: Cancel Request Context (Close HTTP Stream)
+    Note over UI,MUX: Legacy single-pod flow also supports POST/DELETE /api/v1/logs/stream -> EVENT_LOG_LINE on /ws/k8s
+
+    Operator->>UI: Close Drawer / Switch Target
+    UI->>WS: ws.close()
+    MUX->>Kubelet: Cancel Request Context (Close HTTP Stream)
 ```
 
 ---
@@ -404,58 +417,41 @@ stateDiagram-v2
 
 ### 5.1 Dynamic Cluster Health Index (CHI) Calculation Engine
 
-The Cluster Health Index ($CHI \in [0, 100]$) assesses cluster stability dynamically.
+The backend Cluster Health Index ($\text{CHI} \in [0, 100]$, implemented in [`health-calculator.service.ts`](../apps/api-server/src/services/health-calculator.service.ts)) evaluates unresolved persisted incidents per cluster:
 
-$$\text{CHI} = 100 - \sum \text{PodPenalties} - \sum \text{NodePenalties} - \sum \text{AlertPenalties}$$
+$$\text{CHI} = \max\left(0,\; 100 - \sum_{i \in I_{\text{active}}} w(\text{severity}(i))\right)$$
 
 ```mermaid
 flowchart TD
-    START(["Start CHI Calculation Cycle"]) --> FETCH["Fetch Cluster Workloads & Metrics<br/>(Pods, Nodes, Active Incidents)"]
-    FETCH --> INIT_SCORE["Initialize Base Score: 100.0"]
-    
-    INIT_SCORE --> POD_LOOP["Iterate All Pods"]
-    POD_LOOP --> CHECK_POD{"Pod Phase / Status?"}
-    
-    CHECK_POD -- "CrashLoopBackOff" --> PEN_CRASH["Deduct: -10 pts per pod<br/>+ (-2 pts * restartCount)"]
-    CHECK_POD -- "OOMKilled" --> PEN_OOM["Deduct: -15 pts per pod"]
-    CHECK_POD -- "Pending (> 5m)" --> PEN_PEND["Deduct: -5 pts per pod"]
-    CHECK_POD -- "Healthy / Running" --> POD_NEXT["No penalty"]
-    
-    PEN_CRASH --> POD_ACC["Accumulate Pod Penalties"]
-    PEN_OOM --> POD_ACC
-    PEN_PEND --> POD_ACC
-    POD_NEXT --> POD_ACC
-    
-    POD_ACC --> NODE_CHECK{"Any Node NotReady<br/>or MemoryPressure?"}
-    NODE_CHECK -- Yes --> PEN_NODE["Deduct: -25 pts per unhealthy node"]
-    NODE_CHECK -- No --> ALERT_CHECK
-    PEN_NODE --> ALERT_CHECK
-    
-    ALERT_CHECK{"Active Unresolved Incidents?"}
-    ALERT_CHECK -- "Critical" --> PEN_CRIT["Deduct: -10 pts per incident"]
-    ALERT_CHECK -- "Warning" --> PEN_WARN["Deduct: -3 pts per incident"]
-    ALERT_CHECK -- "None" --> CLAMP
-    PEN_CRIT --> CLAMP
-    PEN_WARN --> CLAMP
-    
-    CLAMP["Clamp Score: Max(0.0, Min(100.0, Score))"]
-    CLAMP --> RATING{"Assign Status Rating"}
-    
-    RATING -- "CHI >= 85" --> STATUS_H["status = 'HEALTHY'"]
-    RATING -- "60 <= CHI < 85" --> STATUS_D["status = 'DEGRADED'"]
-    RATING -- "CHI < 60" --> STATUS_C["status = 'CRITICAL'"]
-    
-    STATUS_H --> SAVE["INSERT INTO health_snapshots<br/>UPDATE clusters SET health_score"]
-    STATUS_D --> SAVE
-    STATUS_C --> SAVE
+    START(["Start CHI Calculation Cycle"]) --> FETCH["Query clusters & incidents tables<br/>(snapshotClusterHealth)"]
+    FETCH --> FILTER["Filter active incidents<br/>status != 'resolved'"]
+    FILTER --> INIT_SCORE["Initialize Base Score: 100"]
+
+    INIT_SCORE --> INC_LOOP["Iterate Active Incidents"]
+    INC_LOOP --> SEV_CHECK{"Incident Severity?"}
+
+    SEV_CHECK -- "critical" --> PEN_CRIT["Deduct -25 pts"]
+    SEV_CHECK -- "error" --> PEN_ERR["Deduct -15 pts"]
+    SEV_CHECK -- "warning (default)" --> PEN_WARN["Deduct -8 pts"]
+    SEV_CHECK -- "info" --> PEN_INFO["Deduct -3 pts"]
+
+    PEN_CRIT --> ACC["Accumulate Penalty Total"]
+    PEN_ERR --> ACC
+    PEN_WARN --> ACC
+    PEN_INFO --> ACC
+
+    ACC --> CLAMP["Clamp Score: Max(0, 100 - penalties)"]
+    CLAMP --> SAVE["DB Transaction:<br/>UPDATE clusters SET health_score<br/>INSERT INTO health_snapshots"]
     SAVE --> END(["Cycle Complete"])
 ```
+
+> **Companion Frontend Live Health Ratio:** For instantaneous UI feedback in `TopNavbar` and `LeaderboardView`, [`policyHpaHelpers.ts`](../apps/web/src/store/helpers/policyHpaHelpers.ts) also computes $\text{round}((\text{healthyPods} / \text{totalPods}) \times 100)$ over live WebSocket pod states (`A`–`F` grading).
 
 ### 5.2 Chaos Fault Injection & Reversible Resolution Pipeline
 
 ```mermaid
 flowchart TD
-    TRIGGER(["Operator Triggers Fault in UI<br/>(Crash, Latency, OOM, Scale Down)"]) --> AUTH_VERIFY{"Verify Workspace Role<br/>(ADMIN / OPERATOR permission)"}
+    TRIGGER(["Operator Triggers Fault in UI<br/>(Crash, OOM Pressure, Scale Down)"]) --> AUTH_VERIFY{"Verify Workspace Role<br/>(ADMIN / MEMBER permission)"}
     
     AUTH_VERIFY -- Denied --> ERR_403["Return HTTP 403 Forbidden<br/>Toast: Insufficient Privileges"]
     AUTH_VERIFY -- Allowed --> DISPATCH["Forward Request to Go Streamer<br/>POST /api/v1/chaos/inject"]
@@ -499,21 +495,21 @@ flowchart TD
 
 | Architectural Construct | Source Implementation Link | Domain Owner |
 | :--- | :--- | :--- |
-| **Relational Schemas** | [`apps/api-server/src/db/schema/`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/db/schema) | **Vinit** |
-| **Crypto AES-256 Vault** | [`crypto.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/utils/crypto.ts) | **Vinit** |
-| **Health Calculation** | [`health-calculator.service.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/services/health-calculator.service.ts) | **Vinit** |
-| **Cluster Reconciler** | [`cluster-reconcile.worker.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/workers/cluster-reconcile.worker.ts) | **Vinit** |
-| **WebSocket Streaming Hub** | [`hub.go`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer/pkg/websocket/hub.go) | **Pranav** |
-| **Informer Manager** | [`cluster_manager.go`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer/pkg/k8s/cluster_manager.go) | **Pranav** |
-| **Config & Secret Informers** | [`config_informer.go`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer/pkg/k8s/config_informer.go) | **Pranav** |
-| **Chaos Testing Engine** | [`injector.go`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer/pkg/chaos/injector.go) | **Pranav** |
-| **Streaming UI Hook** | [`useK8sStream.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/hooks/useK8sStream.ts) | **Neha** |
-| **Topology Graph Store** | [`useTopologyStore.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/store/useTopologyStore.ts) | **Neha** |
-| **Chaos Store Slice & Helpers** | [`topologyWsSlice.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/store/slices/topologyWsSlice.ts), [`chaosHelpers.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/store/helpers/chaosHelpers.ts) | **Neha** |
-| **Dynamic Edge Routing** | [`K8sEdge.tsx`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/components/canvas/K8sEdge.tsx), [`layout.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/utils/layout.ts) | **Neha** |
-| **Micro-Honeycomb & Nodes** | [`K8sGroup.tsx`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/components/canvas/K8sGroup.tsx), [`K8sPod.tsx`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/components/canvas/K8sPod.tsx) | **Neha** |
-| **UI Primitives & Modals** | [`components/ui/`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/components/ui) | **Ishika** |
-| **Config & Drawer Overview** | [`ConfigOverviewSection.tsx`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/components/drawer/inspector/ConfigOverviewSection.tsx) | **Ishika** |
+| **Relational Schemas** | [`apps/api-server/src/db/schema/`](../apps/api-server/src/db/schema) | **Vinit** |
+| **Crypto AES-256 Vault** | [`crypto.ts`](../apps/api-server/src/utils/crypto.ts) | **Vinit** |
+| **Health Calculation** | [`health-calculator.service.ts`](../apps/api-server/src/services/health-calculator.service.ts) | **Vinit** |
+| **Cluster Reconciler** | [`cluster-reconcile.worker.ts`](../apps/api-server/src/workers/cluster-reconcile.worker.ts) | **Vinit** |
+| **WebSocket Streaming Hub** | [`hub.go`](../apps/k8s-streamer/pkg/websocket/hub.go) | **Pranav** |
+| **Informer Manager** | [`manager.go`](../apps/k8s-streamer/pkg/k8s/manager.go) | **Pranav** |
+| **Config & Secret Informers** | [`config_informer.go`](../apps/k8s-streamer/pkg/k8s/config_informer.go) | **Pranav** |
+| **Chaos Testing Engine** | [`injector.go`](../apps/k8s-streamer/pkg/chaos/injector.go) | **Pranav** |
+| **Streaming UI Hook** | [`useK8sStream.ts`](../apps/web/src/hooks/useK8sStream.ts) | **Neha** |
+| **Topology Graph Store** | [`useTopologyStore.ts`](../apps/web/src/store/useTopologyStore.ts) | **Neha** |
+| **Chaos Store Slice & Helpers** | [`topologyWsSlice.ts`](../apps/web/src/store/slices/topologyWsSlice.ts), [`chaosHelpers.ts`](../apps/web/src/store/helpers/chaosHelpers.ts) | **Neha** |
+| **Dynamic Edge Routing** | [`K8sEdge.tsx`](../apps/web/src/components/canvas/K8sEdge.tsx), [`layout.ts`](../apps/web/src/utils/layout.ts) | **Neha** |
+| **Micro-Honeycomb & Nodes** | [`K8sGroup.tsx`](../apps/web/src/components/canvas/K8sGroup.tsx), [`K8sPod.tsx`](../apps/web/src/components/canvas/K8sPod.tsx) | **Neha** |
+| **UI Primitives & Modals** | [`components/ui/`](../apps/web/src/components/ui) | **Ishika** |
+| **Config & Drawer Overview** | [`ConfigOverviewSection.tsx`](../apps/web/src/components/drawer/inspector/ConfigOverviewSection.tsx) | **Ishika** |
 
 ---
 
@@ -675,7 +671,7 @@ The chaos engine allows platform engineers to inject synthetic disruptions into 
 │  │   - PURGES: All Data values, base64 payloads, and binary blocks                  │  │
 │  └──────────────────────────────────────────────────────────────────────────────────┘  │
 │       │                                                                                │
-│       ▼ WebSocket Event: EVENT_CONFIG_TOPOLOGY_UPDATED (Metadata Only)                 │
+│       ▼ WebSocket Events: EVENT_CONFIGMAP_MUTATED/DELETED, EVENT_SECRET_MUTATED/DELETED    │
 │  Web UI (Inspector Drawer - ConfigOverviewSection)                                    │
 │  - Displays mounted keys, secret classifications, and volume attachments               │
 │  - ZERO sensitive credentials stored or transmitted over the wire                      │
@@ -684,16 +680,20 @@ The chaos engine allows platform engineers to inject synthetic disruptions into 
 
 #### 7.4.1 Zero-Leak Security Architecture
 * **The Principle of Least Privilege:** Operators require architectural visibility into which configuration sources and credentials are bound to specific microservices, but observability tools must NEVER expose raw passwords, private keys, or API tokens.
-* **Sanitization in Go (`config_informer.go`):**
-  When `ConfigMapInformer` or `SecretInformer` triggers an event (`OnAdd`, `OnUpdate`), the handler constructs a sanitized descriptor:
+* **Sanitization in Go (`config_informer.go` & `events.go`):**
+  When `ConfigMapInformer` or `SecretInformer` triggers an event (`OnAdd`, `OnUpdate`, `OnDelete`), the handler constructs a sanitized `ConfigMapStatusDelta` or `SecretStatusDelta`:
   ```go
-  type SanitizedConfigResource struct {
-      Name              string    `json:"name"`
-      Namespace         string    `json:"namespace"`
-      Type              string    `json:"type"`              // e.g., "Opaque", "kubernetes.io/tls"
-      Keys              []string  `json:"keys"`              // Extracted key names ONLY
-      CreationTimestamp time.Time `json:"creationTimestamp"`
-      ResourceVersion   string    `json:"resourceVersion"`
+  type SecretStatusDelta struct {
+      Name               string            `json:"name"`
+      Namespace          string            `json:"namespace"`
+      Type               string            `json:"type"` // e.g. "Opaque", "kubernetes.io/tls"
+      Keys               []string          `json:"keys"` // Key names ONLY — never raw data values
+      DataCount          int               `json:"dataCount"`
+      Immutable          bool              `json:"immutable"`
+      Labels             map[string]string `json:"labels,omitempty"`
+      MountedByWorkloads []string          `json:"mountedByWorkloads,omitempty"`
+      CreatedAt          time.Time         `json:"createdAt"`
+      Age                string            `json:"age"`
   }
   ```
   `Data` and `StringData` maps are completely omitted from the serialization schema. Only the alphabetical key names are transmitted.

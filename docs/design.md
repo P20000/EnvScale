@@ -15,8 +15,8 @@ EnvScale is an enterprise-grade Kubernetes Observability and Gamified Governance
 - **NO Distracting Laser Animations**: Canvas edges and status indicators must use subtle, professional micro-animations—not flashy laser beam effects.
 
 ### ✅ Enterprise Graphic Guidelines
-- **Clean Floating Capsules**: Header Navbar and Navigation Sidebar float seamlessly as rounded capsule elements over a dark grid canvas.
-- **High-Contrast Dark Canvas**: Deep matte canvas backdrop (`#09090b`) with a subtle, non-intrusive 20px engineering grid.
+- **Clean Floating Capsules**: Header Navbar and Navigation Sidebar float seamlessly over a dark grid canvas.
+- **High-Contrast Dark Canvas**: Deep matte M3 canvas backdrop (`#111318`) with a subtle, non-intrusive 20px engineering dot grid (`#2B2F36`).
 - **Frosted Glassmorphism**: Glass surfaces use clean backdrop blur (`backdrop-blur-md`) with ultra-thin neutral borders (`border-neutral-800/80`).
 - **Material Design Iconography System**: All UI navigation controls, node badges, drawers, terminals, and modals strictly consume standardized **Google Material Design Icons** (`react-icons/md`).
 - **Precision Typography**: Clean, legible typography using **Inter** / **Outfit** with strict hierarchy and uppercase status badges.
@@ -58,33 +58,29 @@ The main application screen follows a 3-region floating layout:
   - **User Profile & Settings**: `👤` avatar menu for workspace members.
 
 ### Region 2: Left Floating Sidebar Capsule
-- **Container**: `fixed left-4 top-1/2 -translate-y-1/2 z-40 flex flex-col rounded-3xl bg-neutral-900/80 backdrop-blur-md border border-neutral-800 p-3 gap-4 shadow-xl`
+- **Container**: Fixed `56px` (`w-14`) vertical navigation rail (`LeftSidebar.tsx`) anchored below the top header.
 - **Navigation Icons**:
-  1. `🔀` **Topology View**: Main React Flow visual graph.
-  2. `⚠️` **Incidents & Alert Policies**: Active alerts, severity logs, and threshold rules.
-  3. `📈` **Metrics Inspector**: CPU, Memory, and Pod restart analytics.
-  4. `🏆` **Gamified Leaderboard**: Cluster Health Index score, streaks, and member rankings.
-  5. `⚙️` **Workspace Settings**: RBAC permissions, encrypted Kubeconfig vault, and API keys.
+  1. **Topology View**: Main React Flow visual graph.
+  2. **Logs Explorer**: Universal multi-container log multiplexer & diagnostics panel.
+  3. **Incidents & Alert Policies**: Active alerts, severity logs, and threshold rules.
+  4. **Metrics Inspector**: CPU, Memory, and top resource-consuming pods analytics.
+  5. **Gamified Leaderboard**: Cluster Health Index score, streaks, and member rankings.
+  6. **Workspace Settings**: Clusters & AES-256 vault, outbound webhooks, preferences, and API tokens.
 
 ### Region 3: Center React Flow Canvas
-- **Backdrop**: `#09090b` matte dark canvas with custom React Flow `<Background variant="dots" gap={20} size={1} color="#27272a" />`.
-- **Controls**: Minimalist zoom/pan controls anchored to the bottom-left of the canvas.
+- **Backdrop**: `#111318` matte dark canvas with custom React Flow `<Background variant="dots" gap={20} size={1} color="#2B2F36" />`.
+- **Controls**: Minimalist zoom/pan controls and top-right floating action capsule (`Vertical`/`Horizontal` layout, `Auto Layout`, `Recenter View`, `Storage Visible`, `Node Boxes`, `Show/Hide Done Jobs`).
 
 ### Region 4: Right Slide-out Inspector Drawer (Contextual)
-- **Container**: Slides out smoothly from the right (`width: 420px`) when any custom K8s node or pod on the canvas is clicked.
+- **Container**: Slides out smoothly from the right (`InspectorDrawer.tsx`) when any custom K8s node or pod on the canvas is clicked.
 - **Content Panels**:
-  - **Overview**: Pod status, namespace, IP address, restarts count, node assignment.
-  - **Live Logs**: Real-time streaming stdout/stderr log tailing console (`kubectl logs -f`).
-  - **Resource Usage**: Sparkline charts for CPU usage (`mcores`) and Memory consumption (`MiB`).
-  - **Chaos Testing Engine**: Action buttons for fault injection (`Simulate Crash`, `Inject Network Latency`, `Trigger OOM`).
+  - **Overview**: Status, namespace, IP, restarts, probes, storage/snapshots, HPA, PDB, NetworkPolicy, ResourceQuota, RBAC, and ConfigMap/Secret key inventories.
+  - **Live Logs**: Real-time streaming stdout/stderr log tailing console.
+  - **Metrics**: Real-time CPU usage (`mcores`) and Memory consumption (`MiB`) views.
+  - **Chaos Testing Engine**: Fault injection actions (`crash`, `oom-pressure`, `scale-down`) with PDB safety checks and 1-click fault healing.
 
 ---
 
-## 3. Color Tokens & Theme System
-
-All styles are configured via CSS variables and Tailwind CSS tokens in `apps/web/src/index.css` and `apps/web/tailwind.config.js`.
-
-### 3.1. Core Surface & Background Tokens
 ## 3. Color Tokens & Theme System (Material Design 3 Dark Theme)
 
 All styles are configured via CSS variables and Tailwind CSS tokens in `apps/web/src/index.css` and `apps/web/tailwind.config.js`.
@@ -165,14 +161,16 @@ Custom nodes in `apps/web/src/components/canvas/` must follow professional graph
 - **Body**: Status indicator dot, status text (`Running`, `CrashLoopBackOff`), restart count badge (`Restarts: 3`).
 - **Handles**: Inherits connections from its parent group; strictly internal visual representation inside the topology.
 
-### C. `K8sService` (Kubernetes Service / Ingress)
-- Pill-shaped node representing Ingress / ClusterIP / LoadBalancer endpoints.
+### D. `K8sService` (Kubernetes Service / Ingress)
+- Pill-shaped node representing Ingress / ClusterIP / LoadBalancer / Headless DNS endpoints.
 - Displays target port (e.g., `:8080`, `:443`) and routes traffic to matching Pod selectors.
 
-### D. Graph Edge Styling
-- Edge type: `argo` or `smoothstep` with radius `8`.
+### E. Graph Edge Styling
+- Edge type: `k8sEdge` (aliased to `argo`) or `smoothstep` with radius `8`.
 - Base stroke color: `#515660`, width `2px`.
 - Active traffic edge: Animated subtle stroke dash array (`stroke-dasharray: 5`, duration `1.5s`) for active request flows.
+
+> For the full catalog of all **13 custom React Flow node components** (`K8sIngress`, `K8sService`, `K8sGroup`, `K8sStatefulSet`, `K8sWorkload`, `K8sPod`, `K8sNode`, `K8sNodeBoundary`, `K8sPVC`, `K8sDaemonSet`, `K8sCronJob`, `K8sJob`, `K8sCompletedJobsNode`) and custom edges, see [Frontend Views & Interactions](frontend-views-and-interactions.md#7-complete-react-flow-node--edge-catalog-appswebsrccomponentscanvas--flow).
 
 ---
 
@@ -180,7 +178,7 @@ Custom nodes in `apps/web/src/components/canvas/` must follow professional graph
 
 - **Material Design 3 (M3) Nested Proportions**: Enforce strict harmonic border radiuses across all dialogs and modals. Inner element radii must equal Outer radius minus padding.
 - **Surface Reality**: Flat, high-contrast, structurally precise structural layers.
-- **Font Family**: Inter, system-ui, sans-serif.
+- **Font Family**: Inter / Plus Jakarta Sans / Geist, system-ui, sans-serif.
 - **Button Hover States**: `hover:bg-[#23262D] transition-all duration-200 ease-out active:scale-95`.
 - **Node Selection Highlight**: Selected node receives a crisp 2px primary border (`border-[#A8C7FA]`) with double ring (`#284568` / `#D3E3FD`).
 - **Drawer Motion**: Smooth slide-in transition (`transition-transform duration-300 ease-in-out`).
@@ -189,9 +187,9 @@ Custom nodes in `apps/web/src/components/canvas/` must follow professional graph
 
 ## 6. Implementation Checklist for Neha & Ishika
 
-- [ ] Update `apps/web/src/index.css` with core color tokens and glassmorphism utility classes.
-- [ ] Implement `TopNavbar.tsx` capsule component with workspace/cluster dropdown.
-- [ ] Implement `LeftSidebar.tsx` floating icon navigation capsule.
-- [ ] Build custom React Flow graph nodes (`K8sNode.tsx`, `K8sPod.tsx`, `K8sService.tsx`).
-- [ ] Implement Dagre auto-layout graph utility (`apps/web/src/utils/layout.ts`).
-- [ ] Build `PodInspectorDrawer.tsx` slide-out panel with live log tailing console.
+- [x] Update `apps/web/src/index.css` with core color tokens and glassmorphism utility classes.
+- [x] Implement `TopNavbar.tsx` capsule component with workspace/cluster dropdown.
+- [x] Implement `LeftSidebar.tsx` floating icon navigation capsule.
+- [x] Build custom React Flow graph nodes (`K8sNode.tsx`, `K8sPod.tsx`, `K8sService.tsx`, and extended workload/storage/boundary cards).
+- [x] Implement Dagre auto-layout graph utility (`apps/web/src/utils/layout.ts`).
+- [x] Build `InspectorDrawer.tsx` slide-out panel with live log tailing console.

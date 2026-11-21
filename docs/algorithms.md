@@ -12,26 +12,26 @@
 
 | Domain | Key Algorithm / Heuristic | Primary File Link | Time / Space Complexity |
 | :--- | :--- | :--- | :--- |
-| **Visual Topology** | Multi-Tier Sugiyama Hierarchical DAG Layout | [`layout.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/utils/layout.ts) | $O(V + E)$ layout passes |
-| **Visual Topology** | Dynamic Graph Edge Resolution & Health Propagation | [`edgeHelpers.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/store/helpers/edgeHelpers.ts) | $O(V_{svc} \cdot V_{pod})$ |
-| **Visual Topology** | Pod Rolling Update & Dual-Revision Diffing | [`rolloutHelpers.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/store/helpers/rolloutHelpers.ts) | $O(N_{rs} + N_{pod})$ |
-| **Telemetry Streaming** | FNV-1a Hash-Based Delta Deduplication Cache | [`dedup.go`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer/pkg/k8s/dedup.go) | $O(1)$ amortized lookup |
-| **Telemetry Streaming** | High-Throughput Frame Coalescing / Micro-Batching | [`client.go`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer/pkg/websocket/client.go) | $O(M)$ channel drain |
-| **Metric Evaluation** | Sliding-Window Alert Debounce & Hysteresis | [`evaluator.go`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer/pkg/k8s/evaluator.go) | $O(R \cdot P)$ per cycle |
-| **Anomaly Detection** | Deterministic Regex & State Machine Log Classifier | [`parser.go`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer/pkg/k8s/parser.go) | $O(L \cdot P)$ per log line |
-| **Chaos Engineering** | Reversible Fault Injection & Spec Patching | [`injector.go`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer/pkg/chaos/injector.go) | $O(1)$ patch execution |
-| **Distributed Pub/Sub** | Redis Fan-Out with Self-Echo Suppression | [`adapter.go`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer/pkg/redis/adapter.go) | $O(1)$ routing |
-| **Health & Governance** | Multi-Factor Cluster Health Index (CHI) Penalty Model | [`health-calculator.service.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/services/health-calculator.service.ts) | $O(I)$ active incidents |
-| **Gamification** | Longest Zero-Incident Streak & Composite Ranking | [`leaderboard.service.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/services/leaderboard.service.ts) | $O(D)$ streak + $O(W \log W)$ sort |
-| **Cryptography** | AES-256-GCM Authenticated Encryption with Random IV | [`crypto.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/utils/crypto.ts), [`crypto.go`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer/pkg/crypto/crypto.go) | $O(N)$ block cipher ops |
-| **Concurrency & Workers**| Mutex-Guarded Recursive Worker Scheduling | [`cluster-reconcile.worker.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/workers/cluster-reconcile.worker.ts) | Non-overlapping $O(C)$ |
+| **Visual Topology** | Multi-Tier Sugiyama Hierarchical DAG Layout | [`layout.ts`](../apps/web/src/utils/layout.ts) | $O(V + E)$ layout passes |
+| **Visual Topology** | Dynamic Graph Edge Resolution & Health Propagation | [`edgeHelpers.ts`](../apps/web/src/store/helpers/edgeHelpers.ts) | $O(V_{svc} \cdot V_{pod})$ |
+| **Visual Topology** | Pod Rolling Update & Dual-Revision Diffing | [`rolloutHelpers.ts`](../apps/web/src/store/helpers/rolloutHelpers.ts) | $O(N_{rs} + N_{pod})$ |
+| **Telemetry Streaming** | FNV-1a Hash-Based Delta Deduplication Cache | [`dedup.go`](../apps/k8s-streamer/pkg/k8s/dedup.go) | $O(1)$ amortized lookup |
+| **Telemetry Streaming** | High-Throughput Frame Coalescing / Micro-Batching | [`client.go`](../apps/k8s-streamer/pkg/websocket/client.go) | $O(M)$ channel drain |
+| **Metric Evaluation** | Sliding-Window Alert Debounce & Hysteresis | [`evaluator.go`](../apps/k8s-streamer/pkg/k8s/evaluator.go) | $O(R \cdot P)$ per cycle |
+| **Anomaly Detection** | Deterministic Regex & State Machine Log Classifier | [`parser.go`](../apps/k8s-streamer/pkg/k8s/parser.go) | $O(L \cdot P)$ per log line |
+| **Chaos Engineering** | Reversible Fault Injection & Spec Patching | [`injector.go`](../apps/k8s-streamer/pkg/chaos/injector.go) | $O(1)$ patch execution |
+| **Distributed Pub/Sub** | Redis Fan-Out with Self-Echo Suppression | [`adapter.go`](../apps/k8s-streamer/pkg/redis/adapter.go) | $O(1)$ routing |
+| **Health & Governance** | Multi-Factor Cluster Health Index (CHI) Penalty Model | [`health-calculator.service.ts`](../apps/api-server/src/services/health-calculator.service.ts) | $O(I)$ active incidents |
+| **Gamification** | Longest Zero-Incident Streak & Composite Ranking | [`leaderboard.service.ts`](../apps/api-server/src/services/leaderboard.service.ts) | $O(D)$ streak + $O(W \log W)$ sort |
+| **Cryptography** | AES-256-GCM Authenticated Encryption with Random IV | [`crypto.ts`](../apps/api-server/src/utils/crypto.ts), [`crypto.go`](../apps/k8s-streamer/pkg/crypto/crypto.go) | $O(N)$ block cipher ops |
+| **Concurrency & Workers**| Mutex-Guarded Recursive Worker Scheduling | [`cluster-reconcile.worker.ts`](../apps/api-server/src/workers/cluster-reconcile.worker.ts) | Non-overlapping $O(C)$ |
 
 ---
 
 ## 2. Frontend Topology & Graph Visualization Algorithms
 
 ### 2.1 Multi-Tier Hierarchical Graph Layout Algorithm (Extended Dagre / Sugiyama)
-- **Source File:** [`apps/web/src/utils/layout.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/utils/layout.ts)
+- **Source File:** [`apps/web/src/utils/layout.ts`](../apps/web/src/utils/layout.ts)
 - **Objective:** Dynamically layout complex Kubernetes clusters into an intuitive, readable architecture graph while isolating sidecar workloads, batch jobs, and infrastructure daemonsets.
 
 #### Algorithmic Formulation & Heuristic Phases:
@@ -72,25 +72,25 @@ flowchart TD
 ```
 
 #### 2.1.1 Persistent User Drag Positioning & Non-Destructive Live Streaming (Hybrid Local & Backend Persistence)
-- **Source Files:** [`apps/web/src/utils/layout.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/utils/layout.ts), [`apps/web/src/utils/layoutEdgeHelpers.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/utils/layoutEdgeHelpers.ts), [`apps/web/src/store/helpers/layoutStorage.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/store/helpers/layoutStorage.ts), [`apps/web/src/hooks/useClusterLayoutPersistence.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/hooks/useClusterLayoutPersistence.ts), [`apps/web/src/store/slices/topologyLayoutSlice.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/store/slices/topologyLayoutSlice.ts), [`apps/web/src/config/api.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/config/api.ts), [`apps/api-server/src/services/cluster.service.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/services/cluster.service.ts)
+- **Source Files:** [`apps/web/src/utils/layout.ts`](../apps/web/src/utils/layout.ts), [`apps/web/src/utils/layoutEdgeHelpers.ts`](../apps/web/src/utils/layoutEdgeHelpers.ts), [`apps/web/src/store/helpers/layoutStorage.ts`](../apps/web/src/store/helpers/layoutStorage.ts), [`apps/web/src/hooks/useClusterLayoutPersistence.ts`](../apps/web/src/hooks/useClusterLayoutPersistence.ts), [`apps/web/src/store/slices/topologyLayoutSlice.ts`](../apps/web/src/store/slices/topologyLayoutSlice.ts), [`apps/web/src/config/api.ts`](../apps/web/src/config/api.ts), [`apps/api-server/src/services/cluster.service.ts`](../apps/api-server/src/services/cluster.service.ts)
 - **Problem Formulation:** When WebSocket streaming deltas (`EVENT_POD_MUTATED`, `EVENT_BATCH_COMPLETE`) arrive at sub-second frequencies, graph layout functions triggered by state listeners recalculate tree hierarchies from scratch. Without coordinate memoization, this causes active mouse drags and custom arrangement geometries to snap back to default coordinates. Furthermore, users expect custom arrangements to persist seamlessly across browser reloads, user logouts, and different devices.
 - **Algorithmic Solution:**
   1. **Active Drag Immature Lock:** When React Flow emits `onNodesChange` with `node.dragging = true`, `getLayoutedElements` bypasses Dagre coordinates and strictly preserves the real-time cursor coordinate $(X_{\text{cursor}}, Y_{\text{cursor}})$.
-  2. **Scoped Browser Local Cache (`envscale-layout-user-${userId}-${clusterId}`):** On `onNodeDragStop`, terminal coordinates are quantized and written to `userNodePositions`. Simultaneously, [`saveLocalLayout`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/store/helpers/layoutStorage.ts) stores the coordinates in a dedicated local storage key scoped strictly by user and cluster ID. This cache is isolated from session tokens and is **not wiped** by `resetStore()` upon logout, ensuring immediate zero-latency rehydration when logging back in.
-  3. **Backend Database Persistence (PostgreSQL):** A debounced background sync (`apiSaveClusterLayout`) persists the user's custom layout to PostgreSQL via the REST API (`PUT /api/v1/clusters/:clusterId/layout`), storing coordinates within `clusters.metadata.userLayouts[userId]`. When logging in from another device or machine, [`apiGetClusterLayout`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/config/api.ts) rehydrates the custom arrangement automatically.
+  2. **Scoped Browser Local Cache (`envscale-layout-user-${userId}-${clusterId}`):** On `onNodeDragStop`, terminal coordinates are quantized and written to `userNodePositions`. Simultaneously, [`saveLocalLayout`](../apps/web/src/store/helpers/layoutStorage.ts) stores the coordinates in a dedicated local storage key scoped strictly by user and cluster ID. This cache is isolated from session tokens and is **not wiped** by `resetStore()` upon logout, ensuring immediate zero-latency rehydration when logging back in.
+  3. **Backend Database Persistence (PostgreSQL):** A debounced background sync (`apiSaveClusterLayout`) persists the user's custom layout to PostgreSQL via the REST API (`PUT /api/v1/clusters/:clusterId/layout`), storing coordinates within `clusters.metadata.userLayouts[userId]`. When logging in from another device or machine, [`apiGetClusterLayout`](../apps/web/src/config/api.ts) rehydrates the custom arrangement automatically.
   4. **Hybrid Coordinate Resolution:** During subsequent layout invocations:
      $$P(n) = \begin{cases} P_{\text{live}}(n) & \text{if } n.\text{dragging} = \text{true} \\ P_{\text{user}}(n) & \text{if } n.\text{id} \in \text{userNodePositions} \\ P_{\text{dock}}(n) & \text{if } n \in \text{DockNodes} \\ P_{\text{dagre}}(n) & \text{otherwise} \end{cases}$$
-  5. **Dynamic Edge Handle Re-projection:** As node coordinates diverge from standard horizontal/vertical ranks, [`calculateLayoutedEdges`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/utils/layoutEdgeHelpers.ts#L3) computes directional vectors $\Delta X = X_t - X_s$ and $\Delta Y = Y_t - Y_s$ across bounding centers, dynamically reassigning source/target connection handles (`source-right`, `target-left`, `source-bottom`, `target-top`) to maintain clean orthogonal or smoothstep paths without visual intersection.
+  5. **Dynamic Edge Handle Re-projection:** As node coordinates diverge from standard horizontal/vertical ranks, [`calculateLayoutedEdges`](../apps/web/src/utils/layoutEdgeHelpers.ts#L3) computes directional vectors $\Delta X = X_t - X_s$ and $\Delta Y = Y_t - Y_s$ across bounding centers, dynamically reassigning source/target connection handles (`source-right`, `target-left`, `source-bottom`, `target-top`) to maintain clean orthogonal or smoothstep paths without visual intersection.
   6. **Auto Layout Fallback & Multi-Tier Purge:** An explicit reset signal triggered by the "Auto Layout" button invokes `handleAutoLayoutReset`:
      - Clears the in-memory `userNodePositions` Zustand store.
-     - Deletes the local scoped key via [`clearLocalLayout`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/store/helpers/layoutStorage.ts).
-     - Issues a REST request (`DELETE /api/v1/clusters/:clusterId/layout`) via [`apiResetClusterLayout`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/config/api.ts) to remove the user's entry from PostgreSQL.
+     - Deletes the local scoped key via [`clearLocalLayout`](../apps/web/src/store/helpers/layoutStorage.ts).
+     - Issues a REST request (`DELETE /api/v1/clusters/:clusterId/layout`) via [`apiResetClusterLayout`](../apps/web/src/config/api.ts) to remove the user's entry from PostgreSQL.
      - Re-executes hierarchical Sugiyama Dagre placement with automated viewport centering (`fitView`).
 
 ---
 
 ### 2.2 Dynamic Graph Edge Resolution & Health Evaluation Algorithm
-- **Source File:** [`apps/web/src/store/helpers/edgeHelpers.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/store/helpers/edgeHelpers.ts)
+- **Source File:** [`apps/web/src/store/helpers/edgeHelpers.ts`](../apps/web/src/store/helpers/edgeHelpers.ts)
 - **Objective:** Infer dynamic topological dataflow relationships between Services and Pods using label selectors, while computing real-time aggregated edge status.
 
 #### Edge Health State Equation:
@@ -100,16 +100,17 @@ For a service connected to a pod group $P = \{p_1, p_2, \dots, p_n\}$:
 - Let $D = \sum [p \text{ is terminating}]$.
 
 $$\text{Edge Status} = \begin{cases} 
-\text{broken } (\text{crimson: } \mathtt{\#ef4444}), & \text{if } |P| = 0 \lor (F > 0 \land H = 0) \\
-\text{degraded } (\text{amber: } \mathtt{\#f59e0b}), & \text{if } F > 0 \land H > 0 \\
-\text{healthy } (\text{emerald: } \mathtt{\#10b981}), & \text{if } H > 0 \land F = 0 \\
-\text{idle / draining } (\text{slate: } \mathtt{\#52525b}), & \text{if } H = 0 \land F = 0 \land D > 0 
+\text{broken (empty group: } \mathtt{\#ef4444}\text{; failing: } \mathtt{\#F2B8B5}\text{)}, & \text{if } |P| = 0 \lor (F > 0 \land H = 0) \\
+\text{degraded } (\text{amber: } \mathtt{\#F4C26B}), & \text{if } F > 0 \land H > 0 \\
+\text{healthy } (\text{emerald: } \mathtt{\#6DD6A8}), & \text{if } H > 0 \land F = 0 \\
+\text{draining } (\text{slate: } \mathtt{\#777D87}), & \text{if } H = 0 \land F = 0 \land D > 0 \\
+\text{idle } (\text{muted: } \mathtt{\#515660}), & \text{otherwise}
 \end{cases}$$
 
 ---
 
 ### 2.3 Rolling Update & Dual-Revision Diffing Algorithm
-- **Source File:** [`apps/web/src/store/helpers/rolloutHelpers.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/store/helpers/rolloutHelpers.ts)
+- **Source File:** [`apps/web/src/store/helpers/rolloutHelpers.ts`](../apps/web/src/store/helpers/rolloutHelpers.ts)
 - **Objective:** Detect live Kubernetes Deployment rollouts in progress by analyzing ReplicaSet revisions, template hashes, and replica ratios.
 
 #### Steps:
@@ -122,7 +123,7 @@ $$\text{Edge Status} = \begin{cases}
 ---
 
 ### 2.4 Log Stream Parsing, ANSI Stripping & Run-Length Deduplication Algorithm
-- **Source Files:** [`apps/web/src/utils/logParser.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/utils/logParser.ts), [`apps/web/src/utils/logAggregator.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/utils/logAggregator.ts)
+- **Source Files:** [`apps/web/src/utils/logParser.ts`](../apps/web/src/utils/logParser.ts), [`apps/web/src/utils/logAggregator.ts`](../apps/web/src/utils/logAggregator.ts)
 - **Objective:** Transform high-velocity stdout/stderr logs into structured events without crashing the browser thread.
 
 #### Algorithmic Mechanisms:
@@ -142,7 +143,7 @@ $$\text{Edge Status} = \begin{cases}
 ## 3. Real-Time Telemetry & Streaming Gateway Algorithms
 
 ### 3.1 Hash-Based Delta Deduplication Cache (`DedupCache`)
-- **Source File:** [`apps/k8s-streamer/pkg/k8s/dedup.go`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer/pkg/k8s/dedup.go)
+- **Source File:** [`apps/k8s-streamer/pkg/k8s/dedup.go`](../apps/k8s-streamer/pkg/k8s/dedup.go)
 - **Objective:** Eliminate redundant WebSocket events generated by Kubernetes Informer periodic re-syncs when resource states have not changed.
 
 #### Algorithmic Mechanism:
@@ -158,7 +159,7 @@ $$\text{Edge Status} = \begin{cases}
 ---
 
 ### 3.2 High-Throughput WebSocket Frame Coalescing / Micro-Batching
-- **Source File:** [`apps/k8s-streamer/pkg/websocket/client.go`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer/pkg/websocket/client.go)
+- **Source File:** [`apps/k8s-streamer/pkg/websocket/client.go`](../apps/k8s-streamer/pkg/websocket/client.go)
 - **Objective:** Maximize WebSocket throughput and minimize TCP/TLS frame overhead during high-density cluster event spikes.
 
 #### Algorithmic Mechanism:
@@ -171,7 +172,7 @@ $$\text{Edge Status} = \begin{cases}
 ---
 
 ### 3.3 Sliding-Window Alert Debounce & Hysteresis Algorithm (`MetricEvaluator`)
-- **Source File:** [`apps/k8s-streamer/pkg/k8s/evaluator.go`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer/pkg/k8s/evaluator.go)
+- **Source File:** [`apps/k8s-streamer/pkg/k8s/evaluator.go`](../apps/k8s-streamer/pkg/k8s/evaluator.go)
 - **Objective:** Evaluate cluster metrics against dynamic alert rules without flapping alerts due to transient spikes.
 
 #### State Machine & Evaluation Loop:
@@ -188,7 +189,7 @@ For each violation key $V_k = (\text{clusterId}, \text{namespace}, \text{podName
 ---
 
 ### 3.4 Deterministic Regex & State Machine Anomaly Classifier
-- **Source File:** [`apps/k8s-streamer/pkg/k8s/parser.go`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer/pkg/k8s/parser.go)
+- **Source File:** [`apps/k8s-streamer/pkg/k8s/parser.go`](../apps/k8s-streamer/pkg/k8s/parser.go)
 - **Objective:** Classify unstructured log outputs and Kubelet status events into standardized incident severity tiers.
 
 #### Classification Table:
@@ -204,7 +205,7 @@ For each violation key $V_k = (\text{clusterId}, \text{namespace}, \text{podName
 ---
 
 ### 3.5 Reversible Chaos Fault Injection Algorithm
-- **Source File:** [`apps/k8s-streamer/pkg/chaos/injector.go`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer/pkg/chaos/injector.go)
+- **Source File:** [`apps/k8s-streamer/pkg/chaos/injector.go`](../apps/k8s-streamer/pkg/chaos/injector.go)
 - **Objective:** Inject deliberate operational failures to validate resilience and automated recovery pipelines, with state-preserving reversals.
 
 #### Supported Fault Operations:
@@ -222,7 +223,7 @@ For each violation key $V_k = (\text{clusterId}, \text{namespace}, \text{podName
 ---
 
 ### 3.6 Redis Pub/Sub Distributed Fan-Out with Self-Echo Suppression
-- **Source File:** [`apps/k8s-streamer/pkg/redis/adapter.go`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer/pkg/redis/adapter.go)
+- **Source File:** [`apps/k8s-streamer/pkg/redis/adapter.go`](../apps/k8s-streamer/pkg/redis/adapter.go)
 - **Objective:** Enable horizontal scaling across multiple streamer replicas while preventing message replication loops.
 
 #### Algorithmic Formulation:
@@ -240,7 +241,7 @@ For each violation key $V_k = (\text{clusterId}, \text{namespace}, \text{podName
 ## 4. Backend Health, Governance & Gamification Algorithms
 
 ### 4.1 Multi-Factor Cluster Health Index (CHI) Algorithm
-- **Source File:** [`apps/api-server/src/services/health-calculator.service.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/services/health-calculator.service.ts)
+- **Source File:** [`apps/api-server/src/services/health-calculator.service.ts`](../apps/api-server/src/services/health-calculator.service.ts)
 - **Objective:** Quantify aggregate cluster health into a continuous metric between $0.00$ and $100.00$.
 
 #### Mathematical Formulation:
@@ -263,10 +264,12 @@ $$\text{Score} = \max(0, 100 - P)$$
 
 Periodic snapshots are executed on background workers to maintain historical time-series logs in `health_snapshots`.
 
+> **Companion Live Frontend Health Ratio ([`policyHpaHelpers.ts`](../apps/web/src/store/helpers/policyHpaHelpers.ts)):** For sub-second UI feedback in `TopNavbar` and `LeaderboardView` before DB snapshots refresh, `calculateClusterHealthScore(pods)` computes $\text{round}((\text{healthyCount} / \text{totalCount}) \times 100)$ across non-system pods (`kube-*` and `local-path-storage` excluded unless no user pods exist) and assigns letter grades `A` ($\ge 90$), `B` ($\ge 75$), `C` ($\ge 60$), `D` ($\ge 45$), or `F` ($< 45$).
+
 ---
 
 ### 4.2 Consecutive Zero-Incident Streak & Composite Leaderboard Ranking
-- **Source File:** [`apps/api-server/src/services/leaderboard.service.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/services/leaderboard.service.ts)
+- **Source File:** [`apps/api-server/src/services/leaderboard.service.ts`](../apps/api-server/src/services/leaderboard.service.ts)
 - **Objective:** Score and gamify engineering teams running microservices in production workspaces.
 
 #### Algorithmic Steps:
@@ -289,7 +292,7 @@ Periodic snapshots are executed on background workers to maintain historical tim
 ---
 
 ### 4.3 Mutex-Guarded Non-Overlapping Worker Scheduling
-- **Source File:** [`apps/api-server/src/workers/cluster-reconcile.worker.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/workers/cluster-reconcile.worker.ts)
+- **Source File:** [`apps/api-server/src/workers/cluster-reconcile.worker.ts`](../apps/api-server/src/workers/cluster-reconcile.worker.ts)
 - **Objective:** Reconcile cluster states against the streamer gateway without causing thundering herd problems or overlapping execution loops.
 
 #### Algorithmic Mechanism:
@@ -303,7 +306,7 @@ Periodic snapshots are executed on background workers to maintain historical tim
 ## 5. Cryptography, Identity & Security Algorithms
 
 ### 5.1 AES-256-GCM Authenticated Encryption for Cluster Secrets
-- **Source Files:** [`apps/api-server/src/utils/crypto.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/utils/crypto.ts), [`apps/k8s-streamer/pkg/crypto/crypto.go`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer/pkg/crypto/crypto.go)
+- **Source Files:** [`apps/api-server/src/utils/crypto.ts`](../apps/api-server/src/utils/crypto.ts), [`apps/k8s-streamer/pkg/crypto/crypto.go`](../apps/k8s-streamer/pkg/crypto/crypto.go)
 - **Objective:** Ensure cluster `Kubeconfig` credentials are never stored in plaintext and cannot be tampered with in transit or at rest.
 
 #### Cryptographic Specification:
@@ -317,14 +320,14 @@ Periodic snapshots are executed on background workers to maintain historical tim
 ---
 
 ### 5.2 Password Hashing & Adaptive Key Derivation (Bcrypt)
-- **Source File:** [`apps/api-server/src/services/auth.service.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/services/auth.service.ts)
+- **Source File:** [`apps/api-server/src/services/auth.service.ts`](../apps/api-server/src/services/auth.service.ts)
 - **Objective:** Defend user credentials against offline dictionary and brute-force GPU rainbow table attacks.
 - **Algorithm:** Blowfish-based adaptive key derivation function (`bcrypt`) with **cost factor $12$** ($2^{12} = 4096$ iterative rounds).
 
 ---
 
 ### 5.3 Opaque Refresh Token Generation & SHA-256 Storage
-- **Source File:** [`apps/api-server/src/services/auth.service.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/services/auth.service.ts)
+- **Source File:** [`apps/api-server/src/services/auth.service.ts`](../apps/api-server/src/services/auth.service.ts)
 - **Objective:** Implement secure token rotation with zero database token exposure.
 - **Generation:** 48 cryptographically secure random bytes encoded as base64url string ($384$ bits of entropy).
 - **Storage:** Database persists only the SHA-256 digest:
@@ -334,7 +337,7 @@ Periodic snapshots are executed on background workers to maintain historical tim
 ---
 
 ### 5.4 HMAC-SHA256 Token Signing with Algorithm Confusion Protection
-- **Source Files:** [`apps/api-server/src/middleware/auth.middleware.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/middleware/auth.middleware.ts), [`apps/k8s-streamer/pkg/websocket/auth.go`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer/pkg/websocket/auth.go)
+- **Source Files:** [`apps/api-server/src/middleware/auth.middleware.ts`](../apps/api-server/src/middleware/auth.middleware.ts), [`apps/k8s-streamer/pkg/websocket/auth.go`](../apps/k8s-streamer/pkg/websocket/auth.go)
 - **Objective:** Authenticate REST API and WebSocket connections using signed JWT payloads while preventing signature bypass attacks.
 - **Signature Algorithm:** HMAC using SHA-256 hash function (`HS256`).
 - **Algorithm Confusion Guard:** Explicitly verifies that incoming tokens use the expected symmetric HMAC signing method (`jwt.SigningMethodHMAC` in Go), rejecting tokens crafted with asymmetric `none` or RSA algorithms.
@@ -342,7 +345,7 @@ Periodic snapshots are executed on background workers to maintain historical tim
 ---
 
 ### 5.5 Fixed-Window API Rate Limiting
-- **Source File:** [`apps/api-server/src/middleware/rate-limit.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/middleware/rate-limit.ts)
+- **Source File:** [`apps/api-server/src/middleware/rate-limit.ts`](../apps/api-server/src/middleware/rate-limit.ts)
 - **Objective:** Mitigate API Denial-of-Service and brute-force login attacks.
 - **Policies:**
   - **General API Limiter:** Fixed sliding window of 60 seconds, maximum 100 requests per IP.

@@ -2,18 +2,20 @@
 
 > **Target Audience:** Engineering Team & AI Assistant System  
 > **Repository:** `EnvScale` Monorepo  
-> **Last Updated:** August 28, 2026  
+> **Primary Modules:** [`apps/api-server/src/db/schema/`](../apps/api-server/src/db/schema), [`apps/api-server/src/lib/auth.ts`](../apps/api-server/src/lib/auth.ts), [`apps/api-server/src/services/auth.service.ts`](../apps/api-server/src/services/auth.service.ts)  
 > **Document Status:** Active Technical Reference
 
 ---
 
 ## Part I: Complete PostgreSQL Database Schema
 
-The database layer is managed using **PostgreSQL** and **Drizzle ORM** (`apps/api-server/src/db/schema`). All primary keys use `UUIDv4` generated via `defaultRandom()`. Cascading foreign keys and optimized B-Tree indexes enforce transactional data integrity and tenant isolation.
+The database layer is managed using **PostgreSQL 16** and **Drizzle ORM** ([`apps/api-server/src/db/schema/`](../apps/api-server/src/db/schema)) across **12 canonical tables**. Relational keys use `UUIDv4` (`defaultRandom()`) for core domain tables and UUID-formatted `TEXT` identifiers (`$defaultFn(() => randomUUID())`) for Better Auth tables. Cascading foreign keys and B-Tree indexes enforce referential integrity and tenant isolation.
 
 ```mermaid
 erDiagram
     users ||--o{ refresh_tokens : "has"
+    users ||--o{ sessions : "establishes"
+    users ||--o{ accounts : "authenticates via"
     users ||--o{ workspaces : "owns"
     users ||--o{ workspace_members : "belongs to"
     workspaces ||--o{ workspace_members : "contains"
@@ -27,22 +29,36 @@ erDiagram
     alert_policies ||--o{ incidents : "triggers"
     users ||--o{ incidents : "acknowledges"
     users ||--o{ incidents : "resolves"
+    verifications {
+        text id PK
+        text identifier
+        text value
+        timestamp expires_at
+    }
+    jwks {
+        text id PK
+        text public_key
+        text private_key
+        text alg
+    }
 ```
 
 ---
 
 ### 1. `users` Table
-Stores user accounts, password hashes, and global role assignments.
+Stores user accounts, optional credential hashes, OAuth identity flags, and global role assignments.
 
-* **File:** `apps/api-server/src/db/schema/users.ts`
+* **File:** [`apps/api-server/src/db/schema/users.ts`](../apps/api-server/src/db/schema/users.ts)
 
 | Column Name | Data Type | Constraints / Default | Description |
 | :--- | :--- | :--- | :--- |
 | `id` | `UUID` | Primary Key, `defaultRandom()` | Unique user identifier |
 | `email` | `VARCHAR(255)` | `NOT NULL`, `UNIQUE` | User email address |
 | `name` | `VARCHAR(255)` | `NOT NULL` | Display name |
-| `password_hash` | `TEXT` | `NOT NULL` | `bcrypt` hashed password (cost factor 12) |
-| `avatar` | `VARCHAR(500)` | Nullable | Avatar image URL |
+| `email_verified` | `BOOLEAN` | `NOT NULL`, Default: `false` | Email verification status (Better Auth) |
+| `image` | `TEXT` | Nullable | OAuth provider avatar image URL |
+| `password_hash` | `TEXT` | Nullable | `bcrypt` hashed password (cost factor 12); `NULL` for OAuth-only accounts |
+| `avatar` | `VARCHAR(500)` | Nullable | Legacy / custom avatar image URL |
 | `role` | `VARCHAR(50)` | Default: `'user'` | Global role (`user`, `admin`) |
 | `is_active` | `BOOLEAN` | Default: `true` | Account active state |
 | `last_login` | `TIMESTAMP` | Nullable | Timestamp of last login |
@@ -220,9 +236,88 @@ Triggered cluster alert instances and remediation history log.
 
 ---
 
+### 9. `sessions` Table (Better Auth)
+Stores server-side browser sessions issued by Better Auth OAuth and credential sign-in flows.
+
+* **File:** [`apps/api-server/src/db/schema/auth.ts`](../apps/api-server/src/db/schema/auth.ts)
+
+| Column Name | Data Type | Constraints / Default | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | `TEXT` | Primary Key, `$defaultFn(randomUUID)` | Session identifier |
+| `expires_at` | `TIMESTAMP` | `NOT NULL` | Session expiration timestamp |
+| `token` | `TEXT` | `NOT NULL`, `UNIQUE` | Unique session cookie token |
+| `ip_address` | `TEXT` | Nullable | Client IP address |
+| `user_agent` | `TEXT` | Nullable | Client User-Agent header |
+| `user_id` | `UUID` | `NOT NULL`, FK -> `users.id` (CASCADE) | Authenticated user ID |
+| `created_at` | `TIMESTAMP` | `NOT NULL`, `defaultNow()` | Creation timestamp |
+| `updated_at` | `TIMESTAMP` | `NOT NULL`, `defaultNow()` | Last update timestamp |
+
+* **Indexes:** `sessions_user_id_idx` on `user_id`, `sessions_token_idx` (Unique) on `token`.
+
+---
+
+### 10. `accounts` Table (Better Auth)
+Maps external OAuth (`google`, `github`) and credential accounts to `users`.
+
+* **File:** [`apps/api-server/src/db/schema/auth.ts`](../apps/api-server/src/db/schema/auth.ts)
+
+| Column Name | Data Type | Constraints / Default | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | `TEXT` | Primary Key, `$defaultFn(randomUUID)` | Account link ID |
+| `account_id` | `TEXT` | `NOT NULL` | Provider-scoped account ID |
+| `provider_id` | `TEXT` | `NOT NULL` | `'google'` \| `'github'` \| `'credential'` |
+| `user_id` | `UUID` | `NOT NULL`, FK -> `users.id` (CASCADE) | Linked EnvScale user |
+| `access_token` | `TEXT` | Nullable | Provider OAuth access token |
+| `refresh_token` | `TEXT` | Nullable | Provider OAuth refresh token |
+| `id_token` | `TEXT` | Nullable | OIDC ID token |
+| `access_token_expires_at` | `TIMESTAMP` | Nullable | Provider access token expiry |
+| `refresh_token_expires_at` | `TIMESTAMP` | Nullable | Provider refresh token expiry |
+| `scope` | `TEXT` | Nullable | Granted OAuth scopes |
+| `password` | `TEXT` | Nullable | Better Auth credential password hash |
+| `issuer` | `TEXT` | Nullable | OIDC issuer URL |
+| `created_at` | `TIMESTAMP` | `NOT NULL`, `defaultNow()` | Link creation time |
+| `updated_at` | `TIMESTAMP` | `NOT NULL`, `defaultNow()` | Link update time |
+
+* **Indexes:** `accounts_user_id_idx` on `user_id`.
+
+---
+
+### 11. `verifications` Table (Better Auth)
+Stores short-lived OAuth state, PKCE, and verification challenges.
+
+* **File:** [`apps/api-server/src/db/schema/auth.ts`](../apps/api-server/src/db/schema/auth.ts)
+
+| Column Name | Data Type | Constraints / Default | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | `TEXT` | Primary Key, `$defaultFn(randomUUID)` | Verification ID |
+| `identifier` | `TEXT` | `NOT NULL` | Target identifier (email / state key) |
+| `value` | `TEXT` | `NOT NULL` | Verification token or challenge value |
+| `expires_at` | `TIMESTAMP` | `NOT NULL` | Expiration timestamp |
+| `created_at` | `TIMESTAMP` | `NOT NULL`, `defaultNow()` | Creation timestamp |
+| `updated_at` | `TIMESTAMP` | `NOT NULL`, `defaultNow()` | Update timestamp |
+
+---
+
+### 12. `jwks` Table (Better Auth JWT Plugin)
+Stores key pairs managed by the Better Auth `jwt` plugin.
+
+* **File:** [`apps/api-server/src/db/schema/auth.ts`](../apps/api-server/src/db/schema/auth.ts)
+
+| Column Name | Data Type | Constraints / Default | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | `TEXT` | Primary Key, `$defaultFn(randomUUID)` | Key ID (`kid`) |
+| `public_key` | `TEXT` | `NOT NULL` | Public JWK payload |
+| `private_key` | `TEXT` | `NOT NULL` | Private JWK payload |
+| `alg` | `TEXT` | Nullable | Signing algorithm |
+| `crv` | `TEXT` | Nullable | Elliptic curve identifier (if applicable) |
+| `created_at` | `TIMESTAMP` | `NOT NULL`, `defaultNow()` | Key creation timestamp |
+| `expires_at` | `TIMESTAMP` | Nullable | Optional key expiration |
+
+---
+
 ## Part II: Complete Authentication & Security Architecture
 
-EnvScale uses a multi-layered security architecture comprising REST API authentication, RBAC middleware guards, real-time WebSocket handshake verification, and AES secret encryption.
+EnvScale uses a multi-layered security architecture comprising Better Auth OAuth (Google & GitHub), dual-token JWT authentication, multi-account session switching, RBAC middleware guards, WebSocket cluster-scoping, and AES-256-GCM secret encryption.
 
 ```mermaid
 sequenceDiagram
@@ -232,28 +327,27 @@ sequenceDiagram
     participant DB as PostgreSQL Database
     participant Streamer as K8s Streamer (Port 8080)
 
-    User->>REST: POST /api/v1/auth/login { email, password }
-    REST->>DB: Query user by email
-    REST->>REST: Verify password with bcrypt.compare()
-    REST->>DB: Store SHA-256 hashed refresh token
-    REST-->>User: Return { accessToken (15m), refreshToken (7d) }
-    
-    User->>User: Store accessToken in localStorage (envscale_auth_token)
+    User->>REST: POST /api/v1/auth/login or /api/auth/* (Google/GitHub OAuth)
+    REST->>DB: Verify credentials / OAuth session & store SHA-256 refresh token
+    REST-->>User: Return { accessToken (7d), refreshToken cookie (7d) }
+
+    User->>REST: GET /api/v1/auth/streamer-token (Bearer or Session Cookie)
+    REST-->>User: Return scoped JWT { allowedClusterIds, expiresIn: "7d" }
 
     Note over User,Streamer: Real-Time Streaming Gateway Connection
-    User->>Streamer: ws://localhost:8080/ws/k8s?clusterId=mini-todo&token=<accessToken>
-    Streamer->>Streamer: AuthenticateHandshake() - Verify HMAC signature with JWT_ACCESS_SECRET
-    alt Token Valid
+    User->>Streamer: ws://localhost:8080/ws/k8s?clusterId=<id>&token=<scopedJwt>
+    Streamer->>Streamer: AuthenticateHandshake() + CheckClusterAuthorization()
+    alt Token Valid & Cluster Authorized
         Streamer-->>User: HTTP 101 Switching Protocols (WebSocket Established)
-    else Token Missing/Invalid
-        Streamer-->>User: HTTP 401 Unauthorized
+    else Token Missing/Invalid or Forbidden
+        Streamer-->>User: HTTP 401 Unauthorized / 403 Forbidden
     end
 
     Note over User,REST: Protected REST API Resource Request
     User->>REST: GET /api/v1/workspaces/:id/clusters (Header: Bearer <accessToken>)
-    REST->>REST: requireAuth middleware checks JWT signature
+    REST->>REST: requireAuth middleware checks JWT signature or Better Auth session
     REST->>REST: requireWorkspaceRole("ADMIN", "MEMBER", "VIEWER") checks DB membership
-    REST->>DB: Fetch workspace clusters
+    REST->>DB: Fetch workspace clusters (kubeconfig excluded)
     REST-->>User: 200 OK Response
 ```
 
@@ -261,18 +355,27 @@ sequenceDiagram
 
 ### 1. Password Security
 * **Algorithm:** `bcrypt` with cost factor 12.
-* **Module:** `apps/api-server/src/services/auth.service.ts`
-* **Rules:** Plain text passwords are never stored or logged.
+* **Module:** [`apps/api-server/src/services/auth.service.ts`](../apps/api-server/src/services/auth.service.ts)
+* **Rules:** Plain text passwords are never stored or logged; OAuth-only users have `password_hash = NULL` and receive an explicit prompt to sign in with Google or GitHub on password login attempts.
 
-### 2. Dual-Token JWT Lifecycle
-* **Access Tokens:**
-  * Expiration: **15 minutes**.
-  * Payload: `{ sub: user.id, email: user.email, role: user.role }`.
+### 2. Better Auth OAuth & Dual-Token JWT Lifecycle
+* **Better Auth Engine ([`apps/api-server/src/lib/auth.ts`](../apps/api-server/src/lib/auth.ts)):**
+  * Mounted at `/api/auth/*` via `toNodeHandler(auth)` in [`index.ts`](../apps/api-server/src/index.ts), backed by `drizzleAdapter(db, { provider: "pg" })` mapped to `users`, `sessions`, `accounts`, `verifications`, and `jwks` with UUID primary keys (`generateId: "uuid"`).
+  * Dynamically enables **Google** (`prompt: "select_account"`, `accessType: "offline"`) and **GitHub** `socialProviders` when `GOOGLE_CLIENT_ID`/`SECRET` or `GITHUB_CLIENT_ID`/`SECRET` are configured, plus `emailAndPassword` (`autoSignIn: true`).
+  * Restricts cross-origin callbacks via `trustedOrigins` (`localhost:5173`, `localhost:3000`, `envscale.duckdns.org`, and `CORS_ORIGIN` entries) and enables the Better Auth `jwt` plugin (`secret: env.JWT_ACCESS_SECRET`, `expirationTime: "7d"`).
+* **Access Tokens (`createAccessToken`):**
+  * Expiration: **7 days** (`expiresIn: "7d"`).
+  * Payload: `{ sub: user.id, email: user.email, role: user.role, ...extraClaims }`.
   * Signed using: `JWT_ACCESS_SECRET` via HMAC SHA-256 (`HS256`).
 * **Refresh Tokens:**
-  * Expiration: **7 days** (168 hours).
-  * Storage: Generated via cryptographically secure random bytes (`randomBytes(48)`), hashed with SHA-256, and stored in `refresh_tokens` table.
-  * Rotation: Calling `rotateRefreshToken` revokes the previous token (`revokedAt = now()`) and issues a fresh token pair.
+  * Expiration: **7 days** (168 hours), delivered as `httpOnly`, `sameSite: "strict"` cookie scoped to `/api/v1/auth` (`secure: true` in production).
+  * Storage: Generated via cryptographically secure random bytes (`randomBytes(48)`), hashed with SHA-256, and stored in `refresh_tokens`.
+  * Rotation: `rotateRefreshToken` revokes the previous token (`revokedAt = now()`) and issues a fresh pair.
+* **Cluster-Scoped Streamer, Multi-Account, Service & Agent Tokens:**
+  * **`GET /api/v1/auth/streamer-token`:** Resolves `allowedClusterIds` via `getUserAccessibleClusterIds(userId, role)` (`["*"]` for global `ADMIN`, otherwise workspace cluster UUIDs and names) and issues a `7d` HS256 JWT for `k8s-streamer`.
+  * **`POST /api/v1/auth/switch-session`:** Accepts `{ accountId | email }` for multi-account UI switching, validates active user status, and returns a new cluster-scoped `7d` JWT alongside the user's default workspace.
+  * **Internal Service JWT (`createServiceToken`):** Issued by `api-server` when calling `k8s-streamer` (`sub: "api-server"`, `role: "ADMIN"`, `allowedClusterIds: ["*"]`, `expiresIn: "1h"`).
+  * **In-Cluster Agent JWT (`createAgentToken`):** Embedded into generated `agent.yaml` manifests (`sub: "agent-<clusterId>"`, `role: "MEMBER"`, `allowedClusterIds: [clusterId]`, `expiresIn: "365d"`).
 
 ### 3. REST API Access Control Middleware
 * **`requireAuth` Middleware:**
