@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Historical Pre-Implementation Proposal (Superseded):** This document captures an early Better Auth rollout draft (including legacy `:5000` port and `npm` examples). For the implemented 12-table Drizzle schema and Better Auth + JWT architecture, use [docs/db-and-auth-architecture.md](db-and-auth-architecture.md).
+
 Here is the architectural execution plan to integrate **Better Auth** with GitHub and Google OAuth, Drizzle ORM, and your existing Go WebSocket streamer (`k8s-streamer`).
 
 ---
@@ -27,7 +30,7 @@ Here is the architectural execution plan to integrate **Better Auth** with GitHu
 ```
 
 > **Cluster Lifecycle & Out-of-Order Startup Resilience:**  
-> For the complete specification on startup hydration, the recursive background cluster reconciliation worker, and frontend exponential backoff circuit breaking, see [docs/cluster-lifecycle-and-resilience.md](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/docs/cluster-lifecycle-and-resilience.md).
+> For the complete specification on startup hydration, the recursive background cluster reconciliation worker, and frontend exponential backoff circuit breaking, see [docs/cluster-lifecycle-and-resilience.md](cluster-lifecycle-and-resilience.md).
 
 ---
 

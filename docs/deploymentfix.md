@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Historical Engineering Handoff Log (Superseded):** For the current as-built AWS deployment runbook and CI/CD / SSM / release-manifest reference, use [docs/deployment.md](deployment.md) and [docs/cicd-and-environment-reference.md](cicd-and-environment-reference.md).
+
 # EnvScale — Final Architecture, Implementation & Deployment Master Plan
 
 **Document type:** Engineering handoff and execution specification  

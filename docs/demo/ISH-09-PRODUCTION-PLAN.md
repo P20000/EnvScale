@@ -59,7 +59,7 @@ Launch services in this exact order to avoid timing issues:
 **Session A — Frontend-only shots (Segments 0–2, Shots 001–011):**
 ```powershell
 # Terminal 1
-cd C:\Users\Dell\Desktop\EnvScale\apps\web
+cd <repo-root>/apps/web
 pnpm dev
 # Wait for: "  Local:   http://localhost:5173/"
 # Open Chrome → http://localhost:5173
@@ -72,25 +72,25 @@ pnpm dev
 # apps/web pnpm dev → localhost:5173
 
 # Terminal 2 — PostgreSQL + Redis via Docker
-cd C:\Users\Dell\Desktop\EnvScale
+cd <repo-root>
 docker compose -f docker-compose.dev.yml up -d
 # Wait for: postgres healthy, redis healthy (docker compose ps)
 
 # Terminal 3 — REST API server
-cd C:\Users\Dell\Desktop\EnvScale\apps\api-server
+cd <repo-root>/apps/api-server
 # Copy .env.example to .env and fill in secrets if not done already
 pnpm dev
 # Wait for: "EnvScale API listening on :3000"
 
 # Terminal 4 — Go K8s Streamer
-cd C:\Users\Dell\Desktop\EnvScale\apps\k8s-streamer
+cd <repo-root>/apps/k8s-streamer
 go run ./cmd/server/main.go
 # Wait for: "K8s Streamer listening :8080"
 # Look for: "Cluster registered: mini-todo" in stdout (auto-registers on startup)
 
 # Terminal 5 — Minikube (if not already running)
 minikube start
-kubectl apply -f C:\Users\Dell\Desktop\EnvScale\testing\k8s\
+kubectl apply -f <repo-root>/testing/k8s/
 # Wait for: kubectl get pods -n testing-todo → all Running
 
 # Verify stack is healthy before recording:
@@ -158,7 +158,7 @@ Scene setup:
 ```
 Capture → Scrolling Capture or Region → Window
 Video codec: H.264, 30fps, quality 80%
-Output folder: C:\Users\Dell\Desktop\EnvScale\docs\demo\recordings\
+Output folder: <repo-root>/docs/demo/recordings/
 ```
 
 ### Kap (macOS)
@@ -355,7 +355,7 @@ Before submitting the final video:
 The final MP4 file is **not committed to Git** because binary video files are inappropriate for a Git repository without LFS.
 
 ```
-Option A — Local: Keep at C:\Users\Dell\Desktop\EnvScale\docs\demo\EnvScale_ISH-09_Product_Demo.mp4
+Option A — Local: Keep at <repo-root>/docs/demo/EnvScale_ISH-09_Product_Demo.mp4
 Option B — Google Drive: Upload to the team's shared drive folder "EnvScale/Semester 5/Demo"
 Option C — YouTube (unlisted): Upload as an unlisted video; add the link to docs/demo/ISH-09-PRODUCTION-PLAN.md
 ```

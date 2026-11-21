@@ -2,6 +2,10 @@
 
 > **Document Purpose:** Comprehensive feature matrix and granular task breakdown for all team members. This document serves as the single source of truth for features, task IDs, and assignment logic synced with GitHub Issues & Project Board.
 
+> [!NOTE]
+> For detailed subsystem specifications covering all implemented features in the monorepo, browse the **[Modular Documentation Hub (`docs/README.md`)](README.md)**:
+> [In-Cluster Agent & Onboarding](in-cluster-agent-and-onboarding.md) · [K8s Workloads & Rollouts](k8s-workloads-and-rollouts.md) · [Storage & VolumeSnapshots](storage-and-volume-snapshots.md) · [Policies, Autoscaling & Quotas](policies-autoscaling-and-quotas.md) · [Logging, Metrics & Diagnostics](logging-metrics-and-diagnostics.md) · [Frontend Views & Interactions](frontend-views-and-interactions.md) · [Frontend State Engine](frontend-state-and-store-architecture.md) · [API & WebSocket Reference](api-and-websocket-reference.md) · [CI/CD & Env Reference](cicd-and-environment-reference.md) · [Developer Control Center](developer-control-center-and-tooling.md) · [System Architecture](system-architecture.md) · [Detailed Design](detailed-design.md) · [Algorithms](algorithms.md) · [DB & Auth Architecture](db-and-auth-architecture.md) · [Cluster Lifecycle & Resilience](cluster-lifecycle-and-resilience.md)
+
 ---
 
 ## Team Task Ownership Matrix
@@ -33,6 +37,7 @@
   - `alert_policies`: `id`, `workspace_id`, `name`, `metric_type`, `condition_operator`, `threshold_value`, `duration_seconds`, `severity`, `enabled`, `created_at`
   - `incidents`: `id`, `workspace_id`, `cluster_id`, `alert_policy_id`, `pod_name`, `namespace`, `status` (`TRIGGERED`, `ACKNOWLEDGED`, `RESOLVED`), `details`, `created_at`, `resolved_at`
   - `cluster_health_snapshots`: `id`, `cluster_id`, `score`, `active_pods`, `failing_pods`, `crash_streak_days`, `created_at`
+- **Schema Note:** The implemented Drizzle schema under `apps/api-server/src/db/schema/` spans 12 tables (`users`, `refresh_tokens`, `sessions`, `accounts`, `verifications`, `jwks`, `workspaces`, `workspace_members`, `clusters`, `health_snapshots`, `alert_policies`, `incidents`) — see [`db-and-auth-architecture.md`](db-and-auth-architecture.md).
 - **Files:** `apps/api-server/src/db/schema.ts`
 - **Acceptance Criteria:** `drizzle-kit check` and `drizzle-kit generate` succeed without syntax or relation errors.
 
@@ -53,7 +58,7 @@
   - `POST /api/v1/auth/refresh`
   - `GET /api/v1/auth/me`
 - **Files:** `apps/api-server/src/controllers/auth.controller.ts`, `apps/api-server/src/services/auth.service.ts`
-- **Acceptance Criteria:** Valid credentials return signed JWT access token (15m expiry) and HTTP-only refresh cookie.
+- **Acceptance Criteria:** Valid credentials return signed JWT access token (`7d` expiry) and HTTP-only refresh cookie (`7d`).
 
 #### [VIN-05] Workspace CRUD & RBAC Authorization Middleware
 - **Description:** Build REST endpoints for Workspace management and RBAC access control middleware (`ADMIN`, `MEMBER`, `VIEWER`).
@@ -79,7 +84,7 @@
 
 #### [VIN-06B] Cluster Lifecycle, Startup Hydration & Self-Healing Reconciler
 - **Description:** Automatic cluster hydration on `api-server` boot, dynamic status updates (`connected` vs `disconnected`), and a recursive background reconciliation worker that auto-reconnects clusters started out-of-order or after service restarts. Includes frontend exponential backoff circuit breaking.
-- **Documentation:** See full architectural spec in [docs/cluster-lifecycle-and-resilience.md](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/docs/cluster-lifecycle-and-resilience.md).
+- **Documentation:** See full architectural spec in [docs/cluster-lifecycle-and-resilience.md](cluster-lifecycle-and-resilience.md).
 - **Files:** `apps/api-server/src/services/cluster-sync.service.ts`, `apps/api-server/src/workers/cluster-reconcile.worker.ts`, `apps/web/src/hooks/useK8sStream.ts`
 - **Acceptance Criteria:** Offline clusters connect automatically once started without requiring UI reload or re-uploading kubeconfig. Non-overlapping execution guaranteed via recursive timer. Clean teardown on `SIGINT`/`SIGTERM`.
 
@@ -194,3 +199,22 @@
 - **[ISH-08]** 15-Slide Presentation Deck (PPT) for Project Defense.
 - **[ISH-09]** 3-Minute Product Video Demo Scripting & Editing.
 - **[ISH-10]** Cross-Browser Visual QA Audit & Mobile Responsive Layout Fixes.
+
+---
+
+## 5. Extended Kubernetes Observability, In-Cluster Agent & Governance Subsystems
+
+The following implemented platform capabilities extend the core PRN/VIN/NEH/ISH feature list and are documented in dedicated modular specs under [`docs/README.md`](README.md):
+
+| Feature Group | Key Implemented Capabilities | Detailed Specification |
+| :--- | :--- | :--- |
+| **Dual-Mode In-Cluster Agent & Onboarding** | Outbound WebSocket `runner.go` agent mode (`connectionType: 'agent'`), `agent.yaml` generator, `AgentRegistry`, 365-day cluster-scoped HS256 JWT (`CLUSTER_TOKEN`), 2-mode Connect Cluster Wizard (`direct` / `agent`) | [`in-cluster-agent-and-onboarding.md`](in-cluster-agent-and-onboarding.md) |
+| **Extended Workloads & Rollback Engine** | Conflict-safe 1-click Deployment Rollback (`rollback_handler.go`), StatefulSet ordinal blades & headless DNS directory, DaemonSets, Jobs/CronJobs/Completed Jobs badge, static mirror pod detection, liveness/readiness/startup probes | [`k8s-workloads-and-rollouts.md`](k8s-workloads-and-rollouts.md) |
+| **Storage & CSI VolumeSnapshots** | `ExtractPodVolumeClaims`, PVC/PV/StorageClass informers, dynamic `snapshot.storage.k8s.io/v1` VolumeSnapshot & VolumeSnapshotContent informers, clone-parent lineage, Tier-3 vertical drop routing | [`storage-and-volume-snapshots.md`](storage-and-volume-snapshots.md) |
+| **Autoscaling, Policies, Quotas & RBAC** | HPA v2 metric targets, NetworkPolicy ingress/egress visualization, PDB (`pdb_informer.go`) + Chaos Safety guardrails (`pkg/chaos/safety.go`), ResourceQuotas & LimitRanges, In-Cluster RBAC (`rbac_informer.go`) & 4-tier verb matrix | [`policies-autoscaling-and-quotas.md`](policies-autoscaling-and-quotas.md) |
+| **Universal Log Multiplexer & Metrics Pulse** | Multi-container `/api/v1/stream/logs` & `/ws/logs` multiplexer (`LogStreamManager`), `LogDiagnosticsPanel`, ANSI/JSON log parsing & run-length compression, 1s `startMetricsPulse` & `MetricsView` 60s rolling charts | [`logging-metrics-and-diagnostics.md`](logging-metrics-and-diagnostics.md) |
+| **Canvas Boundaries, Settings Suite & UX** | Physical `K8sNodeBoundary` host containers with AWS zone/instance labels, app shell & multi-account switcher, 13 custom React Flow node types + `K8sEdge`/`ArgoEdge`, keyboard undo/redo + physical deletion (`routes_resource.go`), 4 Settings tabs, Incident/Alert Rule Builder, Leaderboard, Landing Page, and M3 UI primitives | [`frontend-views-and-interactions.md`](frontend-views-and-interactions.md) |
+| **Client-Side State Engine** | 5 Zustand stores (`useTopologyStore`, `useAuthStore`, `useUIStore`, `useMetricsStore`, `useAlertStore`), 6 topology slices (`topologyWsSlice`, `topologySnapshotHandler`, `topologyLayoutSlice`, etc.), and 16 domain reducers | [`frontend-state-and-store-architecture.md`](frontend-state-and-store-architecture.md) |
+| **REST & WebSocket Protocol Contract** | Complete `api-server` & `k8s-streamer` HTTP route matrix, RBAC guards, Zod validation schemas, JSON payload examples, HTTP error catalog, `WSEventEnvelope`, and `ClusterSnapshot`/`EVENT_*` field specs | [`api-and-websocket-reference.md`](api-and-websocket-reference.md) |
+| **CI/CD, Release Guards & Env Matrix** | GitHub Actions (`ci.yml`, `cd.yml`, `foundation.yml`), release manifest & runtime safety scripts (`deployment/scripts/`), SSM secret sync, and complete monorepo env variable contract | [`cicd-and-environment-reference.md`](cicd-and-environment-reference.md) |
+| **Developer Control Center & Tooling** | Dual-mode `pnpm test-center` GTK4/Libadwaita desktop GUI & Rich CLI, Python local/K8s/chaos/AWS/EKS orchestrators (`scripts/lib/`), `db-backup.sh`, and Git `pre-push` hook | [`developer-control-center-and-tooling.md`](developer-control-center-and-tooling.md) |

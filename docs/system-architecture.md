@@ -1,9 +1,9 @@
 # EnvScale — System Architecture Specification & Block Diagram
 
 > **Document Purpose:** Comprehensive system architecture reference and structural block diagram for **EnvScale** — a multi-tenant Kubernetes observability and gamified governance platform.  
-> **Detailed Design:** See [`docs/detailed-design.md`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/docs/detailed-design.md) for formal UML diagrams, flowcharts, and ER models.  
+> **Detailed Design:** See [`docs/detailed-design.md`](detailed-design.md) for formal UML diagrams, flowcharts, and ER models.  
 > **Audience:** Core System Developers (Pranav, Vinit, Neha, Ishika), Architects, and Academic Reviewers.  
-> **Module Scope:** Monorepo root, [`apps/web`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web), [`apps/api-server`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server), [`apps/k8s-streamer`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer), and [`packages/types`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/packages/types).
+> **Module Scope:** Monorepo root, [`apps/web`](../apps/web), [`apps/api-server`](../apps/api-server), [`apps/k8s-streamer`](../apps/k8s-streamer), and [`packages/types`](../packages/types).
 
 ---
 
@@ -25,7 +25,7 @@ flowchart TB
         subgraph WEB_STATE ["Client State Management"]
             TOPO_STORE["Topology Store<br/>(useTopologyStore - Zustand)"]
             WS_CLIENT["Streaming Client Hook<br/>(useK8sStream - Backoff & Circuit Breaker)"]
-            AUTH_STORE["Auth Store & HTTP Client<br/>(Better Auth Client + Axios)"]
+            AUTH_STORE["Auth Store & HTTP Client<br/>(Better Auth Client + Fetch API)"]
         end
 
         UI_SHELL --> CANVAS
@@ -81,19 +81,19 @@ flowchart TB
         %% Kubernetes Streaming Gateway
         subgraph STREAMER ["Kubernetes Streaming Gateway (apps/k8s-streamer - Go)"]
             direction TB
-            STREAM_ENTRY["HTTP & WS Server<br/>(:8080 - Gorilla WebSocket)"]
+            STREAM_ENTRY["HTTP & WS Server<br/>(:8080 - /ws/k8s, /ws/agent, /ws/logs)"]
             AUTH_VERIFY["HMAC JWT Validator<br/>(Shared JWT_ACCESS_SECRET)"]
             WS_HUB["WebSocket Hub & Multiplexer<br/>(Client Subscriptions & Room Fan-out)"]
             
             subgraph K8S_CORE ["Core Kubernetes Engine"]
-                CLUS_MGR["Dynamic Cluster Manager<br/>(Multi-Tenant Cluster Registry)"]
-                INFORMERS["client-go Informer Factory<br/>(Pods, Nodes, Services, Deployments, Events)"]
-                LOG_STREAM["Pod Log Streamer Pipeline<br/>(kubectl logs -f Streaming)"]
+                CLUS_MGR["Dynamic Cluster & Agent Manager<br/>(ClusterManager & AgentRegistry)"]
+                INFORMERS["client-go Informer Factory<br/>(Core, Workloads, Storage, Policy, RBAC)"]
+                LOG_STREAM["Universal Log Multiplexer<br/>(/ws/logs & /api/v1/stream/logs)"]
                 DELTA_EMIT["Status Delta Emitter<br/>(Sub-200ms State Delta Dispatch)"]
             end
 
             subgraph CHAOS_ENGINE ["Chaos Testing Module"]
-                CHAOS_MGR["Chaos Fault Injector<br/>(pkg/chaos: Crash, Latency, OOM)"]
+                CHAOS_MGR["Chaos Fault Injector<br/>(pkg/chaos: Crash, OOM, Scale-Down)"]
             end
 
             STREAM_ENTRY --> AUTH_VERIFY
@@ -127,8 +127,9 @@ flowchart TB
     %% ─────────────────────────────────────────────────────────────────────────
     %% Edge Interconnections & Cross-Service Dataflows
     %% ─────────────────────────────────────────────────────────────────────────
-    AUTH_STORE -->|REST / HTTPS - Port 5000<br/>Bearer JWT / Cookies| API_ENTRY
-    WS_CLIENT -->|WebSocket / WSS - Port 8080<br/>/?token=JWT| STREAM_ENTRY
+    AUTH_STORE -->|REST / HTTPS - Port 3000<br/>Bearer JWT / Cookies| API_ENTRY
+    WS_CLIENT -->|WebSocket / WSS - Port 8080<br/>/ws/k8s, /ws/logs?token=JWT| STREAM_ENTRY
+    K8S_TARGETS -.->|Outbound WS - /ws/agent<br/>In-Cluster envscale-agent| STREAM_ENTRY
 
     API_SERVER <-->|Drizzle ORM Connection Pool| POSTGRES
     API_SERVER -->|OAuth 2.0 Auth Code / Tokens| IDP
@@ -148,18 +149,18 @@ flowchart TB
 ## 2. Layer-by-Layer Architectural Breakdown
 
 ### 2.1 Layer 1: Client & Presentation Tier (`apps/web`)
-* **Primary Tech Stack:** React 18, Vite, TypeScript, Tailwind CSS, `@xyflow/react` (React Flow), Zustand.
+* **Primary Tech Stack:** React 19, Vite 8, TypeScript, Tailwind CSS, `@xyflow/react` (React Flow), Zustand.
 * **Component Responsibilities:**
-  * **Top Navbar & Left Sidebar Capsules:** Floating capsules implementing Material Design 3 harmonic proportions and Google Material Icons (`react-icons/md`).
-  * **Visual Topology Engine:** Renders clustered Kubernetes infrastructure inside a dark grid canvas (`#09090b`). Custom graph nodes include:
-    * [`K8sGroup`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/components/canvas/K8sGroup.tsx): Parent grouping node representing Namespaces and Workloads with strict handle routing.
-    * [`K8sNode`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/components/canvas/K8sNode.tsx): Worker/control-plane host container tracking CPU/Memory allocation.
-    * [`K8sPod`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/components/canvas/K8sPod.tsx): Workload card displaying phase, restart counters, and health badges.
-    * [`K8sService`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/components/canvas/K8sService.tsx): Pill-shaped ingress and routing representation.
-  * **Automated Layout:** Auto-arranges nodes into an ArgoCD-style hierarchical graph using [Dagre Auto-Layout](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/utils/layout.ts).
+  * **Top Navbar & Left Sidebar Capsules:** Floating capsules implementing Material Design 3 harmonic proportions and Google Material Icons (`@mdi/react` / `@mdi/js`).
+  * **Visual Topology Engine:** Renders clustered Kubernetes infrastructure inside a dark grid canvas (`#111318`) with **13 custom React Flow node components** (see [Frontend Views & Interactions](frontend-views-and-interactions.md#7-complete-react-flow-node--edge-catalog-appswebsrccomponentscanvas--flow)). Primary primitives include:
+    * [`K8sGroup`](../apps/web/src/components/canvas/K8sGroup.tsx): Parent grouping node representing Namespaces and Workloads with strict handle routing.
+    * [`K8sNode`](../apps/web/src/components/canvas/K8sNode.tsx): Worker/control-plane host container tracking CPU/Memory allocation.
+    * [`K8sPod`](../apps/web/src/components/canvas/K8sPod.tsx): Workload card displaying phase, restart counters, and health badges.
+    * [`K8sService`](../apps/web/src/components/canvas/K8sService.tsx): Pill-shaped ingress and routing representation.
+  * **Automated Layout:** Auto-arranges nodes into an ArgoCD-style hierarchical graph using [Dagre Auto-Layout](../apps/web/src/utils/layout.ts).
   * **State & Hook Pipeline:**
-    * [`useTopologyStore`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/store/useTopologyStore.ts): Central Zustand store for active nodes, edges, active cluster selection, live metrics, and log buffers.
-    * [`useK8sStream`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/hooks/useK8sStream.ts): Resilient WebSocket hook providing exponential backoff (`1.5s`, `2.7s`, `4.8s`, `8.7s`, `12s`) and a 5-attempt circuit breaker.
+    * [`useTopologyStore`](../apps/web/src/store/useTopologyStore.ts): Central Zustand store for active nodes, edges, active cluster selection, live metrics, and log buffers.
+    * [`useK8sStream`](../apps/web/src/hooks/useK8sStream.ts): Resilient WebSocket hook providing exponential backoff (`1.5s`, `2.7s`, `4.8s`, `8.7s`, `12s`) and a 5-attempt circuit breaker.
   * **Contextual Drawers & Views:** Inspector Drawer (pod details, live logs, resource gauges, chaos triggers), Alert Policy Rule Builder, Gamified Leaderboard, and Cluster Onboarding Wizard.
 
 ### 2.2 Layer 2: API & Business Logic Tier (`apps/api-server`)
@@ -167,32 +168,32 @@ flowchart TB
 * **Component Responsibilities:**
   * **Authentication & Authorization Engine:**
     * Implements Better Auth with GitHub and Google OAuth plugins, plus fallback email/password.
-    * Issues short-lived JWT access tokens (`15m` expiry) signed via `JWT_ACCESS_SECRET` alongside HTTP-only refresh tokens.
-    * Enforces multi-tenant workspace RBAC (`ADMIN`, `MEMBER`, `VIEWER`) via [`rbac.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/middleware/rbac.ts).
+    * Issues HS256 JWT access tokens (`7d` expiry) signed via `JWT_ACCESS_SECRET` alongside HTTP-only refresh tokens (`7d`).
+    * Enforces multi-tenant workspace RBAC (`ADMIN`, `MEMBER`, `VIEWER`) via [`auth.middleware.ts`](../apps/api-server/src/middleware/auth.middleware.ts).
   * **Cryptographic Vault:**
-    * Uses AES-256-GCM ([`crypto.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/utils/crypto.ts)) to encrypt raw Kubeconfig files before storing them in PostgreSQL. Raw cluster credentials are never exposed in plaintext logs or API responses.
+    * Uses AES-256-GCM ([`crypto.ts`](../apps/api-server/src/utils/crypto.ts)) to encrypt raw Kubeconfig files before storing them in PostgreSQL. Raw cluster credentials are never exposed in plaintext logs or API responses.
   * **Cluster Hydration & Self-Healing Service:**
-    * [`cluster-sync.service.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/services/cluster-sync.service.ts): Decrypts kubeconfigs on server startup and registers active clusters with the Go streamer.
-    * [`cluster-reconcile.worker.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/workers/cluster-reconcile.worker.ts): Non-overlapping recursive background worker (20s tick) that polls streamer `/healthz` and reconciles disconnected clusters.
+    * [`cluster-sync.service.ts`](../apps/api-server/src/services/cluster-sync.service.ts): Decrypts kubeconfigs on server startup and registers active clusters with the Go streamer.
+    * [`cluster-reconcile.worker.ts`](../apps/api-server/src/workers/cluster-reconcile.worker.ts): Non-overlapping recursive background worker (20s tick) that polls streamer `/healthz` and reconciles disconnected clusters.
   * **Governance & Gamification Engine:**
-    * Dynamic Cluster Health Index (CHI) calculation algorithm ([`health-calculator.service.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/services/health-calculator.service.ts)) scoring clusters $0-100$.
-    * Background snapshot worker ([`snapshot.worker.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/workers/snapshot.worker.ts)) persisting historical trend metrics.
+    * Dynamic Cluster Health Index (CHI) calculation algorithm ([`health-calculator.service.ts`](../apps/api-server/src/services/health-calculator.service.ts)) scoring clusters $0-100$.
+    * Background snapshot worker ([`snapshot.worker.ts`](../apps/api-server/src/workers/snapshot.worker.ts)) persisting historical trend metrics.
 
 ### 2.3 Layer 3: Kubernetes Streaming Gateway (`apps/k8s-streamer`)
-* **Primary Tech Stack:** Go 1.22+, `k8s.io/client-go`, Gorilla WebSocket, `redis/go-redis`.
+* **Primary Tech Stack:** Go 1.24, `k8s.io/client-go v0.30.2`, Gorilla WebSocket, `redis/go-redis`.
 * **Component Responsibilities:**
-  * **Real-time Event Gateway:** Operates a concurrent WebSocket Hub maintaining persistent client connections, tenant rooms, and authenticated message broadcasts.
+  * **Real-time Event Gateway & Agent Receiver:** Operates a concurrent WebSocket Hub (`/ws/k8s`) and an outbound in-cluster agent receiver (`/ws/agent`, `MODE=agent`) maintaining persistent client connections, tenant rooms, and authenticated message broadcasts.
   * **Informer Factory & Event Multiplexing:**
-    * Initializes `SharedInformerFactory` instances per cluster (`PodInformer`, `NodeInformer`, `ServiceInformer`, `DeploymentInformer`, `EventInformer`).
-    * Emits sub-200ms granular delta events (`EVENT_POD_STATUS_CHANGED`, `EVENT_NODE_MUTATED`, `EVENT_SERVICE_MUTATED`) over WebSockets.
+    * Initializes `SharedInformerFactory` and dynamic CSI snapshot informers per cluster covering Core (`Pods`, `Nodes`, `Services`, `Endpoints`, `Events`, `PVCs`, `PVs`, `ConfigMaps`, `Secrets`, `ResourceQuotas`, `LimitRanges`), Workloads (`Deployments`, `ReplicaSets`, `StatefulSets`, `DaemonSets`, `Jobs`, `CronJobs`), Networking & Policies (`Ingresses`, `NetworkPolicies`, `HPAs`, `PDBs`), In-Cluster RBAC (`ServiceAccounts`, `Roles`, `RoleBindings`, `ClusterRoles`, `ClusterRoleBindings`), and CSI `VolumeSnapshots` (see [docs/README.md](README.md)).
+    * Emits sub-200ms granular delta events (`EVENT_POD_STATUS_CHANGED`, `EVENT_NODE_MUTATED`, `EVENT_SERVICE_MUTATED`, etc.) over WebSockets.
     * Monitors Kubernetes events to detect failure states like `CrashLoopBackOff`, `OOMKilled`, and `ImagePullBackOff`.
-  * **Log Tailing Pipeline:** Direct streaming of pod stdout/stderr logs (`kubectl logs -f` style) over WebSockets to client drawers.
-  * **Fault Injection Engine (`pkg/chaos`):** Safely injects synthetic anomalies into target clusters (pod termination, container latency, simulated memory stress) to test resilience.
+  * **Log Tailing Pipeline:** Universal multi-container log & event multiplexer (`/ws/logs`, `/api/v1/stream/logs`, and `/api/v1/logs/stream`) streaming live stdout/stderr over WebSockets to `LogsView` and `InspectorDrawer`.
+  * **Fault Injection Engine (`pkg/chaos`):** Safely injects reversible synthetic anomalies (`crash`, `oom-pressure`, `scale-down`) into target clusters with PodDisruptionBudget safety guardrails (`pkg/chaos/safety.go`).
   * **Horizontal Scalability:** Integrates with Redis Pub/Sub to synchronize streaming state across multiple streamer replicas.
 
 ### 2.4 Layer 4: Persistence, Caching & Event Bus
 * **PostgreSQL 16 (Relational Store):**
-  * Managed via Drizzle ORM schemas in [`apps/api-server/src/db/schema/`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/db/schema).
+  * Managed via Drizzle ORM schemas in [`apps/api-server/src/db/schema/`](../apps/api-server/src/db/schema).
   * Enforces foreign-key cascades, composite B-tree indexes, and strict multi-tenant boundaries across `users`, `workspaces`, `clusters`, `alert_policies`, `incidents`, and `health_snapshots`.
 * **Redis 7 (Distributed Event Bus & Ephemeral Cache):**
   * Scalable Pub/Sub channel for multi-instance streamer fan-out.
@@ -289,11 +290,13 @@ sequenceDiagram
 | Service | Port | Protocol | Path / Endpoint | Authentication | Purpose |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Frontend UI** | `5173` | HTTP / HTTPS | `/` | Session / JWT | User visualization interface |
-| **API Server** | `5000` | HTTP / HTTPS | `/api/auth/*` | Better Auth | OAuth & credential authentication |
-| **API Server** | `5000` | HTTP / HTTPS | `/api/v1/*` | Bearer JWT / Cookie | REST CRUD, RBAC, Governance, Secrets |
+| **API Server** | `3000` | HTTP / HTTPS | `/api/auth/*` | Better Auth | OAuth & credential authentication |
+| **API Server** | `3000` | HTTP / HTTPS | `/api/v1/*` | Bearer JWT / Cookie | REST CRUD, RBAC, Governance, Secrets |
 | **Streamer** | `8080` | HTTP | `/healthz` | None (Internal) | Liveness & readiness probes |
-| **Streamer** | `8080` | HTTP | `/api/v1/clusters/register` | Internal Shared Secret | Dynamic cluster registration |
-| **Streamer** | `8080` | WS / WSS | `/ws/k8s` | JWT Query Param | Real-time state delta & log streaming |
+| **Streamer** | `8080` | HTTP | `/api/v1/clusters/register` | Admin / Service JWT | Dynamic cluster registration |
+| **Streamer** | `8080` | WS / WSS | `/ws/k8s` | JWT Query Param | Real-time state delta & metrics streaming |
+| **Streamer** | `8080` | WS / WSS | `/ws/agent` | Cluster-Scoped JWT | Outbound reverse-tunnel from `envscale-agent` |
+| **Streamer** | `8080` | WS / WSS | `/ws/logs`, `/api/v1/stream/logs` | JWT + Cluster Auth | Universal multi-container log & event multiplexer |
 | **PostgreSQL** | `5432` | TCP / PG | `postgres://...` | DB Credentials | Relational persistent storage |
 | **Redis** | `6379` | TCP / RESP | `redis://...` | Redis Password | Pub/Sub message broker & cache |
 | **Kubernetes** | `6443` | HTTPS | `/api`, `/apis` | Kubeconfig mTLS / Bearer | Kubernetes Control Plane API |
@@ -338,12 +341,32 @@ flowchart LR
 
 | Architectural Component | Primary Repository File Links | Assigned Owner |
 | :--- | :--- | :--- |
-| **Frontend Canvas & Shell** | [`App.tsx`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/App.tsx), [`layout.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/utils/layout.ts), [`K8sPod.tsx`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/components/canvas/K8sPod.tsx) | **Neha** |
-| **Frontend State & Stream** | [`useTopologyStore.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/store/useTopologyStore.ts), [`useK8sStream.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/hooks/useK8sStream.ts) | **Neha** |
-| **Onboarding & UI Primitives** | [`ConnectClusterModal.tsx`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/components/onboarding/ConnectClusterModal.tsx), [`Button.tsx`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/web/src/components/ui/Button.tsx) | **Ishika** |
-| **Core Streaming Gateway** | [`main.go`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer/cmd/server/main.go), [`hub.go`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer/pkg/websocket/hub.go) | **Pranav** |
-| **Informer & Chaos Engine** | [`cluster_manager.go`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer/pkg/k8s/cluster_manager.go), [`chaos`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/k8s-streamer/pkg/chaos) | **Pranav** |
-| **REST Server & Better Auth** | [`index.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/index.ts), [`auth.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/lib/auth.ts), [`rbac.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/middleware/rbac.ts) | **Vinit** |
-| **Database Schemas & Vault** | [`schema.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/db/schema.ts), [`crypto.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/utils/crypto.ts) | **Vinit** |
-| **Reconciler & Health Sync** | [`cluster-reconcile.worker.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/workers/cluster-reconcile.worker.ts), [`cluster-sync.service.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/apps/api-server/src/services/cluster-sync.service.ts) | **Vinit** |
-| **Shared Monorepo Types** | [`types/index.ts`](file:///run/media/pranavissam/files%20and%20data/programming/mega%20projects/EnvScale/packages/types/src/index.ts) | **Core Team** |
+| **Frontend Canvas & Shell** | [`App.tsx`](../apps/web/src/App.tsx), [`layout.ts`](../apps/web/src/utils/layout.ts), [`K8sPod.tsx`](../apps/web/src/components/canvas/K8sPod.tsx) | **Neha** |
+| **Frontend State & Stream** | [`useTopologyStore.ts`](../apps/web/src/store/useTopologyStore.ts), [`useK8sStream.ts`](../apps/web/src/hooks/useK8sStream.ts) | **Neha** |
+| **Onboarding & UI Primitives** | [`ConnectClusterWizard.tsx`](../apps/web/src/components/onboarding/ConnectClusterWizard.tsx), [`button.tsx`](../apps/web/src/components/ui/button.tsx) | **Ishika** |
+| **Core Streaming Gateway** | [`main.go`](../apps/k8s-streamer/cmd/server/main.go), [`hub.go`](../apps/k8s-streamer/pkg/websocket/hub.go) | **Pranav** |
+| **Informer & Chaos Engine** | [`manager.go`](../apps/k8s-streamer/pkg/k8s/manager.go), [`chaos`](../apps/k8s-streamer/pkg/chaos) | **Pranav** |
+| **REST Server & Better Auth** | [`index.ts`](../apps/api-server/src/index.ts), [`auth.ts`](../apps/api-server/src/lib/auth.ts), [`auth.middleware.ts`](../apps/api-server/src/middleware/auth.middleware.ts) | **Vinit** |
+| **Database Schemas & Vault** | [`schema.ts`](../apps/api-server/src/db/schema.ts), [`crypto.ts`](../apps/api-server/src/utils/crypto.ts) | **Vinit** |
+| **Reconciler & Health Sync** | [`cluster-reconcile.worker.ts`](../apps/api-server/src/workers/cluster-reconcile.worker.ts), [`cluster-sync.service.ts`](../apps/api-server/src/services/cluster-sync.service.ts) | **Vinit** |
+| **Shared Monorepo Types** | [`types/index.ts`](../packages/types/src/index.ts) | **Core Team** |
+
+---
+
+## 7. Modular Subsystem Documentation Suite
+
+To maintain strict modularity and avoid monolithic specification files, deep architectural and feature-level guides are split across focused documents indexed by [`docs/README.md`](README.md):
+
+| Domain | Document | Coverage Summary |
+| :--- | :--- | :--- |
+| **Agent & Onboarding** | [`in-cluster-agent-and-onboarding.md`](in-cluster-agent-and-onboarding.md) | Dual-mode onboarding (`agent` vs `direct`), `agent.yaml` generator, outbound `pkg/agent/runner.go`, `AgentRegistry`, onboarding wizard UI |
+| **Workloads & Rollouts** | [`k8s-workloads-and-rollouts.md`](k8s-workloads-and-rollouts.md) | Deployments, ReplicaSets, 1-click conflict-safe Rollback Engine, StatefulSets & headless DNS, DaemonSets, Jobs/CronJobs, static mirror pods, health probes |
+| **Storage & Snapshots** | [`storage-and-volume-snapshots.md`](storage-and-volume-snapshots.md) | `ExtractPodVolumeClaims`, PVC/PV/StorageClass informers, dynamic `snapshot.storage.k8s.io/v1` CSI snapshot informers, clone lineage, Tier-3 canvas layout |
+| **Policies, HPA & RBAC** | [`policies-autoscaling-and-quotas.md`](policies-autoscaling-and-quotas.md) | HPA v2 telemetry, NetworkPolicy topology, PDB informer + chaos safety guardrails, ResourceQuotas/LimitRanges, In-Cluster RBAC & 4-tier verb matrix |
+| **Logs & Metrics** | [`logging-metrics-and-diagnostics.md`](logging-metrics-and-diagnostics.md) | Universal `/api/v1/stream/logs` & `/ws/logs` multiplexer (`LogStreamManager`), ANSI/JSON parser & run-length compression, 1s `startMetricsPulse` & `MetricsView` |
+| **Frontend Views & UX** | [`frontend-views-and-interactions.md`](frontend-views-and-interactions.md) | App shell, multi-account switcher, 13 React Flow nodes + custom edges, `K8sNodeBoundary` containers, keyboard undo/redo + deletion, Settings tabs, Incidents, Leaderboard, Landing Page, M3 UI kit |
+| **Frontend State Engine** | [`frontend-state-and-store-architecture.md`](frontend-state-and-store-architecture.md) | 5 Zustand stores, 6 modular topology slices (`topologyWsSlice`, `topologySnapshotHandler`, `topologyLayoutSlice`, etc.), and 16 domain reducers |
+| **API & WebSocket Spec** | [`api-and-websocket-reference.md`](api-and-websocket-reference.md) | Full `api-server` & `k8s-streamer` REST routes, RBAC/Zod schemas, JSON payload examples, HTTP error codes, `ClusterSnapshot`/`EVENT_*` specs |
+| **CI/CD & Env Reference** | [`cicd-and-environment-reference.md`](cicd-and-environment-reference.md) | GitHub Actions (`ci.yml`, `cd.yml`, `foundation.yml`), release manifest & runtime guard scripts, SSM secret sync, and monorepo environment variable matrix |
+| **Dev Tooling & CLI/GUI** | [`developer-control-center-and-tooling.md`](developer-control-center-and-tooling.md) | Dual-mode `pnpm test-center` GTK4/Libadwaita desktop GUI & Rich CLI, Python local/K8s/chaos/AWS/EKS orchestrators, `db-backup.sh`, Git `pre-push` hook |
+| **DB, Auth & Lifecycle** | [`db-and-auth-architecture.md`](db-and-auth-architecture.md), [`cluster-lifecycle-and-resilience.md`](cluster-lifecycle-and-resilience.md) | Drizzle schemas, Better Auth, AES-256-GCM vault, recursive reconciler, WebSocket backoff circuit breaker |

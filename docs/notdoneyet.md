@@ -81,7 +81,7 @@ Structured tracking matrix of completed capabilities vs. pending features across
 ## 9. 🔌 Cluster Connectivity & Observability Infrastructure
 
 * **[x] Outbound In-Cluster Streaming Agent Runner:** Reverse WebSocket agent gateway (`/ws/agent`) in `k8s-streamer`, enabling private/firewalled Kubernetes clusters to stream informers outbound without exposing public kubeconfig endpoints.
-* **[x] Agent Manifest Generation API:** REST endpoint (`GET /api/v1/clusters/:id/agent-manifest`) generating fully configured RBAC and Deployment manifests for one-click deployment.
+* **[x] Agent Manifest Generation API:** REST endpoints (`GET /api/v1/clusters/:clusterId/agent.yaml` and `/api/v1/workspaces/:id/clusters/:clusterId/agent.yaml`) generating configured RBAC and Deployment manifests for one-click deployment.
 * **[x] In-Cluster Agent Onboarding Wizard:** Interactive UI wizard in `apps/web` with 1-click `kubectl apply` installation command and live connection handshake detection.
 * **[x] Dynamic Cluster Health Index:** TopNavbar dynamic health badge with calculated grade (`A+` through `F`) and numerical score (0–100) based on pod health, restarts, and resource pressure.
 * **[x] Non-Destructive Hybrid Drag Layout:** Hybrid layout engine persisting user-dragged node coordinates across browser reloads, WS re-syncs, and cluster reconnects.
@@ -91,20 +91,21 @@ Structured tracking matrix of completed capabilities vs. pending features across
 ## 10. 📜 Real-Time Pod Logging & Terminal Engine
 
 * **[x] Live Pod Log Tailing (`kubectl logs -f`):** Sub-second WebSocket log streaming pipeline (`/ws/logs` in `k8s-streamer`), interactive terminal drawer (`TerminalDrawer.tsx` / `PodLogsTab.tsx`) with log line filtering, search, and immediate regex anomaly detection for `OOMKilled` and `ImagePullBackOff`.
-* **[ ] Multi-Pod Aggregated Log Streaming:** Interleaved log tailing across multiple replica pods in a workload group simultaneously.
+* **[x] Multi-Pod Aggregated Log Streaming:** Universal multiplexer (`/api/v1/stream/logs`, `/ws/logs`, `LogStreamManager` in `stream_logs_handler.go` / `stream_logs_manager.go`) interleaving live container logs across Pods, Deployments, StatefulSets, DaemonSets, Jobs, namespaces, and cluster-wide targets in `LogsView.tsx`.
 
 ---
 
 ## 11. 💥 Chaos Fault Injection & Resilience Testing
 
-* **[x] Chaos Engineering Engine (`pkg/chaos`):** Fault injection endpoints (`/api/v1/chaos/inject`, `/api/v1/chaos/heal`, `/api/v1/chaos/active`), Pod Kill, CPU Spike, Memory Pressure, Network Latency, and Scaledown faults, PDB safety guardrails (`pkg/chaos/safety.go`), real-time crimson visual cues on canvas workload cards, and 1-click active faults healing in the Inspector Drawer.
+* **[x] Chaos Engineering Engine (`pkg/chaos`):** Fault injection endpoints (`POST`/`DELETE /api/v1/chaos/inject`, `GET /api/v1/chaos/faults`), Pod Crash (`crash`), OOM Memory Pressure (`oom-pressure`), and Scale Down (`scale-down`) faults, PDB safety guardrails (`pkg/chaos/safety.go`), real-time crimson visual cues on canvas workload cards, and 1-click active faults healing in the Inspector Drawer.
+* **[ ] CPU Spike & Network Latency Faults:** Synthetic CPU burn and TC/eBPF network latency fault injectors beyond `crash`, `oom-pressure`, and `scale-down`.
 * **[ ] Scheduled & Automated Chaos Experiments:** Recurring chaos schedule engine without manual operator trigger.
 
 ---
 
 ## 12. 📊 Continuous Cluster Metrics Streaming & Telemetry
 
-* **[x] Continuous Cluster Metrics Streaming:** Background cluster-wide metrics streaming pipeline (`informer_metrics.go`, `/ws/metrics`) in `k8s-streamer`, rolling sparkline buffer in `useMetricsStore.ts`, and real-time visualization in `MetricsView.tsx`.
+* **[x] Continuous Cluster Metrics Streaming:** Background 1-second cluster metrics streaming pipeline (`informer_metrics.go` emitting `EVENT_CLUSTER_METRICS` over `/ws/k8s` + `GET /api/v1/clusters/metrics/history`), 60-point rolling buffer in `useMetricsStore.ts`, and real-time area charts in `MetricsView.tsx`.
 * **[ ] Long-Term Metrics Time-Series Storage:** Prometheus / Thanos persistent metrics storage retention beyond in-memory rolling buffer.
 
 ---

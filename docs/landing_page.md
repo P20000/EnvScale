@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Historical Design Scratch Notes (Superseded):** For the implemented scroll-driven landing page architecture and component breakdown, use [docs/frontend-views-and-interactions.md](frontend-views-and-interactions.md#5-scroll-driven-landing-page--storyline).
+
 this is the descriptive information of how the landing page of the application look like: 
 
 - this page is an on scroll trigger animation type of an application slideshow.   

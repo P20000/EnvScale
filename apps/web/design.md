@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Superseded Local Draft:** The canonical Material Design 3 design system and UI specification lives in [`docs/design.md`](../../docs/design.md).
+
 # EnvScale — UI & UX Design System Specification
 
 > **Document Purpose:** Single source of truth for the **EnvScale** frontend design system, component layout architecture, graphic canvas guidelines, and color tokens.  
