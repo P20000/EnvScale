@@ -36,19 +36,34 @@ This matrix records black-box checks performed against functionality present in 
 | QA-016 | Keyboard accessibility | Navigate relevant controls using keyboard | Application available | 1. Use Tab navigation through the startup and modal controls. 2. Observe focus order and activation. | Controls receive a usable focus state and can be activated without a pointer. | Tab/Shift+Tab navigation verified across sidebar, navbar, cluster selector, modal dialogs, and drawer controls with visible focus rings. Enter/Space activates buttons and Escape dismisses modals. | PASS | Full accessibility ring styling and ARIA attributes integrated. |
 | QA-017 | Toast behavior | Trigger a visible toast notification | Application available | 1. Locate a user action that invokes Toast. 2. Trigger it. | A toast appears with readable feedback and dismiss behavior. | ToastContainer and global toast dispatcher integrated. Toasts render with variant icons/colors (Success, Warning, Error, Info), 4.5s auto-dismiss timers, and close buttons on token actions, cluster events, and incoming alert notifications. | PASS | Integrated into live user flows. |
 
+## Phase 3 Full-Stack E2E Integration Verification (2026-11-21)
+
+**Environment:** Ubuntu Linux local stack (`apps/api-server` `:3000`, `apps/k8s-streamer` Go binary `:8081` with `ALLOW_ANONYMOUS_WS=false`, `apps/web` Vite preview `:5173`, `envscale-postgres` PostgreSQL 16 `:5432`, `staywise-redis` Redis 7 `:6379`, and Minikube Kubernetes `v1.35.1` with `testing-todo` namespace).
+
+| Test ID | Feature | Executed Verification | Observed Result | Status |
+|---|---|---|---|---|
+| E2E-001 | Full-stack liveness | Queried `GET /health` (`api-server`), `GET /healthz` (`k8s-streamer`), and `GET /` (`web`) | API `200` (`ok`), Streamer `200` (`redisStatus: "connected"`), Web `200` (`#root`) | PASS |
+| E2E-002 | Auth lifecycle & `switch-session` hardening | Registered Alice & Bob, logged in, checked `/auth/me`, and tested unauth / cross-user / self `switch-session` | Register `201`, Login `200`, Me `200`, unauth `401`, Alice->Bob `403`, Alice->Alice `200` | PASS |
+| E2E-003 | Encrypted cluster connection & K8s sync | Flattened Minikube kubeconfig and posted to `/api/v1/workspaces/:id/clusters/connect` | `201`, Postgres `clusters.kubeconfig` encrypted (`apiVersion:` absent), `status: "connected"` | PASS |
+| E2E-004 | Cross-tenant IDOR & RBAC guards | Called `agent.yaml`, `layout`, and streamer `snapshot` as non-member Bob vs workspace admin Alice | Bob rejected with `403` on all endpoints; Alice received `200` YAML & `[200, 200, 200]` `PUT/GET/DELETE` layout | PASS |
+| E2E-005 | Live Kubernetes Informers & governance telemetry | Polled `GET /api/v1/clusters/snapshot?clusterId=...` after informer sync | Observed `1` Node, `35` Pods, `8` Services, `14` Deployments, `1` StatefulSet, `1` HPA, `2` PDBs, `3` NetworkPolicies, `50` ServiceAccounts | PASS |
+| E2E-006 | WebSocket streaming & metrics history | Tested unauthenticated `/ws/k8s` rejection and authenticated Node `WebSocket` subscription + `/metrics/history` | Unauth rejected; WebSocket opened in `1ms`, first frame (`EVENT_CLUSTER_METRICS`) received in `138ms` (`< 200ms`); metrics history `200` | PASS |
+| E2E-007 | Alert policy & internal incident lifecycle | Created alert policy, tested user/invalid-payload `internal/trigger`, triggered with `k8s-streamer` JWT, resolved incident | Create `201`, human caller `403`, invalid Zod `400`, valid service trigger `201`, resolve `200` | PASS |
+| E2E-008 | Chaos auth guard & leaderboard API | Tested unauth `/chaos/inject`, cross-tenant `/chaos/faults`, authorized `/chaos/faults`, and `/leaderboard` | Unauth inject `401`, Bob `403`, Alice `200` (`activeFaults: 0`), Leaderboard `200` | PASS |
+| E2E-009 | Cluster disconnect & teardown | Deleted cluster via `DELETE /api/v1/workspaces/:wsId/clusters/:clusterId` and cleaned ephemeral DB records | Cluster disconnected cleanly (`204`); PostgreSQL & local ports cleaned up | PASS |
+
 ## Automated Validation
 
 | Command | Result | Status | Details |
 |---|---|---|---|
-| `pnpm --filter web exec tsc --noEmit` | Completed with no output | PASS | Web TypeScript check passed. |
-| `pnpm --filter web build` | Completed successfully | PASS | Vite production build passed. |
-| `pnpm --filter web lint` | Completed successfully | PASS | Zero ESLint warnings or errors. Verified `@typescript-eslint/no-explicit-any` resolved. |
-| `pnpm lint` | Completed successfully | PASS | Monorepo Turborepo lint passed across all packages. |
-| `pnpm build` | Completed successfully | PASS | All build tasks completed successfully across all packages. |
+| `pnpm build` | 3/3 packages built | PASS | `@envscale/types`, `envscale-api-server`, and `web` compiled with zero errors. |
+| `pnpm lint` | 2/2 packages clean | PASS | Zero ESLint or type lint errors. |
+| `pnpm test` | 12/12 `api-server` + 12/12 `web` | PASS | Mocked-DB Phase 1 auth/IDOR/service-token suite + frontend RBAC/node boundary unit suites passed and run in CI on Node 22. |
+| `pnpm --filter envscale-api-server db:check` | Everything's fine | PASS | Drizzle ORM schema and SQL migrations are synchronized. |
+| `cd apps/k8s-streamer && go test -race ./... && go vet ./...` | All Go test packages passed | PASS | `chaos`, `k8s`, `server`, and `websocket` passed with `-race` and zero `go vet` issues. |
+| `python3 -m unittest discover -s testing/deployment -p "test_*.py" -v` | 30/30 tests passed | PASS | Foundation IAM/hardening, SSM runtime/manifest contract, Terraform tags, and CODEOWNERS verified. |
 
-## Environment Limitations
+## Environment Limitations & Release Notes
 
-- The Vite web server was available for manual testing.
-- The Kubernetes streamer was not running, so live WebSocket hydration, connected topology data, live incidents, pod inspection, and streaming logs could not be validated end to end.
-- The API server was not started, so cluster persistence and backend-backed connection behavior were not validated.
-- No automated browser test runner is defined in `apps/web/package.json`.
+- Live end-to-end tests (`E2E-001`..`E2E-009`) executed against a local Minikube target and Docker Compose PostgreSQL/Redis rather than live AWS EC2/EKS production infrastructure (deployed CD run `44892273740` verifies images and release manifests when no EC2 instance is provisioned).
+- `apps/web/package.json` runs unit/helper tests via `tsx --test` rather than a headless Chromium E2E test runner; UI click-through coverage comes from `QA-001`..`QA-017` plus live full-stack HTTP/WebSocket checks.
