@@ -30,7 +30,7 @@ jobs:
       - name: Setup Node.js Environment
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Setup pnpm Package Manager
         uses: pnpm/action-setup@v4
@@ -107,7 +107,7 @@ jobs:
       - name: Setup Node.js Environment
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Setup pnpm Package Manager
         uses: pnpm/action-setup@v4
