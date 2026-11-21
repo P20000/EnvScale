@@ -1,53 +1,53 @@
 # EnvScale
 ## Semester 5 Engineering Project Final Report
 
-**Document status:** Draft for academic review
-**Project date:** 2026-08-25
-**Repository baseline:** `feature/ishika-ish-07`, based on `develop` commit `a477062`
+**Document status:** Updated post-Phase 3 full-stack E2E verification (pending university header metadata)
+**Project date:** 2026-11-21
+**Repository baseline:** `develop` (post-PR `#118` & PR `#119`)
 
-> This report describes the repository evidence available on the ISH-07 branch. Status labels are used throughout: **Implemented** means source evidence exists in this branch; **Partially Implemented** means a user interface or architectural building block exists but service-backed or end-to-end behavior is incomplete; **Planned** means the roadmap describes the work but current-branch evidence does not establish completion; **Design Target** means an intended quality or architecture goal.
+> This report reflects verified repository implementation, automated unit/contract CI checks, and local Minikube full-stack E2E verification (`2026-11-21`). Status labels used throughout: **Implemented** means verified source code exists on `develop`; **Partially Implemented** means core mechanics exist while external cloud/production telemetry remains pending; **Planned** means roadmap work not yet delivered; **Design Target** means an intended operational benchmark.
 
 ## Project Information
 
 | Field | Entry |
 |---|---|
-| Submitted By | [Student Name] |
-| Team Members | [Team Member Names] |
-| Roll Numbers | [Roll Number(s)] |
-| Department | [Department Name] |
-| Institution | [Institution Name] |
-| Academic Session | [Academic Session] |
-| Project Guide | [Project Guide Name] |
-| Submission Date | [Submission Date] |
+| Submitted By | Pranav, Vinit, Neha, Ishika (EnvScale Team) |
+| Team Members | Pranav, Vinit, Neha, Ishika |
+| Roll Numbers | [Pending University Submission Details] |
+| Department | [Pending University Submission Details] |
+| Institution | [Pending University Submission Details] |
+| Academic Session | [Pending University Submission Details] |
+| Project Guide | [Pending University Submission Details] |
+| Submission Date | 2026-11-21 |
 
 ## Certificate
 
-This is to certify that the project entitled **“EnvScale”**, submitted by **[Student Name(s)]**, bearing roll number(s) **[Roll Number(s)]**, to the **[Department Name]**, **[Institution Name]**, in partial fulfillment of the requirements for the **Semester 5 Engineering Project** during the academic session **[Academic Session]**, is a record of work carried out under my supervision and guidance.
+This is to certify that the project entitled **“EnvScale”**, submitted by **Pranav, Vinit, Neha, and Ishika**, bearing roll number(s) **[Pending University Submission Details]**, to the **[Pending University Submission Details (Department)]**, **[Pending University Submission Details (Institution)]**, in partial fulfillment of the requirements for the **Semester 5 Engineering Project** during the academic session **[Pending University Submission Details]**, is a record of work carried out under my supervision and guidance.
 
 To the best of my knowledge, the work presented in this report has not been submitted elsewhere for the award of any other qualification.
 
 | | |
 |---|---|
 | Project Guide | Head of Department |
-| **[Project Guide Name]** | **[HOD Name]** |
+| **[Pending University Submission Details]** | **[Pending University Submission Details]** |
 | Date: [Date] | Date: [Date] |
 
 ## Declaration
 
-We, **[Student Name(s)]**, declare that the project report entitled **“EnvScale”** is our original work completed under the guidance of **[Project Guide Name]** at **[Institution Name]**. The report is based on the implementation and documentation present in the project repository. All external references used in preparing this report are acknowledged in the References section.
+We, **Pranav, Vinit, Neha, and Ishika**, declare that the project report entitled **“EnvScale”** is our original work completed under the guidance of **[Pending University Submission Details (Project Guide)]** at **[Pending University Submission Details (Institution)]**. The report is based on the implementation and documentation present in the project repository. All external references used in preparing this report are acknowledged in the References section.
 
 We further declare that this report has not been submitted, in whole or in part, for any other academic award.
 
 | Student signature | Name and roll number |
 |---|---|
-| ____________________ | [Student Name], [Roll Number] |
-| ____________________ | [Student Name], [Roll Number] |
-| ____________________ | [Student Name], [Roll Number] |
-| ____________________ | [Student Name], [Roll Number] |
+| ____________________ | Pranav, [Pending Roll Number] |
+| ____________________ | Vinit, [Pending Roll Number] |
+| ____________________ | Neha, [Pending Roll Number] |
+| ____________________ | Ishika, [Pending Roll Number] |
 
 ## Acknowledgement
 
-We express our sincere gratitude to **[Project Guide Name]**, **[Head of Department Name]**, and the faculty of **[Department Name]** at **[Institution Name]** for their guidance and support throughout this project. We thank our peers, reviewers, and all contributors who provided feedback on the platform’s user experience, architecture, documentation, and quality assurance process.
+We express our sincere gratitude to **[Pending University Submission Details (Project Guide)]**, **[Pending University Submission Details (Head of Department)]**, and the faculty of **[Pending University Submission Details (Department)]** at **[Pending University Submission Details (Institution)]** for their guidance and support throughout this project. We thank our peers, reviewers, and all contributors who provided feedback on the platform’s user experience, architecture, documentation, and quality assurance process.
 
 We also acknowledge the maintainers of React, Vite, TypeScript, Tailwind CSS, React Flow, Zustand, Express, Drizzle ORM, PostgreSQL, Kubernetes, and the related open-source tools used by the project.
 
@@ -55,9 +55,9 @@ We also acknowledge the maintainers of React, Vite, TypeScript, Tailwind CSS, Re
 
 Kubernetes enables teams to deploy distributed applications, but operating those applications requires understanding many resources, relationships, status conditions, and telemetry signals at once. Traditional terminal-centric workflows can make this information difficult to correlate, particularly when a team is diagnosing a failing pod or trying to understand how services and workloads are connected.
 
-EnvScale is a Kubernetes-inspired observability and governance platform intended to provide a visual operational workspace. Its web application includes a guided Connect Cluster workflow, an interactive React Flow topology canvas, custom representations for Kubernetes nodes, pods, services, workloads, and ingresses, an inspector drawer, incident and alert-policy views, metrics and leaderboard views, workspace settings, reusable UI primitives, empty states, and a global rendering-error boundary. The API and streamer portions of the repository provide the architectural basis for cluster registration, persistence, validation, Kubernetes event handling, WebSocket communication, and workspace-scoped operational data.
+EnvScale is a Multi-Tenant Kubernetes Observability and Gamified Governance Platform providing a visual operational workspace. Its React + TypeScript web application (`apps/web`) includes a guided Connect Cluster wizard (direct kubeconfig or outbound in-cluster agent YAML), an interactive React Flow topology canvas with custom nodes (`StatefulSet`, `Job`, `CronJob`, `PVC`, `NodeBoundary`, `Ingress`, `Service`, `Pod`), an inspector drawer covering RBAC, HPA, PDB, NetworkPolicies, ResourceQuotas, VolumeSnapshots, rollbacks, and chaos controls, plus multi-pod log tailing, incidents/alerts, metrics charts, and workspace leaderboards. The Express + Drizzle + PostgreSQL API (`apps/api-server`) and Go `client-go` WebSocket gateway (`apps/k8s-streamer`) deliver encrypted kubeconfig persistence, workspace RBAC, Redis Pub/Sub scaling, sub-second streaming, and AWS OIDC/SSM deployment automation.
 
-The current repository demonstrates meaningful frontend and schema-level progress. Some capabilities remain partial or planned: live Kubernetes hydration depends on the streamer and target cluster, durable service-backed workflows depend on the API and database, and production deployment, performance benchmarking, chaos testing, and complete security verification are not established as completed results in this branch. This report therefore records both implemented engineering work and the limitations that must be addressed before production or end-to-end completion claims can be made.
+Security hardening in PR `#118`, CI test wiring and governance tagging in PR `#119`, and local full-stack E2E verification against Minikube, PostgreSQL, and Redis (`2026-11-21`, `docs/qa/ISH-05-QA-Test-Matrix.md`) validate core runtime integration. Production AWS EKS/EC2 live cutover telemetry, k6 load testing at high scale, and formal university PDF/video submission remain documented prerequisites rather than claimed live production results.
 
 # 1. Introduction
 
@@ -378,13 +378,13 @@ The repository provides package scripts for web build and lint, API build/type-c
 - Streamer health, WebSocket, informer, reconnection, and log-stream tests.
 - Security tests for authentication, RBAC, kubeconfig protection, validation, and error handling.
 
-## 14.2 Current-Branch Evidence Limitation
+## 14.2 Repository Evidence & QA Traceability
 
-The ISH-05 QA matrix and bug tracker and the ISH-06 SRS are not available on this branch. They are not treated as completed inputs or copied from another branch. The present report is based on the source and documentation available at the `develop`-based ISH-07 baseline.
+On the current `develop` baseline, the ISH-05 QA matrix ([`docs/qa/ISH-05-QA-Test-Matrix.md`](qa/ISH-05-QA-Test-Matrix.md)), bug/audit tracker ([`docs/qa/ISH-05-Bug-Tracker.md`](qa/ISH-05-Bug-Tracker.md)), and SRS ([`docs/EnvScale-SRS.md`](EnvScale-SRS.md)) are all present and synchronized with automated CI verification (`pnpm build`, `pnpm lint`, `pnpm test`, `db:check`, `go test -race ./...`, and `30` deployment contract tests).
 
 ## 14.3 Test Claims
 
-No production users, production uptime, AWS deployment, measured performance benchmark, completed chaos run, or end-to-end Kubernetes integration result is claimed in this report. Such results require dated execution records, reproducible environments, and retained test output.
+This report cites only dated, executed results: frontend black-box UI checks (`QA-001`..`QA-017`), CI automated unit/contract suites, and local full-stack Minikube E2E verification (`E2E-001`..`E2E-009` on `2026-11-21`). No production end-user study, MTTR reduction claim, live AWS EC2/EKS production cutover result, or high-throughput k6 benchmark is claimed.
 
 # 15. Results and Observations
 
@@ -431,11 +431,9 @@ The following work is future work or requires completion and verification:
 
 # 18. Conclusion
 
-EnvScale addresses a concrete engineering problem: Kubernetes operations expose a large set of distributed resources and signals that are difficult to correlate through isolated terminal commands or disconnected views. The repository implements a meaningful visual foundation for that problem through a React Flow topology workspace, custom resource visualization, guided cluster onboarding, contextual inspection, incident and alert-policy interfaces, metrics and leaderboard screens, workspace settings, and resilience-oriented UI components.
+EnvScale addresses a concrete engineering problem: Kubernetes operations expose a large set of distributed resources and signals that are difficult to correlate through isolated terminal commands or disconnected views. Across Milestones 1–4, the repository delivers the full React Flow visual workspace (`apps/web`), the typed Express + Drizzle + PostgreSQL multi-tenant API (`apps/api-server`), the Go `client-go` WebSocket gateway with Redis Pub/Sub and chaos fault injection (`apps/k8s-streamer`), and the hardened AWS OIDC/SSM deployment automation (`deployment/`).
 
-The API schema and module organization provide a corresponding foundation for workspace-scoped persistence, policies, incidents, health snapshots, authentication, and authorization. The Go streamer documentation and package layout establish an event-driven Kubernetes integration direction. Together, these modules demonstrate a modular engineering approach appropriate for a Semester 5 project.
-
-At the same time, the current repository evidence requires a disciplined conclusion. The platform is not represented as a completed production deployment. Live service integration, security enforcement, cloud deployment, performance measurement, chaos validation, and complete QA remain partial or planned. Future work should prioritize reproducible end-to-end environments and traceable test evidence so that the visual experience is supported by reliable operational behavior.
+Automated monorepo CI (`pnpm build`, `pnpm lint`, `pnpm test`, `go test -race ./...`, `drizzle-kit check:pg`, and 30 deployment contract tests), Phase 1 auth/tenant security fixes (PR `#118`), Phase 2 governance/test wiring (PR `#119`), and Phase 3 full-stack Minikube E2E verification (`docs/qa/ISH-05-QA-Test-Matrix.md`) confirm core platform behavior end to end. Production AWS EC2/EKS runtime telemetry, high-scale k6 load benchmarks, and formal university PDF/video submission remain clearly scoped prerequisite items rather than claimed live production metrics.
 
 # 19. References
 
@@ -505,11 +503,11 @@ The report’s scope follows the repository feature matrix and milestone roadmap
 | Streaming | `apps/k8s-streamer/pkg`, `cmd/server`, `README.md`, `apps/web/src/hooks/useK8sStream.ts` |
 | Shared contracts | `packages/types/src/index.ts` |
 | Roadmap and design | `docs/features.md`, `docs/milestones.md`, `docs/design.md`, `docs/idea.md` |
-| QA/reporting | Roadmap documentation on this branch; ISH-05 and ISH-06 artifacts unavailable on this branch |
+| QA/reporting | [`docs/qa/ISH-05-QA-Test-Matrix.md`](qa/ISH-05-QA-Test-Matrix.md), [`docs/qa/ISH-05-Bug-Tracker.md`](qa/ISH-05-Bug-Tracker.md), [`docs/EnvScale-SRS.md`](EnvScale-SRS.md), and `docs/ish-08/` / `docs/demo/` |
 
 ## Appendix D — QA Summary
 
-The current branch does not contain the prior ISH-05 execution matrix or bug tracker, so this report does not invent pass/fail counts or browser results. The required release QA should record test ID, feature, preconditions, steps, expected result, actual result, status, environment, and notes. It should separately record build/type/lint outcomes and distinguish product defects from unavailable API, database, streamer, or Kubernetes dependencies.
+Frontend black-box browser checks (`QA-001`..`QA-017` on `2026-08-24`), automated CI test suites (`pnpm build`, `pnpm lint`, `pnpm test`, `go test -race ./...`, `drizzle-kit check:pg`, `30` deployment contract tests), pre-release security/infrastructure audit remediation (`SEC-001`..`SEC-003`, `INFRA-001`), and Phase 3 full-stack local Minikube E2E integration tests (`E2E-001`..`E2E-009` on `2026-11-21`) are recorded in [`docs/qa/ISH-05-QA-Test-Matrix.md`](qa/ISH-05-QA-Test-Matrix.md) and [`docs/qa/ISH-05-Bug-Tracker.md`](qa/ISH-05-Bug-Tracker.md).
 
 ## Appendix E — Development Workflow
 

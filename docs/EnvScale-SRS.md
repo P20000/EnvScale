@@ -1,12 +1,12 @@
 # EnvScale Software Requirements Specification
 
-**Version:** 1.0
-**Date:** 2026-08-24
-**Status:** Draft for engineering and academic review
+**Version:** 1.1
+**Date:** 2026-11-21
+**Status:** Updated post-Phase 3 full-stack E2E verification
 **Repository:** EnvScale
 **Primary documentation owner:** Ishika
 
-> This document uses repository evidence available on 2026-08-24. `[Implemented]` means a corresponding implementation is present in the repository; it does not imply that every external service or end-to-end workflow has been verified. `[Planned]` identifies work described by the roadmap but not established as complete by the current implementation. `[Design Target]` identifies an architectural or quality goal that requires further verification or implementation.
+> This document reflects repository code, automated CI suites, and live Minikube full-stack E2E verification completed through `2026-11-21`. `[Implemented]` means a verified implementation exists in the codebase; `[Planned]` identifies remaining roadmap/cloud deliverables; `[Design Target]` identifies intended operational targets requiring production deployment telemetry.
 
 ## Table of Contents
 
@@ -108,18 +108,18 @@ The product function set is divided into current web behavior and service-backed
 | Function | Current status |
 |---|---|
 | Web shell and sidebar navigation | `[Implemented]` |
-| Cluster selector and onboarding wizard | `[Implemented]` in the web application |
+| Cluster selector and onboarding wizard (direct kubeconfig + in-cluster agent YAML) | `[Implemented]` |
 | React Flow topology canvas and empty topology state | `[Implemented]` |
-| Resource node rendering and selection | `[Implemented]` in the web application |
-| Inspector tabs for overview, logs, usage, and chaos actions | `[Implemented]` in the web application; external execution requires services |
-| Metrics screen | `[Implemented]` UI with current static/demo values |
-| Incident derivation and filters | `[Implemented]` client-side behavior |
-| Alert-rule builder and list UI | `[Implemented]` client-side behavior |
-| Leaderboard screen | `[Implemented]` UI with client-derived/demo values |
-| Workspace settings screen | `[Implemented]` UI; service persistence is not established end to end |
-| Global EmptyState and ErrorBoundary | `[Implemented]` |
-| Live Kubernetes event hydration | `[Planned]` / `[Design Target]` end-to-end verification |
-| Durable multi-tenant authentication, authorization, and persistence | `[Planned]` / partial backend implementation |
+| Resource node rendering and selection | `[Implemented]` |
+| Inspector tabs for overview, logs, usage, rollbacks, and chaos actions | `[Implemented]` |
+| Metrics screen & live `EVENT_CLUSTER_METRICS` time-series stream | `[Implemented]` (verified in `E2E-006`) |
+| Incident evaluation, internal service trigger, and filters | `[Implemented]` (verified in `E2E-007`) |
+| Alert-policy CRUD builder (`api-server` + PostgreSQL) | `[Implemented]` |
+| Leaderboard screen & health snapshot scoring | `[Implemented]` |
+| Workspace settings, RBAC (`ADMIN`, `MEMBER`, `VIEWER`), and layout persistence | `[Implemented]` (verified in `E2E-004`) |
+| Global EmptyState, ErrorBoundary, and 4xx/5xx error pages | `[Implemented]` |
+| Live Kubernetes event hydration (Informers + `/ws/k8s` + Redis Pub/Sub) | `[Implemented]` (verified in `E2E-005` & `E2E-006`) |
+| Durable multi-tenant authentication, authorization, and persistence | `[Implemented]` (hardened in PR `#118`; verified in CI & `E2E-002`) |
 
 ### 2.3 User Classes and Characteristics
 
@@ -730,9 +730,9 @@ QA shall combine:
 
 ### 9.2 Current QA Evidence
 
-The ISH-05 matrix at [docs/qa/ISH-05-QA-Test-Matrix.md](qa/ISH-05-QA-Test-Matrix.md) records the executed browser checks. The documented session observed startup, navigation, cluster selection, onboarding validation, non-YAML rejection, alert-rule modal behavior, incident filters and reset, empty states, and a mobile viewport. The streamer and API services were unavailable during that session, so live hydration, persistence, and service-backed workflows were not claimed as tested.
+The QA matrix at [docs/qa/ISH-05-QA-Test-Matrix.md](qa/ISH-05-QA-Test-Matrix.md) records both the `2026-08-24` browser black-box checks (`QA-001`..`QA-017`) and the `2026-11-21` Phase 3 full-stack E2E verification (`E2E-001`..`E2E-009`) executed against live `api-server`, `k8s-streamer` (`ALLOW_ANONYMOUS_WS=false`), PostgreSQL, Redis, and Minikube (`1` Node, `35` Pods, `1` HPA, `2` PDBs, `3` NetworkPolicies, `138ms` first WebSocket frame), alongside automated CI suites (`pnpm build`, `pnpm lint`, `pnpm test`, `go test -race ./...`, `db:check`, and `30` deployment contract tests).
 
-The ISH-05 bug tracker at [docs/qa/ISH-05-Bug-Tracker.md](qa/ISH-05-Bug-Tracker.md) records no reproducible application bugs from that session and lists service availability and coverage limitations separately.
+The bug and audit tracker at [docs/qa/ISH-05-Bug-Tracker.md](qa/ISH-05-Bug-Tracker.md) records zero open bugs and documents the `2026-11-21` pre-release remediation of `SEC-001`, `SEC-002`, `SEC-003` (PR `#118`) and `INFRA-001` (PR `#119`) as `VERIFIED`.
 
 ### 9.3 Acceptance and Traceability
 
