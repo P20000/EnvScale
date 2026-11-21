@@ -3,6 +3,8 @@
  * Target REST API backend: http://localhost:3000
  * Target Streaming Gateway: http://localhost:8080
  */
+import { apiClient } from "../lib/apiClient";
+
 
 const isViteDev =
   typeof window !== "undefined" &&
@@ -258,19 +260,12 @@ export async function apiGetWorkspaces() {
 }
 
 export async function apiGetWorkspaceClusters(workspaceId: string) {
-  try {
-    const res = await fetch(`${API_BASE_URL}/api/v1/workspaces/${workspaceId}/clusters`, {
-      headers: getAuthHeaders(),
-      credentials: "include",
-    });
-    if (res.ok) {
-      return await res.json();
-    }
-  } catch (err) {
-    console.warn(`Failed to fetch clusters for workspace ${workspaceId}:`, err);
-  }
-  return [];
+  const res = await apiClient<Array<{ id: string; name: string }>>(
+    `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/clusters`
+  );
+  return res.data || [];
 }
+
 
 export async function apiGetStreamerClusters(): Promise<Array<{ id: string; name: string; status?: string }>> {
   try {
@@ -295,19 +290,13 @@ export async function apiGetStreamerClusters(): Promise<Array<{ id: string; name
 }
 
 export async function apiMe() {
-  try {
-    const res = await fetch(`${API_BASE_URL}/api/v1/auth/me`, {
-      headers: getAuthHeaders(),
-      credentials: "include",
-    });
-    if (res.ok) {
-      return await res.json();
-    }
-  } catch (err) {
-    console.warn("Failed to fetch current user session:", err);
-  }
-  return null;
+  const res = await apiClient<{
+    user?: { id: string; email: string; name: string; role: string };
+    workspace?: { id: string; name: string; slug: string };
+  }>("/api/v1/auth/me");
+  return res.data;
 }
+
 
 /**
  * Disconnect/Unregister K8s Cluster
