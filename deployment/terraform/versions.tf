@@ -15,6 +15,7 @@ provider "aws" {
   default_tags {
     tags = {
       Project     = "EnvScale"
+      Layer       = "DisposableRuntime"
       Environment = var.environment
       ManagedBy   = "Terraform"
       Purpose     = "CollegeDemo"

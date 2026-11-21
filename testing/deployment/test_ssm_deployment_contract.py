@@ -271,6 +271,21 @@ class TestRepoInfrastructureContracts(unittest.TestCase):
         )
         self.assertIn("Verify Post-Apply Idempotency", foundation_yml)
 
+    def test_runtime_and_eks_terraform_enforce_disposable_runtime_tags(self):
+        runtime_versions = (REPO_ROOT / "deployment/terraform/versions.tf").read_text(encoding="utf-8")
+        eks_versions = (REPO_ROOT / "deployment/terraform-eks/versions.tf").read_text(encoding="utf-8")
+        codeowners = (REPO_ROOT / ".github/CODEOWNERS").read_text(encoding="utf-8")
+
+        for tf_text in (runtime_versions, eks_versions):
+            self.assertIn("default_tags", tf_text)
+            self.assertIn('"EnvScale"', tf_text)
+            self.assertIn('"DisposableRuntime"', tf_text)
+
+        for handle in ("@P20000", "@vinit1730", "@Neha874-ctrl", "@ishikaduhan"):
+            self.assertIn(handle, codeowners)
+        self.assertNotIn("@PranavDwivedi", codeowners)
+        self.assertNotIn("@NehaSharma", codeowners)
+
 
 if __name__ == "__main__":
     unittest.main()

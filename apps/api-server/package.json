@@ -8,6 +8,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "type-check": "tsc --noEmit",
+    "test": "NODE_ENV=test DATABASE_URL=postgresql://test:test@127.0.0.1:5432/envscale_test JWT_ACCESS_SECRET=test-access-secret-for-unit-tests-only JWT_REFRESH_SECRET=test-refresh-secret-for-unit-tests-only tsx --test tests/*.test.ts",
     "test:load": "k6 run tests/load/api-load-test.js",
     "db:generate": "drizzle-kit generate:pg",
     "db:migrate": "tsx src/db/migrate.ts",
