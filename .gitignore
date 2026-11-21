@@ -18,16 +18,52 @@ coverage/
 .env.local
 *.pem
 *.kubeconfig
+*kubeconfig*.yaml
 *.log
 
-# Project Management CLI Tool (Local Only - Never committed to repo)
-scripts/
-.task-manager/
-pm
-ghissue
+# Temp / Cache
+__pycache__/
+*.pyc
 
 # IDE & OS
 .DS_Store
 .vscode
 .idea
 
+# Compiled binaries
+apps/k8s-streamer/main
+apps/k8s-streamer/server
+apps/k8s-streamer/k8s-streamer-bin
+apps/k8s-streamer/bin/
+bin/
+*-bin
+.codegraph/
+.playwright-mcp/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+*.tflock
+*.tfvars
+!*.tfvars.example
+backend.hcl
+deployment/**/backend.hcl
+tfplan
+*.tfplan
+*.tfplan.json
+*plan.json
+*plan*.bin
+remote.tfplan
+remote_plan.json
+
+# Backups, Dumps & Temporary Release Manifests
+backups/
+deployment/backups/
+*.sql.bak
+*.dump
+.release-manifest*.json
+
+# Test Center Logs
+.envscale_test_center_logs/

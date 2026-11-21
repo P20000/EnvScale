@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "approved_phase": "phase-1",
+  "aws_account_id": "982534376726",
+  "aws_region": "ap-south-1",
+  "source_bucket": "envscale-cloud-vault-982534376726-ap-south-1",
+  "source_key": "database/backup_20261023_005151.sql",
+  "source_version_id": "hBlNyXzLVfUE5UuHGZ.XkUIUp.RnNxCg",
+  "source_etag": "\"1e2fafedf46e12bb3ceaacf0c6df9d33\"",
+  "expected_byte_size": 28383,
+  "expected_sha256": "34911494ae4a634505e17956b4ec58c000a65d583f02c04715be34ad03f6a2a7",
+  "recovery_bucket": "envscale-recovery-982534376726-ap-south-1"
+}
+

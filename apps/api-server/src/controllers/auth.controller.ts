@@ -1,22 +1,16 @@
 import type { Request, Response } from "express";
-import { z } from "zod";
 import {
   findUserByEmail,
   getUserById,
+  getUserAccessibleClusterIds,
   issueTokens,
+  createAccessToken,
   registerUser,
   rotateRefreshToken,
   verifyPassword,
 } from "../services/auth.service.js";
 
-const credentialsSchema = z.object({
-  email: z.string().trim().email().transform((value) => value.toLowerCase()),
-  password: z.string().min(8).max(128),
-});
-
-const registerSchema = credentialsSchema.extend({
-  name: z.string().trim().min(1).max(255),
-});
+import { ensureDefaultWorkspace } from "../services/workspace.service.js";
 
 const setRefreshCookie = (response: Response, token: string) => {
   response.cookie("refreshToken", token, {
@@ -29,21 +23,22 @@ const setRefreshCookie = (response: Response, token: string) => {
 };
 
 export const register = async (request: Request, response: Response) => {
-  const parsed = registerSchema.safeParse(request.body);
-  if (!parsed.success) {
-    response.status(400).json({ error: "Invalid registration data", details: parsed.error.flatten() });
-    return;
-  }
-  if (await findUserByEmail(parsed.data.email)) {
+  const { name, email, password } = request.body as { name: string; email: string; password: string };
+  if (await findUserByEmail(email)) {
     response.status(409).json({ error: "Email is already registered" });
     return;
   }
 
   try {
-    const user = await registerUser(parsed.data.name, parsed.data.email, parsed.data.password);
+    const user = await registerUser(name, email, password);
+    const workspace = await ensureDefaultWorkspace(user.id, user.name);
     const tokens = await issueTokens(user);
     setRefreshCookie(response, tokens.refreshToken);
-    response.status(201).json({ accessToken: tokens.accessToken, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+    response.status(201).json({
+      accessToken: tokens.accessToken,
+      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      workspace,
+    });
   } catch (error) {
     console.error(error);
     response.status(500).json({ error: "Unable to register user" });
@@ -51,20 +46,32 @@ export const register = async (request: Request, response: Response) => {
 };
 
 export const login = async (request: Request, response: Response) => {
-  const parsed = credentialsSchema.safeParse(request.body);
-  if (!parsed.success) {
-    response.status(400).json({ error: "Invalid login data", details: parsed.error.flatten() });
+  const { email, password } = request.body as { email: string; password: string };
+  const user = await findUserByEmail(email);
+  
+  if (!user || !user.isActive) {
+    response.status(401).json({ error: "Invalid email or password" });
     return;
   }
-  const user = await findUserByEmail(parsed.data.email);
-  if (!user || !user.isActive || !(await verifyPassword(parsed.data.password, user.passwordHash))) {
+  
+  if (!user.passwordHash) {
+    response.status(401).json({ error: "This account uses social login. Please sign in with Google or GitHub." });
+    return;
+  }
+  
+  if (!(await verifyPassword(password, user.passwordHash))) {
     response.status(401).json({ error: "Invalid email or password" });
     return;
   }
 
+  const workspace = await ensureDefaultWorkspace(user.id, user.name);
   const tokens = await issueTokens(user);
   setRefreshCookie(response, tokens.refreshToken);
-  response.json({ accessToken: tokens.accessToken, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+  response.json({
+    accessToken: tokens.accessToken,
+    user: { id: user.id, name: user.name, email: user.email, role: user.role },
+    workspace,
+  });
 };
 
 export const refresh = async (request: Request, response: Response) => {
@@ -89,5 +96,57 @@ export const me = async (request: Request, response: Response) => {
     response.status(401).json({ error: "User unavailable" });
     return;
   }
-  response.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+  const workspace = await ensureDefaultWorkspace(user.id, user.name);
+  response.json({
+    user: { id: user.id, name: user.name, email: user.email, role: user.role },
+    workspace,
+  });
+};
+
+export const getStreamerToken = async (request: Request, response: Response) => {
+  if (!request.user) {
+    response.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const allowedClusterIds = await getUserAccessibleClusterIds(request.user.id, request.user.role);
+  const token = createAccessToken(request.user, { allowedClusterIds });
+  response.json({ token, allowedClusterIds });
+};
+
+export const switchSession = async (request: Request, response: Response) => {
+  try {
+    if (!request.user || request.isServiceToken) {
+      response.status(403).json({ error: "User session authentication required" });
+      return;
+    }
+
+    const caller = await getUserById(request.user.id);
+    if (!caller || caller.isActive === false) {
+      response.status(401).json({ error: "User unavailable" });
+      return;
+    }
+
+    const { accountId, email } = request.body as { accountId?: string; email?: string };
+    if (
+      (accountId && accountId !== caller.id) ||
+      (email && email.toLowerCase() !== caller.email.toLowerCase())
+    ) {
+      response.status(403).json({ error: "Cannot switch to another user's session" });
+      return;
+    }
+
+    const allowedClusterIds = await getUserAccessibleClusterIds(caller.id, caller.role);
+    const token = createAccessToken(caller, { allowedClusterIds });
+    const workspace = await ensureDefaultWorkspace(caller.id, caller.name);
+
+    response.json({
+      token,
+      user: { id: caller.id, name: caller.name, email: caller.email, role: caller.role },
+      workspace,
+      allowedClusterIds,
+    });
+  } catch (error) {
+    console.error("switchSession handler error:", error);
+    response.status(500).json({ error: "Failed to switch user session" });
+  }
 };

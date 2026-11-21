@@ -161,8 +161,7 @@ func BenchmarkBroadcastEvent_Sub200ms(b *testing.B) {
 		Phase:     "Running",
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		hub.BroadcastEvent(types.EventPodStatusChanged, "bench-cluster", delta)
 	}
 }

@@ -1,75 +1,38 @@
-# React + TypeScript + Vite
+# EnvScale Web Frontend (`apps/web`)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Interactive Kubernetes topology visualizer, log explorer, metrics dashboard, incident/alert rule console, and cluster onboarding UI for **EnvScale**.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Framework & Build:** React 19, TypeScript, Vite 8
+- **Topology & Layout:** `@xyflow/react` (`13` custom node components across `15` `nodeTypes` keys + custom `K8sEdge` / `ArgoEdge`), `@dagrejs/dagre`
+- **State & Auth:** Zustand 5 (`useTopologyStore`, `useAuthStore`, `useUIStore`, `useMetricsStore`, `useAlertStore`) + Better Auth client
+- **Styling & Icons:** Tailwind CSS (Material Design 3 dark palette), `@mdi/react` / `@mdi/js`, `lucide-react`, `@base-ui/react`
 
-## React Compiler
+## Local Development
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+# From monorepo root (or inside apps/web)
+cp apps/web/.env.example apps/web/.env
+pnpm --filter web dev       # Starts Vite dev server on http://localhost:5173
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### Scripts ([`package.json`](package.json))
+- `pnpm --filter web dev`: Start Vite HMR server (`:5173`)
+- `pnpm --filter web build`: Type-check (`tsc -b`) and build production bundle (`dist/`)
+- `pnpm --filter web lint`: Run ESLint (`eslint .`)
+- `pnpm --filter web preview`: Preview built production assets
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+### Environment Variables ([`.env.example`](.env.example))
+- `VITE_API_BASE_URL`: REST API base URL (Dev: `http://localhost:3000`; Prod relative proxy: `""`)
+- `VITE_STREAMER_BASE_URL`: Streaming gateway base URL (Dev: `http://localhost:8080`; Prod relative proxy: `""`)
+- `VITE_WS_URL`: WebSocket topology stream URL (Dev: `ws://localhost:8080/ws/k8s`; Prod: `/ws/k8s`)
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Structure & Docs
 
-```
+- `src/components/`: `canvas/`, `flow/`, `drawer/`, `views/`, `onboarding/`, `landing/`, `layout/`, `alerts/`, `incidents/`, `settings/`, `ui/`
+- `src/store/`: 5 Zustand stores, `slices/` (6 topology slices), `helpers/` (16 domain reducers)
+- `src/hooks/`: `useK8sStream`, `useResourceLogs`, `usePodLogs`, `useClusterLayoutPersistence`, `useKeyboardShortcuts`
+- [Frontend Views & Interactions](../../docs/frontend-views-and-interactions.md)
+- [Frontend State & Store Architecture](../../docs/frontend-state-and-store-architecture.md)
+- [UI & UX Design System](../../docs/design.md)

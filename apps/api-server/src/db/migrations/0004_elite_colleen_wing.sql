@@ -1,0 +1,2 @@
+CREATE INDEX IF NOT EXISTS "health_snapshots_cluster_created_at_idx" ON "health_snapshots" ("cluster_id","created_at");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "incidents_workspace_status_idx" ON "incidents" ("workspace_id","status");

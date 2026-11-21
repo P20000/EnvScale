@@ -1,0 +1,13 @@
+{
+  "name": "envscale-ish-08-deck",
+  "version": "1.0.0",
+  "description": "ISH-08: EnvScale 15-slide project defense presentation generator",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "node generate-deck.mjs"
+  },
+  "dependencies": {
+    "pptxgenjs": "3.12.0"
+  }
+}

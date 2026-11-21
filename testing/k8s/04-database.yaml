@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-headless-service
+  namespace: testing-todo
+  labels:
+    app: redis-db
+    tier: database
+spec:
+  clusterIP: None
+  ports:
+    - port: 6379
+      targetPort: 6379
+      name: redis
+  selector:
+    app: redis-db
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-db
+  namespace: testing-todo
+  labels:
+    app: redis-db
+    tier: database
+spec:
+  serviceName: redis-headless-service
+  replicas: 2
+  selector:
+    matchLabels:
+      app: redis-db
+  template:
+    metadata:
+      labels:
+        app: redis-db
+        tier: database
+    spec:
+      containers:
+        - name: redis
+          image: redis:alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 6379
+              name: redis
+          resources:
+            requests:
+              cpu: 30m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi

@@ -1,0 +1,114 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowDay0InitialBucketCreateAndPolicySeal",
+      "Effect": "Allow",
+      "Action": [
+        "s3:CreateBucket",
+        "s3:ListBucket",
+        "s3:GetBucketLocation",
+        "s3:GetBucketPolicy",
+        "s3:PutBucketPolicy"
+      ],
+      "Resource": "arn:aws:s3:::envscale-tfstate-982534376726-ap-south-1"
+    },
+    {
+      "Sid": "AllowDay0InitialCallerIdentityCheck",
+      "Effect": "Allow",
+      "Action": ["sts:GetCallerIdentity"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowDay0InitialSelfIamUserInspection",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetUser",
+        "iam:ListAttachedUserPolicies",
+        "iam:ListUserPolicies"
+      ],
+      "Resource": "arn:aws:iam::982534376726:user/envscale-day0-initial-seal"
+    },
+    {
+      "Sid": "AllowDay0InitialSelfIamRoleInspection",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetRole",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListRolePolicies"
+      ],
+      "Resource": "arn:aws:iam::982534376726:role/envscale-day0-initial-seal"
+    },
+    {
+      "Sid": "AllowDay0InitialSelfPolicyDocumentInspection",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetPolicy",
+        "iam:GetPolicyVersion"
+      ],
+      "Resource": "arn:aws:iam::982534376726:policy/envscale-day0-initial-seal*"
+    },
+    {
+      "Sid": "DenyDay0InitialDestructionAndObjectAccess",
+      "Effect": "Deny",
+      "Action": [
+        "s3:DeleteBucket",
+        "s3:DeleteBucketPolicy",
+        "s3:DeleteObject",
+        "s3:DeleteObject*",
+        "s3:DeleteObjectVersion",
+        "s3:GetObject",
+        "s3:GetObject*",
+        "s3:PutObject",
+        "s3:PutObject*"
+      ],
+      "Resource": [
+        "arn:aws:s3:::envscale-tfstate-982534376726-ap-south-1",
+        "arn:aws:s3:::envscale-tfstate-982534376726-ap-south-1/*"
+      ]
+    },
+    {
+      "Sid": "DenyDay0InitialRecoveryAndLegacyBuckets",
+      "Effect": "Deny",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::envscale-recovery-982534376726-ap-south-1",
+        "arn:aws:s3:::envscale-recovery-982534376726-ap-south-1/*",
+        "arn:aws:s3:::envscale-cloud-vault-982534376726-ap-south-1",
+        "arn:aws:s3:::envscale-cloud-vault-982534376726-ap-south-1/*"
+      ]
+    },
+    {
+      "Sid": "DenyDay0InitialPrivilegeEscalationAndNonStateServices",
+      "Effect": "Deny",
+      "Action": [
+        "iam:Create*",
+        "iam:Delete*",
+        "iam:Put*",
+        "iam:Update*",
+        "iam:Attach*",
+        "iam:Detach*",
+        "iam:Add*",
+        "iam:Remove*",
+        "iam:PassRole",
+        "iam:Tag*",
+        "iam:Untag*",
+        "iam:Set*",
+        "iam:ListRoles",
+        "iam:ListUsers",
+        "iam:ListPolicies",
+        "iam:ListGroups",
+        "iam:ListEntitiesForPolicy",
+        "iam:Simulate*",
+        "ec2:*",
+        "ssm:*",
+        "kms:*",
+        "eks:*",
+        "organizations:*",
+        "account:*",
+        "sts:AssumeRole"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

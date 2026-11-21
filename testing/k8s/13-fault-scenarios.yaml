@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: simulated-crashloop-app
+  namespace: testing-todo
+  labels:
+    app: simulated-crashloop-app
+    tier: fault-simulation
+    anomaly: CrashLoopBackOff
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: simulated-crashloop-app
+  template:
+    metadata:
+      labels:
+        app: simulated-crashloop-app
+        tier: fault-simulation
+        anomaly: CrashLoopBackOff
+    spec:
+      containers:
+        - name: crash-app
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - "echo '[CRASH SIMULATOR] Fatal runtime panic: unhandled nil pointer dereference'; sleep 3; exit 1"
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: simulated-oom-app
+  namespace: testing-todo
+  labels:
+    app: simulated-oom-app
+    tier: fault-simulation
+    anomaly: OOMKilled
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: simulated-oom-app
+  template:
+    metadata:
+      labels:
+        app: simulated-oom-app
+        tier: fault-simulation
+        anomaly: OOMKilled
+    spec:
+      containers:
+        - name: oom-app
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - "echo '[OOM SIMULATOR] Consuming memory beyond 16MB limit...'; x='abcdefgh'; while true; do x=\"$x$x$x$x\"; done"
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 16Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: simulated-invalid-image-app
+  namespace: testing-todo
+  labels:
+    app: simulated-invalid-image-app
+    tier: fault-simulation
+    anomaly: ImagePullBackOff
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: simulated-invalid-image-app
+  template:
+    metadata:
+      labels:
+        app: simulated-invalid-image-app
+        tier: fault-simulation
+        anomaly: ImagePullBackOff
+    spec:
+      containers:
+        - name: bogus-image-container
+          image: todo-backend:non-existent-v999
+          imagePullPolicy: Always
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi

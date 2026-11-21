@@ -6,7 +6,29 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": path.resolve(import.meta.dirname, "./src"),
+    },
+  },
+  server: {
+    watch: {
+      usePolling: true,
+      interval: 500,
+      ignored: ["**/node_modules/**", "**/.git/**", "**/dist/**"],
+    },
+    proxy: {
+      "/api/v1/stream": {
+        target: "http://localhost:8080",
+        ws: true,
+        changeOrigin: true,
+      },
+      "/api": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+      },
+      "/ws": {
+        target: "ws://localhost:8080",
+        ws: true,
+      },
     },
   },
 })
