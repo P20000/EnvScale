@@ -18,10 +18,12 @@ Triggered on pushes to `main`, `develop`, `feature/**` and pull requests targeti
 | **`deployment-contract-checks`** | Ubuntu + Python `3.12` | Runs `validate-release-manifest.py --manifest deployment/release/release-manifest.example.json --allow-example` and `python3 -m unittest discover -s testing/deployment -p "test_*.py" -v`. |
 
 ### CD Pipeline ([`cd.yml`](../.github/workflows/cd.yml))
-Triggered on pushes to `develop` (ignoring `deployment/terraform/**`, `docs/**`, `**.md`) or `workflow_dispatch`:
+Triggered on pushes to `develop` (ignoring `deployment/terraform/**`, `docs/**`, `**.md`) or `workflow_dispatch` (with optional `force_deploy_gate` boolean input):
 1. **`build-and-push` (Matrix: `api-server`, `k8s-streamer`, `web`):** Builds `linux/amd64` Docker images with GHA buildx cache (passing `VITE_API_BASE_URL=`, `VITE_STREAMER_BASE_URL=`, `VITE_WS_URL=/ws/k8s` for `web`), pushes `ghcr.io/<owner>/envscale-{api-server,k8s-streamer,web}:sha-<commit_sha>`, and uploads immutable `@sha256:...` digest artifacts.
 2. **`generate-manifest`:** Downloads image digests, runs `generate-release-manifest.py` + `validate-release-manifest.py --verify-repo-migrations`, uploads `release-manifest.json` (`30d` retention), and (when `AWS_RELEASE_ROLE_ARN` + `RECOVERY_BUCKET` are set) assumes AWS OIDC credentials to upload `s3://<RECOVERY_BUCKET>/releases/<commit_sha>/release-manifest.json`.
-3. **`deploy` (`production` environment):** Assumes `AWS_DEPLOY_ROLE_ARN`, base64-encodes `release-manifest.json`, and dispatches exact-SHA `git checkout --detach` + `sync-ssm-secrets.py` + `envscale.sh deploy --manifest` on `EC2_INSTANCE_ID` via `aws ssm send-command`.
+3. **`check-deploy-target`:** Pre-flight job (without `environment: production`) checks whether repo-level `EC2_INSTANCE_ID` (`secrets.EC2_INSTANCE_ID || vars.EC2_INSTANCE_ID`) is configured or `workflow_dispatch` set `force_deploy_gate=true`, emitting `ec2_configured` (`true` or `false`) and a diagnostic `reason`.
+4. **`deploy` (`production` environment, gated on `ec2_configured == 'true'`):** Assumes `AWS_DEPLOY_ROLE_ARN`, runs `aws ec2 describe-instances` to verify the target EC2 host is in `running` state, base64-encodes `release-manifest.json`, and dispatches exact-SHA `git checkout --detach` + `sync-ssm-secrets.py` + `envscale.sh deploy --manifest` on `EC2_INSTANCE_ID` via `aws ssm send-command`.
+5. **`deploy-fallback-summary` (gated on `ec2_configured != 'true'`):** Downloads the validated `release-manifest` artifact and writes a release readiness summary to `$GITHUB_STEP_SUMMARY` so CD completes cleanly without hanging at the manual `production` approval gate when no EC2 host is provisioned.
 
 ### Foundation Pipeline ([`foundation.yml`](../.github/workflows/foundation.yml))
 Manual `workflow_dispatch` for Day-0/Day-2 AWS IAM/S3/VPC provisioning on `develop` or `main` using pinned Terraform `1.14.9` and serialized concurrency locks:

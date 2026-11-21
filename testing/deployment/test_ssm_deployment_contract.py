@@ -231,6 +231,26 @@ class TestRepoInfrastructureContracts(unittest.TestCase):
         self.assertIn("aws ssm send-command", cd_yml)
         self.assertIn("--manifest", cd_yml)
 
+    def test_cd_workflow_gates_production_deploy_with_no_host_fallback(self):
+        cd_yml = (REPO_ROOT / ".github/workflows/cd.yml").read_text(encoding="utf-8")
+        self.assertIn("force_deploy_gate:", cd_yml)
+        self.assertIn("check-deploy-target:", cd_yml)
+        self.assertIn("ec2_configured:", cd_yml)
+        self.assertLess(cd_yml.index("check-deploy-target:"), cd_yml.index("\n  deploy:\n"))
+        self.assertIn("needs: [generate-manifest, check-deploy-target]", cd_yml)
+        self.assertIn("if: needs.check-deploy-target.outputs.ec2_configured == 'true'", cd_yml)
+        self.assertLess(
+            cd_yml.index("if: needs.check-deploy-target.outputs.ec2_configured == 'true'"),
+            cd_yml.index("environment: production"),
+        )
+        self.assertLess(
+            cd_yml.index("Configure AWS Deploy Credentials"),
+            cd_yml.index("aws ec2 describe-instances"),
+        )
+        self.assertIn("deploy-fallback-summary:", cd_yml)
+        self.assertIn("if: needs.check-deploy-target.outputs.ec2_configured != 'true'", cd_yml)
+        self.assertIn("$GITHUB_STEP_SUMMARY", cd_yml)
+
     def test_foundation_workflow_uses_oidc_plan_validator_and_idempotency(self):
         foundation_yml = (REPO_ROOT / ".github/workflows/foundation.yml").read_text(encoding="utf-8")
         self.assertIn("workflow_dispatch:", foundation_yml)
