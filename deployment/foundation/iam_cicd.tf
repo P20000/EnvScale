@@ -26,7 +26,7 @@ resource "aws_iam_role" "github_deploy" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repository}:environment:${var.production_environment_name}"
+          "token.actions.githubusercontent.com:sub" = "repo:${var.github_oidc_subject_prefix}:environment:${var.production_environment_name}"
         }
       }
     }]
@@ -202,7 +202,7 @@ resource "aws_iam_role" "github_recovery" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repository}:environment:${var.recovery_environment_name}"
+          "token.actions.githubusercontent.com:sub" = "repo:${var.github_oidc_subject_prefix}:environment:${var.recovery_environment_name}"
         }
       }
     }]

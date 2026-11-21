@@ -77,7 +77,7 @@ def build_hardened_foundation_and_boundary_policies(
         ],
     }
 
-    trust_plan = {"Version": "2012-10-17", "Statement": [{"Sid": "AllowGitHubFoundationPlanEnvironmentOIDC", "Effect": "Allow", "Principal": {"Federated": OIDC_ARN}, "Action": "sts:AssumeRoleWithWebIdentity", "Condition": {"StringEquals": {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": "repo:P20000/EnvScale:environment:foundation-plan"}}}]}
+    trust_plan = {"Version": "2012-10-17", "Statement": [{"Sid": "AllowGitHubFoundationPlanEnvironmentOIDC", "Effect": "Allow", "Principal": {"Federated": OIDC_ARN}, "Action": "sts:AssumeRoleWithWebIdentity", "Condition": {"StringEquals": {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": "repo:P20000@61460949/EnvScale@1323134407:environment:foundation-plan"}}}]}
 
     role_plan = {
         "Version": "2012-10-17",
