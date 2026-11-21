@@ -50,6 +50,11 @@ export const list = async (request: Request, response: Response) => {
     }
   }
 
+  if (!workspaceId) {
+    response.status(401).json({ error: "Authentication required to list clusters" });
+    return;
+  }
+
   response.json(await listClusters(workspaceId));
 };
 
@@ -80,7 +85,11 @@ export const remove = async (request: Request, response: Response) => {
 };
 
 export const getLayout = async (request: Request, response: Response) => {
-  const clusterId = request.params.clusterId as string;
+  const clusterId = request.authorizedClusterId;
+  if (!clusterId) {
+    response.status(403).json({ error: "Cluster access denied" });
+    return;
+  }
   const userId = request.user?.id;
   try {
     const layout = await getClusterLayout(clusterId, userId);
@@ -95,7 +104,11 @@ export const getLayout = async (request: Request, response: Response) => {
 };
 
 export const saveLayout = async (request: Request, response: Response) => {
-  const clusterId = request.params.clusterId as string;
+  const clusterId = request.authorizedClusterId;
+  if (!clusterId) {
+    response.status(403).json({ error: "Cluster access denied" });
+    return;
+  }
   const userId = request.user?.id;
   const { positions } = request.body as { positions: Record<string, { x: number; y: number }> };
   try {
@@ -111,7 +124,11 @@ export const saveLayout = async (request: Request, response: Response) => {
 };
 
 export const resetLayout = async (request: Request, response: Response) => {
-  const clusterId = request.params.clusterId as string;
+  const clusterId = request.authorizedClusterId;
+  if (!clusterId) {
+    response.status(403).json({ error: "Cluster access denied" });
+    return;
+  }
   const userId = request.user?.id;
   try {
     const result = await resetClusterLayout(clusterId, userId);
@@ -126,7 +143,11 @@ export const resetLayout = async (request: Request, response: Response) => {
 };
 
 export const getAgentManifest = async (request: Request, response: Response) => {
-  const clusterId = request.params.clusterId as string;
+  const clusterId = request.authorizedClusterId;
+  if (!clusterId) {
+    response.status(403).json({ error: "Cluster access denied" });
+    return;
+  }
   try {
     const cluster = await getClusterById(clusterId);
     if (!cluster) {

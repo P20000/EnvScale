@@ -384,6 +384,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
         const switchRes = await apiSwitchSession({
           accountId: target.id,
           email: target.email,
+          token: target.token,
         });
         if (switchRes.token) {
           activeToken = switchRes.token;

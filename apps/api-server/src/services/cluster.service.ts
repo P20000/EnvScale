@@ -142,18 +142,16 @@ export const connectCluster = async (
 };
 
 export const getClusterById = async (clusterId: string) => {
+  const parsedId = idSchema.parse(clusterId);
   const [cluster] = await db
     .select(publicClusterFields)
     .from(clusters)
-    .where(or(eq(clusters.id, clusterId), eq(clusters.name, clusterId)))
+    .where(eq(clusters.id, parsedId))
     .limit(1);
   return cluster;
 };
 
-export const listClusters = async (rawWorkspaceId?: string) => {
-  if (!rawWorkspaceId) {
-    return db.select(publicClusterFields).from(clusters);
-  }
+export const listClusters = async (rawWorkspaceId: string) => {
   const workspaceId = idSchema.parse(rawWorkspaceId);
   return db
     .select(publicClusterFields)
@@ -183,14 +181,11 @@ export const deleteCluster = async (rawWorkspaceId: string, rawClusterId: string
 };
 
 export const getClusterLayout = async (rawClusterId: string, userId?: string) => {
-  const condition = isUuid(rawClusterId)
-    ? or(eq(clusters.id, rawClusterId), eq(clusters.name, rawClusterId))
-    : eq(clusters.name, rawClusterId);
-
+  const clusterId = idSchema.parse(rawClusterId);
   const rows = await db
     .select({ id: clusters.id, metadata: clusters.metadata })
     .from(clusters)
-    .where(condition!)
+    .where(eq(clusters.id, clusterId))
     .limit(1);
 
   if (rows.length === 0) {
@@ -210,14 +205,11 @@ export const saveClusterLayout = async (
   layout: Record<string, { x: number; y: number }>,
   userId?: string
 ) => {
-  const condition = isUuid(rawClusterId)
-    ? or(eq(clusters.id, rawClusterId), eq(clusters.name, rawClusterId))
-    : eq(clusters.name, rawClusterId);
-
+  const clusterId = idSchema.parse(rawClusterId);
   const rows = await db
     .select({ id: clusters.id, metadata: clusters.metadata })
     .from(clusters)
-    .where(condition!)
+    .where(eq(clusters.id, clusterId))
     .limit(1);
 
   if (rows.length === 0) {
@@ -247,14 +239,11 @@ export const saveClusterLayout = async (
 };
 
 export const resetClusterLayout = async (rawClusterId: string, userId?: string) => {
-  const condition = isUuid(rawClusterId)
-    ? or(eq(clusters.id, rawClusterId), eq(clusters.name, rawClusterId))
-    : eq(clusters.name, rawClusterId);
-
+  const clusterId = idSchema.parse(rawClusterId);
   const rows = await db
     .select({ id: clusters.id, metadata: clusters.metadata })
     .from(clusters)
-    .where(condition!)
+    .where(eq(clusters.id, clusterId))
     .limit(1);
 
   if (rows.length === 0) {
@@ -262,12 +251,14 @@ export const resetClusterLayout = async (rawClusterId: string, userId?: string) 
   }
 
   const targetId = rows[0].id;
-  const currentMeta = (rows[0].metadata as Record<string, unknown>) || {};
+  const currentMeta = { ...((rows[0].metadata as Record<string, unknown>) || {}) };
   const userLayouts = { ...(((currentMeta.userLayouts as Record<string, unknown>) || {}) as Record<string, unknown>) };
   if (userId && userLayouts[userId]) {
     delete userLayouts[userId];
   }
-  delete currentMeta.layout;
+  if (Object.keys(userLayouts).length === 0) {
+    delete currentMeta.layout;
+  }
 
   await db
     .update(clusters)

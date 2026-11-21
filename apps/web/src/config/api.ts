@@ -125,13 +125,21 @@ export interface SwitchSessionResponse {
 export async function apiSwitchSession(params: {
   accountId?: string;
   email?: string;
+  token?: string;
 }): Promise<SwitchSessionResponse> {
   try {
+    const headers = getAuthHeaders("application/json");
+    if (params.token && params.token !== "null" && params.token !== "session_token") {
+      headers["Authorization"] = `Bearer ${params.token}`;
+    }
     const res = await fetch(`${API_BASE_URL}/api/v1/auth/switch-session`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       credentials: "include",
-      body: JSON.stringify(params),
+      body: JSON.stringify({
+        accountId: params.accountId,
+        email: params.email,
+      }),
     });
     const data = (await res.json()) as SwitchSessionResponse;
     if (!res.ok) {

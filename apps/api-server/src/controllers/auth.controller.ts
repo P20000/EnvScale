@@ -115,29 +115,33 @@ export const getStreamerToken = async (request: Request, response: Response) => 
 
 export const switchSession = async (request: Request, response: Response) => {
   try {
+    if (!request.user || request.isServiceToken) {
+      response.status(403).json({ error: "User session authentication required" });
+      return;
+    }
+
+    const caller = await getUserById(request.user.id);
+    if (!caller || caller.isActive === false) {
+      response.status(401).json({ error: "User unavailable" });
+      return;
+    }
+
     const { accountId, email } = request.body as { accountId?: string; email?: string };
-    if (!accountId && !email) {
-      response.status(400).json({ error: "accountId or email is required" });
+    if (
+      (accountId && accountId !== caller.id) ||
+      (email && email.toLowerCase() !== caller.email.toLowerCase())
+    ) {
+      response.status(403).json({ error: "Cannot switch to another user's session" });
       return;
     }
 
-    let user = accountId ? await getUserById(accountId) : undefined;
-    if (!user && email) {
-      user = await findUserByEmail(email);
-    }
-
-    if (!user || user.isActive === false) {
-      response.status(404).json({ error: "User session not found" });
-      return;
-    }
-
-    const allowedClusterIds = await getUserAccessibleClusterIds(user.id, user.role);
-    const token = createAccessToken(user, { allowedClusterIds });
-    const workspace = await ensureDefaultWorkspace(user.id, user.name);
+    const allowedClusterIds = await getUserAccessibleClusterIds(caller.id, caller.role);
+    const token = createAccessToken(caller, { allowedClusterIds });
+    const workspace = await ensureDefaultWorkspace(caller.id, caller.name);
 
     response.json({
       token,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      user: { id: caller.id, name: caller.name, email: caller.email, role: caller.role },
       workspace,
       allowedClusterIds,
     });
