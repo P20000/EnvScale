@@ -12,7 +12,7 @@ Triggered on pushes to `main`, `develop`, `feature/**` and pull requests targeti
 
 | Job | Runner / Runtime | Executed Verification Steps |
 | :--- | :--- | :--- |
-| **`typescript-monorepo`** | Ubuntu + Node 20 + pnpm | `pnpm install --frozen-lockfile`, `pnpm build`, `pnpm lint`, `pnpm --filter envscale-api-server db:check` (Drizzle Kit check). |
+| **`typescript-monorepo`** | Ubuntu + Node 20 + pnpm | `pnpm install --frozen-lockfile`, `pnpm build`, `pnpm lint`, `pnpm test` (`api-server` security/RBAC & `web` helper suites), `pnpm --filter envscale-api-server db:check` (Drizzle Kit check). |
 | **`k8s-streamer-engine`** | Ubuntu + Go `1.24` | `go mod verify`, `go test -v -race ./...`, `CGO_ENABLED=0 go build -v -ldflags="-w -s" -o /dev/null ./cmd/server`. |
 | **`db-schema-check`** | Ubuntu + Node 20 + pnpm | Installs `envscale-api-server...` workspace deps and asserts `src/db/migrations` existence. |
 | **`deployment-contract-checks`** | Ubuntu + Python `3.12` | Runs `validate-release-manifest.py --manifest deployment/release/release-manifest.example.json --allow-example` and `python3 -m unittest discover -s testing/deployment -p "test_*.py" -v`. |

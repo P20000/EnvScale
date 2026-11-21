@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test": "find src -name '*.test.ts' -exec ../api-server/node_modules/.bin/tsx --test {} +",
     "preview": "vite preview"
   },
   "dependencies": {

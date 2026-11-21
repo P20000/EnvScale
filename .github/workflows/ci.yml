@@ -58,6 +58,9 @@ jobs:
       - name: Run Monorepo Lint (ESLint Cleanliness)
         run: pnpm lint
 
+      - name: Run Monorepo Unit & Security Tests
+        run: pnpm test
+
       - name: Verify Database Schema & Migrations Consistency (Drizzle Kit)
         run: pnpm --filter envscale-api-server db:check
 
