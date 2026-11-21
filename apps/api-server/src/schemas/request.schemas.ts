@@ -93,3 +93,30 @@ export const incidentResolveSchema = z.object({
 export const healthHistoryQuerySchema = z.object({
   days: z.coerce.number().int().min(1).max(90).default(7),
 });
+
+export const switchSessionSchema = z
+  .object({
+    accountId: idSchema.optional(),
+    email: z
+      .string()
+      .trim()
+      .email()
+      .transform((value) => value.toLowerCase())
+      .optional(),
+  })
+  .refine((value) => Boolean(value.accountId || value.email), {
+    message: "accountId or email is required",
+  });
+
+export const internalIncidentTriggerSchema = z.object({
+  ruleId: idSchema,
+  clusterId: z.string().trim().min(1).max(255),
+  targetKind: z.string().trim().min(1).max(100),
+  targetName: z.string().trim().min(1).max(255),
+  namespace: z.string().trim().max(255).optional(),
+  measured: z.union([z.string().max(100), z.number().transform((v) => String(v))]).optional(),
+  threshold: z.union([z.string().max(100), z.number().transform((v) => String(v))]).optional(),
+  severity: z.enum(["info", "warning", "error", "critical", "INFO", "WARNING", "ERROR", "CRITICAL"]).optional(),
+  message: z.string().trim().max(2000).optional(),
+  timestamp: z.string().trim().max(100).optional(),
+});
