@@ -50,6 +50,17 @@ variable "github_repository" {
   }
 }
 
+variable "github_oidc_subject_prefix" {
+  description = "Immutable GitHub OIDC repository subject prefix (<owner>@<owner_id>/<repo>@<repo_id>) when GitHub use_immutable_subject is enabled."
+  type        = string
+  default     = "P20000@61460949/EnvScale@1323134407"
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_.-]+@[0-9]+/[A-Za-z0-9_.-]+@[0-9]+$", var.github_oidc_subject_prefix))
+    error_message = "github_oidc_subject_prefix must follow immutable '<owner>@<owner_id>/<repo>@<repo_id>' format without wildcards."
+  }
+}
+
 variable "release_branch" {
   description = "Git branch permitted to assume envscale-github-release-role."
   type        = string

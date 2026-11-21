@@ -71,11 +71,11 @@ def build_rendered_foundation_policies(foundation_dir: pathlib.Path) -> dict[str
     combined_hcl = "\n".join(hcl_parts)
 
     required_snippets = [
-        '"repo:${var.github_repository}:ref:refs/heads/${var.release_branch}"',
-        '"repo:${var.github_repository}:environment:${var.production_environment_name}"',
-        '"repo:${var.github_repository}:environment:${var.recovery_environment_name}"',
-        '"repo:${var.github_repository}:environment:${var.foundation_environment_name}"',
-        '"repo:${var.github_repository}:environment:${var.foundation_plan_environment_name}"',
+        '"repo:${var.github_oidc_subject_prefix}:ref:refs/heads/${var.release_branch}"',
+        '"repo:${var.github_oidc_subject_prefix}:environment:${var.production_environment_name}"',
+        '"repo:${var.github_oidc_subject_prefix}:environment:${var.recovery_environment_name}"',
+        '"repo:${var.github_oidc_subject_prefix}:environment:${var.foundation_environment_name}"',
+        '"repo:${var.github_oidc_subject_prefix}:environment:${var.foundation_plan_environment_name}"',
         '"iam:PermissionsBoundary" = local.workload_boundary_policy_arn',
         '"iam:PolicyARN" = local.ssm_managed_core_policy_arn',
         "permissions_boundary = aws_iam_policy.workload_permissions_boundary.arn",
@@ -174,10 +174,10 @@ def build_rendered_foundation_policies(foundation_dir: pathlib.Path) -> dict[str
             ],
         },
         "trust_ec2_runtime": {"Version": "2012-10-17", "Statement": [{"Sid": "AllowEC2ServiceAssumeRoleInAccount", "Effect": "Allow", "Principal": {"Service": "ec2.amazonaws.com"}, "Action": "sts:AssumeRole", "Condition": {"StringEquals": {"aws:SourceAccount": ACCOUNT}}}]},
-        "trust_github_release": {"Version": "2012-10-17", "Statement": [{"Sid": "AllowGitHubDevelopBranchOIDC", "Effect": "Allow", "Principal": {"Federated": OIDC_ARN}, "Action": "sts:AssumeRoleWithWebIdentity", "Condition": {"StringEquals": {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": "repo:P20000/EnvScale:ref:refs/heads/develop"}}}]},
-        "trust_github_deploy": {"Version": "2012-10-17", "Statement": [{"Sid": "AllowGitHubProductionEnvironmentOIDC", "Effect": "Allow", "Principal": {"Federated": OIDC_ARN}, "Action": "sts:AssumeRoleWithWebIdentity", "Condition": {"StringEquals": {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": "repo:P20000/EnvScale:environment:production"}}}]},
-        "trust_github_recovery": {"Version": "2012-10-17", "Statement": [{"Sid": "AllowGitHubRecoveryEnvironmentOIDC", "Effect": "Allow", "Principal": {"Federated": OIDC_ARN}, "Action": "sts:AssumeRoleWithWebIdentity", "Condition": {"StringEquals": {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": "repo:P20000/EnvScale:environment:recovery"}}}]},
-        "trust_github_foundation": {"Version": "2012-10-17", "Statement": [{"Sid": "AllowGitHubFoundationEnvironmentOIDC", "Effect": "Allow", "Principal": {"Federated": OIDC_ARN}, "Action": "sts:AssumeRoleWithWebIdentity", "Condition": {"StringEquals": {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": "repo:P20000/EnvScale:environment:foundation"}}}]},
+        "trust_github_release": {"Version": "2012-10-17", "Statement": [{"Sid": "AllowGitHubDevelopBranchOIDC", "Effect": "Allow", "Principal": {"Federated": OIDC_ARN}, "Action": "sts:AssumeRoleWithWebIdentity", "Condition": {"StringEquals": {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": "repo:P20000@61460949/EnvScale@1323134407:ref:refs/heads/develop"}}}]},
+        "trust_github_deploy": {"Version": "2012-10-17", "Statement": [{"Sid": "AllowGitHubProductionEnvironmentOIDC", "Effect": "Allow", "Principal": {"Federated": OIDC_ARN}, "Action": "sts:AssumeRoleWithWebIdentity", "Condition": {"StringEquals": {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": "repo:P20000@61460949/EnvScale@1323134407:environment:production"}}}]},
+        "trust_github_recovery": {"Version": "2012-10-17", "Statement": [{"Sid": "AllowGitHubRecoveryEnvironmentOIDC", "Effect": "Allow", "Principal": {"Federated": OIDC_ARN}, "Action": "sts:AssumeRoleWithWebIdentity", "Condition": {"StringEquals": {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": "repo:P20000@61460949/EnvScale@1323134407:environment:recovery"}}}]},
+        "trust_github_foundation": {"Version": "2012-10-17", "Statement": [{"Sid": "AllowGitHubFoundationEnvironmentOIDC", "Effect": "Allow", "Principal": {"Federated": OIDC_ARN}, "Action": "sts:AssumeRoleWithWebIdentity", "Condition": {"StringEquals": {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": "repo:P20000@61460949/EnvScale@1323134407:environment:foundation"}}}]},
         "trust_foundation_admin": {"Version": "2012-10-17", "Statement": [{"Sid": "AllowSameAccountHumanOperatorsWithRecentMFAOnly", "Effect": "Allow", "Principal": {"AWS": [f"arn:aws:iam::{ACCOUNT}:user/DEV-user-alpha"]}, "Action": "sts:AssumeRole", "Condition": {"Bool": {"aws:MultiFactorAuthPresent": "true"}, "NumericLessThan": {"aws:MultiFactorAuthAge": "3600"}}}]},
         "role_ec2_runtime": {
             "Version": "2012-10-17",

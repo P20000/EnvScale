@@ -377,15 +377,29 @@ def test_live_aws_iam_simulation_and_analyzer(tfstate_bucket_policy: dict) -> No
         ("NEG: boundary allow_all+workload -> kms:Decrypt direct", "allow_all", "role_workload_permissions_boundary", "kms:Decrypt", f"arn:aws:kms:{REGION}:{ACCOUNT}:key/11112222-3333-4444-5555-666677778888", {}, "implicitDeny"),
     ]
 
-    for lbl, tkey, ctx, exp in [
-        ("trust_github_foundation OIDC exact env (no MFA)", "trust_github_foundation", {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": "repo:P20000/EnvScale:environment:foundation"}, "allowed"),
-        ("NEG: trust_github_foundation wrong env", "trust_github_foundation", {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": "repo:P20000/EnvScale:environment:production"}, "implicitDeny"),
-        ("trust_github_foundation_plan OIDC exact env", "trust_github_foundation_plan", {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": "repo:P20000/EnvScale:environment:foundation-plan"}, "allowed"),
-        ("NEG: trust_github_foundation_plan wrong env", "trust_github_foundation_plan", {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": "repo:P20000/EnvScale:environment:foundation"}, "implicitDeny"),
+    oidc_prefix = "P20000@61460949/EnvScale@1323134407"
+    oidc_cases = [
+        ("trust_github_foundation", "environment:foundation", "environment:production"),
+        ("trust_github_foundation_plan", "environment:foundation-plan", "environment:foundation"),
+        ("trust_github_release", "ref:refs/heads/develop", "environment:release"),
+        ("trust_github_deploy", "environment:production", "environment:recovery"),
+        ("trust_github_recovery", "environment:recovery", "environment:production"),
+    ]
+    trust_vectors = [
+        v
+        for tkey, good_tail, bad_tail in oidc_cases
+        for v in (
+            (f"{tkey} exact immutable sub", tkey, {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": f"repo:{oidc_prefix}:{good_tail}"}, "allowed"),
+            (f"NEG: {tkey} old mutable sub", tkey, {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": f"repo:P20000/EnvScale:{good_tail}"}, "implicitDeny"),
+            (f"NEG: {tkey} wrong scope", tkey, {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": f"repo:{oidc_prefix}:{bad_tail}"}, "implicitDeny"),
+            (f"NEG: {tkey} wrong audience", tkey, {"token.actions.githubusercontent.com:aud": "wrong-audience", "token.actions.githubusercontent.com:sub": f"repo:{oidc_prefix}:{good_tail}"}, "implicitDeny"),
+        )
+    ] + [
         ("trust_foundation_admin AssumeRole WITH fresh MFA", "trust_foundation_admin", {"aws:MultiFactorAuthPresent": True, "aws:MultiFactorAuthAge": 60}, "allowed"),
         ("NEG: trust_foundation_admin AssumeRole WITHOUT MFA", "trust_foundation_admin", {}, "implicitDeny"),
         ("NEG: trust_foundation_admin STALE MFA (3601s)", "trust_foundation_admin", {"aws:MultiFactorAuthPresent": True, "aws:MultiFactorAuthAge": 3601}, "implicitDeny"),
-    ]:
+    ]
+    for lbl, tkey, ctx, exp in trust_vectors:
         act = "sts:AssumeRoleWithWebIdentity" if tkey.startswith("trust_github_") else "sts:AssumeRole"
         dec = sim.eval_iam_policy_local_harness(policies[tkey], act, f"arn:aws:iam::{ACCOUNT}:role/target", ctx)
         assert_true(dec == exp, f"{lbl}: got {dec}, expected {exp}")

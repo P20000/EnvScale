@@ -452,6 +452,42 @@ class TestFoundationBootstrapIam(unittest.TestCase):
         self.assertNotEqual(proc_bad.returncode, 0)
         self.assertIn("Usage:", proc_bad.stderr)
 
+    def test_foundation_oidc_trust_policies_enforce_immutable_subjects(self):
+        prefix = "P20000@61460949/EnvScale@1323134407"
+        cases = (
+            ("trust_github_foundation_plan", f"repo:{prefix}:environment:foundation-plan", f"repo:{prefix}:environment:foundation"),
+            ("trust_github_foundation", f"repo:{prefix}:environment:foundation", f"repo:{prefix}:environment:foundation-plan"),
+        )
+        for key, expected_sub, swapped_sub in cases:
+            doc = self.pols[key]
+            self.assertEqual(len(doc["Statement"]), 1)
+            stmt = doc["Statement"][0]
+            self.assertEqual(stmt["Effect"], "Allow")
+            self.assertEqual(stmt["Action"], "sts:AssumeRoleWithWebIdentity")
+            self.assertEqual(set(stmt["Condition"].keys()), {"StringEquals"})
+            se = stmt["Condition"]["StringEquals"]
+            self.assertEqual(se["token.actions.githubusercontent.com:aud"], "sts.amazonaws.com")
+            self.assertEqual(se["token.actions.githubusercontent.com:sub"], expected_sub)
+            self.assertNotIn("*", expected_sub)
+            self.assertNotIn("?", expected_sub)
+            target = f"arn:aws:iam::{ACCOUNT}:role/{key}"
+            self.assertEqual(sim.eval_iam_policy_local_harness(doc, "sts:AssumeRoleWithWebIdentity", target, {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": expected_sub}), "allowed")
+            env_name = expected_sub.rsplit(":", 1)[1]
+            for bad_ctx in (
+                {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": f"repo:P20000/EnvScale:environment:{env_name}"},
+                {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": swapped_sub},
+                {"token.actions.githubusercontent.com:aud": "wrong-aud", "token.actions.githubusercontent.com:sub": expected_sub},
+            ):
+                self.assertEqual(sim.eval_iam_policy_local_harness(doc, "sts:AssumeRoleWithWebIdentity", target, bad_ctx), "implicitDeny")
+
+        caller, roles, _, _ = self._make_iam_caller(all_exist=True)
+        plan_iam_safety.verify_bootstrap_iam_and_boundary_live(FOUNDATION_DIR, iam_caller=caller)
+        drifted_trust = json.loads(json.dumps(self.pols["trust_github_foundation_plan"]))
+        drifted_trust["Statement"][0]["Condition"]["StringEquals"]["token.actions.githubusercontent.com:sub"] = "repo:P20000/EnvScale:environment:foundation-plan"
+        roles["envscale-github-foundation-plan-role"]["AssumeRolePolicyDocument"] = drifted_trust
+        with self.assertRaises(SystemExit):
+            plan_iam_safety.verify_bootstrap_iam_and_boundary_live(FOUNDATION_DIR, iam_caller=caller)
+
 
 if __name__ == "__main__":
     unittest.main()

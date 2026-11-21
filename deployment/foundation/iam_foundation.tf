@@ -29,7 +29,7 @@ resource "aws_iam_role" "github_foundation" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repository}:environment:${var.foundation_environment_name}"
+          "token.actions.githubusercontent.com:sub" = "repo:${var.github_oidc_subject_prefix}:environment:${var.foundation_environment_name}"
         }
       }
     }]

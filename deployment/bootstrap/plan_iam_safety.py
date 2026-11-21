@@ -21,6 +21,7 @@ import re
 from typing import Any
 
 IMMUTABLE_ACCOUNT_ID = "982534376726"
+from oidc_trust_guard import IMMUTABLE_OIDC_SUBJECT_PREFIX, check_oidc_trust_statement
 SSM_MANAGED_CORE_ARN = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 ALLOWED_PASSROLE_SERVICES = frozenset({"ec2.amazonaws.com", "eks.amazonaws.com"})
 WILDCARD_ALLOW_ACTIONS = frozenset({"*", "*:*", "iam:*", "s3:*", "ec2:*", "ssm:*", "kms:*", "sts:*"})
@@ -131,6 +132,7 @@ def check_iam_resource_change_safety(rc: dict[str, Any]) -> list[str]:
                     mfa = ((st.get("Condition") or {}).get("Bool") or {}).get("aws:MultiFactorAuthPresent")
                     if str(mfa).lower() != "true":
                         errors.append("Break-glass role 'aws_iam_role.foundation_admin[0]' trust policy lacks MFA Bool condition.")
+            errors.extend(check_oidc_trust_statement(addr, trust_doc))
 
     if rtype in ("aws_iam_role_policy", "aws_iam_policy") and isinstance(after.get("policy"), str) and after["policy"]:
         try:
@@ -188,7 +190,7 @@ def verify_bootstrap_iam_and_boundary_live(
     foundation_dir: Any,
     *,
     account_id: str = IMMUTABLE_ACCOUNT_ID,
-    repository: str = "P20000/EnvScale",
+    oidc_subject_prefix: str = IMMUTABLE_OIDC_SUBJECT_PREFIX,
     operator_principal: str = f"arn:aws:iam::{IMMUTABLE_ACCOUNT_ID}:user/DEV-user-alpha",
     iam_caller: Any = None,
 ) -> dict[str, str]:
@@ -207,7 +209,7 @@ def verify_bootstrap_iam_and_boundary_live(
             rendered["role_github_foundation_plan"],
             {
                 "allowed_operator_principals": (),
-                "allowed_oidc_subs": (f"repo:{repository}:environment:foundation-plan",),
+                "allowed_oidc_subs": (f"repo:{oidc_subject_prefix}:environment:foundation-plan",),
                 "expected_trust_doc": rendered["trust_github_foundation_plan"],
             },
         ),
@@ -217,7 +219,7 @@ def verify_bootstrap_iam_and_boundary_live(
             rendered["role_github_foundation"],
             {
                 "allowed_operator_principals": (),
-                "allowed_oidc_subs": (f"repo:{repository}:environment:foundation",),
+                "allowed_oidc_subs": (f"repo:{oidc_subject_prefix}:environment:foundation",),
                 "expected_trust_doc": rendered["trust_github_foundation"],
             },
         ),
