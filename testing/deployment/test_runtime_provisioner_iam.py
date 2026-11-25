@@ -196,10 +196,16 @@ class TestRuntimeProvisionerTwoRoleIam(unittest.TestCase):
         self.assertGreaterEqual(counts["provisioner"], 45)
         self.assertGreaterEqual(counts["ec2_runtime"], 16)
         self.assertGreaterEqual(counts["boundary"], 8)
+        self.assertEqual(counts["combined_sg_sgr"], 10)
 
     def test_live_aws_simulation_contract_mocked(self):
+        from iam_boundary_policies import build_combined_sg_rule_scenarios
+
         vectors = b2.build_runtime_iam_simulation_vectors()
         expected_outcomes = [row[-1] for g in ("provisioner", "ec2_runtime", "boundary") for row in vectors[g]]
+        for _act in ("ec2:AuthorizeSecurityGroupIngress", "ec2:AuthorizeSecurityGroupEgress"):
+            for _lbl, _ctx, exp_sg, exp_sgr, _exp_c in build_combined_sg_rule_scenarios(b2.REGION):
+                expected_outcomes.extend([exp_sg, exp_sgr])
         with (
             mock.patch.object(sim, "run_access_analyzer_validation") as m_analyzer,
             mock.patch.object(sim, "simulate_via_aws_iam", side_effect=expected_outcomes) as m_sim,
@@ -212,7 +218,7 @@ class TestRuntimeProvisionerTwoRoleIam(unittest.TestCase):
             analyzed_keys,
             {"trust_runtime_provisioner", "role_runtime_provisioner", "boundary_runtime_provisioner", "trust_ec2_runtime", "role_ec2_runtime"},
         )
-        self.assertEqual(m_sim.call_count, counts["provisioner"] + counts["ec2_runtime"] + counts["boundary"])
+        self.assertEqual(m_sim.call_count, counts["provisioner"] + counts["ec2_runtime"] + counts["boundary"] + 2 * counts["combined_sg_sgr"])
 
 
 if __name__ == "__main__":

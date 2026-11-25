@@ -132,17 +132,24 @@ def check_iam_resource_change_safety(rc: dict[str, Any]) -> list[str]:
             trust_sz = len(json.dumps(trust_doc, separators=(",", ":")))
             if trust_sz > 2048:
                 errors.append(f"Trust policy for '{addr}' exceeds AWS 2048-char limit ({trust_sz} chars).")
-            for st in trust_doc.get("Statement") or []:
+            raw_t_stmts = trust_doc.get("Statement") if isinstance(trust_doc, dict) else None
+            if not isinstance(raw_t_stmts, list) or not raw_t_stmts:
+                errors.append(f"Trust policy for '{addr}' must contain a non-empty 'Statement' list.")
+                raw_t_stmts = []
+            for st in raw_t_stmts:
                 if not isinstance(st, dict) or st.get("Effect") != "Allow":
                     continue
                 princ = st.get("Principal")
                 if princ == "*" or (isinstance(princ, dict) and any("*" in _as_list(v) for v in princ.values())):
                     errors.append(f"Trust policy for '{addr}' must not allow wildcard Principal '*'.")
                 if addr == "aws_iam_role.foundation_admin[0]":
-                    mfa = ((st.get("Condition") or {}).get("Bool") or {}).get("aws:MultiFactorAuthPresent")
+                    cond = st.get("Condition")
+                    bool_op = cond.get("Bool") if isinstance(cond, dict) else None
+                    mfa = bool_op.get("aws:MultiFactorAuthPresent") if isinstance(bool_op, dict) else None
                     if str(mfa).lower() != "true":
                         errors.append("Break-glass role 'aws_iam_role.foundation_admin[0]' trust policy lacks MFA Bool condition.")
-            errors.extend(check_oidc_trust_statement(addr, trust_doc))
+            if isinstance(trust_doc, dict):
+                errors.extend(check_oidc_trust_statement(addr, trust_doc))
 
     if rtype in ("aws_iam_role_policy", "aws_iam_policy") and isinstance(after.get("policy"), str) and after["policy"]:
         try:
@@ -150,11 +157,13 @@ def check_iam_resource_change_safety(rc: dict[str, Any]) -> list[str]:
         except json.JSONDecodeError as exc:
             errors.append(f"Invalid JSON in policy for '{addr}': {exc}")
         else:
+            from iam_boundary_policies import validate_policy_document_structure, validate_workload_allow_statement_safety
             max_sz = 10240 if rtype == "aws_iam_role_policy" else 6144
             pol_sz = len(json.dumps(pol_doc, separators=(",", ":")))
             if pol_sz > max_sz:
                 errors.append(f"Policy '{addr}' exceeds AWS {max_sz}-char limit ({pol_sz} chars).")
-            stmts = [s for s in (pol_doc.get("Statement") or []) if isinstance(s, dict)]
+            stmts, struct_errs = validate_policy_document_structure(addr, pol_doc)
+            errors.extend(struct_errs)
             if addr == "aws_iam_policy.workload_permissions_boundary":
                 deny_acts = {a for s in stmts if s.get("Effect") == "Deny" for a in _as_list(s.get("Action"))}
                 for req in ("iam:Create*", "iam:Put*", "iam:Delete*", "iam:Attach*", "s3:DeleteBucket", "s3:PutBucketPolicy"):
@@ -174,7 +183,8 @@ def check_iam_resource_change_safety(rc: dict[str, Any]) -> list[str]:
                 if any(a in FORBIDDEN_ALLOW_ACTIONS for a in acts):
                     errors.append(f"Policy '{addr}' allows forbidden destructive/escalation action: {acts}")
                 if "iam:PassRole" in acts:
-                    se = (st.get("Condition") or {}).get("StringEquals") or {}
+                    cond = st.get("Condition")
+                    se = cond.get("StringEquals") if isinstance(cond, dict) else None
                     pts = _as_list(se.get("iam:PassedToService")) if isinstance(se, dict) else []
                     if not pts or not set(pts).issubset(ALLOWED_PASSROLE_SERVICES) or "*" in res_list:
                         errors.append(f"Policy '{addr}' allows iam:PassRole without strict iam:PassedToService/resource restriction.")
@@ -189,6 +199,8 @@ def check_iam_resource_change_safety(rc: dict[str, Any]) -> list[str]:
                     for a in acts
                 ):
                     errors.append(f"Workload policy '{addr}' contains disallowed IAM escalation Allow action: {acts}")
+                if addr in WORKLOAD_POLICY_ADDRESSES:
+                    errors.extend(validate_workload_allow_statement_safety(addr, st, IMMUTABLE_ACCOUNT_ID))
 
     if rtype == "aws_s3_bucket_public_access_block" and any(
         after.get(k) is False for k in ("block_public_acls", "ignore_public_acls", "block_public_policy", "restrict_public_buckets")

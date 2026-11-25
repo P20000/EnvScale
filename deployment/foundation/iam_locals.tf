@@ -244,10 +244,13 @@ locals {
     {
       Sid      = "SgRl"
       Effect   = "Allow"
-      Action   = local.ec2_sg_rule_pair_actions
+      Action   = ["ec2:AuthorizeSecurityGroupIngress", "ec2:AuthorizeSecurityGroupEgress"]
       Resource = "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:security-group-rule/*"
       Condition = {
-        StringEquals = { "aws:RequestedRegion" = var.aws_region }
+        StringEquals = {
+          "aws:RequestTag/Project" = "EnvScale"
+          "aws:RequestTag/Layer"   = "DisposableRuntime"
+        }
       }
     },
     {

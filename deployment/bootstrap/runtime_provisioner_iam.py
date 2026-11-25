@@ -101,7 +101,7 @@ def build_runtime_provisioner_policy(account_id: str = ACCOUNT, region: str = RE
             {"Sid": "RunInstAmi", "Effect": "Allow", "Action": ["ec2:RunInstances"], "Resource": [f"arn:aws:ec2:{region}::image/*", f"arn:aws:ec2:{region}::snapshot/*"], "Condition": {"StringEquals": {"ec2:Owner": APPROVED_AMI_OWNERS}}},
             {"Sid": "TagCreate", "Effect": "Allow", "Action": ["ec2:CreateTags"], "Resource": ec2_arns + [f"{ec2_prefix}:security-group-rule/*", f"{ec2_prefix}:elastic-ip/*"], "Condition": {"StringEquals": {"ec2:CreateAction": create_actions, **req_tags}}},
             {"Sid": "Lifecycle", "Effect": "Allow", "Action": ["ec2:ModifyVpcAttribute", "ec2:ModifySubnetAttribute", "ec2:AttachInternetGateway", "ec2:DetachInternetGateway", "ec2:CreateRoute", "ec2:ReplaceRoute", "ec2:DeleteRoute", "ec2:AssociateRouteTable", "ec2:DisassociateRouteTable", "ec2:AuthorizeSecurityGroupIngress", "ec2:AuthorizeSecurityGroupEgress", "ec2:RevokeSecurityGroupIngress", "ec2:RevokeSecurityGroupEgress", "ec2:UpdateSecurityGroupRuleDescriptionsIngress", "ec2:UpdateSecurityGroupRuleDescriptionsEgress", "ec2:StartInstances", "ec2:StopInstances", "ec2:RebootInstances", "ec2:ModifyInstanceAttribute", "ec2:ModifyInstanceMetadataOptions", "ec2:ModifyVolume", "ec2:AttachVolume", "ec2:DetachVolume", "ec2:TerminateInstances", "ec2:DeleteVolume", "ec2:DeleteSecurityGroup", "ec2:DeleteRouteTable", "ec2:DeleteInternetGateway", "ec2:DeleteSubnet", "ec2:DeleteVpc", "ec2:AssociateAddress", "ec2:DisassociateAddress", "ec2:CreateTags", "ec2:DeleteTags"], "Resource": ec2_arns + [f"{ec2_prefix}:elastic-ip/*"], "Condition": {"StringEquals": res_tags}},
-            {"Sid": "SgRules", "Effect": "Allow", "Action": ["ec2:AuthorizeSecurityGroupIngress", "ec2:AuthorizeSecurityGroupEgress", "ec2:RevokeSecurityGroupIngress", "ec2:RevokeSecurityGroupEgress", "ec2:UpdateSecurityGroupRuleDescriptionsIngress", "ec2:UpdateSecurityGroupRuleDescriptionsEgress"], "Resource": f"{ec2_prefix}:security-group-rule/*", "Condition": {"StringEquals": {"aws:RequestedRegion": region}}},
+            {"Sid": "SgRules", "Effect": "Allow", "Action": ["ec2:AuthorizeSecurityGroupIngress", "ec2:AuthorizeSecurityGroupEgress"], "Resource": f"{ec2_prefix}:security-group-rule/*", "Condition": {"StringEquals": req_tags}},
             {"Sid": "RelDispEip", "Effect": "Allow", "Action": ["ec2:ReleaseAddress"], "Resource": f"{ec2_prefix}:elastic-ip/*", "Condition": {"StringEquals": res_tags}},
             {"Sid": "IamRead", "Effect": "Allow", "Action": ["iam:GetRole", "iam:GetInstanceProfile"], "Resource": [ec2_role_arn, ec2_prof_arn]},
             {"Sid": "PassRole", "Effect": "Allow", "Action": ["iam:PassRole"], "Resource": ec2_role_arn, "Condition": {"StringEquals": {"iam:PassedToService": "ec2.amazonaws.com"}}},
@@ -237,7 +237,17 @@ def build_runtime_iam_simulation_vectors(account_id: str = ACCOUNT, region: str 
         ("prov CreateTags on RunInstances", "role_runtime_provisioner", "ec2:CreateTags", f"{ep}:instance/*", {"ec2:CreateAction": "RunInstances", **req, **reg}, None, "boundary_runtime_provisioner", "allowed"),
         ("prov CreateTags on AllocateAddress", "role_runtime_provisioner", "ec2:CreateTags", f"{ep}:elastic-ip/*", {"ec2:CreateAction": "AllocateAddress", **req, **reg}, None, "boundary_runtime_provisioner", "allowed"),
         ("prov AuthorizeSecurityGroupIngress on SG", "role_runtime_provisioner", "ec2:AuthorizeSecurityGroupIngress", f"{ep}:security-group/sg-1", res_reg, None, "boundary_runtime_provisioner", "allowed"),
-        ("prov AuthorizeSecurityGroupIngress on rule", "role_runtime_provisioner", "ec2:AuthorizeSecurityGroupIngress", f"{ep}:security-group-rule/sgr-1", reg, None, "boundary_runtime_provisioner", "allowed"),
+        ("prov RevokeSecurityGroupEgress on tagged SG", "role_runtime_provisioner", "ec2:RevokeSecurityGroupEgress", f"{ep}:security-group/sg-1", res_reg, None, "boundary_runtime_provisioner", "allowed"),
+        ("prov UpdateSecurityGroupRuleDescriptionsIngress on tagged SG", "role_runtime_provisioner", "ec2:UpdateSecurityGroupRuleDescriptionsIngress", f"{ep}:security-group/sg-1", res_reg, None, "boundary_runtime_provisioner", "allowed"),
+        ("prov AuthorizeSecurityGroupIngress on tagged rule", "role_runtime_provisioner", "ec2:AuthorizeSecurityGroupIngress", f"{ep}:security-group-rule/sgr-1", {**req, **reg}, None, "boundary_runtime_provisioner", "allowed"),
+        ("NEG: prov AuthorizeSecurityGroupIngress on untagged SG", "role_runtime_provisioner", "ec2:AuthorizeSecurityGroupIngress", f"{ep}:security-group/sg-untagged", reg, None, "boundary_runtime_provisioner", "implicitDeny"),
+        ("NEG: prov RevokeSecurityGroupEgress on untagged SG", "role_runtime_provisioner", "ec2:RevokeSecurityGroupEgress", f"{ep}:security-group/sg-untagged", reg, None, "boundary_runtime_provisioner", "implicitDeny"),
+        ("NEG: prov UpdateSecurityGroupRuleDescriptionsIngress on untagged SG", "role_runtime_provisioner", "ec2:UpdateSecurityGroupRuleDescriptionsIngress", f"{ep}:security-group/sg-untagged", reg, None, "boundary_runtime_provisioner", "implicitDeny"),
+        ("NEG: prov AuthorizeSecurityGroupIngress on foreign SG", "role_runtime_provisioner", "ec2:AuthorizeSecurityGroupIngress", f"{ep}:security-group/sg-relmon", other, None, "boundary_runtime_provisioner", "implicitDeny"),
+        ("NEG: prov AuthorizeSecurityGroupIngress on untagged rule", "role_runtime_provisioner", "ec2:AuthorizeSecurityGroupIngress", f"{ep}:security-group-rule/sgr-untagged", reg, None, "boundary_runtime_provisioner", "implicitDeny"),
+        ("NEG: prov AuthorizeSecurityGroupEgress on foreign-tagged rule", "role_runtime_provisioner", "ec2:AuthorizeSecurityGroupEgress", f"{ep}:security-group-rule/sgr-foreign", {"aws:RequestTag/Project": "Relmonition", "aws:RequestTag/Layer": "Production", **reg}, None, "boundary_runtime_provisioner", "implicitDeny"),
+        ("NEG: prov RevokeSecurityGroupEgress on rule ARN", "role_runtime_provisioner", "ec2:RevokeSecurityGroupEgress", f"{ep}:security-group-rule/sgr-1", {**req, **reg}, None, "boundary_runtime_provisioner", "implicitDeny"),
+        ("NEG: prov UpdateSecurityGroupRuleDescriptionsIngress on rule ARN", "role_runtime_provisioner", "ec2:UpdateSecurityGroupRuleDescriptionsIngress", f"{ep}:security-group-rule/sgr-1", {**req, **reg}, None, "boundary_runtime_provisioner", "implicitDeny"),
         ("prov CreateRoute & DisassociateRouteTable", "role_runtime_provisioner", "ec2:DisassociateRouteTable", f"{ep}:route-table/rtb-1", res_reg, None, "boundary_runtime_provisioner", "allowed"),
         ("prov AssociateAddress on tagged EIP", "role_runtime_provisioner", "ec2:AssociateAddress", f"{ep}:elastic-ip/eipalloc-1", res_reg, None, "boundary_runtime_provisioner", "allowed"),
         ("prov ReleaseAddress on DisposableRuntime EIP", "role_runtime_provisioner", "ec2:ReleaseAddress", f"{ep}:elastic-ip/eipalloc-1", res_reg, None, "boundary_runtime_provisioner", "allowed"),
@@ -313,7 +323,10 @@ def check_runtime_provisioner_plan_safety(addr: str, rtype: str, after: dict) ->
                 trust_doc = json.loads(trust_raw)
             except json.JSONDecodeError:
                 return errors
-            stmts = [s for s in (trust_doc.get("Statement") or []) if isinstance(s, dict) and s.get("Effect") == "Allow"]
+            if not isinstance(trust_doc, dict) or not isinstance(trust_doc.get("Statement"), list):
+                errors.append(f"Role '{addr}' trust policy must be a dict with a 'Statement' list.")
+                return errors
+            stmts = [s for s in trust_doc["Statement"] if isinstance(s, dict) and s.get("Effect") == "Allow"]
             if len(stmts) != 1:
                 errors.append(f"Role '{addr}' trust policy must have exactly 1 Allow statement.")
             for st in stmts:
@@ -324,9 +337,11 @@ def check_runtime_provisioner_plan_safety(addr: str, rtype: str, after: dict) ->
                     not str(p).startswith(f"arn:aws:iam::{ACCOUNT}:user/") or str(p).endswith(":root") for p in plist
                 ):
                     errors.append(f"Role '{addr}' trust Principal must allow only account {ACCOUNT} IAM user ARN(s).")
-                cond = st.get("Condition") or {}
-                mfa = ((cond.get("Bool") or {}).get("aws:MultiFactorAuthPresent"))
-                age = ((cond.get("NumericLessThan") or {}).get("aws:MultiFactorAuthAge"))
+                cond = st.get("Condition")
+                bool_op = cond.get("Bool") if isinstance(cond, dict) else None
+                num_op = cond.get("NumericLessThan") if isinstance(cond, dict) else None
+                mfa = bool_op.get("aws:MultiFactorAuthPresent") if isinstance(bool_op, dict) else None
+                age = num_op.get("aws:MultiFactorAuthAge") if isinstance(num_op, dict) else None
                 if str(mfa).lower() != "true":
                     errors.append(f"Role '{addr}' trust policy lacks MFA Bool condition aws:MultiFactorAuthPresent=true.")
                 if str(age) != "3600":
@@ -338,7 +353,10 @@ def check_runtime_provisioner_plan_safety(addr: str, rtype: str, after: dict) ->
                 pol_doc = json.loads(pol_raw)
             except json.JSONDecodeError:
                 return errors
-            stmts = [s for s in (pol_doc.get("Statement") or []) if isinstance(s, dict)]
+            if not isinstance(pol_doc, dict) or not isinstance(pol_doc.get("Statement"), list):
+                errors.append(f"Runtime provisioner permissions boundary '{addr}' must be a dict with a 'Statement' list.")
+                return errors
+            stmts = [s for s in pol_doc["Statement"] if isinstance(s, dict)]
             deny_acts = {
                 str(a) for s in stmts if s.get("Effect") == "Deny"
                 for a in (s.get("Action") if isinstance(s.get("Action"), list) else [s.get("Action")])
@@ -382,6 +400,25 @@ def verify_runtime_iam_matrix(*, live_aws: bool = False, tfstate_bucket_policy: 
                 if aws_dec != expected:
                     sim._fail(f"{label}: AWS simulate-custom-policy got {aws_dec}, expected {expected}")
             counts[group] += 1
+
+    from iam_boundary_policies import build_combined_sg_rule_scenarios, eval_combined_sg_rule_operation
+    ep = f"arn:aws:ec2:{REGION}:{ACCOUNT}"
+    counts["combined_sg_sgr"] = 0
+    for act in ("ec2:AuthorizeSecurityGroupIngress", "ec2:AuthorizeSecurityGroupEgress"):
+        for label, ctx, exp_sg, exp_sgr, exp_comb in build_combined_sg_rule_scenarios(REGION):
+            res = eval_combined_sg_rule_operation(
+                sim,
+                policies["role_runtime_provisioner"],
+                policies["boundary_runtime_provisioner"],
+                act,
+                f"{ep}:security-group/sg-eval",
+                f"{ep}:security-group-rule/*",
+                ctx,
+                live_aws=live_aws,
+            )
+            if (res["sg"], res["sgr"], res["combined"]) != (exp_sg, exp_sgr, exp_comb):
+                sim._fail(f"Combined {act} ({label}): got {res}, expected {(exp_sg, exp_sgr, exp_comb)}")
+            counts["combined_sg_sgr"] += 1
     return counts
 
 

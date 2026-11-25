@@ -13,6 +13,7 @@ FOUNDATION_DIR = REPO_ROOT / "deployment" / "foundation"
 if str(BOOTSTRAP_DIR) not in sys.path:
     sys.path.insert(0, str(BOOTSTRAP_DIR))
 
+import iam_boundary_policies as ibp  # noqa: E402
 import iam_policy_simulator as sim  # noqa: E402
 import plan_iam_safety  # noqa: E402
 
@@ -91,6 +92,10 @@ class TestIamPolicySizesAndEquivalence(unittest.TestCase):
         self.assertTrue(any("6144-char limit" in e for e in plan_iam_safety.check_iam_resource_change_safety(rc_managed)))
         self.assertTrue(any("2048-char limit" in e for e in plan_iam_safety.check_iam_resource_change_safety(rc_trust)))
 
+        unscoped_sgr = json.dumps({"Version": "2012-10-17", "Statement": [{"Sid": "SgRules", "Effect": "Allow", "Action": ["ec2:AuthorizeSecurityGroupIngress"], "Resource": f"{EP}:security-group-rule/*", "Condition": {"StringEquals": {"aws:RequestedRegion": REGION}}}]})
+        rc_sgr = {"address": "aws_iam_role_policy.runtime_provisioner", "type": "aws_iam_role_policy", "change": {"actions": ["update"], "after": {"policy": unscoped_sgr}}}
+        self.assertTrue(any("security-group-rule/*" in e for e in plan_iam_safety.check_iam_resource_change_safety(rc_sgr)))
+
     def test_github_deploy_effective_permissions_and_deny_precedence(self):
         dep = self.pols["role_github_deploy"]
         reg = {"aws:RequestedRegion": REGION}
@@ -120,14 +125,22 @@ class TestIamPolicySizesAndEquivalence(unittest.TestCase):
             ("ec2:RunInstances", sim.LIVE_UBUNTU_AMI_ARN, {"ec2:Owner": "099720109477", **reg}, None, "allowed"),
             ("ec2:RunInstances", sim.LIVE_UBUNTU_SNAP_ARN, {"ec2:Owner": "099720109477", **reg}, None, "allowed"),
             ("ec2:AuthorizeSecurityGroupIngress", f"{EP}:security-group/sg-1", res, None, "allowed"),
-            ("ec2:RevokeSecurityGroupEgress", f"{EP}:security-group-rule/sgr-1", reg, None, "allowed"),
-            ("ec2:UpdateSecurityGroupRuleDescriptionsIngress", f"{EP}:security-group-rule/sgr-1", reg, None, "allowed"),
+            ("ec2:RevokeSecurityGroupEgress", f"{EP}:security-group/sg-1", res, None, "allowed"),
+            ("ec2:UpdateSecurityGroupRuleDescriptionsIngress", f"{EP}:security-group/sg-1", res, None, "allowed"),
+            ("ec2:AuthorizeSecurityGroupIngress", f"{EP}:security-group-rule/sgr-1", req, None, "allowed"),
+            ("ec2:AuthorizeSecurityGroupEgress", f"{EP}:security-group-rule/sgr-1", req, None, "allowed"),
             ("ec2:AssociateAddress", f"{EP}:elastic-ip/eipalloc-1", {"aws:ResourceTag/Project": "EnvScale", **reg}, None, "allowed"),
             ("ec2:StopInstances", f"{EP}:instance/i-1", res, None, "allowed"),
             ("ssm:SendCommand", f"arn:aws:ssm:{REGION}::document/AWS-RunShellScript", {}, None, "allowed"),
             ("ssm:SendCommand", f"{EP}:instance/i-1", res, None, "allowed"),
             ("iam:PassRole", EC2_ROLE, {"iam:PassedToService": "ec2.amazonaws.com"}, None, "allowed"),
             # Negative / Explicit Deny precedence
+            ("ec2:AuthorizeSecurityGroupIngress", f"{EP}:security-group/sg-untagged", reg, None, "implicitDeny"),
+            ("ec2:RevokeSecurityGroupEgress", f"{EP}:security-group/sg-other", other, None, "implicitDeny"),
+            ("ec2:UpdateSecurityGroupRuleDescriptionsIngress", f"{EP}:security-group/sg-other", other, None, "implicitDeny"),
+            ("ec2:AuthorizeSecurityGroupIngress", f"{EP}:security-group-rule/sgr-untagged", reg, None, "implicitDeny"),
+            ("ec2:RevokeSecurityGroupEgress", f"{EP}:security-group-rule/sgr-1", req, None, "implicitDeny"),
+            ("ec2:UpdateSecurityGroupRuleDescriptionsIngress", f"{EP}:security-group-rule/sgr-1", req, None, "implicitDeny"),
             ("ec2:CreateSubnet", f"{EP}:vpc/vpc-other", {**other, "aws:RequestTag/Project": "EnvScale", "aws:RequestTag/Layer": "DisposableRuntime"}, None, "implicitDeny"),
             ("ec2:TerminateInstances", f"{EP}:instance/i-1", res, None, "explicitDeny"),
             ("ec2:DeleteVpc", f"{EP}:vpc/vpc-1", res, None, "explicitDeny"),
@@ -164,6 +177,8 @@ class TestIamPolicySizesAndEquivalence(unittest.TestCase):
             ("ec2:TerminateInstances", f"{EP}:instance/i-1", res, None, "allowed"),
             ("ec2:DeleteVpc", f"{EP}:vpc/vpc-1", res, None, "allowed"),
             ("ec2:AuthorizeSecurityGroupEgress", f"{EP}:security-group/sg-1", res, None, "allowed"),
+            ("ec2:RevokeSecurityGroupIngress", f"{EP}:security-group/sg-1", res, None, "allowed"),
+            ("ec2:AuthorizeSecurityGroupEgress", f"{EP}:security-group-rule/sgr-1", req, None, "allowed"),
             ("ssm:SendCommand", f"{EP}:instance/i-1", res, None, "allowed"),
             ("eks:CreateCluster", eks_cls, req, None, "allowed"),
             ("eks:CreateNodegroup", eks_ng, res_req, None, "allowed"),
@@ -177,6 +192,12 @@ class TestIamPolicySizesAndEquivalence(unittest.TestCase):
             ("s3:DeleteObject", f"{RC_ARN}/lifecycle/active-op.lock", tls, self.rc_rp, "allowed"),
             ("s3:DeleteObject", f"{TF_ARN}/eks/terraform.tfstate.tflock", {}, None, "allowed"),
             # Negative / Explicit Deny precedence
+            ("ec2:AuthorizeSecurityGroupIngress", f"{EP}:security-group/sg-untagged", reg, None, "implicitDeny"),
+            ("ec2:RevokeSecurityGroupIngress", f"{EP}:security-group/sg-other", other, None, "implicitDeny"),
+            ("ec2:UpdateSecurityGroupRuleDescriptionsEgress", f"{EP}:security-group/sg-other", other, None, "implicitDeny"),
+            ("ec2:AuthorizeSecurityGroupIngress", f"{EP}:security-group-rule/sgr-untagged", reg, None, "implicitDeny"),
+            ("ec2:RevokeSecurityGroupEgress", f"{EP}:security-group-rule/sgr-1", req, None, "implicitDeny"),
+            ("ec2:UpdateSecurityGroupRuleDescriptionsIngress", f"{EP}:security-group-rule/sgr-1", req, None, "implicitDeny"),
             ("ec2:TerminateInstances", f"{EP}:instance/i-other", other, None, "implicitDeny"),
             ("eks:DeleteCluster", sim.LIVE_COEXISTING_EKS_ARN, other, None, "implicitDeny"),
             ("ec2:ReleaseAddress", f"{EP}:elastic-ip/eipalloc-1", res, None, "explicitDeny"),
@@ -194,6 +215,103 @@ class TestIamPolicySizesAndEquivalence(unittest.TestCase):
         for act, rsc, ctx, rp, exp in cases:
             with self.subTest(action=act, resource=rsc):
                 self.assertEqual(sim.eval_iam_policy_local_harness(rec, act, rsc, ctx, rp, self.wb), exp)
+
+    def test_combined_parent_sg_and_rule_authorization_matrix(self):
+        role_pairs = (
+            ("role_runtime_provisioner", self.pols["role_runtime_provisioner"], self.pols["boundary_runtime_provisioner"]),
+            ("role_github_deploy", self.pols["role_github_deploy"], self.wb),
+            ("role_github_recovery", self.pols["role_github_recovery"], self.wb),
+        )
+        for role_name, pol_doc, bnd_doc in role_pairs:
+            for act in ("ec2:AuthorizeSecurityGroupIngress", "ec2:AuthorizeSecurityGroupEgress"):
+                for label, ctx, exp_sg, exp_sgr, exp_comb in ibp.build_combined_sg_rule_scenarios(REGION):
+                    with self.subTest(role=role_name, action=act, scenario=label):
+                        res = ibp.eval_combined_sg_rule_operation(
+                            sim, pol_doc, bnd_doc, act, f"{EP}:security-group/sg-eval", f"{EP}:security-group-rule/*", ctx
+                        )
+                        self.assertEqual((res["sg"], res["sgr"], res["combined"]), (exp_sg, exp_sgr, exp_comb))
+
+    def test_plan_safety_validator_fails_closed_on_sgr_wildcards_createtags_and_malformed_statements(self):
+        # Verify all 5 actual Terraform-generated workload policies pass check_iam_resource_change_safety
+        workload_map = {
+            "aws_iam_role_policy.ec2_runtime": self.pols["role_ec2_runtime"],
+            "aws_iam_role_policy.github_release": self.pols["role_github_release"],
+            "aws_iam_role_policy.github_deploy": self.pols["role_github_deploy"],
+            "aws_iam_role_policy.github_recovery": self.pols["role_github_recovery"],
+            "aws_iam_role_policy.runtime_provisioner": self.pols["role_runtime_provisioner"],
+        }
+        checked_allow_count = 0
+        for addr, doc in workload_map.items():
+            rc = {"address": addr, "type": "aws_iam_role_policy", "change": {"actions": ["update"], "after": {"policy": json.dumps(doc)}}}
+            self.assertEqual(plan_iam_safety.check_iam_resource_change_safety(rc), [], f"Valid rendered policy {addr} failed safety check")
+            for st in doc["Statement"]:
+                if st.get("Effect") == "Allow":
+                    checked_allow_count += 1
+                    self.assertEqual(ibp.validate_workload_allow_statement_safety(addr, st, ACCOUNT, REGION), [])
+        self.assertGreaterEqual(checked_allow_count, 40)
+
+        # Verify complete 10-ARN CreateTags allowlist succeeds
+        req_cond = {"StringEquals": {"aws:RequestTag/Project": "EnvScale", "aws:RequestTag/Layer": "DisposableRuntime"}}
+        all_allowed_create_arns = sorted(ibp.allowed_createtags_resource_arns(ACCOUNT, REGION))
+        self.assertEqual(len(all_allowed_create_arns), 10)
+        valid_stmts = [
+            {"Sid": "SgRules", "Effect": "Allow", "Action": ["ec2:AuthorizeSecurityGroupIngress", "ec2:AuthorizeSecurityGroupEgress"], "Resource": f"{EP}:security-group-rule/*", "Condition": req_cond},
+            {"Sid": "TagCreateAll10", "Effect": "Allow", "Action": "ec2:CreateTags", "Resource": all_allowed_create_arns, "Condition": {"StringEquals": {"ec2:CreateAction": sorted(ibp.ALLOWED_TAG_CREATE_ACTIONS), **req_cond["StringEquals"]}}},
+        ]
+        for valid_st in valid_stmts:
+            rc_ok = {"address": "aws_iam_role_policy.runtime_provisioner", "type": "aws_iam_role_policy", "change": {"actions": ["update"], "after": {"policy": json.dumps({"Version": "2012-10-17", "Statement": [valid_st]})}}}
+            self.assertEqual(plan_iam_safety.check_iam_resource_change_safety(rc_ok), [])
+
+        tag_cond = {"StringEquals": {"ec2:CreateAction": ["CreateVpc", "RunInstances"], **req_cond["StringEquals"]}}
+        bad_stmts = [
+            ("unscoped_sgr", {"Effect": "Allow", "Action": ["ec2:AuthorizeSecurityGroupIngress"], "Resource": f"{EP}:security-group-rule/*", "Condition": {"StringEquals": {"aws:RequestedRegion": REGION}}}),
+            ("createtags_without_createaction", {"Effect": "Allow", "Action": ["ec2:CreateTags"], "Resource": f"{EP}:security-group-rule/*", "Condition": req_cond}),
+            ("createtags_mixed_with_sgr_action", {"Effect": "Allow", "Action": ["ec2:AuthorizeSecurityGroupIngress", "ec2:CreateTags"], "Resource": f"{EP}:security-group-rule/*", "Condition": {"StringEquals": {"ec2:CreateAction": ["AuthorizeSecurityGroupIngress"], **req_cond["StringEquals"]}}}),
+            ("createtags_disallowed_createaction", {"Effect": "Allow", "Action": "ec2:CreateTags", "Resource": f"{EP}:security-group-rule/*", "Condition": {"StringEquals": {"ec2:CreateAction": ["ModifyVpcAttribute"], **req_cond["StringEquals"]}}}),
+            ("createtags_unrecognized_resource_type", {"Effect": "Allow", "Action": "ec2:CreateTags", "Resource": f"{EP}:customer-gateway/*", "Condition": tag_cond}),
+            ("createtags_foreign_account_arn", {"Effect": "Allow", "Action": "ec2:CreateTags", "Resource": f"arn:aws:ec2:{REGION}:111122223333:instance/*", "Condition": tag_cond}),
+            ("createtags_wildcard_region_arn", {"Effect": "Allow", "Action": "ec2:CreateTags", "Resource": f"arn:aws:ec2:*:{ACCOUNT}:instance/*", "Condition": tag_cond}),
+            ("createtags_wildcard_account_arn", {"Effect": "Allow", "Action": "ec2:CreateTags", "Resource": f"arn:aws:ec2:{REGION}:*:instance/*", "Condition": tag_cond}),
+            ("createtags_wrong_region_arn", {"Effect": "Allow", "Action": "ec2:CreateTags", "Resource": f"arn:aws:ec2:us-east-1:{ACCOUNT}:instance/*", "Condition": tag_cond}),
+            ("createtags_broad_star_arn", {"Effect": "Allow", "Action": "ec2:CreateTags", "Resource": "*", "Condition": tag_cond}),
+            ("createtags_malformed_arn", {"Effect": "Allow", "Action": "ec2:CreateTags", "Resource": "not-an-arn", "Condition": tag_cond}),
+            ("createtags_wildcard_action", {"Effect": "Allow", "Action": "ec2:Create*", "Resource": f"{EP}:instance/*", "Condition": tag_cond}),
+            ("lifecycle_createtags_with_sgr", {"Effect": "Allow", "Action": ["ec2:CreateTags", "ec2:DeleteTags"], "Resource": f"{EP}:security-group-rule/*", "Condition": {"StringEquals": {"aws:ResourceTag/Project": "EnvScale", "aws:ResourceTag/Layer": "DisposableRuntime"}}}),
+            ("lifecycle_createtags_foreign_arn", {"Effect": "Allow", "Action": ["ec2:CreateTags", "ec2:DeleteTags"], "Resource": f"arn:aws:ec2:{REGION}:111122223333:instance/*", "Condition": {"StringEquals": {"aws:ResourceTag/Project": "EnvScale", "aws:ResourceTag/Layer": "DisposableRuntime"}}}),
+            ("wildcard_action_on_sgr", {"Effect": "Allow", "Action": ["ec2:AuthorizeSecurityGroup*"], "Resource": f"{EP}:security-group-rule/*", "Condition": req_cond}),
+            ("broad_star_resource_sg_rule", {"Effect": "Allow", "Action": ["ec2:AuthorizeSecurityGroupIngress"], "Resource": "*", "Condition": req_cond}),
+            ("mixed_resources_on_sgr", {"Effect": "Allow", "Action": ["ec2:AuthorizeSecurityGroupIngress"], "Resource": [f"{EP}:security-group-rule/*", f"{EP}:security-group/*"], "Condition": req_cond}),
+            ("malformed_action_empty_list", {"Effect": "Allow", "Action": [], "Resource": f"{EP}:security-group-rule/*", "Condition": req_cond}),
+            ("malformed_action_non_str", {"Effect": "Allow", "Action": [123], "Resource": f"{EP}:security-group-rule/*", "Condition": req_cond}),
+            ("malformed_resource_none", {"Effect": "Allow", "Action": ["ec2:AuthorizeSecurityGroupIngress"], "Resource": None, "Condition": req_cond}),
+            ("disallowed_not_action", {"Effect": "Allow", "NotAction": ["ec2:Describe*"], "Resource": f"{EP}:security-group-rule/*", "Condition": req_cond}),
+            ("disallowed_not_resource", {"Effect": "Allow", "Action": ["ec2:AuthorizeSecurityGroupIngress"], "NotResource": f"{EP}:security-group/sg-1", "Condition": req_cond}),
+            ("malformed_condition_string", {"Effect": "Allow", "Action": ["ec2:AuthorizeSecurityGroupIngress"], "Resource": f"{EP}:security-group-rule/*", "Condition": "not-a-dict"}),
+            ("malformed_condition_list", {"Effect": "Allow", "Action": ["ec2:AuthorizeSecurityGroupIngress"], "Resource": f"{EP}:security-group-rule/*", "Condition": ["StringEquals"]}),
+            ("malformed_condition_none", {"Effect": "Allow", "Action": ["ec2:AuthorizeSecurityGroupIngress"], "Resource": f"{EP}:security-group-rule/*", "Condition": None}),
+            ("malformed_operator_non_dict", {"Effect": "Allow", "Action": ["ec2:AuthorizeSecurityGroupIngress"], "Resource": f"{EP}:security-group-rule/*", "Condition": {"StringEquals": "not-a-dict"}}),
+            ("malformed_operator_empty_dict", {"Effect": "Allow", "Action": ["ec2:AuthorizeSecurityGroupIngress"], "Resource": f"{EP}:security-group-rule/*", "Condition": {"StringEquals": {}}}),
+            ("malformed_condition_value_dict", {"Effect": "Allow", "Action": ["ec2:AuthorizeSecurityGroupIngress"], "Resource": f"{EP}:security-group-rule/*", "Condition": {"StringEquals": {"aws:RequestTag/Project": {"nested": "bad"}}}}),
+            ("malformed_condition_value_none", {"Effect": "Allow", "Action": ["ec2:AuthorizeSecurityGroupIngress"], "Resource": f"{EP}:security-group-rule/*", "Condition": {"StringEquals": {"aws:RequestTag/Project": None}}}),
+            ("malformed_condition_value_empty_list", {"Effect": "Allow", "Action": ["ec2:AuthorizeSecurityGroupIngress"], "Resource": f"{EP}:security-group-rule/*", "Condition": {"StringEquals": {"aws:RequestTag/Project": []}}}),
+        ]
+        for label, bad_st in bad_stmts:
+            with self.subTest(case=label):
+                rc_bad = {"address": "aws_iam_role_policy.runtime_provisioner", "type": "aws_iam_role_policy", "change": {"actions": ["update"], "after": {"policy": json.dumps({"Version": "2012-10-17", "Statement": [bad_st]})}}}
+                self.assertTrue(plan_iam_safety.check_iam_resource_change_safety(rc_bad), f"Validator failed to reject {label}")
+
+        # Document-level malformed Statement structures must return controlled errors, never raise
+        for bad_doc_label, bad_doc in (
+            ("root_list", [{"Effect": "Allow"}]),
+            ("stmt_missing", {"Version": "2012-10-17"}),
+            ("stmt_empty", {"Version": "2012-10-17", "Statement": []}),
+            ("stmt_non_list", {"Version": "2012-10-17", "Statement": "bad"}),
+            ("stmt_entry_non_dict", {"Version": "2012-10-17", "Statement": ["not-a-dict"]}),
+            ("stmt_bad_effect", {"Version": "2012-10-17", "Statement": [{"Effect": "Maybe", "Action": "s3:GetObject", "Resource": "*"}]}),
+        ):
+            with self.subTest(doc_case=bad_doc_label):
+                rc_doc = {"address": "aws_iam_role_policy.runtime_provisioner", "type": "aws_iam_role_policy", "change": {"actions": ["update"], "after": {"policy": json.dumps(bad_doc)}}}
+                self.assertTrue(plan_iam_safety.check_iam_resource_change_safety(rc_doc), f"Validator failed to reject {bad_doc_label}")
 
 
 if __name__ == "__main__":

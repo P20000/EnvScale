@@ -193,16 +193,15 @@ resource "aws_iam_role_policy" "runtime_provisioner" {
         }
       },
       {
-        Sid    = "SgRules"
-        Effect = "Allow"
-        Action = [
-          "ec2:AuthorizeSecurityGroupIngress", "ec2:AuthorizeSecurityGroupEgress",
-          "ec2:RevokeSecurityGroupIngress", "ec2:RevokeSecurityGroupEgress",
-          "ec2:UpdateSecurityGroupRuleDescriptionsIngress", "ec2:UpdateSecurityGroupRuleDescriptionsEgress",
-        ]
+        Sid      = "SgRules"
+        Effect   = "Allow"
+        Action   = ["ec2:AuthorizeSecurityGroupIngress", "ec2:AuthorizeSecurityGroupEgress"]
         Resource = "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:security-group-rule/*"
         Condition = {
-          StringEquals = { "aws:RequestedRegion" = var.aws_region }
+          StringEquals = {
+            "aws:RequestTag/Project" = "EnvScale"
+            "aws:RequestTag/Layer"   = "DisposableRuntime"
+          }
         }
       },
       {
