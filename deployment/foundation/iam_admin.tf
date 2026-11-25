@@ -157,7 +157,10 @@ resource "aws_iam_role_policy" "foundation_admin" {
           "iam:TagPolicy",
           "iam:UntagPolicy",
         ]
-        Resource = local.workload_boundary_policy_arn
+        Resource = [
+          local.workload_boundary_policy_arn,
+          local.runtime_provisioner_boundary_policy_arn,
+        ]
       },
       {
         Sid    = "AllowOutOfBandSSMParameterSeeding"

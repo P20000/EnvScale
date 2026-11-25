@@ -35,20 +35,24 @@ PROTECTED_FOUNDATION_IAM_ADDRESSES = frozenset({
     "aws_iam_role.foundation_admin[0]",
     "aws_iam_role_policy.foundation_admin[0]",
     "aws_iam_policy.workload_permissions_boundary",
+    "aws_iam_policy.runtime_provisioner_permissions_boundary",
 })
 
-BOUNDARY_ENFORCED_ROLE_ADDRESSES = frozenset({
-    "aws_iam_role.ec2_runtime",
-    "aws_iam_role.github_release",
-    "aws_iam_role.github_deploy",
-    "aws_iam_role.github_recovery",
-})
+EXPECTED_ROLE_BOUNDARIES: dict[str, str] = {
+    "aws_iam_role.ec2_runtime": ":policy/envscale-workload-permissions-boundary",
+    "aws_iam_role.github_release": ":policy/envscale-workload-permissions-boundary",
+    "aws_iam_role.github_deploy": ":policy/envscale-workload-permissions-boundary",
+    "aws_iam_role.github_recovery": ":policy/envscale-workload-permissions-boundary",
+    "aws_iam_role.runtime_provisioner": ":policy/envscale-runtime-provisioner-permissions-boundary",
+}
+BOUNDARY_ENFORCED_ROLE_ADDRESSES = frozenset(EXPECTED_ROLE_BOUNDARIES)
 
 WORKLOAD_POLICY_ADDRESSES = frozenset({
     "aws_iam_role_policy.ec2_runtime",
     "aws_iam_role_policy.github_release",
     "aws_iam_role_policy.github_deploy",
     "aws_iam_role_policy.github_recovery",
+    "aws_iam_role_policy.runtime_provisioner",
 })
 
 
@@ -93,14 +97,17 @@ def check_iam_resource_change_safety(rc: dict[str, Any]) -> list[str]:
     if not isinstance(after, dict):
         return errors
 
-    if rtype == "aws_iam_role" and addr in BOUNDARY_ENFORCED_ROLE_ADDRESSES:
+    if rtype == "aws_iam_role" and addr in EXPECTED_ROLE_BOUNDARIES:
         pb = after.get("permissions_boundary")
         pb_unknown = after_unknown.get("permissions_boundary") is True
         if isinstance(pb, str) and pb:
-            if not pb.endswith(":policy/envscale-workload-permissions-boundary"):
+            if not pb.endswith(EXPECTED_ROLE_BOUNDARIES[addr]):
                 errors.append(f"Role '{addr}' uses unexpected permissions_boundary '{pb}'.")
         elif not pb_unknown and ("assume_role_policy" in after or "name" in after or "permissions_boundary" in after):
             errors.append(f"Role '{addr}' is missing mandatory permissions_boundary attachment.")
+    if addr in ("aws_iam_role.runtime_provisioner", "aws_iam_policy.runtime_provisioner_permissions_boundary"):
+        from runtime_provisioner_iam import check_runtime_provisioner_plan_safety
+        errors.extend(check_runtime_provisioner_plan_safety(addr, rtype, after))
 
     if rtype == "aws_iam_role_policy_attachment":
         pol_arn = after.get("policy_arn")
@@ -122,6 +129,9 @@ def check_iam_resource_change_safety(rc: dict[str, Any]) -> list[str]:
         except json.JSONDecodeError as exc:
             errors.append(f"Invalid JSON in assume_role_policy for '{addr}': {exc}")
         else:
+            trust_sz = len(json.dumps(trust_doc, separators=(",", ":")))
+            if trust_sz > 2048:
+                errors.append(f"Trust policy for '{addr}' exceeds AWS 2048-char limit ({trust_sz} chars).")
             for st in trust_doc.get("Statement") or []:
                 if not isinstance(st, dict) or st.get("Effect") != "Allow":
                     continue
@@ -140,6 +150,10 @@ def check_iam_resource_change_safety(rc: dict[str, Any]) -> list[str]:
         except json.JSONDecodeError as exc:
             errors.append(f"Invalid JSON in policy for '{addr}': {exc}")
         else:
+            max_sz = 10240 if rtype == "aws_iam_role_policy" else 6144
+            pol_sz = len(json.dumps(pol_doc, separators=(",", ":")))
+            if pol_sz > max_sz:
+                errors.append(f"Policy '{addr}' exceeds AWS {max_sz}-char limit ({pol_sz} chars).")
             stmts = [s for s in (pol_doc.get("Statement") or []) if isinstance(s, dict)]
             if addr == "aws_iam_policy.workload_permissions_boundary":
                 deny_acts = {a for s in stmts if s.get("Effect") == "Deny" for a in _as_list(s.get("Action"))}
@@ -203,63 +217,35 @@ def verify_bootstrap_iam_and_boundary_live(
     fdir = pathlib.Path(foundation_dir)
     rendered = sim.build_rendered_foundation_policies(fdir)
     role_checks = (
-        (
-            "envscale-github-foundation-plan-role",
-            "envscale-github-foundation-plan-policy",
-            rendered["role_github_foundation_plan"],
-            {
-                "allowed_operator_principals": (),
-                "allowed_oidc_subs": (f"repo:{oidc_subject_prefix}:environment:foundation-plan",),
-                "expected_trust_doc": rendered["trust_github_foundation_plan"],
-            },
-        ),
-        (
-            "envscale-github-foundation-role",
-            "envscale-github-foundation-policy",
-            rendered["role_github_foundation"],
-            {
-                "allowed_operator_principals": (),
-                "allowed_oidc_subs": (f"repo:{oidc_subject_prefix}:environment:foundation",),
-                "expected_trust_doc": rendered["trust_github_foundation"],
-            },
-        ),
-        (
-            "envscale-foundation-admin-role",
-            "envscale-foundation-admin-policy",
-            rendered["role_foundation_admin"],
-            {
-                "allowed_operator_principals": (operator_principal,),
-                "allowed_oidc_subs": (),
-                "require_mfa": True,
-                "expected_trust_doc": rendered["trust_foundation_admin"],
-            },
-        ),
+        ("envscale-github-foundation-plan-role", "envscale-github-foundation-plan-policy", rendered["role_github_foundation_plan"],
+         {"allowed_operator_principals": (), "allowed_oidc_subs": (f"repo:{oidc_subject_prefix}:environment:foundation-plan",), "expected_trust_doc": rendered["trust_github_foundation_plan"]}),
+        ("envscale-github-foundation-role", "envscale-github-foundation-policy", rendered["role_github_foundation"],
+         {"allowed_operator_principals": (), "allowed_oidc_subs": (f"repo:{oidc_subject_prefix}:environment:foundation",), "expected_trust_doc": rendered["trust_github_foundation"]}),
+        ("envscale-foundation-admin-role", "envscale-foundation-admin-policy", rendered["role_foundation_admin"],
+         {"allowed_operator_principals": (operator_principal,), "allowed_oidc_subs": (), "require_mfa": True, "expected_trust_doc": rendered["trust_foundation_admin"]}),
     )
     for role_name, inline_name, expected_inline_doc, trust_kw in role_checks:
         role_obj = (call("get-role", ["--role-name", role_name]) or {}).get("Role") or {}
-        guard.validate_live_role_trust_policy(
-            role_obj,
-            role_label=role_name,
-            expected_account=account_id,
-            **trust_kw,
-        )
+        guard.validate_live_role_trust_policy(role_obj, role_label=role_name, expected_account=account_id, **trust_kw)
         pol_resp = call("get-role-policy", ["--role-name", role_name, "--policy-name", inline_name]) or {}
-        live_inline = guard._decode_policy_doc(pol_resp.get("PolicyDocument"))
-        if guard._canonical_policy(live_inline) != guard._canonical_policy(expected_inline_doc):
+        if guard._canonical_policy(guard._decode_policy_doc(pol_resp.get("PolicyDocument"))) != guard._canonical_policy(expected_inline_doc):
             raise SystemExit(f"[FATAL] Live inline policy '{inline_name}' on '{role_name}' drifted from Foundation HCL.")
 
     boundary_arn = f"arn:aws:iam::{account_id}:policy/envscale-workload-permissions-boundary"
-    pol_meta = (call("get-policy", ["--policy-arn", boundary_arn]) or {}).get("Policy") or {}
-    ver_id = str(pol_meta.get("DefaultVersionId", ""))
-    if not ver_id:
-        raise SystemExit(f"[FATAL] Missing DefaultVersionId on live boundary policy '{boundary_arn}'.")
-    ver_obj = (call("get-policy-version", ["--policy-arn", boundary_arn, "--version-id", ver_id]) or {}).get("PolicyVersion") or {}
-    live_boundary = guard._decode_policy_doc(ver_obj.get("Document"))
-    if guard._canonical_policy(live_boundary) != guard._canonical_policy(rendered["role_workload_permissions_boundary"]):
-        raise SystemExit(f"[FATAL] Live workload boundary policy '{boundary_arn}' drifted from Foundation HCL.")
+    rt_boundary_arn = f"arn:aws:iam::{account_id}:policy/envscale-runtime-provisioner-permissions-boundary"
+    for b_arn, b_key in ((boundary_arn, "role_workload_permissions_boundary"), (rt_boundary_arn, "boundary_runtime_provisioner")):
+        pol_meta = (call("get-policy", ["--policy-arn", b_arn]) or {}).get("Policy") or {}
+        ver_id = str(pol_meta.get("DefaultVersionId", ""))
+        if not ver_id:
+            raise SystemExit(f"[FATAL] Missing DefaultVersionId on live boundary policy '{b_arn}'.")
+        ver_obj = (call("get-policy-version", ["--policy-arn", b_arn, "--version-id", ver_id]) or {}).get("PolicyVersion") or {}
+        live_boundary = guard._decode_policy_doc(ver_obj.get("Document"))
+        if guard._canonical_policy(live_boundary) != guard._canonical_policy(rendered[b_key]):
+            raise SystemExit(f"[FATAL] Live boundary policy '{b_arn}' drifted from Foundation HCL.")
 
     return {
         "workload_boundary_arn": boundary_arn,
+        "runtime_provisioner_boundary_arn": rt_boundary_arn,
         "foundation_plan_role": "envscale-github-foundation-plan-role",
         "foundation_apply_role": "envscale-github-foundation-role",
         "foundation_admin_role": "envscale-foundation-admin-role",
@@ -421,6 +407,7 @@ def run_bootstrap_foundation_iam(
 
     import_specs = (
         ("aws_iam_policy.workload_permissions_boundary", f"arn:aws:iam::{account_id}:policy/envscale-workload-permissions-boundary", "get-policy", ["--policy-arn", f"arn:aws:iam::{account_id}:policy/envscale-workload-permissions-boundary"]),
+        ("aws_iam_policy.runtime_provisioner_permissions_boundary", f"arn:aws:iam::{account_id}:policy/envscale-runtime-provisioner-permissions-boundary", "get-policy", ["--policy-arn", f"arn:aws:iam::{account_id}:policy/envscale-runtime-provisioner-permissions-boundary"]),
         ("aws_iam_role.foundation_admin[0]", "envscale-foundation-admin-role", "get-role", ["--role-name", "envscale-foundation-admin-role"]),
         ("aws_iam_role_policy.foundation_admin[0]", "envscale-foundation-admin-role:envscale-foundation-admin-policy", "get-role-policy", ["--role-name", "envscale-foundation-admin-role", "--policy-name", "envscale-foundation-admin-policy"]),
         ("aws_iam_role.github_foundation_plan", "envscale-github-foundation-plan-role", "get-role", ["--role-name", "envscale-github-foundation-plan-role"]),

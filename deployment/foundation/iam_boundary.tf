@@ -253,3 +253,146 @@ resource "aws_iam_policy" "workload_permissions_boundary" {
   }
 }
 
+# ==============================================================================
+# EnvScale Persistent Foundation — Runtime Provisioner IAM Permissions Boundary
+# ==============================================================================
+# Dedicated upper-bound permissions boundary attached to
+# `envscale-runtime-provisioner-role` (Principal 8). Protected from mutation or
+# removal by `envscale-github-foundation-role`; managed strictly by break-glass
+# MFA administration (`envscale-foundation-admin-role`).
+# ==============================================================================
+
+resource "aws_iam_policy" "runtime_provisioner_permissions_boundary" {
+  name        = "envscale-runtime-provisioner-permissions-boundary"
+  description = "Upper-bound IAM permissions boundary for EnvScale MFA-enforced runtime provisioner role."
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowBoundedRuntimeStateAndReleaseReads"
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket", "s3:GetBucketLocation", "s3:GetObject",
+          "s3:GetObjectVersion", "s3:PutObject", "s3:DeleteObject",
+        ]
+        Resource = [
+          local.tfstate_bucket_arn, "${local.tfstate_bucket_arn}/*",
+          local.recovery_bucket_arn, "${local.recovery_bucket_arn}/*",
+        ]
+      },
+      {
+        Sid    = "AllowBoundedSSMControlPlaneDispatchOnly"
+        Effect = "Allow"
+        Action = [
+          "ssm:DescribeParameters", "ssm:DescribeInstanceInformation",
+          "ssm:ListCommandInvocations", "ssm:GetCommandInvocation", "ssm:SendCommand",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "AllowBoundedRegionalRuntimeEc2Lifecycle"
+        Effect = "Allow"
+        Action = [
+          "ec2:Describe*", "ec2:CreateVpc", "ec2:CreateInternetGateway", "ec2:CreateVolume",
+          "ec2:AllocateAddress", "ec2:CreateSubnet", "ec2:CreateRouteTable", "ec2:CreateSecurityGroup",
+          "ec2:RunInstances", "ec2:CreateTags", "ec2:DeleteTags", "ec2:ModifyVpcAttribute",
+          "ec2:ModifySubnetAttribute", "ec2:AttachInternetGateway", "ec2:DetachInternetGateway",
+          "ec2:CreateRoute", "ec2:ReplaceRoute", "ec2:DeleteRoute", "ec2:AssociateRouteTable",
+          "ec2:DisassociateRouteTable", "ec2:AuthorizeSecurityGroupIngress", "ec2:AuthorizeSecurityGroupEgress",
+          "ec2:RevokeSecurityGroupIngress", "ec2:RevokeSecurityGroupEgress",
+          "ec2:UpdateSecurityGroupRuleDescriptionsIngress", "ec2:UpdateSecurityGroupRuleDescriptionsEgress",
+          "ec2:StartInstances", "ec2:StopInstances", "ec2:RebootInstances", "ec2:ModifyInstanceAttribute",
+          "ec2:ModifyInstanceMetadataOptions", "ec2:ModifyVolume", "ec2:AttachVolume", "ec2:DetachVolume",
+          "ec2:AssociateAddress", "ec2:DisassociateAddress", "ec2:ReleaseAddress", "ec2:TerminateInstances",
+          "ec2:DeleteVolume", "ec2:DeleteSecurityGroup", "ec2:DeleteRouteTable",
+          "ec2:DeleteInternetGateway", "ec2:DeleteSubnet", "ec2:DeleteVpc",
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = { "aws:RequestedRegion" = var.aws_region }
+        }
+      },
+      {
+        Sid      = "AllowBoundedRuntimeProfileLookup"
+        Effect   = "Allow"
+        Action   = ["iam:GetRole", "iam:GetInstanceProfile"]
+        Resource = [local.ec2_runtime_role_arn, local.ec2_runtime_profile_arn]
+      },
+      {
+        Sid      = "AllowBoundedPassEc2RuntimeRoleOnly"
+        Effect   = "Allow"
+        Action   = ["iam:PassRole"]
+        Resource = local.ec2_runtime_role_arn
+        Condition = {
+          StringEquals = { "iam:PassedToService" = "ec2.amazonaws.com" }
+        }
+      },
+      {
+        Sid    = "DenyBoundedSecretReadsKmsAndSsmMutations"
+        Effect = "Deny"
+        Action = [
+          "ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath",
+          "ssm:PutParameter", "ssm:DeleteParameter", "ssm:DeleteParameters",
+          "ssm:LabelParameterVersion", "kms:*",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "DenyBoundedIamMutationsAndGovernanceAdmin"
+        Effect = "Deny"
+        Action = [
+          "iam:Create*", "iam:Delete*", "iam:Put*", "iam:Update*", "iam:Attach*",
+          "iam:Detach*", "iam:Add*", "iam:Remove*", "iam:Tag*", "iam:Untag*",
+          "organizations:*", "account:*",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "DenyBoundedProtectedS3AndFoundationState"
+        Effect = "Deny"
+        Action = ["s3:DeleteBucket", "s3:DeleteBucketPolicy", "s3:PutBucketPolicy", "s3:DeleteObjectVersion"]
+        Resource = [
+          local.tfstate_bucket_arn, "${local.tfstate_bucket_arn}/*",
+          local.recovery_bucket_arn, "${local.recovery_bucket_arn}/*",
+        ]
+      },
+      {
+        Sid      = "DenyBoundedFoundationWriteAndTfstateDelete"
+        Effect   = "Deny"
+        Action   = ["s3:PutObject"]
+        Resource = ["${local.tfstate_bucket_arn}/foundation/*", "${local.recovery_bucket_arn}/*"]
+      },
+      {
+        Sid    = "DenyBoundedStateAndRecoveryDeletions"
+        Effect = "Deny"
+        Action = ["s3:DeleteObject"]
+        Resource = [
+          "${local.tfstate_bucket_arn}/*.tfstate", "${local.tfstate_bucket_arn}/foundation/*",
+          "${local.recovery_bucket_arn}/backups/*", "${local.recovery_bucket_arn}/releases/*",
+        ]
+      },
+      {
+        Sid      = "DenyBoundedLegacyVaultAccess"
+        Effect   = "Deny"
+        Action   = ["s3:*"]
+        Resource = [local.legacy_vault_bucket_arn, "${local.legacy_vault_bucket_arn}/*"]
+      },
+      {
+        Sid      = "DenyBoundedNonDisposableEipRelease"
+        Effect   = "Deny"
+        Action   = ["ec2:ReleaseAddress"]
+        Resource = "*"
+        Condition = {
+          StringNotEqualsIfExists = { "aws:ResourceTag/Layer" = "DisposableRuntime" }
+        }
+      },
+    ]
+  })
+
+  tags = {
+    Name    = "envscale-runtime-provisioner-permissions-boundary"
+    Purpose = "RuntimeProvisionerPermissionsBoundary"
+  }
+}
+

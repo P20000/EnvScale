@@ -6,6 +6,8 @@
 # permissions without `.tfstate` delete access, mandatory EnvScale resource/
 # request tag boundaries (`Project = EnvScale`, `Layer = DisposableRuntime`),
 # owner-verified AMI/snapshot `RunInstances` scoping, and explicit Denies.
+# Both inline role policies stay strictly <= 10,240 non-whitespace chars (AWS
+# aggregate inline role policy quota) while preserving exact effective scope.
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
@@ -43,45 +45,38 @@ resource "aws_iam_role_policy" "github_deploy" {
       local.shared_cicd_tfstate_statements,
       [
         {
-          Sid      = "AllowRecoveryListScoped"
+          Sid      = "RcLs"
           Effect   = "Allow"
-          Action   = ["s3:ListBucket"]
+          Action   = "s3:ListBucket"
           Resource = local.recovery_bucket_arn
           Condition = {
-            StringLike = {
-              "s3:prefix" = ["releases/*", "lifecycle/*", "backups/*"]
-            }
+            StringLike = { "s3:prefix" = ["releases/*", "lifecycle/*", "backups/*"] }
           }
         },
         {
-          Sid      = "AllowRecoveryBucketLocation"
-          Effect   = "Allow"
-          Action   = ["s3:GetBucketLocation"]
-          Resource = local.recovery_bucket_arn
+          Sid    = "S3Rd"
+          Effect = "Allow"
+          Action = ["s3:GetBucketLocation", "s3:GetObject", "s3:GetObjectVersion"]
+          Resource = [
+            local.tfstate_bucket_arn,
+            "${local.tfstate_bucket_arn}/foundation/terraform.tfstate",
+            local.recovery_bucket_arn,
+            "${local.recovery_bucket_arn}/releases/*",
+            "${local.recovery_bucket_arn}/lifecycle/*",
+            "${local.recovery_bucket_arn}/backups/*",
+          ]
         },
         {
-          Sid    = "AllowRecoveryReleasesAndLifecycleRW"
+          Sid    = "RcWr"
           Effect = "Allow"
-          Action = ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject"]
+          Action = "s3:PutObject"
           Resource = [
             "${local.recovery_bucket_arn}/releases/*",
             "${local.recovery_bucket_arn}/lifecycle/*",
           ]
         },
         {
-          Sid      = "AllowRecoveryLifecycleLockRelease"
-          Effect   = "Allow"
-          Action   = ["s3:DeleteObject"]
-          Resource = "${local.recovery_bucket_arn}/lifecycle/active-op.lock"
-        },
-        {
-          Sid      = "AllowRecoveryBackupsReadOnly"
-          Effect   = "Allow"
-          Action   = ["s3:GetObject", "s3:GetObjectVersion"]
-          Resource = "${local.recovery_bucket_arn}/backups/*"
-        },
-        {
-          Sid    = "AllowRegionalMetadataDescribeOnly"
+          Sid    = "Meta"
           Effect = "Allow"
           Action = [
             "ec2:Describe*",
@@ -96,72 +91,88 @@ resource "aws_iam_role_policy" "github_deploy" {
           }
         },
         {
-          Sid      = "AllowGetEc2RuntimeRoleAndProfile"
+          Sid      = "IamR"
           Effect   = "Allow"
           Action   = ["iam:GetRole", "iam:GetInstanceProfile"]
-          Resource = [aws_iam_role.ec2_runtime.arn, aws_iam_instance_profile.ec2_runtime.arn]
+          Resource = [local.ec2_runtime_role_arn, local.ec2_runtime_profile_arn]
         },
         {
-          Sid      = "AllowPassEc2RuntimeRoleToEc2Only"
+          Sid      = "PsE2"
           Effect   = "Allow"
-          Action   = ["iam:PassRole"]
-          Resource = aws_iam_role.ec2_runtime.arn
+          Action   = "iam:PassRole"
+          Resource = local.ec2_runtime_role_arn
+          Condition = {
+            StringEquals = { "iam:PassedToService" = "ec2.amazonaws.com" }
+          }
+        },
+        {
+          Sid    = "CrRt"
+          Effect = "Allow"
+          Action = ["ec2:CreateVpc", "ec2:CreateInternetGateway", "ec2:CreateVolume", "ec2:RunInstances"]
+          Resource = [
+            "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:vpc/*",
+            "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:internet-gateway/*",
+            "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:volume/*",
+            "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:instance/*",
+            "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:network-interface/*",
+          ]
           Condition = {
             StringEquals = {
-              "iam:PassedToService" = "ec2.amazonaws.com"
+              "aws:RequestTag/Project" = "EnvScale"
+              "aws:RequestTag/Layer"   = "DisposableRuntime"
+            }
+          }
+        },
+        {
+          Sid      = "Ec2L"
+          Effect   = "Allow"
+          Action   = local.ec2_nondestructive_runtime_actions
+          Resource = local.ec2_runtime_tagged_arns
+          Condition = {
+            StringEquals = {
+              "aws:ResourceTag/Project" = "EnvScale"
+              "aws:ResourceTag/Layer"   = "DisposableRuntime"
             }
           }
         },
       ],
       local.shared_ec2_runtime_provisioning_statements,
-      local.shared_ssm_run_command_statements,
       local.shared_governance_tag_deny_statements,
       [
         {
-          Sid      = "DenyFoundationStateMutation"
-          Effect   = "Deny"
-          Action   = ["s3:PutObject", "s3:DeleteObject", "s3:DeleteObjectVersion"]
-          Resource = "${local.tfstate_bucket_arn}/foundation/*"
-        },
-        {
-          Sid      = "DenyTfstateObjectDeletion"
-          Effect   = "Deny"
-          Action   = ["s3:DeleteObject", "s3:DeleteObjectVersion"]
-          Resource = "${local.tfstate_bucket_arn}/*.tfstate"
-        },
-        {
-          Sid    = "DenyBucketAndVersionDeletion"
+          Sid    = "DnSp"
           Effect = "Deny"
-          Action = ["s3:DeleteBucket", "s3:DeleteBucketPolicy", "s3:PutBucketPolicy", "s3:DeleteObjectVersion"]
+          Action = "s3:PutObject"
           Resource = [
-            local.tfstate_bucket_arn,
-            "${local.tfstate_bucket_arn}/*",
-            local.recovery_bucket_arn,
-            "${local.recovery_bucket_arn}/*",
+            "${local.tfstate_bucket_arn}/foundation/*",
+            "${local.recovery_bucket_arn}/backups/*",
           ]
         },
         {
-          Sid      = "DenyBackupMutationsAndDeletions"
-          Effect   = "Deny"
-          Action   = ["s3:PutObject", "s3:DeleteObject"]
-          Resource = "${local.recovery_bucket_arn}/backups/*"
+          Sid    = "DnSd"
+          Effect = "Deny"
+          Action = "s3:DeleteObject"
+          Resource = [
+            "${local.tfstate_bucket_arn}/foundation/*",
+            "${local.tfstate_bucket_arn}/*.tfstate",
+            "${local.recovery_bucket_arn}/backups/*",
+            "${local.recovery_bucket_arn}/releases/*",
+          ]
         },
         {
-          Sid      = "DenyReleaseArtifactDeletion"
+          Sid      = "DnLg"
           Effect   = "Deny"
-          Action   = ["s3:DeleteObject"]
-          Resource = "${local.recovery_bucket_arn}/releases/*"
-        },
-        {
-          Sid      = "DenyLegacyVaultAccess"
-          Effect   = "Deny"
-          Action   = ["s3:*"]
+          Action   = "s3:*"
           Resource = [local.legacy_vault_bucket_arn, "${local.legacy_vault_bucket_arn}/*"]
         },
         {
-          Sid    = "DenyDestructiveComputeAndEipRelease"
+          Sid    = "DnGl"
           Effect = "Deny"
           Action = [
+            "s3:DeleteBucket",
+            "s3:DeleteBucketPolicy",
+            "s3:PutBucketPolicy",
+            "s3:DeleteObjectVersion",
             "ec2:TerminateInstances",
             "ec2:DeleteVolume",
             "ec2:DeleteVpc",
@@ -170,14 +181,11 @@ resource "aws_iam_role_policy" "github_deploy" {
             "ec2:DeleteRouteTable",
             "ec2:DeleteInternetGateway",
             "ec2:ReleaseAddress",
+            "ssm:GetParameter*",
+            "ssm:PutParameter",
+            "ssm:DeleteParameter*",
           ]
           Resource = "*"
-        },
-        {
-          Sid      = "DenySSMParameterValuesAndMutations"
-          Effect   = "Deny"
-          Action   = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath", "ssm:PutParameter", "ssm:DeleteParameter", "ssm:DeleteParameters"]
-          Resource = local.ssm_all_param_arn
         },
       ]
     )
@@ -219,35 +227,30 @@ resource "aws_iam_role_policy" "github_recovery" {
       local.shared_cicd_tfstate_statements,
       [
         {
-          Sid      = "AllowRecoveryListScoped"
+          Sid      = "RcLs"
           Effect   = "Allow"
-          Action   = ["s3:ListBucket"]
+          Action   = "s3:ListBucket"
           Resource = local.recovery_bucket_arn
           Condition = {
-            StringLike = {
-              "s3:prefix" = ["backups/*", "releases/*", "lifecycle/*"]
-            }
+            StringLike = { "s3:prefix" = ["backups/*", "releases/*", "lifecycle/*"] }
           }
         },
         {
-          Sid      = "AllowRecoveryBucketLocation"
-          Effect   = "Allow"
-          Action   = ["s3:GetBucketLocation"]
-          Resource = local.recovery_bucket_arn
-        },
-        {
-          Sid    = "AllowRecoveryBackupsAndReleasesReadOnly"
+          Sid    = "S3Rd"
           Effect = "Allow"
-          Action = ["s3:GetObject", "s3:GetObjectVersion"]
+          Action = ["s3:GetBucketLocation", "s3:GetObject", "s3:GetObjectVersion"]
           Resource = [
+            local.tfstate_bucket_arn,
+            "${local.tfstate_bucket_arn}/foundation/terraform.tfstate",
+            local.recovery_bucket_arn,
             "${local.recovery_bucket_arn}/backups/*",
             "${local.recovery_bucket_arn}/releases/*",
           ]
         },
         {
-          Sid    = "AllowRecoveryLifecycleAndPointerWrite"
+          Sid    = "RcWr"
           Effect = "Allow"
-          Action = ["s3:PutObject"]
+          Action = "s3:PutObject"
           Resource = [
             "${local.recovery_bucket_arn}/lifecycle/*",
             "${local.recovery_bucket_arn}/releases/latest-known-good.json",
@@ -256,13 +259,7 @@ resource "aws_iam_role_policy" "github_recovery" {
           ]
         },
         {
-          Sid      = "AllowRecoveryLifecycleLockRelease"
-          Effect   = "Allow"
-          Action   = ["s3:DeleteObject"]
-          Resource = "${local.recovery_bucket_arn}/lifecycle/active-op.lock"
-        },
-        {
-          Sid    = "AllowRegionalMetadataDescribeOnly"
+          Sid    = "Meta"
           Effect = "Allow"
           Action = [
             "ec2:Describe*",
@@ -281,34 +278,17 @@ resource "aws_iam_role_policy" "github_recovery" {
           }
         },
         {
-          Sid    = "AllowTaggedRuntimeDestruction"
+          Sid    = "CrRt"
           Effect = "Allow"
-          Action = [
-            "ec2:TerminateInstances",
-            "ec2:DetachVolume",
-            "ec2:DeleteVolume",
-            "ec2:DeleteSecurityGroup",
-            "ec2:DisassociateRouteTable",
-            "ec2:DeleteRoute",
-            "ec2:DeleteRouteTable",
-            "ec2:DetachInternetGateway",
-            "ec2:DeleteInternetGateway",
-            "ec2:DeleteSubnet",
-            "ec2:DeleteVpc",
+          Action = ["ec2:CreateVpc", "ec2:CreateInternetGateway", "ec2:CreateVolume", "ec2:RunInstances", "eks:CreateCluster"]
+          Resource = [
+            "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:vpc/*",
+            "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:internet-gateway/*",
+            "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:volume/*",
+            "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:instance/*",
+            "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:network-interface/*",
+            "arn:aws:eks:${var.aws_region}:${var.aws_account_id}:cluster/envscale-*",
           ]
-          Resource = local.ec2_runtime_tagged_arns
-          Condition = {
-            StringEquals = {
-              "aws:ResourceTag/Project" = "EnvScale"
-              "aws:ResourceTag/Layer"   = "DisposableRuntime"
-            }
-          }
-        },
-        {
-          Sid      = "AllowEnvScaleEksClusterCreation"
-          Effect   = "Allow"
-          Action   = ["eks:CreateCluster"]
-          Resource = "arn:aws:eks:${var.aws_region}:${var.aws_account_id}:cluster/envscale-*"
           Condition = {
             StringEquals = {
               "aws:RequestTag/Project" = "EnvScale"
@@ -317,33 +297,20 @@ resource "aws_iam_role_policy" "github_recovery" {
           }
         },
         {
-          Sid    = "AllowEnvScaleEksNodegroupCreation"
+          Sid    = "RtOp"
           Effect = "Allow"
-          Action = ["eks:CreateNodegroup"]
-          Resource = [
-            "arn:aws:eks:${var.aws_region}:${var.aws_account_id}:cluster/envscale-*",
-            "arn:aws:eks:${var.aws_region}:${var.aws_account_id}:nodegroup/envscale-*/*/*",
-          ]
-          Condition = {
-            StringEquals = {
-              "aws:ResourceTag/Project" = "EnvScale"
-              "aws:ResourceTag/Layer"   = "DisposableRuntime"
-              "aws:RequestTag/Project"  = "EnvScale"
-              "aws:RequestTag/Layer"    = "DisposableRuntime"
-            }
-          }
-        },
-        {
-          Sid    = "AllowEnvScaleEksTaggedLifecycleAndDelete"
-          Effect = "Allow"
-          Action = [
-            "eks:DeleteCluster",
-            "eks:DeleteNodegroup",
-            "eks:UpdateClusterConfig",
-            "eks:UpdateNodegroupConfig",
-            "eks:UntagResource",
-          ]
-          Resource = local.eks_envscale_scoped_arns
+          Action = concat(
+            local.ec2_nondestructive_runtime_actions,
+            local.ec2_destructive_runtime_actions,
+            [
+              "eks:DeleteCluster",
+              "eks:DeleteNodegroup",
+              "eks:UpdateClusterConfig",
+              "eks:UpdateNodegroupConfig",
+              "eks:UntagResource",
+            ]
+          )
+          Resource = concat(local.ec2_runtime_tagged_arns, local.eks_envscale_scoped_arns)
           Condition = {
             StringEquals = {
               "aws:ResourceTag/Project" = "EnvScale"
@@ -352,9 +319,9 @@ resource "aws_iam_role_policy" "github_recovery" {
           }
         },
         {
-          Sid      = "AllowEnvScaleEksTaggedResourceTagging"
+          Sid      = "EksN"
           Effect   = "Allow"
-          Action   = ["eks:TagResource"]
+          Action   = ["eks:CreateNodegroup", "eks:TagResource"]
           Resource = local.eks_envscale_scoped_arns
           Condition = {
             StringEquals = {
@@ -366,124 +333,86 @@ resource "aws_iam_role_policy" "github_recovery" {
           }
         },
         {
-          Sid    = "AllowGetRuntimeAndEksRoles"
+          Sid    = "IamR"
           Effect = "Allow"
           Action = ["iam:GetRole", "iam:GetInstanceProfile"]
           Resource = [
-            aws_iam_role.ec2_runtime.arn,
-            aws_iam_instance_profile.ec2_runtime.arn,
+            local.ec2_runtime_role_arn,
+            local.ec2_runtime_profile_arn,
             "arn:aws:iam::${var.aws_account_id}:role/envscale-eks-*",
           ]
         },
         {
-          Sid    = "AllowPassEc2AndNodeRolesToEc2Only"
+          Sid    = "PsE2"
           Effect = "Allow"
-          Action = ["iam:PassRole"]
+          Action = "iam:PassRole"
           Resource = [
-            aws_iam_role.ec2_runtime.arn,
+            local.ec2_runtime_role_arn,
             "arn:aws:iam::${var.aws_account_id}:role/envscale-eks-node-*",
           ]
           Condition = {
-            StringEquals = {
-              "iam:PassedToService" = "ec2.amazonaws.com"
-            }
+            StringEquals = { "iam:PassedToService" = "ec2.amazonaws.com" }
           }
         },
         {
-          Sid      = "AllowPassEksClusterRoleToEksOnly"
+          Sid      = "PsEk"
           Effect   = "Allow"
-          Action   = ["iam:PassRole"]
+          Action   = "iam:PassRole"
           Resource = "arn:aws:iam::${var.aws_account_id}:role/envscale-eks-cluster-*"
           Condition = {
-            StringEquals = {
-              "iam:PassedToService" = "eks.amazonaws.com"
-            }
+            StringEquals = { "iam:PassedToService" = "eks.amazonaws.com" }
           }
         },
       ],
       local.shared_ec2_runtime_provisioning_statements,
-      local.shared_ssm_run_command_statements,
       local.shared_governance_tag_deny_statements,
       [
         {
-          Sid      = "DenyFoundationStaticEipRelease"
-          Effect   = "Deny"
-          Action   = ["ec2:ReleaseAddress"]
-          Resource = "*"
-        },
-        {
-          Sid      = "DenyFoundationStateMutation"
-          Effect   = "Deny"
-          Action   = ["s3:PutObject", "s3:DeleteObject", "s3:DeleteObjectVersion"]
-          Resource = "${local.tfstate_bucket_arn}/foundation/*"
-        },
-        {
-          Sid      = "DenyTfstateObjectDeletion"
-          Effect   = "Deny"
-          Action   = ["s3:DeleteObject", "s3:DeleteObjectVersion"]
-          Resource = "${local.tfstate_bucket_arn}/*.tfstate"
-        },
-        {
-          Sid    = "DenyBucketAndVersionDestruction"
+          Sid    = "DnSp"
           Effect = "Deny"
-          Action = ["s3:DeleteBucket", "s3:DeleteBucketPolicy", "s3:PutBucketPolicy", "s3:DeleteObjectVersion"]
+          Action = "s3:PutObject"
           Resource = [
-            local.tfstate_bucket_arn,
-            "${local.tfstate_bucket_arn}/*",
-            local.recovery_bucket_arn,
-            "${local.recovery_bucket_arn}/*",
-          ]
-        },
-        {
-          Sid    = "DenyBackupArchiveWritesAndAllBackupDeletions"
-          Effect = "Deny"
-          Action = ["s3:PutObject"]
-          Resource = [
+            "${local.tfstate_bucket_arn}/foundation/*",
             "${local.recovery_bucket_arn}/backups/historical/*",
             "${local.recovery_bucket_arn}/backups/postgres/archive/*",
           ]
         },
         {
-          Sid      = "DenyBackupDeletions"
-          Effect   = "Deny"
-          Action   = ["s3:DeleteObject"]
-          Resource = "${local.recovery_bucket_arn}/backups/*"
+          Sid    = "DnSd"
+          Effect = "Deny"
+          Action = "s3:DeleteObject"
+          Resource = [
+            "${local.tfstate_bucket_arn}/foundation/*",
+            "${local.tfstate_bucket_arn}/*.tfstate",
+            "${local.recovery_bucket_arn}/backups/*",
+            "${local.recovery_bucket_arn}/releases/*",
+          ]
         },
         {
-          Sid      = "DenyReleaseArtifactDeletion"
+          Sid      = "DnLg"
           Effect   = "Deny"
-          Action   = ["s3:DeleteObject"]
-          Resource = "${local.recovery_bucket_arn}/releases/*"
-        },
-        {
-          Sid      = "DenyLegacyVaultAccess"
-          Effect   = "Deny"
-          Action   = ["s3:*"]
+          Action   = "s3:*"
           Resource = [local.legacy_vault_bucket_arn, "${local.legacy_vault_bucket_arn}/*"]
         },
         {
-          Sid      = "DenySSMParameterValuesAndMutations"
-          Effect   = "Deny"
-          Action   = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath", "ssm:PutParameter", "ssm:DeleteParameter", "ssm:DeleteParameters"]
-          Resource = local.ssm_all_param_arn
-        },
-        {
-          Sid    = "DenyFoundationIAMMutations"
+          Sid    = "DnGl"
           Effect = "Deny"
           Action = [
+            "s3:DeleteBucket",
+            "s3:DeleteBucketPolicy",
+            "s3:PutBucketPolicy",
+            "s3:DeleteObjectVersion",
+            "ec2:ReleaseAddress",
+            "ssm:GetParameter*",
+            "ssm:PutParameter",
+            "ssm:DeleteParameter*",
             "iam:Delete*",
             "iam:PutRolePolicy",
             "iam:AttachRolePolicy",
             "iam:DetachRolePolicy",
             "iam:UpdateAssumeRolePolicy",
           ]
-          Resource = [
-            "arn:aws:iam::${var.aws_account_id}:role/envscale-ec2-runtime-role",
-            "arn:aws:iam::${var.aws_account_id}:role/envscale-foundation-admin-role",
-            "arn:aws:iam::${var.aws_account_id}:role/envscale-github-*",
-            "arn:aws:iam::${var.aws_account_id}:instance-profile/envscale-*",
-            "arn:aws:iam::${var.aws_account_id}:oidc-provider/*",
-          ]
+          Resource = "*"
         },
       ]
     )

@@ -219,3 +219,21 @@ variable "foundation_admin_trusted_principal_arns" {
   }
 }
 
+variable "runtime_provisioner_trusted_principal_arns" {
+  description = "Same-account human IAM user principal ARNs permitted to assume envscale-runtime-provisioner-role WITH MFA (account root, OIDC, and automated roles strictly forbidden)."
+  type        = list(string)
+  default     = ["arn:aws:iam::982534376726:user/DEV-user-alpha"]
+
+  validation {
+    condition = (
+      length(var.runtime_provisioner_trusted_principal_arns) > 0 &&
+      alltrue([
+        for arn in var.runtime_provisioner_trusted_principal_arns :
+        can(regex("^arn:aws:iam::982534376726:user/[A-Za-z0-9+=,.@_-]+$", arn)) &&
+        !endswith(arn, ":root")
+      ])
+    )
+    error_message = "runtime_provisioner_trusted_principal_arns must contain only specific account 982534376726 IAM user ARNs (account root, OIDC, and automated roles are strictly forbidden)."
+  }
+}
+

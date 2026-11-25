@@ -2,27 +2,40 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { jwt } from "better-auth/plugins";
 import { db } from "../db/client.js";
-import { env } from "../config/env.js";
+import { env, normalizeOptionalCredential, type Env } from "../config/env.js";
 
 import * as schema from "../db/schema/index.js";
 
-// Dynamically construct social providers configuration only if client credentials exist
-const socialProviders: Record<string, { clientId: string; clientSecret: string; prompt?: string; accessType?: "offline" | "online" }> = {};
+export type OAuthProviderEnv = Pick<
+  Env,
+  "GOOGLE_CLIENT_ID" | "GOOGLE_CLIENT_SECRET" | "GITHUB_CLIENT_ID" | "GITHUB_CLIENT_SECRET"
+>;
 
-if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) {
-  socialProviders.google = {
-    clientId: env.GOOGLE_CLIENT_ID,
-    clientSecret: env.GOOGLE_CLIENT_SECRET,
-    prompt: "select_account",
-    accessType: "offline",
-  };
-}
+// Dynamically construct social providers configuration only if valid non-DISABLED client credentials exist
+export function buildSocialProviders(config: OAuthProviderEnv) {
+  const providers: Record<string, { clientId: string; clientSecret: string; prompt?: string; accessType?: "offline" | "online" }> = {};
 
-if (env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET) {
-  socialProviders.github = {
-    clientId: env.GITHUB_CLIENT_ID,
-    clientSecret: env.GITHUB_CLIENT_SECRET,
-  };
+  const googleId = normalizeOptionalCredential(config.GOOGLE_CLIENT_ID);
+  const googleSecret = normalizeOptionalCredential(config.GOOGLE_CLIENT_SECRET);
+  if (googleId && googleSecret) {
+    providers.google = {
+      clientId: googleId,
+      clientSecret: googleSecret,
+      prompt: "select_account",
+      accessType: "offline",
+    };
+  }
+
+  const githubId = normalizeOptionalCredential(config.GITHUB_CLIENT_ID);
+  const githubSecret = normalizeOptionalCredential(config.GITHUB_CLIENT_SECRET);
+  if (githubId && githubSecret) {
+    providers.github = {
+      clientId: githubId,
+      clientSecret: githubSecret,
+    };
+  }
+
+  return Object.keys(providers).length > 0 ? providers : undefined;
 }
 
 export const auth = betterAuth({
@@ -52,7 +65,7 @@ export const auth = betterAuth({
       ? env.CORS_ORIGIN.split(",").map((o) => o.trim()).filter(Boolean)
       : []),
   ],
-  socialProviders: Object.keys(socialProviders).length > 0 ? socialProviders : undefined,
+  socialProviders: buildSocialProviders(env),
   emailAndPassword: {
     enabled: true,
     autoSignIn: true,

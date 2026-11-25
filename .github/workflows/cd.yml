@@ -258,9 +258,9 @@ jobs:
             --instance-ids "${INSTANCE_ID}" \
             --document-name "AWS-RunShellScript" \
             --comment "EnvScale deploy ${TARGET_SHA}" \
-            --parameters "$(python3 - "${TARGET_SHA}" "${MANIFEST_B64}" <<'PYEOF'
-          import json, sys
-          sha, manifest_b64 = sys.argv[1], sys.argv[2]
+            --parameters "$(python3 - "${TARGET_SHA}" "${MANIFEST_B64}" "${AWS_REGION}" <<'PYEOF'
+          import json, shlex, sys
+          sha, manifest_b64, aws_region = sys.argv[1], sys.argv[2], sys.argv[3]
           cmds = [
               "set -euo pipefail",
               "test -d /opt/envscale/.git || { echo '[FATAL] EC2 repository checkout is missing.'; exit 1; }",
@@ -271,7 +271,7 @@ jobs:
               "chmod +x ./envscale.sh deployment/scripts/*.sh deployment/scripts/*.py",
               "mkdir -p /etc/envscale /var/lib/envscale",
               "chmod 700 /etc/envscale /var/lib/envscale",
-              "python3 /opt/envscale/deployment/scripts/sync-ssm-secrets.py --ssm-prefix /envscale/prod --output /etc/envscale/secrets.env",
+              f"python3 /opt/envscale/deployment/scripts/sync-ssm-secrets.py --ssm-prefix /envscale/prod --region {shlex.quote(aws_region)} --output /etc/envscale/secrets.env",
               f"echo '{manifest_b64}' | base64 -d > /var/lib/envscale/pending-release-manifest.json",
               "chmod 600 /var/lib/envscale/pending-release-manifest.json",
               "ENVSCALE_SECRETS_FILE=/etc/envscale/secrets.env /opt/envscale/envscale.sh deploy --manifest /var/lib/envscale/pending-release-manifest.json",

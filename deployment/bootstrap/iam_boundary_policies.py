@@ -16,9 +16,11 @@ ACCOUNT = "982534376726"
 REGION = "ap-south-1"
 OIDC_ARN = f"arn:aws:iam::{ACCOUNT}:oidc-provider/token.actions.githubusercontent.com"
 BOUNDARY_POLICY_ARN = f"arn:aws:iam::{ACCOUNT}:policy/envscale-workload-permissions-boundary"
+RUNTIME_PROVISIONER_BOUNDARY_ARN = f"arn:aws:iam::{ACCOUNT}:policy/envscale-runtime-provisioner-permissions-boundary"
 SSM_CORE_POLICY_ARN = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 EC2_RUNTIME_ROLE_ARN = f"arn:aws:iam::{ACCOUNT}:role/envscale-ec2-runtime-role"
 EC2_RUNTIME_PROFILE_ARN = f"arn:aws:iam::{ACCOUNT}:instance-profile/envscale-ec2-runtime-profile"
+RUNTIME_PROVISIONER_ROLE_ARN = f"arn:aws:iam::{ACCOUNT}:role/envscale-runtime-provisioner-role"
 
 WORKLOAD_MANAGED_ROLE_ARNS = [
     EC2_RUNTIME_ROLE_ARN,
@@ -34,9 +36,11 @@ FOUNDATION_PROTECTED_ROLE_ARNS = [
 ]
 
 ENUMERATED_IAM_READ_ARNS = WORKLOAD_MANAGED_ROLE_ARNS + FOUNDATION_PROTECTED_ROLE_ARNS + [
+    RUNTIME_PROVISIONER_ROLE_ARN,
     EC2_RUNTIME_PROFILE_ARN,
     OIDC_ARN,
     BOUNDARY_POLICY_ARN,
+    RUNTIME_PROVISIONER_BOUNDARY_ARN,
 ]
 
 
@@ -108,7 +112,8 @@ def build_hardened_foundation_and_boundary_policies(
             {"Sid": "AllowEnumeratedFoundationIamReadOnly", "Effect": "Allow", "Action": ["iam:GetRole", "iam:GetRolePolicy", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies", "iam:ListInstanceProfilesForRole", "iam:ListRoleTags", "iam:GetInstanceProfile", "iam:ListInstanceProfileTags", "iam:GetOpenIDConnectProvider", "iam:ListOpenIDConnectProviderTags", "iam:GetPolicy", "iam:GetPolicyVersion", "iam:ListPolicyVersions", "iam:ListPolicyTags", "iam:ListEntitiesForPolicy"], "Resource": ENUMERATED_IAM_READ_ARNS},
             {"Sid": "AllowOidcProviderDiscovery", "Effect": "Allow", "Action": ["iam:ListOpenIDConnectProviders"], "Resource": "*"},
             {"Sid": "AllowBoundedWorkloadRoleCreationAndBoundary", "Effect": "Allow", "Action": ["iam:CreateRole", "iam:PutRolePermissionsBoundary"], "Resource": WORKLOAD_MANAGED_ROLE_ARNS, "Condition": {"StringEquals": {"iam:PermissionsBoundary": BOUNDARY_POLICY_ARN}}},
-            {"Sid": "AllowEnumeratedWorkloadRoleNonBoundaryUpdates", "Effect": "Allow", "Action": ["iam:UpdateRole", "iam:UpdateRoleDescription", "iam:DeleteRole", "iam:UpdateAssumeRolePolicy", "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:TagRole", "iam:UntagRole"], "Resource": WORKLOAD_MANAGED_ROLE_ARNS},
+            {"Sid": "AllowBoundedRuntimeProvisionerRoleCreationAndBoundary", "Effect": "Allow", "Action": ["iam:CreateRole", "iam:PutRolePermissionsBoundary"], "Resource": RUNTIME_PROVISIONER_ROLE_ARN, "Condition": {"StringEquals": {"iam:PermissionsBoundary": RUNTIME_PROVISIONER_BOUNDARY_ARN}}},
+            {"Sid": "AllowEnumeratedWorkloadRoleNonBoundaryUpdates", "Effect": "Allow", "Action": ["iam:UpdateRole", "iam:UpdateRoleDescription", "iam:DeleteRole", "iam:UpdateAssumeRolePolicy", "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:TagRole", "iam:UntagRole"], "Resource": WORKLOAD_MANAGED_ROLE_ARNS + [RUNTIME_PROVISIONER_ROLE_ARN]},
             {"Sid": "AllowBoundedEc2RuntimeCorePolicyAttachment", "Effect": "Allow", "Action": ["iam:AttachRolePolicy", "iam:DetachRolePolicy"], "Resource": EC2_RUNTIME_ROLE_ARN, "Condition": {"ArnEquals": {"iam:PolicyARN": SSM_CORE_POLICY_ARN}}},
             {"Sid": "AllowEnumeratedInstanceProfileAndOidcWrites", "Effect": "Allow", "Action": ["iam:CreateInstanceProfile", "iam:DeleteInstanceProfile", "iam:AddRoleToInstanceProfile", "iam:RemoveRoleFromInstanceProfile", "iam:TagInstanceProfile", "iam:UntagInstanceProfile", "iam:CreateOpenIDConnectProvider", "iam:UpdateOpenIDConnectProviderThumbprint", "iam:AddClientIDToOpenIDConnectProvider", "iam:RemoveClientIDFromOpenIDConnectProvider", "iam:TagOpenIDConnectProvider", "iam:UntagOpenIDConnectProvider"], "Resource": [EC2_RUNTIME_PROFILE_ARN, OIDC_ARN]},
             {"Sid": "AllowNonSecretSSMParametersOnly", "Effect": "Allow", "Action": ["ssm:GetParameter", "ssm:GetParameters", "ssm:PutParameter", "ssm:DeleteParameter", "ssm:AddTagsToResource", "ssm:RemoveTagsFromResource", "ssm:ListTagsForResource"], "Resource": ssm_non_secret},
@@ -134,7 +139,7 @@ def build_hardened_foundation_and_boundary_policies(
             {"Sid": "AllowLegacyVaultReadOnlyForHistoricalMigration", "Effect": "Allow", "Action": ["s3:ListBucket", "s3:ListBucketVersions", "s3:GetBucketLocation", "s3:GetObject", "s3:GetObjectVersion"], "Resource": [leg_arn, f"{leg_arn}/*"]},
             {"Sid": "AllowFoundationIAMAndOidcAdministration", "Effect": "Allow", "Action": ["iam:Get*", "iam:List*", "iam:CreateRole", "iam:UpdateRole", "iam:UpdateAssumeRolePolicy", "iam:PutRolePermissionsBoundary", "iam:TagRole", "iam:UntagRole", "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:CreateInstanceProfile", "iam:AddRoleToInstanceProfile", "iam:RemoveRoleFromInstanceProfile", "iam:TagInstanceProfile", "iam:CreateOpenIDConnectProvider", "iam:UpdateOpenIDConnectProviderThumbprint", "iam:TagOpenIDConnectProvider"], "Resource": [f"arn:aws:iam::{ACCOUNT}:role/envscale-*", f"arn:aws:iam::{ACCOUNT}:instance-profile/envscale-*", OIDC_ARN]},
             {"Sid": "AllowOidcProviderDiscovery", "Effect": "Allow", "Action": ["iam:ListOpenIDConnectProviders"], "Resource": "*"},
-            {"Sid": "AllowWorkloadBoundaryPolicyAdministration", "Effect": "Allow", "Action": ["iam:GetPolicy", "iam:GetPolicyVersion", "iam:ListPolicyVersions", "iam:ListPolicyTags", "iam:ListEntitiesForPolicy", "iam:CreatePolicy", "iam:CreatePolicyVersion", "iam:DeletePolicy", "iam:DeletePolicyVersion", "iam:SetDefaultPolicyVersion", "iam:TagPolicy", "iam:UntagPolicy"], "Resource": BOUNDARY_POLICY_ARN},
+            {"Sid": "AllowWorkloadBoundaryPolicyAdministration", "Effect": "Allow", "Action": ["iam:GetPolicy", "iam:GetPolicyVersion", "iam:ListPolicyVersions", "iam:ListPolicyTags", "iam:ListEntitiesForPolicy", "iam:CreatePolicy", "iam:CreatePolicyVersion", "iam:DeletePolicy", "iam:DeletePolicyVersion", "iam:SetDefaultPolicyVersion", "iam:TagPolicy", "iam:UntagPolicy"], "Resource": [BOUNDARY_POLICY_ARN, RUNTIME_PROVISIONER_BOUNDARY_ARN]},
             {"Sid": "AllowOutOfBandSSMParameterSeeding", "Effect": "Allow", "Action": ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath", "ssm:PutParameter", "ssm:AddTagsToResource", "ssm:ListTagsForResource"], "Resource": ssm_prod},
             {"Sid": "AllowSSMDescribeAndFoundationEipDescribe", "Effect": "Allow", "Action": ["ssm:DescribeParameters", "ec2:DescribeAddresses", "ec2:DescribeAddressesAttribute"], "Resource": "*", "Condition": {"StringEquals": {"aws:RequestedRegion": REGION}}},
             {"Sid": "AllowSSMKmsViaServiceOnly", "Effect": "Allow", "Action": ["kms:Encrypt", "kms:Decrypt"], "Resource": f"arn:aws:kms:{REGION}:{ACCOUNT}:key/*", "Condition": {"StringEquals": {"kms:ViaService": f"ssm.{REGION}.amazonaws.com"}}},
@@ -145,12 +150,17 @@ def build_hardened_foundation_and_boundary_policies(
         ],
     }
 
+    import runtime_provisioner_iam as rt_iam  # local import avoids circular dependency
+
     return {
         "day0_bootstrap_boundary": day0_boundary,
         "day0_initial_seal": day0_seal,
         "day0_initial_seal_boundary": day0_seal_boundary,
         "foundation_iam_bootstrap": foundation_iam_bootstrap,
         "role_workload_permissions_boundary": workload_boundary,
+        "boundary_runtime_provisioner": rt_iam.build_runtime_provisioner_permissions_boundary(ACCOUNT, REGION),
+        "trust_runtime_provisioner": rt_iam.build_runtime_provisioner_trust_policy(ACCOUNT),
+        "role_runtime_provisioner": rt_iam.build_runtime_provisioner_policy(ACCOUNT, REGION),
         "trust_github_foundation_plan": trust_plan,
         "role_github_foundation_plan": role_plan,
         "role_github_foundation": role_foundation,

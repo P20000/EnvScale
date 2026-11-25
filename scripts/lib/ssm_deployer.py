@@ -21,6 +21,20 @@ DEFAULT_SECRETS_FILE = "/etc/envscale/secrets.env"
 DEFAULT_REMOTE_MANIFEST = "/var/lib/envscale/pending-release-manifest.json"
 DEFAULT_SSM_PREFIX = "/envscale/prod"
 DEFAULT_INSTANCE_PROFILE = "envscale-ec2-runtime-profile"
+DEFAULT_AWS_REGION = "ap-south-1"
+
+REQUIRED_RUNTIME_SSM_PARAMS = (
+    "postgres_password",
+    "redis_password",
+    "jwt_access_secret",
+    "jwt_refresh_secret",
+    "better_auth_secret",
+    "better_auth_url",
+    "cors_origin",
+    "kubeconfig_encryption_key",
+    "duckdns_domain",
+    "duckdns_token",
+)
 
 
 def verify_runtime_instance_profile(
@@ -28,12 +42,15 @@ def verify_runtime_instance_profile(
     emit_fn: StepCallback = None,
     step_id: Optional[str] = None,
     step_title: Optional[str] = None,
+    aws_env: Optional[Dict[str, str]] = None,
 ) -> Dict[str, str]:
     """Fail closed before runtime apply if the foundation IAM instance profile or role is missing."""
+    run_kwargs: Dict[str, object] = {"capture_output": True, "text": True}
+    if aws_env is not None:
+        run_kwargs["env"] = aws_env
     res = subprocess.run(
         ["aws", "iam", "get-instance-profile", "--instance-profile-name", profile_name, "--output", "json"],
-        capture_output=True,
-        text=True,
+        **run_kwargs,  # type: ignore[arg-type]
     )
     if res.returncode != 0:
         err = res.stderr.strip() or f"aws iam get-instance-profile exited {res.returncode}"
@@ -58,6 +75,55 @@ def _emit(emit_fn: StepCallback, step_id: Optional[str], step_title: Optional[st
         emit_fn(step_id, step_title, status, detail)
 
 
+def verify_ssm_parameters_present(
+    ssm_prefix: str = DEFAULT_SSM_PREFIX,
+    region: str = DEFAULT_AWS_REGION,
+    aws_env: Optional[Dict[str, str]] = None,
+    emit_fn: StepCallback = None,
+    step_id: Optional[str] = None,
+    step_title: Optional[str] = None,
+) -> List[str]:
+    """Verify via metadata-only describe-parameters (zero decryption) that required SSM params exist."""
+    prefix = "/" + ssm_prefix.strip("/")
+    effective_region = (region or DEFAULT_AWS_REGION).strip() or DEFAULT_AWS_REGION
+    run_kwargs: Dict[str, object] = {"capture_output": True, "text": True}
+    if aws_env is not None:
+        run_kwargs["env"] = aws_env
+
+    found: set[str] = set()
+    next_token: Optional[str] = None
+    while True:
+        cmd = [
+            "aws", "ssm", "describe-parameters",
+            "--region", effective_region,
+            "--parameter-filters", f"Key=Name,Option=BeginsWith,Values={prefix}/",
+            "--output", "json",
+        ]
+        if next_token:
+            cmd.extend(["--next-token", next_token])
+        res = subprocess.run(cmd, **run_kwargs)  # type: ignore[arg-type]
+        if res.returncode != 0:
+            err = res.stderr.strip() or f"aws ssm describe-parameters exited {res.returncode}"
+            raise RuntimeError(f"SSM parameter preflight failed for {prefix}/* in {effective_region}: {err}")
+        payload = json.loads(res.stdout or "{}")
+        for param in payload.get("Parameters", []):
+            name = param.get("Name", "")
+            if name:
+                found.add(name.rsplit("/", 1)[-1])
+        next_token = payload.get("NextToken")
+        if not next_token:
+            break
+
+    missing = [k for k in REQUIRED_RUNTIME_SSM_PARAMS if k not in found]
+    if missing:
+        raise RuntimeError(
+            f"Deployment halted: Required SSM parameter(s) missing under {prefix}/ in {effective_region}: "
+            f"{', '.join(missing)}. Seed /envscale/prod/* via deployment/bootstrap/seed-parameters.sh first."
+        )
+    _emit(emit_fn, step_id, step_title, "log", f"Verified {len(REQUIRED_RUNTIME_SSM_PARAMS)} required SSM parameters exist under {prefix}/ in {effective_region}.")
+    return sorted(found)
+
+
 def wait_for_ssm_online(
     instance_id: str,
     region: str = "ap-south-1",
@@ -66,8 +132,12 @@ def wait_for_ssm_online(
     step_title: Optional[str] = None,
     max_attempts: int = 36,
     interval_s: int = 5,
+    aws_env: Optional[Dict[str, str]] = None,
 ) -> bool:
     """Poll AWS SSM until the target EC2 instance reports PingStatus == 'Online'."""
+    run_kwargs: Dict[str, object] = {"capture_output": True, "text": True}
+    if aws_env is not None:
+        run_kwargs["env"] = aws_env
     for _ in range(max_attempts):
         res = subprocess.run(
             [
@@ -77,8 +147,7 @@ def wait_for_ssm_online(
                 "--query", "InstanceInformationList[0].PingStatus",
                 "--output", "text",
             ],
-            capture_output=True,
-            text=True,
+            **run_kwargs,  # type: ignore[arg-type]
         )
         if res.returncode == 0 and res.stdout.strip() == "Online":
             _emit(emit_fn, step_id, step_title, "log", f"SSM agent online for {instance_id}.")
@@ -96,9 +165,13 @@ def run_ssm_command(
     step_id: Optional[str] = None,
     step_title: Optional[str] = None,
     check: bool = True,
+    aws_env: Optional[Dict[str, str]] = None,
 ) -> subprocess.CompletedProcess:
     """Execute shell commands on an EC2 instance via AWS SSM RunCommand."""
     params_json = json.dumps({"commands": commands})
+    run_kwargs: Dict[str, object] = {"capture_output": True, "text": True}
+    if aws_env is not None:
+        run_kwargs["env"] = aws_env
     send_res = subprocess.run(
         [
             "aws", "ssm", "send-command",
@@ -110,8 +183,7 @@ def run_ssm_command(
             "--query", "Command.CommandId",
             "--output", "text",
         ],
-        capture_output=True,
-        text=True,
+        **run_kwargs,  # type: ignore[arg-type]
     )
     if send_res.returncode != 0:
         err = send_res.stderr.strip() or f"aws ssm send-command exited with code {send_res.returncode}"
@@ -127,8 +199,7 @@ def run_ssm_command(
             "--command-id", command_id,
             "--instance-id", instance_id,
         ],
-        capture_output=True,
-        text=True,
+        **run_kwargs,  # type: ignore[arg-type]
     )
 
     inv_res = subprocess.run(
@@ -139,8 +210,7 @@ def run_ssm_command(
             "--instance-id", instance_id,
             "--output", "json",
         ],
-        capture_output=True,
-        text=True,
+        **run_kwargs,  # type: ignore[arg-type]
     )
     if inv_res.returncode != 0:
         err = inv_res.stderr.strip() or f"Failed retrieving SSM invocation {command_id}"
@@ -175,6 +245,7 @@ def resolve_and_validate_manifest(
     manifest_path: Optional[str] = None,
     recovery_bucket: Optional[str] = None,
     region: str = "ap-south-1",
+    aws_env: Optional[Dict[str, str]] = None,
 ) -> pathlib.Path:
     """Locate and schema-validate the immutable release manifest for commit_sha."""
     candidate = manifest_path or os.environ.get("ENVSCALE_RELEASE_MANIFEST", "").strip()
@@ -186,7 +257,10 @@ def resolve_and_validate_manifest(
             downloaded = os.path.join(PROJECT_ROOT, ".envscale_test_center_logs", f"release-manifest-{commit_sha[:8]}.json")
             os.makedirs(os.path.dirname(downloaded), exist_ok=True)
             s3_uri = f"s3://{recovery_bucket}/releases/{commit_sha}/release-manifest.json"
-            dl = subprocess.run(["aws", "s3", "cp", s3_uri, downloaded, "--region", region], capture_output=True, text=True)
+            s3_kwargs: Dict[str, object] = {"capture_output": True, "text": True}
+            if aws_env is not None:
+                s3_kwargs["env"] = aws_env
+            dl = subprocess.run(["aws", "s3", "cp", s3_uri, downloaded, "--region", region], **s3_kwargs)  # type: ignore[arg-type]
             if dl.returncode != 0:
                 raise RuntimeError(
                     f"Release manifest not found locally or at {s3_uri}: {dl.stderr.strip()}"
@@ -231,10 +305,12 @@ def build_remote_deploy_commands(
     ssm_prefix: str = DEFAULT_SSM_PREFIX,
     secrets_file: str = DEFAULT_SECRETS_FILE,
     remote_manifest_path: str = DEFAULT_REMOTE_MANIFEST,
+    region: str = DEFAULT_AWS_REGION,
 ) -> List[str]:
     """Build exact-SHA checkout, SSM secret sync, and host-runtime.sh dispatch commands."""
     q_sha = shlex.quote(commit_sha)
     q_prefix = shlex.quote(ssm_prefix)
+    q_region = shlex.quote((region or DEFAULT_AWS_REGION).strip() or DEFAULT_AWS_REGION)
     q_secrets = shlex.quote(secrets_file)
     q_manifest = shlex.quote(remote_manifest_path)
     q_b64 = shlex.quote(manifest_b64)
@@ -248,7 +324,7 @@ def build_remote_deploy_commands(
         "test -x /opt/envscale/deployment/scripts/host-runtime.sh || chmod +x /opt/envscale/deployment/scripts/*.sh /opt/envscale/deployment/scripts/*.py /opt/envscale/envscale.sh",
         "mkdir -p /etc/envscale /var/lib/envscale",
         "chmod 700 /etc/envscale /var/lib/envscale",
-        f"python3 /opt/envscale/deployment/scripts/sync-ssm-secrets.py --ssm-prefix {q_prefix} --output {q_secrets}",
+        f"python3 /opt/envscale/deployment/scripts/sync-ssm-secrets.py --ssm-prefix {q_prefix} --region {q_region} --output {q_secrets}",
         f"printf '%s' {q_b64} | base64 -d > {q_manifest}",
         f"chmod 600 {q_manifest}",
         f"ENVSCALE_SECRETS_FILE={q_secrets} /opt/envscale/envscale.sh deploy --manifest {q_manifest}",

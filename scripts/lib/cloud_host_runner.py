@@ -131,7 +131,13 @@ def generate_caddyfile(current_ip: str, full_domain: str) -> str:
 }}
 """
 
-def verify_deployment_health(target_host: str, emit: Optional[StepCallback] = None, step_id: str = "verify", step_title: str = "Health Verification") -> Tuple[bool, List[str]]:
+def verify_deployment_health(
+    target_host: str,
+    emit: Optional[StepCallback] = None,
+    step_id: str = "verify",
+    step_title: str = "Health Verification",
+    allow_anonymous_ws: bool = False,
+) -> Tuple[bool, List[str]]:
     """Runs rigorous verification on Frontend, API, Streamer, and SSL certificates."""
     log = emit or (lambda sid, title, status, detail: None)
     log(step_id, step_title, "log", f"Starting deep verification suite on https://{target_host}...")
@@ -210,10 +216,21 @@ def verify_deployment_health(target_host: str, emit: Optional[StepCallback] = No
             "Sec-WebSocket-Version": "13",
         })
         with urllib.request.urlopen(req, timeout=10) as r:
-            pass
+            status = getattr(r, "status", None) or r.getcode()
+            if allow_anonymous_ws and status == 101:
+                log(step_id, step_title, "log", f"[PASS] WebSocket gateway upgraded anonymously (HTTP 101) on {ws_url}")
+            elif not allow_anonymous_ws and status == 101:
+                errors.append("WebSocket gateway returned unexpected code: 101 (unauthenticated upgrade accepted while ALLOW_ANONYMOUS_WS=false)")
+            else:
+                errors.append(f"WebSocket gateway returned unexpected code: {status}")
     except urllib.error.HTTPError as he:
-        if he.code in (400, 101):
-            log(step_id, step_title, "log", f"[PASS] WebSocket gateway active and routing on {ws_url}")
+        if not allow_anonymous_ws:
+            if he.code == 401:
+                log(step_id, step_title, "log", f"[PASS] WebSocket gateway active & enforcing auth guard (HTTP 401) on {ws_url}")
+            else:
+                errors.append(f"WebSocket gateway returned unexpected code: {he.code}")
+        elif he.code in (400, 101):
+            log(step_id, step_title, "log", f"[PASS] WebSocket gateway active and routing (HTTP {he.code}) on {ws_url}")
         else:
             errors.append(f"WebSocket gateway returned unexpected code: {he.code}")
     except Exception as e:

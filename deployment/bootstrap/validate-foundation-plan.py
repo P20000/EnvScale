@@ -30,11 +30,13 @@ from plan_iam_safety import PROTECTED_FOUNDATION_IAM_ADDRESSES, check_iam_resour
 SUPPORTED_TERRAFORM_VERSION = "1.14.9"
 SUPPORTED_FORMAT_VERSIONS = {"1.2"}
 
-# Core Approved Managed Resources (33 resources when create_foundation_admin_role = true)
+# Core Approved Managed Resources (36 resources when create_foundation_admin_role = true)
 APPROVED_MANAGED_RESOURCES: dict[str, str] = {
     "aws_iam_policy.workload_permissions_boundary": "aws_iam_policy",
+    "aws_iam_policy.runtime_provisioner_permissions_boundary": "aws_iam_policy",
     "aws_iam_role.ec2_runtime": "aws_iam_role", "aws_iam_instance_profile.ec2_runtime": "aws_iam_instance_profile",
     "aws_iam_role_policy.ec2_runtime": "aws_iam_role_policy", "aws_iam_role_policy_attachment.ec2_runtime_ssm_core": "aws_iam_role_policy_attachment",
+    "aws_iam_role.runtime_provisioner": "aws_iam_role", "aws_iam_role_policy.runtime_provisioner": "aws_iam_role_policy",
     "aws_iam_role.github_release": "aws_iam_role", "aws_iam_role_policy.github_release": "aws_iam_role_policy",
     "aws_iam_role.github_deploy": "aws_iam_role", "aws_iam_role_policy.github_deploy": "aws_iam_role_policy",
     "aws_iam_role.github_recovery": "aws_iam_role", "aws_iam_role_policy.github_recovery": "aws_iam_role_policy",
@@ -320,10 +322,10 @@ def run_self_tests() -> None:
             else:
                 os.environ[k] = v
     assert validate_plan_doc(make_valid_plan_doc("bootstrap"), mode="bootstrap", allow_protected_iam_updates=False)
-    print("  [PASS] Golden 7-resource one-time bootstrap plan accepted with break-glass flag and rejected without it")
+    print("  [PASS] Golden 8-resource one-time bootstrap plan accepted with break-glass flag and rejected without it")
 
     assert not validate_plan_doc(make_valid_plan_doc("initial"), mode="auto")
-    print("  [PASS] Golden initial OIDC plan (7 bootstrap no-ops + 26 workload/S3/SSM creates) accepted cleanly")
+    print("  [PASS] Golden initial OIDC plan (8 bootstrap no-ops + 28 workload/S3/SSM creates) accepted cleanly")
 
     upd_doc = make_valid_plan_doc("update")
     next(rc for rc in upd_doc["resource_changes"] if rc["address"] == "aws_iam_role.ec2_runtime")["change"]["actions"] = ["update"]
@@ -376,9 +378,11 @@ def run_self_tests() -> None:
     assert_rejected(lambda d: d["resource_changes"].append(d["resource_changes"][-1].copy()), "Duplicate resource change entry", "Duplicate resource change entry rejected")
     assert_rejected(lambda d: d["resource_changes"][0].update(mode="orphan"), "unrecognized mode 'orphan'", "Resource change with unrecognized mode rejected")
 
-    for prot_addr in ("aws_iam_role.github_foundation", "aws_iam_role.foundation_admin[0]", "aws_iam_policy.workload_permissions_boundary"):
+    for prot_addr in ("aws_iam_role.github_foundation", "aws_iam_role.foundation_admin[0]", "aws_iam_policy.workload_permissions_boundary", "aws_iam_policy.runtime_provisioner_permissions_boundary"):
         assert_rejected(lambda d, pa=prot_addr: next(rc for rc in d["resource_changes"] if rc["address"] == pa)["change"].update(actions=["update"]), "cannot be modified", f"Protected IAM update to {prot_addr} rejected", base_mode="update")
     assert_rejected(lambda d: next(rc for rc in d["resource_changes"] if rc["address"] == "aws_iam_role.ec2_runtime")["change"].update(after={"name": "envscale-ec2-runtime-role", "permissions_boundary": None}), "missing mandatory permissions_boundary", "Workload role missing permissions_boundary rejected")
+    assert_rejected(lambda d: next(rc for rc in d["resource_changes"] if rc["address"] == "aws_iam_role.runtime_provisioner")["change"].update(after={"name": "envscale-runtime-provisioner-role", "permissions_boundary": "arn:aws:iam::982534376726:policy/envscale-workload-permissions-boundary"}), "unexpected permissions_boundary", "Runtime provisioner with wrong boundary rejected")
+    assert_rejected(lambda d: next(rc for rc in d["resource_changes"] if rc["address"] == "aws_iam_role.runtime_provisioner")["change"].update(after={"permissions_boundary": "arn:aws:iam::982534376726:policy/envscale-runtime-provisioner-permissions-boundary", "assume_role_policy": '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":["arn:aws:iam::982534376726:user/DEV-user-alpha"]},"Action":"sts:AssumeRole"}]}'}), "lacks MFA Bool condition", "Runtime provisioner trust without MFA rejected")
     assert_rejected(lambda d: next(rc for rc in d["resource_changes"] if rc["address"] == "aws_iam_role.github_deploy")["change"].update(after={"permissions_boundary": "arn:aws:iam::982534376726:policy/envscale-workload-permissions-boundary", "assume_role_policy": '{"Statement":[{"Effect":"Allow","Condition":{"StringLike":{"sub":"*"}}}]}'}), "must not contain StringLike", "Trust policy StringLike mutation rejected")
     assert_rejected(lambda d: next(rc for rc in d["resource_changes"] if rc["address"] == "aws_iam_role_policy.github_deploy")["change"].update(after={"policy": '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["iam:PutRolePolicy"],"Resource":"*"}]}'}), "disallowed IAM escalation", "Workload inline policy IAM escalation rejected")
     assert_rejected(lambda d: next(rc for rc in d["resource_changes"] if rc["address"] == "aws_iam_role_policy_attachment.ec2_runtime_ssm_core")["change"].update(after={"role": "envscale-ec2-runtime-role", "policy_arn": "arn:aws:iam::aws:policy/AdministratorAccess"}), "unauthorized managed policy", "Unauthorized managed policy attachment rejected")

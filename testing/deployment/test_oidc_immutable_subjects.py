@@ -141,7 +141,9 @@ class TestOidcImmutableSubjects(unittest.TestCase):
                 if op == "get-policy":
                     return {"Policy": {"DefaultVersionId": "v1"}}
                 if op == "get-policy-version":
-                    return {"PolicyVersion": {"Document": self.pols["role_workload_permissions_boundary"]}}
+                    parn = params[params.index("--policy-arn") + 1]
+                    pkey = "boundary_runtime_provisioner" if parn.endswith("runtime-provisioner-permissions-boundary") else "role_workload_permissions_boundary"
+                    return {"PolicyVersion": {"Document": self.pols[pkey]}}
                 raise AssertionError(f"Unexpected IAM op: {op} {params}")
 
             return caller

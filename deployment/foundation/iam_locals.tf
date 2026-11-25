@@ -2,12 +2,15 @@
 # EnvScale Persistent Foundation — Shared Tag-Scoped IAM Statement Locals
 # ==============================================================================
 # Modular IAM layout (< 500 lines per file):
-#   - iam_locals.tf     : Shared ARNs, native S3 .tflock statements, tag-enforced EC2
-#                         provisioning, AMI/snapshot RunInstances scoping, & tag Denies
-#   - iam.tf            : Principal 1 (EC2 Runtime) + Principal 2 (GitHub Release)
-#   - iam_cicd.tf       : Principal 3 (GitHub Deploy) + Principal 4 (GitHub Recovery)
-#   - iam_admin.tf      : Principal 5 (MFA-enforced Human Break-Glass Admin Role)
-#   - iam_foundation.tf : Principal 6 (GitHub OIDC Automated Foundation Provisioner)
+#   - iam_locals.tf              : Shared ARNs, native S3 .tflock statements,
+#                                  tag-enforced EC2 provisioning, AMI/snapshot
+#                                  RunInstances scoping, & governance tag Denies
+#   - iam.tf                     : Principal 1 (EC2 Runtime) + Principal 2 (GitHub Release)
+#   - iam_cicd.tf                : Principal 3 (GitHub Deploy) + Principal 4 (GitHub Recovery)
+#   - iam_admin.tf               : Principal 5 (MFA-enforced Human Break-Glass Admin Role)
+#   - iam_foundation.tf          : Principal 6 (GitHub OIDC Automated Foundation Provisioner)
+#   - iam_foundation_plan.tf     : Principal 7 (Read-Only GitHub OIDC Foundation Plan Role)
+#   - iam_runtime_provisioner.tf : Principal 8 (MFA-enforced Runtime Provisioner)
 # ZERO DynamoDB actions or resources exist anywhere in this module.
 # ==============================================================================
 
@@ -33,10 +36,12 @@ locals {
     ] : "arn:aws:ssm:${var.aws_region}:${var.aws_account_id}:parameter${local.ssm_prefix}/${k}"
   ]
 
-  ec2_runtime_role_arn         = "arn:aws:iam::${var.aws_account_id}:role/envscale-ec2-runtime-role"
-  ec2_runtime_profile_arn      = "arn:aws:iam::${var.aws_account_id}:instance-profile/envscale-ec2-runtime-profile"
-  workload_boundary_policy_arn = "arn:aws:iam::${var.aws_account_id}:policy/envscale-workload-permissions-boundary"
-  ssm_managed_core_policy_arn  = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+  ec2_runtime_role_arn                    = "arn:aws:iam::${var.aws_account_id}:role/envscale-ec2-runtime-role"
+  ec2_runtime_profile_arn                 = "arn:aws:iam::${var.aws_account_id}:instance-profile/envscale-ec2-runtime-profile"
+  runtime_provisioner_role_arn            = "arn:aws:iam::${var.aws_account_id}:role/envscale-runtime-provisioner-role"
+  workload_boundary_policy_arn            = "arn:aws:iam::${var.aws_account_id}:policy/envscale-workload-permissions-boundary"
+  runtime_provisioner_boundary_policy_arn = "arn:aws:iam::${var.aws_account_id}:policy/envscale-runtime-provisioner-permissions-boundary"
+  ssm_managed_core_policy_arn             = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
   workload_managed_role_arns = [
     "arn:aws:iam::${var.aws_account_id}:role/envscale-ec2-runtime-role",
     "arn:aws:iam::${var.aws_account_id}:role/envscale-github-release-role",
@@ -52,9 +57,11 @@ locals {
     local.workload_managed_role_arns,
     local.foundation_protected_role_arns,
     [
+      local.runtime_provisioner_role_arn,
       local.ec2_runtime_profile_arn,
       local.github_oidc_provider_arn,
       local.workload_boundary_policy_arn,
+      local.runtime_provisioner_boundary_policy_arn,
     ]
   )
 
@@ -74,11 +81,58 @@ locals {
     "arn:aws:eks:${var.aws_region}:${var.aws_account_id}:nodegroup/envscale-*/*/*",
   ]
 
+  # Exact Ingress/Egress pair globs (bounded further by workload_permissions_boundary explicit actions)
+  ec2_sg_rule_pair_actions = [
+    "ec2:AuthorizeSecurityGroup*",
+    "ec2:RevokeSecurityGroup*",
+    "ec2:UpdateSecurityGroupRuleDescriptions*",
+  ]
+
+  ec2_nondestructive_runtime_actions = concat(
+    [
+      "ec2:ModifyVpcAttribute",
+      "ec2:ModifySubnetAttribute",
+      "ec2:AttachInternetGateway",
+      "ec2:CreateRoute",
+      "ec2:ReplaceRoute",
+      "ec2:AssociateRouteTable",
+    ],
+    local.ec2_sg_rule_pair_actions,
+    [
+      "ec2:StartInstances",
+      "ec2:StopInstances",
+      "ec2:RebootInstances",
+      "ec2:ModifyInstanceAttribute",
+      "ec2:ModifyInstanceMetadataOptions",
+      "ec2:ModifyVolume",
+      "ec2:AttachVolume",
+      "ec2:AssociateAddress",
+      "ec2:DisassociateAddress",
+      "ec2:CreateTags",
+      "ec2:DeleteTags",
+      "ssm:SendCommand",
+    ]
+  )
+
+  ec2_destructive_runtime_actions = [
+    "ec2:TerminateInstances",
+    "ec2:DetachVolume",
+    "ec2:DeleteVolume",
+    "ec2:DeleteSecurityGroup",
+    "ec2:DisassociateRouteTable",
+    "ec2:DeleteRoute",
+    "ec2:DeleteRouteTable",
+    "ec2:DetachInternetGateway",
+    "ec2:DeleteInternetGateway",
+    "ec2:DeleteSubnet",
+    "ec2:DeleteVpc",
+  ]
+
   shared_cicd_tfstate_statements = [
     {
-      Sid      = "AllowTfstateListScoped"
+      Sid      = "TfLs"
       Effect   = "Allow"
-      Action   = ["s3:ListBucket"]
+      Action   = "s3:ListBucket"
       Resource = local.tfstate_bucket_arn
       Condition = {
         StringLike = {
@@ -87,66 +141,33 @@ locals {
       }
     },
     {
-      Sid      = "AllowTfstateBucketLocation"
-      Effect   = "Allow"
-      Action   = ["s3:GetBucketLocation"]
-      Resource = local.tfstate_bucket_arn
-    },
-    {
-      Sid      = "AllowFoundationStateReadOnly"
-      Effect   = "Allow"
-      Action   = ["s3:GetObject"]
-      Resource = "${local.tfstate_bucket_arn}/foundation/terraform.tfstate"
-    },
-    {
-      Sid    = "AllowRuntimeAndEksStateReadWrite"
+      Sid    = "RtSt"
       Effect = "Allow"
       Action = ["s3:GetObject", "s3:PutObject"]
       Resource = [
         "${local.tfstate_bucket_arn}/runtime/terraform.tfstate",
         "${local.tfstate_bucket_arn}/eks/terraform.tfstate",
+        "${local.tfstate_bucket_arn}/runtime/terraform.tfstate.tflock",
+        "${local.tfstate_bucket_arn}/eks/terraform.tfstate.tflock",
       ]
     },
     {
-      Sid    = "AllowRuntimeAndEksNativeLockFiles"
+      Sid    = "LkDl"
       Effect = "Allow"
-      Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+      Action = "s3:DeleteObject"
       Resource = [
         "${local.tfstate_bucket_arn}/runtime/terraform.tfstate.tflock",
         "${local.tfstate_bucket_arn}/eks/terraform.tfstate.tflock",
+        "${local.recovery_bucket_arn}/lifecycle/active-op.lock",
       ]
     },
   ]
 
   shared_ec2_runtime_provisioning_statements = [
     {
-      Sid    = "AllowCreateTaggedTopLevelRuntimeResources"
+      Sid    = "CrCh"
       Effect = "Allow"
-      Action = [
-        "ec2:CreateVpc",
-        "ec2:CreateInternetGateway",
-        "ec2:CreateVolume",
-      ]
-      Resource = [
-        "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:vpc/*",
-        "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:internet-gateway/*",
-        "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:volume/*",
-      ]
-      Condition = {
-        StringEquals = {
-          "aws:RequestTag/Project" = "EnvScale"
-          "aws:RequestTag/Layer"   = "DisposableRuntime"
-        }
-      }
-    },
-    {
-      Sid    = "AllowCreateTaggedVpcChildResources"
-      Effect = "Allow"
-      Action = [
-        "ec2:CreateSubnet",
-        "ec2:CreateRouteTable",
-        "ec2:CreateSecurityGroup",
-      ]
+      Action = ["ec2:CreateSubnet", "ec2:CreateRouteTable", "ec2:CreateSecurityGroup"]
       Resource = [
         "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:subnet/*",
         "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:route-table/*",
@@ -160,13 +181,9 @@ locals {
       }
     },
     {
-      Sid    = "AllowVpcParentForChildResourceCreation"
-      Effect = "Allow"
-      Action = [
-        "ec2:CreateSubnet",
-        "ec2:CreateRouteTable",
-        "ec2:CreateSecurityGroup",
-      ]
+      Sid      = "VpcP"
+      Effect   = "Allow"
+      Action   = ["ec2:CreateSubnet", "ec2:CreateRouteTable", "ec2:CreateSecurityGroup"]
       Resource = "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:vpc/*"
       Condition = {
         StringEquals = {
@@ -176,27 +193,13 @@ locals {
       }
     },
     {
-      Sid    = "AllowRunInstancesTaggedInstanceAndVolume"
+      Sid    = "RnDp"
       Effect = "Allow"
-      Action = ["ec2:RunInstances"]
-      Resource = [
-        "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:instance/*",
-        "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:volume/*",
-      ]
-      Condition = {
-        StringEquals = {
-          "aws:RequestTag/Project" = "EnvScale"
-          "aws:RequestTag/Layer"   = "DisposableRuntime"
-        }
-      }
-    },
-    {
-      Sid    = "AllowRunInstancesInEnvScaleSubnetAndSg"
-      Effect = "Allow"
-      Action = ["ec2:RunInstances"]
+      Action = "ec2:RunInstances"
       Resource = [
         "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:subnet/*",
         "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:security-group/*",
+        "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:network-interface/*",
       ]
       Condition = {
         StringEquals = {
@@ -206,33 +209,9 @@ locals {
       }
     },
     {
-      Sid      = "AllowRunInstancesTaggedNewEni"
-      Effect   = "Allow"
-      Action   = ["ec2:RunInstances"]
-      Resource = "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:network-interface/*"
-      Condition = {
-        StringEquals = {
-          "aws:RequestTag/Project" = "EnvScale"
-          "aws:RequestTag/Layer"   = "DisposableRuntime"
-        }
-      }
-    },
-    {
-      Sid      = "AllowRunInstancesTaggedExistingEni"
-      Effect   = "Allow"
-      Action   = ["ec2:RunInstances"]
-      Resource = "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:network-interface/*"
-      Condition = {
-        StringEquals = {
-          "aws:ResourceTag/Project" = "EnvScale"
-          "aws:ResourceTag/Layer"   = "DisposableRuntime"
-        }
-      }
-    },
-    {
-      Sid    = "AllowRunInstancesApprovedAmiAndSnapshot"
+      Sid    = "RnAm"
       Effect = "Allow"
-      Action = ["ec2:RunInstances"]
+      Action = "ec2:RunInstances"
       Resource = [
         "arn:aws:ec2:${var.aws_region}::image/*",
         "arn:aws:ec2:${var.aws_region}::snapshot/*",
@@ -244,24 +223,18 @@ locals {
       }
     },
     {
-      Sid    = "AllowTagOnCreateForRuntimeResources"
+      Sid    = "TgCr"
       Effect = "Allow"
-      Action = ["ec2:CreateTags"]
+      Action = "ec2:CreateTags"
       Resource = concat(local.ec2_runtime_tagged_arns, [
         "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:security-group-rule/*",
       ])
       Condition = {
         StringEquals = {
           "ec2:CreateAction" = [
-            "CreateVpc",
-            "CreateSubnet",
-            "CreateInternetGateway",
-            "CreateRouteTable",
-            "CreateSecurityGroup",
-            "AuthorizeSecurityGroupIngress",
-            "AuthorizeSecurityGroupEgress",
-            "CreateVolume",
-            "RunInstances",
+            "CreateVpc", "CreateSubnet", "CreateInternetGateway", "CreateRouteTable",
+            "CreateSecurityGroup", "AuthorizeSecurityGroupIngress", "AuthorizeSecurityGroupEgress",
+            "CreateVolume", "RunInstances",
           ]
           "aws:RequestTag/Project" = "EnvScale"
           "aws:RequestTag/Layer"   = "DisposableRuntime"
@@ -269,94 +242,34 @@ locals {
       }
     },
     {
-      Sid    = "AllowNonDestructiveTaggedRuntimeOperations"
-      Effect = "Allow"
-      Action = [
-        "ec2:ModifyVpcAttribute",
-        "ec2:ModifySubnetAttribute",
-        "ec2:AttachInternetGateway",
-        "ec2:CreateRoute",
-        "ec2:ReplaceRoute",
-        "ec2:AssociateRouteTable",
-        "ec2:AuthorizeSecurityGroupIngress",
-        "ec2:AuthorizeSecurityGroupEgress",
-        "ec2:RevokeSecurityGroupIngress",
-        "ec2:RevokeSecurityGroupEgress",
-        "ec2:UpdateSecurityGroupRuleDescriptionsIngress",
-        "ec2:UpdateSecurityGroupRuleDescriptionsEgress",
-        "ec2:StartInstances",
-        "ec2:StopInstances",
-        "ec2:RebootInstances",
-        "ec2:ModifyInstanceAttribute",
-        "ec2:ModifyInstanceMetadataOptions",
-        "ec2:ModifyVolume",
-        "ec2:AttachVolume",
-        "ec2:AssociateAddress",
-        "ec2:DisassociateAddress",
-        "ec2:CreateTags",
-        "ec2:DeleteTags",
-      ]
-      Resource = local.ec2_runtime_tagged_arns
-      Condition = {
-        StringEquals = {
-          "aws:ResourceTag/Project" = "EnvScale"
-          "aws:ResourceTag/Layer"   = "DisposableRuntime"
-        }
-      }
-    },
-    {
-      Sid    = "AllowSecurityGroupRuleSubresourceManagement"
-      Effect = "Allow"
-      Action = [
-        "ec2:AuthorizeSecurityGroupIngress",
-        "ec2:AuthorizeSecurityGroupEgress",
-        "ec2:RevokeSecurityGroupIngress",
-        "ec2:RevokeSecurityGroupEgress",
-        "ec2:UpdateSecurityGroupRuleDescriptionsIngress",
-        "ec2:UpdateSecurityGroupRuleDescriptionsEgress",
-      ]
+      Sid      = "SgRl"
+      Effect   = "Allow"
+      Action   = local.ec2_sg_rule_pair_actions
       Resource = "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:security-group-rule/*"
       Condition = {
         StringEquals = { "aws:RequestedRegion" = var.aws_region }
       }
     },
     {
-      Sid      = "AllowFoundationStaticEipAssociation"
+      Sid      = "StEp"
       Effect   = "Allow"
       Action   = ["ec2:AssociateAddress", "ec2:DisassociateAddress"]
       Resource = "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:elastic-ip/*"
       Condition = {
-        StringEquals = {
-          "aws:ResourceTag/Project" = "EnvScale"
-        }
+        StringEquals = { "aws:ResourceTag/Project" = "EnvScale" }
       }
     },
-  ]
-
-  shared_ssm_run_command_statements = [
     {
-      Sid      = "AllowSSMSendCommandRunShellDocument"
+      Sid      = "SsDc"
       Effect   = "Allow"
-      Action   = ["ssm:SendCommand"]
+      Action   = "ssm:SendCommand"
       Resource = "arn:aws:ssm:${var.aws_region}::document/AWS-RunShellScript"
-    },
-    {
-      Sid      = "AllowSSMSendCommandDisposableRuntimeInstances"
-      Effect   = "Allow"
-      Action   = ["ssm:SendCommand"]
-      Resource = "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:instance/*"
-      Condition = {
-        StringEquals = {
-          "aws:ResourceTag/Project" = "EnvScale"
-          "aws:ResourceTag/Layer"   = "DisposableRuntime"
-        }
-      }
     },
   ]
 
   shared_governance_tag_deny_statements = [
     {
-      Sid      = "DenyDeletingGovernanceOwnershipTags"
+      Sid      = "DnTg"
       Effect   = "Deny"
       Action   = ["ec2:DeleteTags", "eks:UntagResource"]
       Resource = "*"
@@ -367,7 +280,7 @@ locals {
       }
     },
     {
-      Sid      = "DenyMutatingProjectTagValue"
+      Sid      = "DnPr"
       Effect   = "Deny"
       Action   = ["ec2:CreateTags", "eks:TagResource"]
       Resource = "*"
@@ -381,7 +294,7 @@ locals {
       }
     },
     {
-      Sid      = "DenyMutatingLayerTagValue"
+      Sid      = "DnLy"
       Effect   = "Deny"
       Action   = ["ec2:CreateTags", "eks:TagResource"]
       Resource = "*"
@@ -396,4 +309,3 @@ locals {
     },
   ]
 }
-

@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import urllib.error
 from unittest import mock
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -30,7 +31,7 @@ MANIFEST_GEN = _load_script_module("gen_manifest", "deployment/scripts/generate-
 MANIFEST_VAL = _load_script_module("val_manifest", "deployment/scripts/validate-release-manifest.py")
 SSM_SECRETS = _load_script_module("ssm_secrets", "deployment/scripts/sync-ssm-secrets.py")
 
-from scripts.lib import cloud_deployer, ssm_deployer  # noqa: E402
+from scripts.lib import cloud_deployer, cloud_host_runner, ssm_deployer  # noqa: E402
 
 SAMPLE_SHA = "0123456789abcdef0123456789abcdef01234567"
 API_DIGEST = "sha256:1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809"
@@ -117,6 +118,49 @@ class TestSsmSecretsSync(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 SSM_SECRETS.render_secrets_env({"DUCKDNS_DOMAIN": "envscale"}, out_path)
 
+    def test_resolve_aws_region_precedence_and_imds_fallback(self):
+        with mock.patch.dict(os.environ, {"AWS_REGION": "us-east-1", "AWS_DEFAULT_REGION": "eu-west-1"}, clear=False):
+            self.assertEqual(SSM_SECRETS.resolve_aws_region("ap-south-1", allow_imds=False), "ap-south-1")
+            self.assertEqual(SSM_SECRETS.resolve_aws_region(None, allow_imds=False), "us-east-1")
+        with mock.patch.dict(os.environ, {"AWS_REGION": "", "AWS_DEFAULT_REGION": ""}, clear=False):
+            tok_resp, reg_resp = mock.MagicMock(), mock.MagicMock()
+            tok_resp.__enter__.return_value = tok_resp
+            tok_resp.read.return_value = b"imds-tok"
+            reg_resp.__enter__.return_value = reg_resp
+            reg_resp.read.return_value = b"ap-south-1\n"
+            with mock.patch.object(SSM_SECRETS.urllib.request, "urlopen", side_effect=[tok_resp, reg_resp]) as mock_open:
+                self.assertEqual(SSM_SECRETS.resolve_aws_region(None, allow_imds=True), "ap-south-1")
+            self.assertEqual(mock_open.call_count, 2)
+            with mock.patch.object(SSM_SECRETS.urllib.request, "urlopen", side_effect=urllib.error.URLError("timeout")):
+                self.assertIsNone(SSM_SECRETS.resolve_aws_region(None, allow_imds=True))
+        with self.assertRaises(ValueError):
+            SSM_SECRETS.resolve_aws_region("bad region!", allow_imds=False)
+
+    def test_normalizes_disabled_oauth_sentinel_to_empty(self):
+        ssm_payload = {
+            "Parameters": [
+                {"Name": "/envscale/prod/google_client_id", "Value": "DISABLED"},
+                {"Name": "/envscale/prod/google_client_secret", "Value": "disabled"},
+                {"Name": "/envscale/prod/github_client_id", "Value": "real-gh-id"},
+                {"Name": "/envscale/prod/github_client_secret", "Value": "DISABLED"},
+            ],
+        }
+        with mock.patch.object(SSM_SECRETS.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout=json.dumps(ssm_payload), stderr="")):
+            fetched = SSM_SECRETS.fetch_ssm_parameters("/envscale/prod", region="ap-south-1")
+        self.assertEqual((fetched["GOOGLE_CLIENT_ID"], fetched["GOOGLE_CLIENT_SECRET"]), ("", ""))
+        self.assertEqual((fetched["GITHUB_CLIENT_ID"], fetched["GITHUB_CLIENT_SECRET"]), ("real-gh-id", ""))
+
+        base = {k: "val-123" for k in SSM_SECRETS.REQUIRED_KEYS}
+        base.update({"GOOGLE_CLIENT_ID": "DISABLED", "GOOGLE_CLIENT_SECRET": "Disabled", "GITHUB_CLIENT_ID": "real-gh-id", "GITHUB_CLIENT_SECRET": "real-gh-sec"})
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_path = pathlib.Path(tmpdir) / "secrets.env"
+            SSM_SECRETS.render_secrets_env(base, out_path)
+            txt = out_path.read_text(encoding="utf-8")
+        self.assertIn('GOOGLE_CLIENT_ID=""', txt)
+        self.assertIn('GOOGLE_CLIENT_SECRET=""', txt)
+        self.assertIn('GITHUB_CLIENT_ID="real-gh-id"', txt)
+        self.assertIn('GITHUB_CLIENT_SECRET="real-gh-sec"', txt)
+
 
 class TestSsmCommandsAndCleanup(unittest.TestCase):
     def test_remote_commands_require_exact_sha_and_manifest(self):
@@ -126,8 +170,113 @@ class TestSsmCommandsAndCleanup(unittest.TestCase):
         self.assertIn(f"git fetch --no-tags origin {SAMPLE_SHA}", joined)
         self.assertIn(f"git checkout --detach {SAMPLE_SHA}", joined)
         self.assertNotIn("origin/develop", joined)
-        self.assertIn("sync-ssm-secrets.py --ssm-prefix /envscale/prod --output /etc/envscale/secrets.env", joined)
+        self.assertIn("sync-ssm-secrets.py --ssm-prefix /envscale/prod --region ap-south-1 --output /etc/envscale/secrets.env", joined)
         self.assertIn("ENVSCALE_SECRETS_FILE=/etc/envscale/secrets.env /opt/envscale/envscale.sh deploy --manifest /var/lib/envscale/pending-release-manifest.json", joined)
+        custom_joined = "\n".join(ssm_deployer.build_remote_deploy_commands(SAMPLE_SHA, "e30=", region="us-west-2"))
+        self.assertIn("--region us-west-2", custom_joined)
+
+    def test_verify_ssm_parameters_present_checks_paginated_metadata_without_decryption(self):
+        p1 = {"Parameters": [{"Name": f"/envscale/prod/{k}"} for k in ssm_deployer.REQUIRED_RUNTIME_SSM_PARAMS[:5]], "NextToken": "t2"}
+        p2 = {"Parameters": [{"Name": f"/envscale/prod/{k}"} for k in ssm_deployer.REQUIRED_RUNTIME_SSM_PARAMS[5:]]}
+        calls = [subprocess.CompletedProcess([], 0, stdout=json.dumps(p1), stderr=""), subprocess.CompletedProcess([], 0, stdout=json.dumps(p2), stderr="")]
+        with mock.patch.object(ssm_deployer.subprocess, "run", side_effect=calls) as m_run:
+            found = ssm_deployer.verify_ssm_parameters_present(region="ap-south-1")
+        self.assertEqual(len(found), len(ssm_deployer.REQUIRED_RUNTIME_SSM_PARAMS))
+        for c in m_run.call_args_list:
+            cmd = c.args[0]
+            self.assertIn("describe-parameters", cmd)
+            self.assertIn("ap-south-1", cmd)
+            self.assertNotIn("get-parameter", " ".join(cmd))
+
+        incomplete = {"Parameters": [{"Name": "/envscale/prod/duckdns_domain"}]}
+        with mock.patch.object(ssm_deployer.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout=json.dumps(incomplete), stderr="")):
+            with self.assertRaises(RuntimeError) as ctx:
+                ssm_deployer.verify_ssm_parameters_present(region="ap-south-1")
+        self.assertIn("duckdns_token", str(ctx.exception))
+
+    def test_cloud_deployer_deploy_decoupled_from_local_env_secrets(self):
+        deployer = cloud_deployer.CloudDeployer(log_fn=lambda _: None)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mpath = pathlib.Path(tmpdir) / "manifest.json"
+            mpath.write_text('{"git":{"commit_sha":"' + SAMPLE_SHA + '"}}', encoding="utf-8")
+            with (
+                mock.patch.object(deployer, "get_instance_id", return_value="i-0123456789abcdef0"),
+                mock.patch.object(deployer, "get_public_ip", return_value="203.0.113.10"),
+                mock.patch.object(deployer, "_get_tf_outputs", return_value={"app_url": {"value": "https://envscale.duckdns.org"}}),
+                mock.patch.object(deployer, "load_deployment_env", return_value={}),
+                mock.patch.object(deployer, "get_aws_context", return_value={"account_id": "982534376726", "region": "ap-south-1", "s3_bucket": "bkt"}),
+                mock.patch.object(cloud_deployer, "verify_ssm_parameters_present", return_value=list(ssm_deployer.REQUIRED_RUNTIME_SSM_PARAMS)) as m_ssm,
+                mock.patch.object(cloud_deployer, "resolve_and_validate_manifest", return_value=mpath),
+                mock.patch.object(cloud_deployer, "run_ssm_command") as m_run,
+                mock.patch.object(cloud_deployer, "verify_deployment_health", return_value=(True, [])),
+                mock.patch.object(cloud_deployer.time, "sleep"),
+            ):
+                deployer.deploy(release_sha=SAMPLE_SHA, manifest_path=str(mpath))
+            m_ssm.assert_called_once()
+            self.assertIn("--region ap-south-1", "\n".join(m_run.call_args.args[1]))
+
+            with (
+                mock.patch.object(deployer, "get_instance_id", return_value="i-0123456789abcdef0"),
+                mock.patch.object(deployer, "get_public_ip", return_value="203.0.113.10"),
+                mock.patch.object(deployer, "load_deployment_env", return_value={}),
+                mock.patch.object(deployer, "get_aws_context", return_value={"account_id": "982534376726", "region": "ap-south-1", "s3_bucket": "bkt"}),
+                mock.patch.object(cloud_deployer, "verify_ssm_parameters_present", side_effect=RuntimeError("Missing SSM params")),
+                mock.patch.object(cloud_deployer, "run_ssm_command") as m_run_blocked,
+            ):
+                with self.assertRaises(RuntimeError):
+                    deployer.deploy(release_sha=SAMPLE_SHA, manifest_path=str(mpath))
+                m_run_blocked.assert_not_called()
+
+    def test_websocket_health_probe_enforces_401_and_detects_failures(self):
+        sock_cm = mock.MagicMock()
+        sock_cm.__enter__.return_value = sock_cm
+        ssl_sock = mock.MagicMock()
+        ssl_sock.__enter__.return_value = ssl_sock
+        ssl_sock.getpeercert.return_value = {"notAfter": "Dec 31 23:59:59 2099 GMT"}
+        ssl_ctx = mock.MagicMock()
+        ssl_ctx.wrap_socket.return_value = ssl_sock
+
+        def _make_urlopen(ws_outcome):
+            def _urlopen(req, timeout=10):
+                url = req.full_url
+                if url.endswith("/ws/k8s"):
+                    if isinstance(ws_outcome, Exception):
+                        raise ws_outcome
+                    resp = mock.MagicMock()
+                    resp.__enter__.return_value = resp
+                    resp.status = ws_outcome
+                    return resp
+                resp = mock.MagicMock()
+                resp.__enter__.return_value = resp
+                if url.endswith("/healthz"):
+                    resp.status, resp.read.return_value = 200, b'{"service":"k8s-streamer"}'
+                elif url.endswith("/api/v1/workspaces"):
+                    raise urllib.error.HTTPError(url, 401, "Unauthorized", {}, None)  # type: ignore[arg-type]
+                else:
+                    resp.status, resp.read.return_value = 200, b"ok"
+                return resp
+            return _urlopen
+
+        cases = [
+            (False, urllib.error.HTTPError("u", 401, "Unauthorized", {}, None), True),  # type: ignore[arg-type]
+            (False, 200, False),
+            (False, 101, False),
+            (False, urllib.error.HTTPError("u", 400, "Bad Request", {}, None), False),  # type: ignore[arg-type]
+            (False, urllib.error.HTTPError("u", 404, "Not Found", {}, None), False),  # type: ignore[arg-type]
+            (False, urllib.error.HTTPError("u", 502, "Bad Gateway", {}, None), False),  # type: ignore[arg-type]
+            (False, urllib.error.URLError("refused"), False),
+            (True, 101, True),
+            (True, urllib.error.HTTPError("u", 400, "Bad Request", {}, None), True),  # type: ignore[arg-type]
+            (True, urllib.error.HTTPError("u", 401, "Unauthorized", {}, None), False),  # type: ignore[arg-type]
+        ]
+        with (
+            mock.patch("socket.create_connection", return_value=sock_cm),
+            mock.patch("ssl.create_default_context", return_value=ssl_ctx),
+        ):
+            for allow_anon, outcome, expected_ok in cases:
+                with mock.patch.object(cloud_host_runner.urllib.request, "urlopen", side_effect=_make_urlopen(outcome)):
+                    ok, errs = cloud_host_runner.verify_deployment_health("envscale.duckdns.org", allow_anonymous_ws=allow_anon)
+                self.assertEqual(ok, expected_ok, f"allow_anon={allow_anon}, outcome={outcome}, errs={errs}")
 
     def test_resolve_manifest_rejects_commit_sha_mismatch(self):
         manifest = MANIFEST_GEN.build_release_manifest(
@@ -230,6 +379,7 @@ class TestRepoInfrastructureContracts(unittest.TestCase):
         self.assertIn("generate-release-manifest.py", cd_yml)
         self.assertIn("aws ssm send-command", cd_yml)
         self.assertIn("--manifest", cd_yml)
+        self.assertIn("sync-ssm-secrets.py --ssm-prefix /envscale/prod --region", cd_yml)
 
     def test_cd_workflow_gates_production_deploy_with_no_host_fallback(self):
         cd_yml = (REPO_ROOT / ".github/workflows/cd.yml").read_text(encoding="utf-8")
