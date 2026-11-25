@@ -20,6 +20,7 @@ from .config import PROJECT_ROOT
 BACKUP_RESULT_PREFIX = "ENVSCALE_BACKUP_RESULT="
 DEFAULT_AWS_REGION = "ap-south-1"
 DEFAULT_MAX_BACKUP_AGE_SECONDS = 86400
+MAX_FUTURE_SKEW_SECONDS = 300
 DEFAULT_PIPELINE_STATE_PATH = os.path.join(PROJECT_ROOT, ".envscale_test_center_logs", "cloud_pipeline_state.json")
 
 
@@ -260,6 +261,20 @@ def verify_s3_postgres_backup_object(
     }
 
 
+def _parse_s3_last_modified(raw_ts: Any, s3_target: str) -> datetime:
+    """Parse an S3 LastModified timestamp into a timezone-aware UTC datetime, failing closed on missing or malformed values."""
+    if not isinstance(raw_ts, str) or not raw_ts.strip():
+        raise RuntimeError(f"Destruction blocked: S3 backup {s3_target} is missing LastModified timestamp.")
+    ts_str = raw_ts.strip()
+    try:
+        dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise RuntimeError(f"Destruction blocked: invalid LastModified timestamp on {s3_target}: {raw_ts!r}") from exc
+    if dt.tzinfo is None:
+        raise RuntimeError(f"Destruction blocked: LastModified timestamp on {s3_target} lacks timezone offset: {raw_ts!r}")
+    return dt.astimezone(timezone.utc)
+
+
 def verify_no_host_destroy_safety(
     *,
     tf_state_path: str,
@@ -270,8 +285,9 @@ def verify_no_host_destroy_safety(
     pipeline_state_path: Optional[str] = None,
     expected_instance_id: Optional[str] = None,
     max_backup_age_seconds: int = DEFAULT_MAX_BACKUP_AGE_SECONDS,
+    now_utc: Optional[datetime] = None,
 ) -> Dict[str, Any]:
-    """Fail-closed no-host teardown check: verify state/instance identity and prove the S3 backup belongs to this deployment."""
+    """Fail-closed no-host teardown check: select newest S3 dump without pre-filtering and prove deployment ownership."""
     if not os.path.isfile(tf_state_path):
         raise RuntimeError("Destruction blocked: no active EC2 instance ID resolved and Terraform state file is missing.")
     ident = extract_tfstate_deployment_identity(tf_state_path, pipeline_state_path=pipeline_state_path)
@@ -295,30 +311,69 @@ def verify_no_host_destroy_safety(
     if ls_res.returncode != 0:
         err = redact_sensitive_text((ls_res.stderr or ls_res.stdout or f"exit code {ls_res.returncode}").strip())
         raise RuntimeError(f"Destruction blocked: no EC2 instance present and failed listing s3://{bucket}/backups/postgres/: {err}")
-    contents = (json.loads(ls_res.stdout or "{}") or {}).get("Contents") or []
-    dumps = [o for o in contents if isinstance(o, dict) and str(o.get("Key", "")).startswith("backups/postgres/") and str(o.get("Key", "")).endswith(".dump") and int(o.get("Size") or 0) > 0]
-    if not dumps:
-        raise RuntimeError(f"Destruction blocked: no EC2 instance found and no existing PostgreSQL backup (.dump) exists in s3://{bucket}/backups/postgres/.")
-    latest = sorted(dumps, key=lambda o: (str(o.get("LastModified", "")), str(o.get("Key", ""))), reverse=True)[0]
-    latest_key = str(latest["Key"])
-    last_mod_raw = str(latest.get("LastModified") or "").strip()
-    if not last_mod_raw:
-        raise RuntimeError(f"Destruction blocked: S3 backup s3://{bucket}/{latest_key} is missing LastModified timestamp.")
+    raw_stdout = (ls_res.stdout or "").strip()
+    if not raw_stdout:
+        raise RuntimeError(f"Destruction blocked: malformed empty response from s3api list-objects-v2 for s3://{bucket}/backups/postgres/.")
     try:
-        mod_dt = datetime.fromisoformat(last_mod_raw.replace("Z", "+00:00"))
-        if mod_dt.tzinfo is None:
-            mod_dt = mod_dt.replace(tzinfo=timezone.utc)
-    except ValueError as exc:
-        raise RuntimeError(f"Destruction blocked: invalid LastModified timestamp on s3://{bucket}/{latest_key}: {last_mod_raw!r}") from exc
-    age_s = (datetime.now(timezone.utc) - mod_dt).total_seconds()
+        ls_doc = json.loads(raw_stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Destruction blocked: malformed JSON from s3api list-objects-v2 for s3://{bucket}/backups/postgres/: {exc}") from exc
+    if not isinstance(ls_doc, dict):
+        raise RuntimeError(
+            f"Destruction blocked: unexpected JSON structure from s3api list-objects-v2 for s3://{bucket}/backups/postgres/ "
+            f"(expected object, got {type(ls_doc).__name__})."
+        )
+    if "Contents" not in ls_doc or not isinstance(ls_doc.get("Contents"), list):
+        raise RuntimeError(f"Destruction blocked: S3 listing for s3://{bucket}/backups/postgres/ is missing a valid 'Contents' list.")
+
+    contents = ls_doc["Contents"]
+    parsed_candidates: List[tuple[datetime, str, Dict[str, Any]]] = []
+    for entry in contents:
+        if not isinstance(entry, dict):
+            raise RuntimeError(f"Destruction blocked: malformed object entry in S3 listing for s3://{bucket}/backups/postgres/.")
+        raw_key = entry.get("Key")
+        if not isinstance(raw_key, str) or not raw_key.strip():
+            raise RuntimeError(f"Destruction blocked: S3 listing for s3://{bucket}/backups/postgres/ contains an entry with missing or invalid Key.")
+        key_str = raw_key.strip()
+        if not key_str.startswith("backups/postgres/") or not key_str.endswith(".dump"):
+            continue
+        dt = _parse_s3_last_modified(entry.get("LastModified"), f"s3://{bucket}/{key_str}")
+        parsed_candidates.append((dt, key_str, entry))
+
+    if not parsed_candidates:
+        raise RuntimeError(f"Destruction blocked: no EC2 instance found and no existing PostgreSQL backup (.dump) exists in s3://{bucket}/backups/postgres/.")
+
+    # Sort by parsed LastModified descending (then Key descending) BEFORE checking Size so a newer 0-byte dump never falls back to an older dump.
+    parsed_candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    mod_dt, latest_key, latest = parsed_candidates[0]
+    s3_latest = f"s3://{bucket}/{latest_key}"
+
+    raw_size = latest.get("Size")
+    if not isinstance(raw_size, int) or isinstance(raw_size, bool) or raw_size <= 0:
+        raise RuntimeError(
+            f"Destruction blocked: newest S3 backup candidate {s3_latest} has zero or invalid Size ({raw_size!r}); "
+            "refusing to fall back to older backups."
+        )
+
+    effective_now = (
+        now_utc.astimezone(timezone.utc)
+        if isinstance(now_utc, datetime) and now_utc.tzinfo is not None
+        else datetime.now(timezone.utc)
+    )
+    age_s = (effective_now - mod_dt).total_seconds()
+    if age_s < -MAX_FUTURE_SKEW_SECONDS:
+        raise RuntimeError(
+            f"Destruction blocked: newest S3 backup {s3_latest} has an implausible future LastModified timestamp "
+            f"({latest.get('LastModified')!r}, {int(-age_s)}s ahead of current UTC)."
+        )
     if age_s > max_backup_age_seconds:
         raise RuntimeError(
-            f"Destruction blocked: S3 backup s3://{bucket}/{latest_key} is stale (age={int(age_s)}s > max={max_backup_age_seconds}s)."
+            f"Destruction blocked: S3 backup {s3_latest} is stale (age={int(age_s)}s > max={max_backup_age_seconds}s)."
         )
 
     verified = verify_s3_postgres_backup_object(
         bucket=bucket, backup_key=latest_key, region=region,
-        expected_size=int(latest["Size"]), aws_env=aws_env, run_fn=run_fn,
+        expected_size=raw_size, aws_env=aws_env, run_fn=run_fn,
     )
     meta = verified.get("metadata") or {}
     b_lineage = str(meta.get("tf_lineage") or "").strip()
@@ -326,7 +381,7 @@ def verify_no_host_destroy_safety(
     b_vpc = str(meta.get("vpc_id") or "").strip()
     if not b_lineage or not b_inst or b_inst == "unknown" or not b_vpc:
         raise RuntimeError(
-            f"Destruction blocked: S3 backup s3://{bucket}/{latest_key} is missing required deployment ownership metadata "
+            f"Destruction blocked: S3 backup {s3_latest} is missing required deployment ownership metadata "
             f"(tf_lineage={b_lineage!r}, instance_id={b_inst!r}, vpc_id={b_vpc!r})."
         )
     if b_lineage != tf_lineage:

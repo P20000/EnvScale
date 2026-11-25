@@ -384,28 +384,21 @@ class TestPostgresBackupDestroySafety(unittest.TestCase):
             tf_state = tf_dir / "terraform.tfstate"
             pipe_state = tf_dir / "cloud_pipeline_state.json"
             deployer = cloud_deployer.CloudDeployer(log_fn=lambda _: None)
-            now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            stale_iso = (datetime.now(timezone.utc) - timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            now_dt = datetime.now(timezone.utc)
+            now_iso = now_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            older_valid_iso = (now_dt - timedelta(minutes=15)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            stale_iso = (now_dt - timedelta(hours=25)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            future_iso = (now_dt + timedelta(seconds=600)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-            valid_tf_doc = {
-                "lineage": LINEAGE,
-                "serial": 12,
-                "resources": [{"type": "aws_vpc", "instances": [{"attributes": {"id": VPC_ID}}]}],
-            }
-            valid_pipe_doc = {
-                "context": {"instance_id": INSTANCE_ID, "release_id": RELEASE_ID, "target_sha": COMMIT_SHA},
-            }
+            valid_tf_doc = {"lineage": LINEAGE, "serial": 12, "resources": [{"type": "aws_vpc", "instances": [{"attributes": {"id": VPC_ID}}]}]}
+            valid_pipe_doc = {"context": {"instance_id": INSTANCE_ID, "release_id": RELEASE_ID, "target_sha": COMMIT_SHA}}
             valid_meta = {
-                "sha256": VALID_DUMP_SHA256,
-                "byte_size": str(len(VALID_DUMP_BYTES)),
-                "tf_lineage": LINEAGE,
-                "instance_id": INSTANCE_ID,
-                "vpc_id": VPC_ID,
-                "release_id": RELEASE_ID,
-                "commit_sha": COMMIT_SHA,
+                "sha256": VALID_DUMP_SHA256, "byte_size": str(len(VALID_DUMP_BYTES)),
+                "tf_lineage": LINEAGE, "instance_id": INSTANCE_ID, "vpc_id": VPC_ID,
+                "release_id": RELEASE_ID, "commit_sha": COMMIT_SHA,
             }
 
-            def _run_no_host_case(tf_doc, pipe_doc, list_contents, head_doc, executed: List[List[str]]) -> None:
+            def _run_no_host_case(tf_doc, pipe_doc, list_payload, head_doc, executed: List[List[str]]) -> None:
                 if tf_doc is None:
                     tf_state.unlink(missing_ok=True)
                 else:
@@ -418,7 +411,8 @@ class TestPostgresBackupDestroySafety(unittest.TestCase):
                 def _subproc(cmd, **kw):
                     executed.append(list(cmd))
                     if cmd[:3] == ["aws", "s3api", "list-objects-v2"]:
-                        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps({"Contents": list_contents}), stderr="")
+                        out_str = list_payload if isinstance(list_payload, str) else json.dumps(list_payload)
+                        return subprocess.CompletedProcess(cmd, 0, stdout=out_str, stderr="")
                     if cmd[:3] == ["aws", "s3api", "head-object"]:
                         return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(head_doc), stderr="")
                     return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
@@ -435,8 +429,17 @@ class TestPostgresBackupDestroySafety(unittest.TestCase):
                 ):
                     deployer.infra_destroy()
 
-            fresh_list = [{"Key": "backups/postgres/backup_1.dump", "Size": len(VALID_DUMP_BYTES), "LastModified": now_iso}]
-            stale_list = [{"Key": "backups/postgres/backup_old.dump", "Size": len(VALID_DUMP_BYTES), "LastModified": stale_iso}]
+            fresh_list = {"Contents": [{"Key": "backups/postgres/backup_1.dump", "Size": len(VALID_DUMP_BYTES), "LastModified": now_iso}]}
+            stale_list = {"Contents": [{"Key": "backups/postgres/backup_old.dump", "Size": len(VALID_DUMP_BYTES), "LastModified": stale_iso}]}
+            future_list = {"Contents": [{"Key": "backups/postgres/backup_fut.dump", "Size": len(VALID_DUMP_BYTES), "LastModified": future_iso}]}
+            bad_ts_list = {"Contents": [{"Key": "backups/postgres/backup_badts.dump", "Size": len(VALID_DUMP_BYTES), "LastModified": "not-a-timestamp"}]}
+            naive_ts_list = {"Contents": [{"Key": "backups/postgres/backup_naive.dump", "Size": len(VALID_DUMP_BYTES), "LastModified": "2026-11-26T00:00:00"}]}
+            newest_zero_older_valid_list = {
+                "Contents": [
+                    {"Key": "backups/postgres/backup_older_valid.dump", "Size": len(VALID_DUMP_BYTES), "LastModified": older_valid_iso},
+                    {"Key": "backups/postgres/backup_newest_zero.dump", "Size": 0, "LastModified": now_iso},
+                ]
+            }
             valid_head = {"ContentLength": len(VALID_DUMP_BYTES), "ChecksumSHA256": VALID_DUMP_B64_SHA256, "Metadata": valid_meta}
 
             blocked_cases = [
@@ -444,8 +447,15 @@ class TestPostgresBackupDestroySafety(unittest.TestCase):
                 ("lingering_aws_instance", {"lineage": LINEAGE, "resources": [{"type": "aws_instance", "instances": [{"attributes": {"id": INSTANCE_ID}}]}]}, valid_pipe_doc, fresh_list, valid_head, "still records an aws_instance"),
                 ("missing_state_lineage", {"lineage": "", "resources": valid_tf_doc["resources"]}, valid_pipe_doc, fresh_list, valid_head, "cannot establish deployment and instance identity"),
                 ("missing_pipeline_instance_identity", valid_tf_doc, None, fresh_list, valid_head, "cannot establish deployment and instance identity"),
-                ("empty_s3_backup_history", valid_tf_doc, valid_pipe_doc, [], valid_head, "no existing PostgreSQL backup"),
-                ("stale_historical_backup", valid_tf_doc, valid_pipe_doc, stale_list, valid_head, "is stale"),
+                ("s3_listing_malformed_json", valid_tf_doc, valid_pipe_doc, "{not valid json", valid_head, "malformed JSON from s3api list-objects-v2"),
+                ("s3_listing_unexpected_top_level_list", valid_tf_doc, valid_pipe_doc, [{"Key": "backups/postgres/b.dump"}], valid_head, "unexpected JSON structure from s3api list-objects-v2"),
+                ("s3_listing_missing_contents_key", valid_tf_doc, valid_pipe_doc, {"Name": BUCKET, "Prefix": "backups/postgres/"}, valid_head, "missing a valid 'Contents' list"),
+                ("s3_listing_genuinely_empty", valid_tf_doc, valid_pipe_doc, {"Contents": []}, valid_head, "no existing PostgreSQL backup"),
+                ("newest_dump_zero_bytes_with_older_valid_dump", valid_tf_doc, valid_pipe_doc, newest_zero_older_valid_list, valid_head, "refusing to fall back to older backups"),
+                ("newest_dump_invalid_timestamp", valid_tf_doc, valid_pipe_doc, bad_ts_list, valid_head, "invalid LastModified timestamp"),
+                ("newest_dump_timezone_naive_timestamp", valid_tf_doc, valid_pipe_doc, naive_ts_list, valid_head, "lacks timezone offset"),
+                ("newest_dump_future_timestamp_over_300s", valid_tf_doc, valid_pipe_doc, future_list, valid_head, "implausible future LastModified timestamp"),
+                ("stale_historical_backup_over_24h", valid_tf_doc, valid_pipe_doc, stale_list, valid_head, "is stale"),
                 ("missing_native_checksum_on_no_host", valid_tf_doc, valid_pipe_doc, fresh_list, {"ContentLength": len(VALID_DUMP_BYTES), "Metadata": valid_meta}, "missing mandatory native S3 ChecksumSHA256"),
                 ("missing_backup_ownership_metadata", valid_tf_doc, valid_pipe_doc, fresh_list, {"ContentLength": len(VALID_DUMP_BYTES), "ChecksumSHA256": VALID_DUMP_B64_SHA256, "Metadata": {"sha256": VALID_DUMP_SHA256}}, "missing required deployment ownership metadata"),
                 ("mismatched_tf_lineage", valid_tf_doc, valid_pipe_doc, fresh_list, {"ContentLength": len(VALID_DUMP_BYTES), "ChecksumSHA256": VALID_DUMP_B64_SHA256, "Metadata": {**valid_meta, "tf_lineage": "other-lineage-999"}}, "tf_lineage"),
@@ -462,9 +472,15 @@ class TestPostgresBackupDestroySafety(unittest.TestCase):
                     self.assertIn(exp_err, str(ctx.exception))
                     self._assert_terraform_destroy_not_called(self, executed_track)
 
-            # Positive case: all deployment/instance identities, freshness, and native ChecksumSHA256 match
+            # Positive case: newest valid backup with matching deployment identity and native ChecksumSHA256
+            multi_valid_list = {
+                "Contents": [
+                    {"Key": "backups/postgres/backup_older_zero.dump", "Size": 0, "LastModified": older_valid_iso},
+                    {"Key": "backups/postgres/backup_newest_valid.dump", "Size": len(VALID_DUMP_BYTES), "LastModified": now_iso},
+                ]
+            }
             executed_ok: List[List[str]] = []
-            _run_no_host_case(valid_tf_doc, valid_pipe_doc, fresh_list, valid_head, executed_ok)
+            _run_no_host_case(valid_tf_doc, valid_pipe_doc, multi_valid_list, valid_head, executed_ok)
             self.assertTrue(any(c[:2] == ["terraform", "destroy"] for c in executed_ok))
 
     def test_unique_backup_keys_never_collide_on_retry(self):
