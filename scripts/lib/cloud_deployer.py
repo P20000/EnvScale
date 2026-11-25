@@ -15,9 +15,9 @@ from .cloud_identity import DEFAULT_ACCOUNT_ID, DEFAULT_REGION, redact_sensitive
 from .config import PROJECT_ROOT, TERRAFORM_DIR
 from .ssm_deployer import (
     DEFAULT_SECRETS_FILE, build_postgres_backup_ssm_commands, build_remote_deploy_commands,
-    cleanup_external_references, generate_postgres_backup_key, parse_postgres_backup_ssm_output,
-    resolve_and_validate_manifest, run_ssm_command, verify_no_host_destroy_safety,
-    verify_runtime_instance_profile, verify_s3_postgres_backup_object,
+    cleanup_external_references, extract_tfstate_deployment_identity, generate_postgres_backup_key,
+    parse_postgres_backup_ssm_output, resolve_and_validate_manifest, run_ssm_command,
+    verify_no_host_destroy_safety, verify_runtime_instance_profile, verify_s3_postgres_backup_object,
     verify_ssm_parameters_present, wait_for_ssm_online,
 )
 
@@ -334,12 +334,18 @@ class CloudDeployer:
                 account_id=account_id, region=region,
                 configured_bucket=ctx.get("recovery_bucket") or ctx.get("s3_bucket"),
             )
+            tf_state = os.path.join(TERRAFORM_DIR, "terraform.tfstate")
             instance_id = self.get_instance_id()
             if instance_id:
+                dep_ident = extract_tfstate_deployment_identity(tf_state) if os.path.isfile(tf_state) else {}
                 backup_key = generate_postgres_backup_key(instance_id)
                 ssm_res = run_ssm_command(
                     instance_id,
-                    build_postgres_backup_ssm_commands(bucket, backup_key, region=region, instance_id=instance_id),
+                    build_postgres_backup_ssm_commands(
+                        bucket, backup_key, region=region, instance_id=instance_id,
+                        tf_lineage=dep_ident.get("tf_lineage", ""), vpc_id=dep_ident.get("vpc_id", ""),
+                        release_id=dep_ident.get("release_id", ""), commit_sha=dep_ident.get("commit_sha", ""),
+                    ),
                     region=region, comment="Archive and validate postgres before destroy",
                     emit_fn=self._step_fn, step_id=s1, step_title=t1, check=True, aws_env=self._aws_env,
                 )
@@ -353,7 +359,7 @@ class CloudDeployer:
                 )
             else:
                 verified = verify_no_host_destroy_safety(
-                    tf_state_path=os.path.join(TERRAFORM_DIR, "terraform.tfstate"),
+                    tf_state_path=tf_state,
                     bucket=bucket, region=region, aws_env=self._aws_env, run_fn=subprocess.run,
                 )
             self._emit_step(s1, t1, "log", f"Verified S3 backup s3://{bucket}/{verified['key']} ({verified['content_length']} bytes).")
