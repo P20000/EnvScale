@@ -10,21 +10,15 @@ import urllib.error
 import urllib.request
 from typing import Any, Callable, Dict, List, Optional
 
-from .cloud_host_runner import (
-    load_deployment_env,
-    verify_deployment_health,
-)
-from .cloud_identity import DEFAULT_REGION, resolve_recovery_bucket
+from .cloud_host_runner import load_deployment_env, verify_deployment_health
+from .cloud_identity import DEFAULT_ACCOUNT_ID, DEFAULT_REGION, redact_sensitive_text, resolve_recovery_bucket
 from .config import PROJECT_ROOT, TERRAFORM_DIR
 from .ssm_deployer import (
-    DEFAULT_SECRETS_FILE,
-    build_remote_deploy_commands,
-    cleanup_external_references,
-    resolve_and_validate_manifest,
-    run_ssm_command,
-    verify_runtime_instance_profile,
-    verify_ssm_parameters_present,
-    wait_for_ssm_online,
+    DEFAULT_SECRETS_FILE, build_postgres_backup_ssm_commands, build_remote_deploy_commands,
+    cleanup_external_references, generate_postgres_backup_key, parse_postgres_backup_ssm_output,
+    resolve_and_validate_manifest, run_ssm_command, verify_no_host_destroy_safety,
+    verify_runtime_instance_profile, verify_s3_postgres_backup_object,
+    verify_ssm_parameters_present, wait_for_ssm_online,
 )
 
 LogCallback = Callable[[str], None]
@@ -57,15 +51,16 @@ class CloudDeployer:
         return {"env": self._aws_env} if self._aws_env is not None else {}
 
     def _emit_step(self, step_id: str, title: str, status: str, detail: str = ""):
-        self._step_fn(step_id, title, status, detail)
-        if detail and status == "log":
-            self._log(f"[{title}] {detail}")
+        safe = redact_sensitive_text(detail)
+        self._step_fn(step_id, title, status, safe)
+        if safe and status == "log":
+            self._log(f"[{title}] {safe}")
         elif status == "start":
-            self._log(f"Starting step: {title} ({detail})")
+            self._log(f"Starting step: {title} ({safe})")
         elif status == "success":
             self._log(f"Completed step: {title}")
         elif status == "error":
-            self._log(f"Failed step: {title} - {detail}")
+            self._log(f"Failed step: {title} - {safe}")
 
     def _run_cmd(self, cmd: list, cwd: Optional[str] = None, check: bool = True, step_id: Optional[str] = None, step_title: Optional[str] = None, input_data: Optional[str] = None, display_cmd: Optional[str] = None) -> subprocess.CompletedProcess:
         cmd_str = display_cmd if display_cmd is not None else " ".join(cmd)
@@ -329,32 +324,39 @@ class CloudDeployer:
 
     def infra_destroy(self):
         s1, t1 = "destroy_archive", "Archiving PostgreSQL Database to S3 Vault"
-        self._emit_step(s1, t1, "start", "ssm pg_dump archive")
+        self._emit_step(s1, t1, "start", "ssm pg_dump archive & s3api head-object verification")
         try:
             self.ensure_s3_vault(step_id=s1, step_title=t1)
+            ctx = self.get_aws_context()
+            account_id = (ctx.get("account_id") or DEFAULT_ACCOUNT_ID).strip()
+            region = (ctx.get("region") or DEFAULT_REGION).strip()
+            bucket = resolve_recovery_bucket(
+                account_id=account_id, region=region,
+                configured_bucket=ctx.get("recovery_bucket") or ctx.get("s3_bucket"),
+            )
             instance_id = self.get_instance_id()
             if instance_id:
-                ctx = self.get_aws_context()
-                stamp = time.strftime("%Y%m%d_%H%M%S")
-                s3_path = f"s3://{ctx['s3_bucket']}/backups/postgres/backup_{stamp}.dump"
-                try:
-                    run_ssm_command(
-                        instance_id,
-                        [
-                            "if docker ps --format '{{.Names}}' | grep -q '^envscale-postgres$'; then "
-                            f"docker exec envscale-postgres pg_dump --format=custom -U envscale envscale | aws s3 cp - {s3_path}; "
-                            "fi"
-                        ],
-                        region=ctx["region"],
-                        comment="Archive postgres before destroy",
-                        emit_fn=self._step_fn,
-                        step_id=s1,
-                        step_title=t1,
-                        check=False,
-                        aws_env=self._aws_env,
-                    )
-                except Exception:
-                    pass
+                backup_key = generate_postgres_backup_key(instance_id)
+                ssm_res = run_ssm_command(
+                    instance_id,
+                    build_postgres_backup_ssm_commands(bucket, backup_key, region=region, instance_id=instance_id),
+                    region=region, comment="Archive and validate postgres before destroy",
+                    emit_fn=self._step_fn, step_id=s1, step_title=t1, check=True, aws_env=self._aws_env,
+                )
+                if ssm_res.returncode != 0:
+                    raise RuntimeError(ssm_res.stderr or f"SSM PostgreSQL backup failed (code {ssm_res.returncode})")
+                dump_meta = parse_postgres_backup_ssm_output(ssm_res.stdout or "", expected_bucket=bucket, expected_key=backup_key)
+                verified = verify_s3_postgres_backup_object(
+                    bucket=bucket, backup_key=backup_key, region=region,
+                    expected_size=dump_meta["size"], expected_sha256=dump_meta["sha256"],
+                    aws_env=self._aws_env, run_fn=subprocess.run,
+                )
+            else:
+                verified = verify_no_host_destroy_safety(
+                    tf_state_path=os.path.join(TERRAFORM_DIR, "terraform.tfstate"),
+                    bucket=bucket, region=region, aws_env=self._aws_env, run_fn=subprocess.run,
+                )
+            self._emit_step(s1, t1, "log", f"Verified S3 backup s3://{bucket}/{verified['key']} ({verified['content_length']} bytes).")
             self.backup_to_s3(step_id=s1, step_title=t1)
             self._emit_step(s1, t1, "success")
         except Exception as e:
@@ -368,13 +370,11 @@ class CloudDeployer:
             self.backup_to_s3(step_id=s2, step_title=t2)
             env = self.load_deployment_env()
             cleanup_external_references(
-                domain=env.get("DUCKDNS_DOMAIN"),
-                token=env.get("DUCKDNS_TOKEN"),
-                emit_fn=self._step_fn,
-                step_id=s2,
-                step_title=t2,
+                domain=env.get("DUCKDNS_DOMAIN"), token=env.get("DUCKDNS_TOKEN"),
+                emit_fn=self._step_fn, step_id=s2, step_title=t2,
             )
             self._emit_step(s2, t2, "success", "All AWS cloud resources destroyed and external DNS/secrets cleaned.")
+            return verified
         except Exception as e:
             self._emit_step(s2, t2, "error", str(e))
             raise

@@ -262,7 +262,7 @@ resource "aws_iam_role_policy" "runtime_provisioner" {
         Sid      = "S3Read"
         Effect   = "Allow"
         Action   = ["s3:GetBucketLocation", "s3:GetObject", "s3:GetObjectVersion"]
-        Resource = [local.tfstate_bucket_arn, "${local.tfstate_bucket_arn}/foundation/terraform.tfstate", local.recovery_bucket_arn, "${local.recovery_bucket_arn}/releases/*"]
+        Resource = [local.tfstate_bucket_arn, "${local.tfstate_bucket_arn}/foundation/terraform.tfstate", local.recovery_bucket_arn, "${local.recovery_bucket_arn}/releases/*", "${local.recovery_bucket_arn}/backups/postgres/*"]
       },
       {
         Sid      = "RtState"
@@ -282,7 +282,7 @@ resource "aws_iam_role_policy" "runtime_provisioner" {
         Action   = ["s3:ListBucket"]
         Resource = local.recovery_bucket_arn
         Condition = {
-          StringLike = { "s3:prefix" = ["releases/*"] }
+          StringLike = { "s3:prefix" = ["releases/*", "backups/postgres/*"] }
         }
       },
       {

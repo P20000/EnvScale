@@ -231,6 +231,28 @@ class TestIamPolicySizesAndEquivalence(unittest.TestCase):
                         )
                         self.assertEqual((res["sg"], res["sgr"], res["combined"]), (exp_sg, exp_sgr, exp_comb))
 
+    def test_runtime_provisioner_postgres_backup_verification_permissions_least_privilege(self):
+        prov = self.pols["role_runtime_provisioner"]
+        bnd = self.pols["boundary_runtime_provisioner"]
+        tls = {"aws:SecureTransport": True, "aws:PrincipalAccount": ACCOUNT}
+        cases = [
+            # Narrowly scoped read/list on backups/postgres/* for pre-destroy head-object and history check
+            ("s3:GetObject", f"{RC_ARN}/backups/postgres/backup_20261126T000000Z_i-1_abcdef123456.dump", tls, self.rc_rp, "allowed"),
+            ("s3:GetObjectVersion", f"{RC_ARN}/backups/postgres/backup_20261126T000000Z_i-1_abcdef123456.dump", tls, self.rc_rp, "allowed"),
+            ("s3:ListBucket", RC_ARN, {**tls, "s3:prefix": "backups/postgres/"}, self.rc_rp, "allowed"),
+            # Least-privilege isolation: zero write/delete on backups/postgres/*, zero read/list on other recovery prefixes
+            ("s3:PutObject", f"{RC_ARN}/backups/postgres/backup_20261126T000000Z_i-1_abcdef123456.dump", tls, self.rc_rp, "explicitDeny"),
+            ("s3:DeleteObject", f"{RC_ARN}/backups/postgres/backup_20261126T000000Z_i-1_abcdef123456.dump", tls, self.rc_rp, "explicitDeny"),
+            ("s3:GetObject", f"{RC_ARN}/backups/historical/legacy.sql", tls, self.rc_rp, "implicitDeny"),
+            ("s3:GetObject", f"{RC_ARN}/lifecycle/alerts/alert.json", tls, self.rc_rp, "implicitDeny"),
+            ("s3:ListBucket", RC_ARN, {**tls, "s3:prefix": "backups/historical/"}, self.rc_rp, "implicitDeny"),
+            ("s3:ListBucket", RC_ARN, {**tls, "s3:prefix": "backups/"}, self.rc_rp, "implicitDeny"),
+            ("s3:ListBucket", RC_ARN, {**tls, "s3:prefix": "lifecycle/"}, self.rc_rp, "implicitDeny"),
+        ]
+        for act, rsc, ctx, rp, exp in cases:
+            with self.subTest(action=act, resource=rsc, ctx=ctx):
+                self.assertEqual(sim.eval_iam_policy_local_harness(prov, act, rsc, ctx, rp, bnd), exp)
+
     def test_plan_safety_validator_fails_closed_on_sgr_wildcards_createtags_and_malformed_statements(self):
         # Verify all 5 actual Terraform-generated workload policies pass check_iam_resource_change_safety
         workload_map = {
