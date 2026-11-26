@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import pathlib
 import subprocess
@@ -440,6 +441,50 @@ class TestFoundationReconciliation(unittest.TestCase):
             self.assertFalse(any(c[:2] == ["terraform", "plan"] for c in tf_cmds))
             self.assertIn(str(reviewed_bin.resolve()), bs_cmds[0])
             self.assertIn(expected_sha, bs_cmds[0])
+
+    def test_plan_validator_update_prior_data_source_and_benign_shadow_drift(self):
+        spec = importlib.util.spec_from_file_location("vfp_mod", str(BOOTSTRAP_DIR / "validate-foundation-plan.py"))
+        vfp = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+        assert spec and spec.loader
+        spec.loader.exec_module(vfp)  # type: ignore[union-attr]
+        upd = vfp.make_valid_plan_doc("update")
+        # 1. data.aws_iam_policy_document.recovery_bucket_policy present only in prior_state passes update mode
+        ds_rc = next(rc for rc in upd["resource_changes"] if rc["address"] == "data.aws_iam_policy_document.recovery_bucket_policy")
+        upd["resource_changes"].remove(ds_rc)
+        self.assertTrue(vfp.validate_plan_doc(upd, mode="auto"))
+        upd["prior_state"]["values"]["root_module"]["resources"].append(
+            {"address": ds_rc["address"], "mode": "data", "type": ds_rc["type"]}
+        )
+        self.assertEqual(vfp.validate_plan_doc(upd, mode="auto"), [])
+
+        # 2. Benign provider-v5 shadow drift on no-op S3 resources passes update mode
+        sse_before = {"rule": [{"apply_server_side_encryption_by_default": [{"kms_master_key_id": "", "sse_algorithm": "AES256"}], "bucket_key_enabled": None}]}
+        sse_after = {"rule": [{"apply_server_side_encryption_by_default": [{"kms_master_key_id": "", "sse_algorithm": "AES256"}], "bucket_key_enabled": False}]}
+        upd["resource_drift"] = [
+            {"address": "aws_s3_bucket.recovery", "mode": "managed", "type": "aws_s3_bucket", "change": {
+                "actions": ["update"], "before": {"policy": "", "versioning": [], "force_destroy": False},
+                "after": {"policy": "{\"Version\":\"2012-10-17\"}", "versioning": [{"enabled": True}], "force_destroy": False},
+            }},
+            {"address": "aws_s3_bucket_server_side_encryption_configuration.recovery", "mode": "managed", "type": "aws_s3_bucket_server_side_encryption_configuration", "change": {
+                "actions": ["update"], "before": sse_before, "after": sse_after,
+            }},
+        ]
+        self.assertEqual(vfp.validate_plan_doc(upd, mode="auto"), [])
+
+        # 3. Real/unsafe drift must fail closed
+        for bad_label, mutator in [
+            ("sse_algorithm", lambda d: d["resource_drift"][1]["change"]["after"]["rule"][0]["apply_server_side_encryption_by_default"][0].update(sse_algorithm="aws:kms")),
+            ("force_destroy", lambda d: d["resource_drift"][0]["change"]["after"].update(force_destroy=True)),
+            ("delete_drift", lambda d: d["resource_drift"][0]["change"].update(actions=["delete"])),
+            ("drift_on_updated_rc", lambda d: next(rc for rc in d["resource_changes"] if rc["address"] == "aws_s3_bucket.recovery")["change"].update(actions=["update"])),
+        ]:
+            doc = json.loads(json.dumps(upd))
+            mutator(doc)
+            self.assertTrue(vfp.validate_plan_doc(doc, mode="auto"), msg=f"Expected rejection for {bad_label}")
+
+        init_doc = vfp.make_valid_plan_doc("initial")
+        init_doc["resource_drift"] = json.loads(json.dumps(upd["resource_drift"]))
+        self.assertTrue(vfp.validate_plan_doc(init_doc, mode="initial"))
 
 
 if __name__ == "__main__":
