@@ -133,6 +133,8 @@ class _FakeHostAndS3Sandbox:
             "st_path = pathlib.Path(os.environ['SANDBOX_STATE'])\n"
             "st = json.loads(st_path.read_text())\n"
             "args = sys.argv[1:]\n"
+            "if args[:1] == ['--version']:\n"
+            "    print('aws-cli/2.15.0 Python/3.12 Linux/6.8'); sys.exit(0)\n"
             "if args[:2] == ['s3', 'cp']:\n"
             "    st['s3_cp_calls'] = int(st.get('s3_cp_calls', 0)) + 1\n"
             "    st_path.write_text(json.dumps(st))\n"

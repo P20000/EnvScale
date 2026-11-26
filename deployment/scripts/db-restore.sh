@@ -148,6 +148,21 @@ if [[ -f "$ENV_FILE" ]]; then
 fi
 PG_CONTAINER="${RESTORE_COMPOSE_PROJECT_NAME}-postgres"
 
+if [[ -n "$S3_URI" ]]; then
+  if ! aws --version 2>&1 | grep -Eq '^aws-cli/2\.'; then
+    if [[ -x /usr/local/bin/aws ]] && /usr/local/bin/aws --version 2>&1 | grep -Eq '^aws-cli/2\.'; then
+      export PATH="/usr/local/bin:$PATH"
+    elif [[ -x "${SCRIPT_DIR}/ensure-awscli-v2.sh" ]]; then
+      bash "${SCRIPT_DIR}/ensure-awscli-v2.sh"
+      export PATH="/usr/local/bin:$PATH"
+    fi
+  fi
+  aws --version 2>&1 | grep -Eq '^aws-cli/2\.' || {
+    log_error "AWS CLI v2 required for S3 checksum-verified restore; got: $(aws --version 2>&1 || echo missing)"
+    exit 1
+  }
+fi
+
 TMP_DUMP="$(mktemp /tmp/envscale_pg_restore_XXXXXX.dump)"
 TMP_TOC="${TMP_DUMP}.toc"
 trap 'rm -f "$TMP_DUMP" "$TMP_TOC"' EXIT INT TERM

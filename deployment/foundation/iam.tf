@@ -48,7 +48,7 @@ resource "aws_iam_role_policy" "ec2_runtime" {
         Sid      = "AllowSSMProdParameterRead"
         Effect   = "Allow"
         Action   = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"]
-        Resource = local.ssm_prod_param_arn
+        Resource = [local.ssm_prod_prefix_arn, local.ssm_prod_param_arn]
       },
       {
         Sid      = "AllowSSMKmsDecryptViaSSMOnly"

@@ -142,6 +142,11 @@ def wait_for_ssm_online(
     raise RuntimeError(f"Timed out waiting for SSM agent on instance {instance_id} to become Online.")
 
 
+DEFAULT_SSM_TIMEOUT_S = 600
+DEFAULT_SSM_POLL_INTERVAL_S = 5
+_SSM_NON_TERMINAL_STATUSES = frozenset({"Pending", "InProgress", "Delayed"})
+
+
 def _wrap_commands_for_bash(commands: List[str]) -> List[str]:
     """Run SSM RunShellScript commands via /bin/bash because Ubuntu's /bin/sh (dash) rejects pipefail."""
     if not commands:
@@ -154,8 +159,9 @@ def run_ssm_command(
     comment: str = "EnvScale SSM command", emit_fn: StepCallback = None,
     step_id: Optional[str] = None, step_title: Optional[str] = None,
     check: bool = True, aws_env: Optional[Dict[str, str]] = None,
+    timeout_s: int = DEFAULT_SSM_TIMEOUT_S, poll_interval_s: float = DEFAULT_SSM_POLL_INTERVAL_S,
 ) -> subprocess.CompletedProcess:
-    """Execute shell commands on an EC2 instance via AWS SSM RunCommand."""
+    """Execute shell commands on an EC2 instance via AWS SSM RunCommand with bounded polling."""
     params_json = json.dumps({"commands": _wrap_commands_for_bash(commands)})
     run_kwargs: Dict[str, object] = {"capture_output": True, "text": True}
     if aws_env is not None:
@@ -177,25 +183,43 @@ def run_ssm_command(
         raise RuntimeError("aws ssm send-command did not return a valid CommandId.")
     _emit(emit_fn, step_id, step_title, "log", f"Dispatched SSM Command {command_id} on {instance_id}...")
 
-    subprocess.run(
-        ["aws", "ssm", "wait", "command-executed", "--region", region, "--command-id", command_id, "--instance-id", instance_id],
-        **run_kwargs,  # type: ignore[arg-type]
-    )
+    deadline = time.monotonic() + max(1, timeout_s)
+    payload: Dict[str, Any] = {}
+    while True:
+        inv_res = subprocess.run(
+            ["aws", "ssm", "get-command-invocation", "--region", region, "--command-id", command_id, "--instance-id", instance_id, "--output", "json"],
+            **run_kwargs,  # type: ignore[arg-type]
+        )
+        if inv_res.returncode != 0:
+            err_txt = inv_res.stderr.strip() or f"Failed retrieving SSM invocation {command_id}"
+            if "InvocationDoesNotExist" in err_txt and time.monotonic() < deadline:
+                time.sleep(min(poll_interval_s, max(0.0, deadline - time.monotonic())))
+                continue
+            if check:
+                raise RuntimeError(err_txt)
+            return inv_res
 
-    inv_res = subprocess.run(
-        ["aws", "ssm", "get-command-invocation", "--region", region, "--command-id", command_id, "--instance-id", instance_id, "--output", "json"],
-        **run_kwargs,  # type: ignore[arg-type]
-    )
-    if inv_res.returncode != 0:
-        err = inv_res.stderr.strip() or f"Failed retrieving SSM invocation {command_id}"
-        if check:
-            raise RuntimeError(err)
-        return inv_res
+        payload = json.loads(inv_res.stdout or "{}")
+        status = str(payload.get("Status") or "Unknown")
+        if status not in _SSM_NON_TERMINAL_STATUSES:
+            break
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            stdout = (payload.get("StandardOutputContent") or "").strip()
+            stderr = (payload.get("StandardErrorContent") or "").strip()
+            msg = redact_sensitive_text(
+                f"SSM command {command_id} timed out after {timeout_s}s in status {status}"
+                + (f": {stderr}" if stderr else "")
+            )
+            _emit(emit_fn, step_id, step_title, "log", f"ERROR: {msg}")
+            if check:
+                raise RuntimeError(msg)
+            return subprocess.CompletedProcess(["aws", "ssm", "send-command", command_id], 1, stdout=stdout, stderr=msg)
+        time.sleep(min(poll_interval_s, remaining))
 
-    payload = json.loads(inv_res.stdout or "{}")
     stdout = (payload.get("StandardOutputContent") or "").strip()
     stderr = (payload.get("StandardErrorContent") or "").strip()
-    status = payload.get("Status", "Unknown")
+    status = str(payload.get("Status") or "Unknown")
     resp_code = payload.get("ResponseCode")
     ok = status == "Success" and (resp_code is None or int(resp_code) == 0)
 
@@ -204,7 +228,8 @@ def run_ssm_command(
             _emit(emit_fn, step_id, step_title, "log", redact_sensitive_text(line))
 
     if not ok and check:
-        err_msg = redact_sensitive_text(stderr or f"SSM command {command_id} ended with status {status}")
+        detail = stderr or stdout or f"no output captured (status={status}, code={resp_code})"
+        err_msg = redact_sensitive_text(f"SSM command {command_id} ended with status {status} (code={resp_code}): {detail}")
         _emit(emit_fn, step_id, step_title, "log", f"ERROR: {err_msg}")
         raise RuntimeError(err_msg)
 
@@ -301,6 +326,7 @@ def build_remote_deploy_commands(
         "test -x /opt/envscale/deployment/scripts/host-runtime.sh || chmod +x /opt/envscale/deployment/scripts/*.sh /opt/envscale/deployment/scripts/*.py /opt/envscale/envscale.sh",
         "mkdir -p /etc/envscale /var/lib/envscale",
         "chmod 700 /etc/envscale /var/lib/envscale",
+        *build_ensure_awscli_v2_commands(),
         f"python3 /opt/envscale/deployment/scripts/sync-ssm-secrets.py --ssm-prefix {q_prefix} --region {q_region} --output {q_secrets}",
         f"printf '%s' {q_b64} | base64 -d > {q_manifest}",
         f"chmod 600 {q_manifest}",
@@ -350,6 +376,7 @@ def cleanup_external_references(
 from .postgres_backup_verifier import (  # noqa: E402,F401
     BACKUP_RESULT_PREFIX,
     DEFAULT_MAX_BACKUP_AGE_SECONDS,
+    build_ensure_awscli_v2_commands,
     build_postgres_backup_ssm_commands,
     extract_tfstate_deployment_identity,
     generate_postgres_backup_key,

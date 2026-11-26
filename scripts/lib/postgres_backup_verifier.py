@@ -96,6 +96,24 @@ def extract_tfstate_deployment_identity(
     return info
 
 
+def build_ensure_awscli_v2_commands() -> List[str]:
+    """Build self-contained idempotent bash snippet ensuring AWS CLI v2 is active."""
+    return [
+        "if aws --version 2>&1 | grep -Eq '^aws-cli/2\\.'; then :; "
+        "elif [ -x /usr/local/bin/aws ] && /usr/local/bin/aws --version 2>&1 | grep -Eq '^aws-cli/2\\.'; then export PATH=\"/usr/local/bin:$PATH\"; "
+        "elif [ -x /opt/envscale/deployment/scripts/ensure-awscli-v2.sh ]; then bash /opt/envscale/deployment/scripts/ensure-awscli-v2.sh && export PATH=\"/usr/local/bin:$PATH\"; "
+        "else "
+        "ARCH=\"$(uname -m)\"; case \"$ARCH\" in x86_64|amd64) SLUG=x86_64;; aarch64|arm64) SLUG=aarch64;; *) echo \"[FATAL] Unsupported arch $ARCH\" >&2; exit 1;; esac; "
+        "T=\"$(mktemp -d /tmp/awscli_v2_XXXXXX)\"; "
+        "(trap 'rm -rf \"$T\"' EXIT; curl -fsSL --retry 3 --max-time 120 \"https://awscli.amazonaws.com/awscli-exe-linux-${SLUG}.zip\" -o \"$T/awscliv2.zip\" && "
+        "(unzip -q \"$T/awscliv2.zip\" -d \"$T\" 2>/dev/null || python3 -c \"import os,pathlib,sys,zipfile; z=zipfile.ZipFile(sys.argv[1]); z.extractall(sys.argv[2]); [os.chmod(pathlib.Path(sys.argv[2])/i.filename,(i.external_attr>>16)&0o777) for i in z.infolist() if (i.external_attr>>16)&0o777]\" \"$T/awscliv2.zip\" \"$T\") && "
+        "\"$T/aws/install\" --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update >/dev/null); "
+        "rm -rf \"$T\"; export PATH=\"/usr/local/bin:$PATH\"; "
+        "fi",
+        "aws --version 2>&1 | grep -Eq '^aws-cli/2\\.' || { echo \"[FATAL] AWS CLI v2 required on host, got: $(aws --version 2>&1 || echo missing)\" >&2; exit 1; }",
+    ]
+
+
 def build_postgres_backup_ssm_commands(
     bucket: str,
     backup_key: str,
@@ -121,6 +139,7 @@ def build_postgres_backup_ssm_commands(
     return [
         "set -euo pipefail",
         "umask 077",
+        *build_ensure_awscli_v2_commands(),
         "docker inspect envscale-postgres >/dev/null 2>&1 || { echo \"[FATAL] PostgreSQL container 'envscale-postgres' is missing on host.\" >&2; exit 1; }",
         "[ \"$(docker inspect -f '{{.State.Running}}' envscale-postgres 2>/dev/null || echo false)\" = \"true\" ] || { echo \"[FATAL] PostgreSQL container 'envscale-postgres' is not running.\" >&2; exit 1; }",
         "PG_USER=\"envscale\"; PG_DB=\"envscale\"",

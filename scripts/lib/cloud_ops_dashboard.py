@@ -16,6 +16,7 @@ from .config import TERRAFORM_DIR
 from .postgres_backup_verifier import (
     _decode_and_validate_native_s3_checksum_sha256,
     _parse_s3_last_modified,
+    build_ensure_awscli_v2_commands,
     build_postgres_backup_ssm_commands,
     extract_tfstate_deployment_identity,
     generate_postgres_backup_key,
@@ -442,7 +443,7 @@ def trigger_remote_restore(
 
     ssm_res = run_ssm_command(
         instance_id,
-        ["set -euo pipefail", restore_cmd],
+        ["set -euo pipefail", *build_ensure_awscli_v2_commands(), restore_cmd],
         region=region,
         comment="EnvScale PostgreSQL restore from S3",
         emit_fn=step_fn,
