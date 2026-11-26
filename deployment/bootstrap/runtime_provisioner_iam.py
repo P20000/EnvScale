@@ -233,6 +233,7 @@ def build_runtime_iam_simulation_vectors(account_id: str = ACCOUNT, region: str 
         ("prov RunInstances tagged subnet", "role_runtime_provisioner", "ec2:RunInstances", f"{ep}:subnet/subnet-1", res_reg, None, "boundary_runtime_provisioner", "allowed"),
         ("prov RunInstances tagged SG", "role_runtime_provisioner", "ec2:RunInstances", f"{ep}:security-group/sg-1", res_reg, None, "boundary_runtime_provisioner", "allowed"),
         ("prov RunInstances Ubuntu AMI", "role_runtime_provisioner", "ec2:RunInstances", LIVE_UBUNTU_AMI_ARN, {"ec2:Owner": "099720109477", **reg}, None, "boundary_runtime_provisioner", "allowed"),
+        ("prov RunInstances Ubuntu AMI (amazon alias)", "role_runtime_provisioner", "ec2:RunInstances", LIVE_UBUNTU_AMI_ARN, {"ec2:Owner": "amazon", **reg}, None, "boundary_runtime_provisioner", "allowed"),
         ("prov RunInstances Ubuntu snapshot", "role_runtime_provisioner", "ec2:RunInstances", LIVE_UBUNTU_SNAP_ARN, {"ec2:Owner": "099720109477", **reg}, None, "boundary_runtime_provisioner", "allowed"),
         ("prov CreateTags on RunInstances", "role_runtime_provisioner", "ec2:CreateTags", f"{ep}:instance/*", {"ec2:CreateAction": "RunInstances", **req, **reg}, None, "boundary_runtime_provisioner", "allowed"),
         ("prov CreateTags on AllocateAddress", "role_runtime_provisioner", "ec2:CreateTags", f"{ep}:elastic-ip/*", {"ec2:CreateAction": "AllocateAddress", **req, **reg}, None, "boundary_runtime_provisioner", "allowed"),

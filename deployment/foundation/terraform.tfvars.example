@@ -20,7 +20,7 @@ retain_static_eip           = false
 duckdns_domain                          = "envscale"
 google_client_id                        = "DISABLED"
 github_client_id                        = "DISABLED"
-approved_ami_owner_ids                  = ["099720109477"]
+approved_ami_owner_ids                  = ["099720109477", "amazon"]
 create_foundation_admin_role            = true
 foundation_admin_trusted_principal_arns = ["arn:aws:iam::982534376726:user/DEV-user-alpha"]
 
