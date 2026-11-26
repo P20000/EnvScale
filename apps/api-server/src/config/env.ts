@@ -8,11 +8,27 @@
 import { z } from "zod";
 
 /**
+ * Treat empty strings and the Terraform/SSM placeholder sentinel "DISABLED"
+ * (case-insensitive) as unset for optional OAuth credentials.
+ */
+export function normalizeOptionalCredential(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.toUpperCase() === "DISABLED") return undefined;
+  return trimmed;
+}
+
+const optionalOAuthCredential = z.preprocess(
+  normalizeOptionalCredential,
+  z.string().optional(),
+);
+
+/**
  * Zod schema for environment variable validation.
  * Coerces PORT to a number, validates DATABASE_URL format,
  * and enforces required secret keys.
  */
-const envSchema = z.object({
+export const envSchema = z.object({
   NODE_ENV: z
     .enum(["development", "production", "test"])
     .default("development"),
@@ -43,11 +59,11 @@ const envSchema = z.object({
   BETTER_AUTH_SECRET: z.string().optional(),
   BETTER_AUTH_URL: z.string().optional().default("http://localhost:3000"),
 
-  GOOGLE_CLIENT_ID: z.string().optional(),
-  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_CLIENT_ID: optionalOAuthCredential,
+  GOOGLE_CLIENT_SECRET: optionalOAuthCredential,
 
-  GITHUB_CLIENT_ID: z.string().optional(),
-  GITHUB_CLIENT_SECRET: z.string().optional(),
+  GITHUB_CLIENT_ID: optionalOAuthCredential,
+  GITHUB_CLIENT_SECRET: optionalOAuthCredential,
 });
 
 /**

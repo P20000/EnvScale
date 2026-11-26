@@ -85,6 +85,21 @@ output "workload_permissions_boundary_arn" {
   value       = aws_iam_policy.workload_permissions_boundary.arn
 }
 
+output "runtime_provisioner_role_name" {
+  description = "MFA-enforced human runtime provisioner IAM role name for disposable EC2 provisioning."
+  value       = aws_iam_role.runtime_provisioner.name
+}
+
+output "runtime_provisioner_role_arn" {
+  description = "MFA-enforced human runtime provisioner IAM role ARN for disposable EC2 provisioning."
+  value       = aws_iam_role.runtime_provisioner.arn
+}
+
+output "runtime_provisioner_permissions_boundary_arn" {
+  description = "Dedicated IAM Permissions Boundary policy ARN attached to envscale-runtime-provisioner-role."
+  value       = aws_iam_policy.runtime_provisioner_permissions_boundary.arn
+}
+
 output "foundation_admin_role_name" {
   description = "Dedicated MFA-enforced human break-glass IAM role name for out-of-band SSM seeding and historical archive upload."
   value       = var.create_foundation_admin_role ? aws_iam_role.foundation_admin[0].name : null

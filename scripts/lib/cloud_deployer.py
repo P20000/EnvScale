@@ -8,43 +8,59 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
-from .cloud_host_runner import (
-    load_deployment_env,
-    validate_deployment_secrets,
-    verify_deployment_health,
-)
+from .cloud_host_runner import load_deployment_env, verify_deployment_health
+from .cloud_identity import DEFAULT_ACCOUNT_ID, DEFAULT_REGION, redact_sensitive_text, resolve_recovery_bucket
 from .config import PROJECT_ROOT, TERRAFORM_DIR
 from .ssm_deployer import (
-    DEFAULT_SECRETS_FILE,
-    build_remote_deploy_commands,
-    cleanup_external_references,
-    resolve_and_validate_manifest,
-    run_ssm_command,
-    verify_runtime_instance_profile,
-    wait_for_ssm_online,
+    DEFAULT_SECRETS_FILE, build_postgres_backup_ssm_commands, build_remote_deploy_commands,
+    cleanup_external_references, extract_tfstate_deployment_identity, generate_postgres_backup_key,
+    parse_postgres_backup_ssm_output, resolve_and_validate_manifest, run_ssm_command,
+    verify_no_host_destroy_safety, verify_runtime_instance_profile, verify_s3_postgres_backup_object,
+    verify_ssm_parameters_present, wait_for_ssm_online,
 )
 
 LogCallback = Callable[[str], None]
 StepCallback = Callable[[str, str, str, str], None]
 
 
+def _is_tls_propagation_error(errors: List[str]) -> bool:
+    """Return True when health check errors look strictly like initial Let's Encrypt TLS propagation."""
+    if not errors:
+        return False
+    app_markers = ("returned unexpected status", "returned error status", "returned unexpected code", "health payload invalid")
+    if any(any(m in err for m in app_markers) for err in errors):
+        return False
+    tls_markers = ("SSL/TLS", "CERTIFICATE_VERIFY_FAILED", "certificate", "EOF occurred in violation of protocol")
+    return any(any(m in err for m in tls_markers) for err in errors)
+
+
 class CloudDeployer:
-    def __init__(self, log_fn: Optional[LogCallback] = None, step_fn: Optional[StepCallback] = None):
+    def __init__(
+        self,
+        log_fn: Optional[LogCallback] = None,
+        step_fn: Optional[StepCallback] = None,
+        aws_env: Optional[Dict[str, str]] = None,
+    ):
         self._log = log_fn or (lambda msg: print(f"[CloudDeployer] {msg}"))
         self._step_fn = step_fn or (lambda sid, title, status, detail: None)
+        self._aws_env = aws_env
+
+    def _env_kw(self) -> Dict[str, Any]:
+        return {"env": self._aws_env} if self._aws_env is not None else {}
 
     def _emit_step(self, step_id: str, title: str, status: str, detail: str = ""):
-        self._step_fn(step_id, title, status, detail)
-        if detail and status == "log":
-            self._log(f"[{title}] {detail}")
+        safe = redact_sensitive_text(detail)
+        self._step_fn(step_id, title, status, safe)
+        if safe and status == "log":
+            self._log(f"[{title}] {safe}")
         elif status == "start":
-            self._log(f"Starting step: {title} ({detail})")
+            self._log(f"Starting step: {title} ({safe})")
         elif status == "success":
             self._log(f"Completed step: {title}")
         elif status == "error":
-            self._log(f"Failed step: {title} - {detail}")
+            self._log(f"Failed step: {title} - {safe}")
 
     def _run_cmd(self, cmd: list, cwd: Optional[str] = None, check: bool = True, step_id: Optional[str] = None, step_title: Optional[str] = None, input_data: Optional[str] = None, display_cmd: Optional[str] = None) -> subprocess.CompletedProcess:
         cmd_str = display_cmd if display_cmd is not None else " ".join(cmd)
@@ -53,7 +69,7 @@ class CloudDeployer:
         else:
             self._log(f"Executing: {cmd_str}")
 
-        res = subprocess.run(cmd, cwd=cwd or PROJECT_ROOT, input=input_data, capture_output=True, text=True)
+        res = subprocess.run(cmd, cwd=cwd or PROJECT_ROOT, input=input_data, capture_output=True, text=True, **self._env_kw())
         if res.stdout:
             for line in res.stdout.strip().split("\n"):
                 if line:
@@ -71,37 +87,38 @@ class CloudDeployer:
         return res
 
     def get_aws_context(self) -> Dict[str, str]:
-        res = subprocess.run(["aws", "sts", "get-caller-identity", "--output", "json"], capture_output=True, text=True)
+        res = subprocess.run(["aws", "sts", "get-caller-identity", "--output", "json"], capture_output=True, text=True, **self._env_kw())
         if res.returncode != 0:
             raise RuntimeError("AWS CLI credentials not configured or expired. Run 'aws configure'.")
         data = json.loads(res.stdout)
         account_id = data.get("Account", "")
-        reg_res = subprocess.run(["aws", "configure", "get", "region"], capture_output=True, text=True)
-        region = reg_res.stdout.strip() or "ap-south-1"
-        bucket = f"envscale-cloud-vault-{account_id}-{region}"
-        return {"account_id": account_id, "region": region, "s3_bucket": bucket}
+        reg_res = subprocess.run(["aws", "configure", "get", "region"], capture_output=True, text=True, **self._env_kw())
+        region = (self._aws_env or {}).get("AWS_REGION") or reg_res.stdout.strip() or DEFAULT_REGION
+        env_cfg = self.load_deployment_env()
+        bucket = resolve_recovery_bucket(
+            account_id=account_id,
+            region=region,
+            configured_bucket=env_cfg.get("RECOVERY_BUCKET") or os.environ.get("RECOVERY_BUCKET"),
+        )
+        return {"account_id": account_id, "region": region, "s3_bucket": bucket, "recovery_bucket": bucket}
 
     def ensure_s3_vault(self, step_id: Optional[str] = None, step_title: Optional[str] = None):
+        """Verify canonical Persistent Foundation recovery bucket exists (never creates legacy buckets)."""
         ctx = self.get_aws_context()
         bucket = ctx["s3_bucket"]
         region = ctx["region"]
-        check = subprocess.run(["aws", "s3", "ls", f"s3://{bucket}"], capture_output=True, text=True)
+        check = subprocess.run(
+            ["aws", "s3api", "get-bucket-location", "--bucket", bucket, "--region", region],
+            capture_output=True, text=True, **self._env_kw(),
+        )
         if check.returncode != 0:
-            if step_id and step_title:
-                self._emit_step(step_id, step_title, "log", f"Creating permanent S3 Vault bucket: s3://{bucket}...")
-            if region == "us-east-1":
-                self._run_cmd(["aws", "s3api", "create-bucket", "--bucket", bucket, "--region", region], step_id=step_id, step_title=step_title)
-            else:
-                self._run_cmd([
-                    "aws", "s3api", "create-bucket", "--bucket", bucket, "--region", region,
-                    "--create-bucket-configuration", f"LocationConstraint={region}",
-                ], step_id=step_id, step_title=step_title)
-            self._run_cmd([
-                "aws", "s3api", "put-bucket-versioning", "--bucket", bucket,
-                "--versioning-configuration", "Status=Enabled",
-            ], step_id=step_id, step_title=step_title)
-        elif step_id and step_title:
-            self._emit_step(step_id, step_title, "log", f"Verified S3 Vault bucket: s3://{bucket}")
+            err = (check.stderr or check.stdout or "Bucket unreachable").strip()
+            raise RuntimeError(
+                f"Canonical recovery bucket 's3://{bucket}' is not accessible ({err}). "
+                "Apply Persistent Foundation via foundation.yml before runtime operations."
+            )
+        if step_id and step_title:
+            self._emit_step(step_id, step_title, "log", f"Verified canonical recovery bucket: s3://{bucket}")
 
     def backup_to_s3(self, step_id: Optional[str] = None, step_title: Optional[str] = None):
         """Back up Terraform state only (no SSH private key persistence)."""
@@ -116,7 +133,7 @@ class CloudDeployer:
         ctx = self.get_aws_context()
         bucket = ctx["s3_bucket"]
         tf_state = os.path.join(TERRAFORM_DIR, "terraform.tfstate")
-        check_state = subprocess.run(["aws", "s3", "ls", f"s3://{bucket}/state/terraform.tfstate"], capture_output=True)
+        check_state = subprocess.run(["aws", "s3", "ls", f"s3://{bucket}/state/terraform.tfstate"], capture_output=True, **self._env_kw())
         if check_state.returncode == 0:
             self._run_cmd(["aws", "s3", "cp", f"s3://{bucket}/state/terraform.tfstate", tf_state], step_id=step_id, step_title=step_title)
 
@@ -189,7 +206,8 @@ class CloudDeployer:
         if step_id and step_title:
             self._emit_step(step_id, step_title, "log", "GitHub CLI not authenticated; remember to update EC2_HOST/EC2_INSTANCE_ID secrets manually.")
 
-    def infra_up(self):
+    def provision_host(self) -> Dict[str, str]:
+        """Provision AWS runtime EC2 host, sync DNS/GitHub targets, and await SSM/cloud-init."""
         s1, t1 = "s1_vault", "Verifying AWS Credentials & S3 State Vault"
         self._emit_step(s1, t1, "start", "aws sts get-caller-identity && s3 vault sync")
         try:
@@ -203,7 +221,7 @@ class CloudDeployer:
         s2, t2 = "s2_terraform", "Provisioning AWS Cloud Resources (Terraform Apply)"
         self._emit_step(s2, t2, "start", "terraform apply -auto-approve")
         try:
-            verify_runtime_instance_profile(emit_fn=self._step_fn, step_id=s2, step_title=t2)
+            verify_runtime_instance_profile(emit_fn=self._step_fn, step_id=s2, step_title=t2, aws_env=self._aws_env)
             self._run_cmd(["terraform", "init"], cwd=TERRAFORM_DIR, step_id=s2, step_title=t2)
             self._run_cmd(["terraform", "apply", "-auto-approve"], cwd=TERRAFORM_DIR, step_id=s2, step_title=t2)
             ip = self.get_public_ip()
@@ -230,7 +248,7 @@ class CloudDeployer:
         self._emit_step(s4, t4, "start", f"aws ssm wait {instance_id} /var/log/user_data.log")
         try:
             region = self.get_aws_context()["region"]
-            wait_for_ssm_online(instance_id, region=region, emit_fn=self._step_fn, step_id=s4, step_title=t4)
+            wait_for_ssm_online(instance_id, region=region, emit_fn=self._step_fn, step_id=s4, step_title=t4, aws_env=self._aws_env)
             run_ssm_command(
                 instance_id,
                 [
@@ -243,20 +261,26 @@ class CloudDeployer:
                 emit_fn=self._step_fn,
                 step_id=s4,
                 step_title=t4,
+                aws_env=self._aws_env,
             )
             self._emit_step(s4, t4, "success")
         except Exception as e:
             self._emit_step(s4, t4, "error", str(e))
             raise
 
+        return {"ip": ip, "instance_id": instance_id}
+
+    def infra_up(self, release_sha: Optional[str] = None, manifest_path: Optional[str] = None) -> Dict[str, str]:
+        info = self.provision_host()
         s5, t5 = "s5_deploy", "Deploying Containers & Verifying Health Endpoints"
         self._emit_step(s5, t5, "start", "ssm host-runtime.sh deploy")
         try:
-            self.deploy(step_id=s5, step_title=t5)
-            self._emit_step(s5, t5, "success", f"ONLINE at https://{ip}.sslip.io (http://{ip})")
+            self.deploy(release_sha=release_sha, manifest_path=manifest_path, step_id=s5, step_title=t5)
+            self._emit_step(s5, t5, "success", f"ONLINE at https://{info['ip']}.sslip.io (http://{info['ip']})")
         except Exception as e:
             self._emit_step(s5, t5, "error", str(e))
             raise
+        return info
 
     def infra_stop(self):
         s1, t1 = "stop_instance", "Pausing AWS EC2 Instance"
@@ -280,7 +304,7 @@ class CloudDeployer:
         try:
             self._run_cmd(["aws", "ec2", "start-instances", "--instance-ids", instance_id], step_id=s1, step_title=t1)
             region = self.get_aws_context()["region"]
-            wait_for_ssm_online(instance_id, region=region, emit_fn=self._step_fn, step_id=s1, step_title=t1)
+            wait_for_ssm_online(instance_id, region=region, emit_fn=self._step_fn, step_id=s1, step_title=t1, aws_env=self._aws_env)
             ip = self.get_public_ip()
             self._emit_step(s1, t1, "success", f"Host back online at {ip} ({instance_id})")
         except Exception as e:
@@ -300,31 +324,45 @@ class CloudDeployer:
 
     def infra_destroy(self):
         s1, t1 = "destroy_archive", "Archiving PostgreSQL Database to S3 Vault"
-        self._emit_step(s1, t1, "start", "ssm pg_dump archive")
+        self._emit_step(s1, t1, "start", "ssm pg_dump archive & s3api head-object verification")
         try:
             self.ensure_s3_vault(step_id=s1, step_title=t1)
+            ctx = self.get_aws_context()
+            account_id = (ctx.get("account_id") or DEFAULT_ACCOUNT_ID).strip()
+            region = (ctx.get("region") or DEFAULT_REGION).strip()
+            bucket = resolve_recovery_bucket(
+                account_id=account_id, region=region,
+                configured_bucket=ctx.get("recovery_bucket") or ctx.get("s3_bucket"),
+            )
+            tf_state = os.path.join(TERRAFORM_DIR, "terraform.tfstate")
             instance_id = self.get_instance_id()
             if instance_id:
-                ctx = self.get_aws_context()
-                stamp = time.strftime("%Y%m%d_%H%M%S")
-                s3_path = f"s3://{ctx['s3_bucket']}/database/backup_{stamp}.sql"
-                try:
-                    run_ssm_command(
-                        instance_id,
-                        [
-                            "if docker ps --format '{{.Names}}' | grep -q '^envscale-postgres$'; then "
-                            f"docker exec envscale-postgres pg_dump -U envscale envscale | aws s3 cp - {s3_path}; "
-                            "fi"
-                        ],
-                        region=ctx["region"],
-                        comment="Archive postgres before destroy",
-                        emit_fn=self._step_fn,
-                        step_id=s1,
-                        step_title=t1,
-                        check=False,
-                    )
-                except Exception:
-                    pass
+                dep_ident = extract_tfstate_deployment_identity(tf_state) if os.path.isfile(tf_state) else {}
+                backup_key = generate_postgres_backup_key(instance_id)
+                ssm_res = run_ssm_command(
+                    instance_id,
+                    build_postgres_backup_ssm_commands(
+                        bucket, backup_key, region=region, instance_id=instance_id,
+                        tf_lineage=dep_ident.get("tf_lineage", ""), vpc_id=dep_ident.get("vpc_id", ""),
+                        release_id=dep_ident.get("release_id", ""), commit_sha=dep_ident.get("commit_sha", ""),
+                    ),
+                    region=region, comment="Archive and validate postgres before destroy",
+                    emit_fn=self._step_fn, step_id=s1, step_title=t1, check=True, aws_env=self._aws_env,
+                )
+                if ssm_res.returncode != 0:
+                    raise RuntimeError(ssm_res.stderr or f"SSM PostgreSQL backup failed (code {ssm_res.returncode})")
+                dump_meta = parse_postgres_backup_ssm_output(ssm_res.stdout or "", expected_bucket=bucket, expected_key=backup_key)
+                verified = verify_s3_postgres_backup_object(
+                    bucket=bucket, backup_key=backup_key, region=region,
+                    expected_size=dump_meta["size"], expected_sha256=dump_meta["sha256"],
+                    aws_env=self._aws_env, run_fn=subprocess.run,
+                )
+            else:
+                verified = verify_no_host_destroy_safety(
+                    tf_state_path=tf_state,
+                    bucket=bucket, region=region, aws_env=self._aws_env, run_fn=subprocess.run,
+                )
+            self._emit_step(s1, t1, "log", f"Verified S3 backup s3://{bucket}/{verified['key']} ({verified['content_length']} bytes).")
             self.backup_to_s3(step_id=s1, step_title=t1)
             self._emit_step(s1, t1, "success")
         except Exception as e:
@@ -338,13 +376,11 @@ class CloudDeployer:
             self.backup_to_s3(step_id=s2, step_title=t2)
             env = self.load_deployment_env()
             cleanup_external_references(
-                domain=env.get("DUCKDNS_DOMAIN"),
-                token=env.get("DUCKDNS_TOKEN"),
-                emit_fn=self._step_fn,
-                step_id=s2,
-                step_title=t2,
+                domain=env.get("DUCKDNS_DOMAIN"), token=env.get("DUCKDNS_TOKEN"),
+                emit_fn=self._step_fn, step_id=s2, step_title=t2,
             )
             self._emit_step(s2, t2, "success", "All AWS cloud resources destroyed and external DNS/secrets cleaned.")
+            return verified
         except Exception as e:
             self._emit_step(s2, t2, "error", str(e))
             raise
@@ -370,6 +406,7 @@ class CloudDeployer:
             emit_fn=self._step_fn,
             step_id=s,
             step_title=t,
+            aws_env=self._aws_env,
         )
         self._emit_step(s, t, "success", f"EC2 instance {instance_id} successfully rolled back.")
 
@@ -380,6 +417,9 @@ class CloudDeployer:
         mode: str = "prod",
         step_id: Optional[str] = None,
         step_title: Optional[str] = None,
+        auto_rollback: bool = True,
+        tls_retry_attempts: int = 3,
+        tls_retry_delay_s: int = 10,
     ):
         instance_id = self.get_instance_id()
         ip = self.get_public_ip()
@@ -393,25 +433,24 @@ class CloudDeployer:
             sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=PROJECT_ROOT, text=True).strip()
 
         env = self.load_deployment_env()
-        missing = [
-            k for k in validate_deployment_secrets(env, require_duckdns=True)
-            if k not in ("DATABASE_URL", "REDIS_URL")
-        ]
-        if missing:
-            raise RuntimeError(f"Deployment halted: Required secret(s) missing or empty in .env: {', '.join(missing)}.")
+        aws_ctx = self.get_aws_context()
+        region = aws_ctx["region"]
+        verify_ssm_parameters_present(region=region, aws_env=self._aws_env, emit_fn=self._step_fn, step_id=s, step_title=t)
 
         if ip and env.get("DUCKDNS_TOKEN"):
             self.sync_duckdns(ip, domain=env.get("DUCKDNS_DOMAIN"), token=env.get("DUCKDNS_TOKEN"), step_id=s, step_title=t)
+        elif ip:
+            self._emit_step(s, t, "log", "Skipping local DuckDNS sync; EC2 runtime syncs DuckDNS from SSM /envscale/prod/duckdns_token.")
 
-        region = self.get_aws_context()["region"]
         manifest_file = resolve_and_validate_manifest(
             commit_sha=sha,
             manifest_path=manifest_path,
-            recovery_bucket=env.get("RECOVERY_BUCKET") or os.environ.get("RECOVERY_BUCKET"),
+            recovery_bucket=aws_ctx.get("recovery_bucket") or aws_ctx.get("s3_bucket"),
             region=region,
+            aws_env=self._aws_env,
         )
         manifest_b64 = base64.b64encode(manifest_file.read_bytes()).decode("ascii")
-        commands = build_remote_deploy_commands(commit_sha=sha, manifest_b64=manifest_b64)
+        commands = build_remote_deploy_commands(commit_sha=sha, manifest_b64=manifest_b64, region=region)
 
         self._emit_step(s, t, "log", f"Dispatching exact-SHA SSM deployment ({sha[:7]}) on {instance_id}...")
         run_ssm_command(
@@ -422,15 +461,35 @@ class CloudDeployer:
             emit_fn=self._step_fn,
             step_id=s,
             step_title=t,
+            aws_env=self._aws_env,
         )
 
         time.sleep(3)
-        target = f"{env.get('DUCKDNS_DOMAIN')}.duckdns.org" if env.get("DUCKDNS_TOKEN") else f"{ip}.sslip.io"
+        tf_app_url = str(self._get_tf_outputs().get("app_url", {}).get("value") or "").strip()
+        duck_dom = env.get("DUCKDNS_DOMAIN", "").strip()
+        if tf_app_url.startswith("https://"):
+            target = tf_app_url[len("https://"):].split("/", 1)[0]
+        elif duck_dom:
+            target = duck_dom if duck_dom.endswith(".duckdns.org") else f"{duck_dom}.duckdns.org"
+        else:
+            target = f"{ip}.sslip.io"
         ok, errors = verify_deployment_health(target, emit=self._step_fn, step_id=s, step_title=t)
+        attempts = max(1, tls_retry_attempts)
+        for attempt in range(1, attempts):
+            if ok or not _is_tls_propagation_error(errors):
+                break
+            self._emit_step(s, t, "log", f"Waiting {tls_retry_delay_s}s for initial TLS certificate propagation (attempt {attempt + 1}/{attempts})...")
+            time.sleep(tls_retry_delay_s)
+            ok, errors = verify_deployment_health(target, emit=self._step_fn, step_id=s, step_title=t)
+
         if not ok:
             self._emit_step(s, t, "error", f"Verification failed on https://{target}: {'; '.join(errors)}")
-            self._emit_step(s, t, "log", "Triggering automatic rollback on remote host...")
-            self.rollback(step_id=s, step_title=t)
-            raise RuntimeError(f"Deployment post-verification failed on https://{target}: {'; '.join(errors)}. Stack was automatically rolled back.")
+            if auto_rollback:
+                self._emit_step(s, t, "log", "Triggering automatic rollback on remote host...")
+                try:
+                    self.rollback(step_id=s, step_title=t)
+                except Exception as rb_err:
+                    self._emit_step(s, t, "log", f"Notice: automatic rollback did not complete ({rb_err}).")
+            raise RuntimeError(f"Deployment post-verification failed on https://{target}: {'; '.join(errors)}.")
 
         self._emit_step(s, t, "success", f"ONLINE at https://{target} ({instance_id})")

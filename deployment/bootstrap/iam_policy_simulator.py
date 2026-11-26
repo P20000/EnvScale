@@ -66,7 +66,7 @@ def build_rendered_foundation_policies(foundation_dir: pathlib.Path) -> dict[str
 
     hcl_parts = [
         (foundation_dir / name).read_text(encoding="utf-8")
-        for name in ("iam_locals.tf", "iam_boundary.tf", "iam.tf", "iam_cicd.tf", "iam_admin.tf", "iam_foundation.tf", "iam_foundation_plan.tf", "storage.tf")
+        for name in ("iam_locals.tf", "iam_boundary.tf", "iam.tf", "iam_cicd.tf", "iam_admin.tf", "iam_foundation.tf", "iam_foundation_plan.tf", "iam_runtime_provisioner.tf", "storage.tf")
     ]
     combined_hcl = "\n".join(hcl_parts)
 
@@ -77,8 +77,13 @@ def build_rendered_foundation_policies(foundation_dir: pathlib.Path) -> dict[str
         '"repo:${var.github_oidc_subject_prefix}:environment:${var.foundation_environment_name}"',
         '"repo:${var.github_oidc_subject_prefix}:environment:${var.foundation_plan_environment_name}"',
         '"iam:PermissionsBoundary" = local.workload_boundary_policy_arn',
+        '"iam:PermissionsBoundary" = local.runtime_provisioner_boundary_policy_arn',
         '"iam:PolicyARN" = local.ssm_managed_core_policy_arn',
         "permissions_boundary = aws_iam_policy.workload_permissions_boundary.arn",
+        "permissions_boundary = aws_iam_policy.runtime_provisioner_permissions_boundary.arn",
+        "AllowSameAccountHumanProvisionersWithRecentMFA",
+        "AllowBoundedRuntimeProvisionerRoleCreationAndBoundary",
+        "DenyBoundedSecretReadsKmsAndSsmMutations",
         '"aws:MultiFactorAuthPresent" = "true"',
         '"aws:MultiFactorAuthAge" = "3600"',
         '"arn:aws:ec2:${var.aws_region}::snapshot/*"',
@@ -130,35 +135,39 @@ def build_rendered_foundation_policies(foundation_dir: pathlib.Path) -> dict[str
     req_envscale = {"StringEquals": {"aws:RequestTag/Project": "EnvScale", "aws:RequestTag/Layer": "DisposableRuntime"}}
     res_envscale = {"StringEquals": {"aws:ResourceTag/Project": "EnvScale", "aws:ResourceTag/Layer": "DisposableRuntime"}}
 
+    sg_acts = ["ec2:AuthorizeSecurityGroup*", "ec2:RevokeSecurityGroup*", "ec2:UpdateSecurityGroupRuleDescriptions*"]
+    ec2_nondestr = [
+        "ec2:ModifyVpcAttribute", "ec2:ModifySubnetAttribute", "ec2:AttachInternetGateway",
+        "ec2:CreateRoute", "ec2:ReplaceRoute", "ec2:AssociateRouteTable", *sg_acts,
+        "ec2:StartInstances", "ec2:StopInstances", "ec2:RebootInstances",
+        "ec2:ModifyInstanceAttribute", "ec2:ModifyInstanceMetadataOptions",
+        "ec2:ModifyVolume", "ec2:AttachVolume", "ec2:AssociateAddress", "ec2:DisassociateAddress",
+        "ec2:CreateTags", "ec2:DeleteTags", "ssm:SendCommand",
+    ]
+    ec2_destr = [
+        "ec2:TerminateInstances", "ec2:DetachVolume", "ec2:DeleteVolume", "ec2:DeleteSecurityGroup",
+        "ec2:DisassociateRouteTable", "ec2:DeleteRoute", "ec2:DeleteRouteTable",
+        "ec2:DetachInternetGateway", "ec2:DeleteInternetGateway", "ec2:DeleteSubnet", "ec2:DeleteVpc",
+    ]
     shared_tfstate = [
-        {"Sid": "AllowTfstateListScoped", "Effect": "Allow", "Action": ["s3:ListBucket"], "Resource": tfstate_arn, "Condition": {"StringLike": {"s3:prefix": ["runtime/*", "eks/*", "foundation/terraform.tfstate"]}}},
-        {"Sid": "AllowTfstateBucketLocation", "Effect": "Allow", "Action": ["s3:GetBucketLocation"], "Resource": tfstate_arn},
-        {"Sid": "AllowFoundationStateReadOnly", "Effect": "Allow", "Action": ["s3:GetObject"], "Resource": f"{tfstate_arn}/foundation/terraform.tfstate"},
-        {"Sid": "AllowRuntimeAndEksStateReadWrite", "Effect": "Allow", "Action": ["s3:GetObject", "s3:PutObject"], "Resource": [f"{tfstate_arn}/runtime/terraform.tfstate", f"{tfstate_arn}/eks/terraform.tfstate"]},
-        {"Sid": "AllowRuntimeAndEksNativeLockFiles", "Effect": "Allow", "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"], "Resource": [f"{tfstate_arn}/runtime/terraform.tfstate.tflock", f"{tfstate_arn}/eks/terraform.tfstate.tflock"]},
+        {"Sid": "TfLs", "Effect": "Allow", "Action": "s3:ListBucket", "Resource": tfstate_arn, "Condition": {"StringLike": {"s3:prefix": ["runtime/*", "eks/*", "foundation/terraform.tfstate"]}}},
+        {"Sid": "RtSt", "Effect": "Allow", "Action": ["s3:GetObject", "s3:PutObject"], "Resource": [f"{tfstate_arn}/runtime/terraform.tfstate", f"{tfstate_arn}/eks/terraform.tfstate", f"{tfstate_arn}/runtime/terraform.tfstate.tflock", f"{tfstate_arn}/eks/terraform.tfstate.tflock"]},
+        {"Sid": "LkDl", "Effect": "Allow", "Action": "s3:DeleteObject", "Resource": [f"{tfstate_arn}/runtime/terraform.tfstate.tflock", f"{tfstate_arn}/eks/terraform.tfstate.tflock", f"{rec_arn}/lifecycle/active-op.lock"]},
     ]
     shared_ec2_prov = [
-        {"Sid": "AllowCreateTaggedTopLevelRuntimeResources", "Effect": "Allow", "Action": ["ec2:CreateVpc", "ec2:CreateInternetGateway", "ec2:CreateVolume"], "Resource": [f"arn:aws:ec2:{REGION}:{ACCOUNT}:vpc/*", f"arn:aws:ec2:{REGION}:{ACCOUNT}:internet-gateway/*", f"arn:aws:ec2:{REGION}:{ACCOUNT}:volume/*"], "Condition": req_envscale},
-        {"Sid": "AllowCreateTaggedVpcChildResources", "Effect": "Allow", "Action": ["ec2:CreateSubnet", "ec2:CreateRouteTable", "ec2:CreateSecurityGroup"], "Resource": [f"arn:aws:ec2:{REGION}:{ACCOUNT}:subnet/*", f"arn:aws:ec2:{REGION}:{ACCOUNT}:route-table/*", f"arn:aws:ec2:{REGION}:{ACCOUNT}:security-group/*"], "Condition": req_envscale},
-        {"Sid": "AllowVpcParentForChildResourceCreation", "Effect": "Allow", "Action": ["ec2:CreateSubnet", "ec2:CreateRouteTable", "ec2:CreateSecurityGroup"], "Resource": f"arn:aws:ec2:{REGION}:{ACCOUNT}:vpc/*", "Condition": res_envscale},
-        {"Sid": "AllowRunInstancesTaggedInstanceAndVolume", "Effect": "Allow", "Action": ["ec2:RunInstances"], "Resource": [f"arn:aws:ec2:{REGION}:{ACCOUNT}:instance/*", f"arn:aws:ec2:{REGION}:{ACCOUNT}:volume/*"], "Condition": req_envscale},
-        {"Sid": "AllowRunInstancesInEnvScaleSubnetAndSg", "Effect": "Allow", "Action": ["ec2:RunInstances"], "Resource": [f"arn:aws:ec2:{REGION}:{ACCOUNT}:subnet/*", f"arn:aws:ec2:{REGION}:{ACCOUNT}:security-group/*"], "Condition": res_envscale},
-        {"Sid": "AllowRunInstancesTaggedNewEni", "Effect": "Allow", "Action": ["ec2:RunInstances"], "Resource": f"arn:aws:ec2:{REGION}:{ACCOUNT}:network-interface/*", "Condition": req_envscale},
-        {"Sid": "AllowRunInstancesTaggedExistingEni", "Effect": "Allow", "Action": ["ec2:RunInstances"], "Resource": f"arn:aws:ec2:{REGION}:{ACCOUNT}:network-interface/*", "Condition": res_envscale},
-        {"Sid": "AllowRunInstancesApprovedAmiAndSnapshot", "Effect": "Allow", "Action": ["ec2:RunInstances"], "Resource": [f"arn:aws:ec2:{REGION}::image/*", f"arn:aws:ec2:{REGION}::snapshot/*"], "Condition": {"StringEquals": {"ec2:Owner": APPROVED_AMI_OWNERS}}},
-        {"Sid": "AllowTagOnCreateForRuntimeResources", "Effect": "Allow", "Action": ["ec2:CreateTags"], "Resource": ec2_tagged_arns + [f"arn:aws:ec2:{REGION}:{ACCOUNT}:security-group-rule/*"], "Condition": {"StringEquals": {"ec2:CreateAction": ["CreateVpc", "CreateSubnet", "CreateInternetGateway", "CreateRouteTable", "CreateSecurityGroup", "AuthorizeSecurityGroupIngress", "AuthorizeSecurityGroupEgress", "CreateVolume", "RunInstances"], "aws:RequestTag/Project": "EnvScale", "aws:RequestTag/Layer": "DisposableRuntime"}}},
-        {"Sid": "AllowNonDestructiveTaggedRuntimeOperations", "Effect": "Allow", "Action": ["ec2:ModifyVpcAttribute", "ec2:ModifySubnetAttribute", "ec2:AttachInternetGateway", "ec2:CreateRoute", "ec2:ReplaceRoute", "ec2:AssociateRouteTable", "ec2:AuthorizeSecurityGroupIngress", "ec2:AuthorizeSecurityGroupEgress", "ec2:RevokeSecurityGroupIngress", "ec2:RevokeSecurityGroupEgress", "ec2:UpdateSecurityGroupRuleDescriptionsIngress", "ec2:UpdateSecurityGroupRuleDescriptionsEgress", "ec2:StartInstances", "ec2:StopInstances", "ec2:RebootInstances", "ec2:ModifyInstanceAttribute", "ec2:ModifyInstanceMetadataOptions", "ec2:ModifyVolume", "ec2:AttachVolume", "ec2:AssociateAddress", "ec2:DisassociateAddress", "ec2:CreateTags", "ec2:DeleteTags"], "Resource": ec2_tagged_arns, "Condition": res_envscale},
-        {"Sid": "AllowSecurityGroupRuleSubresourceManagement", "Effect": "Allow", "Action": ["ec2:AuthorizeSecurityGroupIngress", "ec2:AuthorizeSecurityGroupEgress", "ec2:RevokeSecurityGroupIngress", "ec2:RevokeSecurityGroupEgress", "ec2:UpdateSecurityGroupRuleDescriptionsIngress", "ec2:UpdateSecurityGroupRuleDescriptionsEgress"], "Resource": f"arn:aws:ec2:{REGION}:{ACCOUNT}:security-group-rule/*", "Condition": {"StringEquals": {"aws:RequestedRegion": REGION}}},
-        {"Sid": "AllowFoundationStaticEipAssociation", "Effect": "Allow", "Action": ["ec2:AssociateAddress", "ec2:DisassociateAddress"], "Resource": f"arn:aws:ec2:{REGION}:{ACCOUNT}:elastic-ip/*", "Condition": {"StringEquals": {"aws:ResourceTag/Project": "EnvScale"}}},
-    ]
-    shared_ssm_cmd = [
-        {"Sid": "AllowSSMSendCommandRunShellDocument", "Effect": "Allow", "Action": ["ssm:SendCommand"], "Resource": f"arn:aws:ssm:{REGION}::document/AWS-RunShellScript"},
-        {"Sid": "AllowSSMSendCommandDisposableRuntimeInstances", "Effect": "Allow", "Action": ["ssm:SendCommand"], "Resource": f"arn:aws:ec2:{REGION}:{ACCOUNT}:instance/*", "Condition": res_envscale},
+        {"Sid": "CrCh", "Effect": "Allow", "Action": ["ec2:CreateSubnet", "ec2:CreateRouteTable", "ec2:CreateSecurityGroup"], "Resource": [f"arn:aws:ec2:{REGION}:{ACCOUNT}:subnet/*", f"arn:aws:ec2:{REGION}:{ACCOUNT}:route-table/*", f"arn:aws:ec2:{REGION}:{ACCOUNT}:security-group/*"], "Condition": req_envscale},
+        {"Sid": "VpcP", "Effect": "Allow", "Action": ["ec2:CreateSubnet", "ec2:CreateRouteTable", "ec2:CreateSecurityGroup"], "Resource": f"arn:aws:ec2:{REGION}:{ACCOUNT}:vpc/*", "Condition": res_envscale},
+        {"Sid": "RnDp", "Effect": "Allow", "Action": "ec2:RunInstances", "Resource": [f"arn:aws:ec2:{REGION}:{ACCOUNT}:subnet/*", f"arn:aws:ec2:{REGION}:{ACCOUNT}:security-group/*", f"arn:aws:ec2:{REGION}:{ACCOUNT}:network-interface/*"], "Condition": res_envscale},
+        {"Sid": "RnAm", "Effect": "Allow", "Action": "ec2:RunInstances", "Resource": [f"arn:aws:ec2:{REGION}::image/*", f"arn:aws:ec2:{REGION}::snapshot/*"], "Condition": {"StringEquals": {"ec2:Owner": APPROVED_AMI_OWNERS}}},
+        {"Sid": "TgCr", "Effect": "Allow", "Action": "ec2:CreateTags", "Resource": ec2_tagged_arns + [f"arn:aws:ec2:{REGION}:{ACCOUNT}:security-group-rule/*"], "Condition": {"StringEquals": {"ec2:CreateAction": ["CreateVpc", "CreateSubnet", "CreateInternetGateway", "CreateRouteTable", "CreateSecurityGroup", "AuthorizeSecurityGroupIngress", "AuthorizeSecurityGroupEgress", "CreateVolume", "RunInstances"], "aws:RequestTag/Project": "EnvScale", "aws:RequestTag/Layer": "DisposableRuntime"}}},
+        {"Sid": "SgRl", "Effect": "Allow", "Action": ["ec2:AuthorizeSecurityGroupIngress", "ec2:AuthorizeSecurityGroupEgress"], "Resource": f"arn:aws:ec2:{REGION}:{ACCOUNT}:security-group-rule/*", "Condition": req_envscale},
+        {"Sid": "StEp", "Effect": "Allow", "Action": ["ec2:AssociateAddress", "ec2:DisassociateAddress"], "Resource": f"arn:aws:ec2:{REGION}:{ACCOUNT}:elastic-ip/*", "Condition": {"StringEquals": {"aws:ResourceTag/Project": "EnvScale"}}},
+        {"Sid": "SsDc", "Effect": "Allow", "Action": "ssm:SendCommand", "Resource": f"arn:aws:ssm:{REGION}::document/AWS-RunShellScript"},
     ]
     shared_tag_denies = [
-        {"Sid": "DenyDeletingGovernanceOwnershipTags", "Effect": "Deny", "Action": ["ec2:DeleteTags", "eks:UntagResource"], "Resource": "*", "Condition": {"ForAnyValue:StringEquals": {"aws:TagKeys": ["Project", "Layer"]}}},
-        {"Sid": "DenyMutatingProjectTagValue", "Effect": "Deny", "Action": ["ec2:CreateTags", "eks:TagResource"], "Resource": "*", "Condition": {"Null": {"aws:RequestTag/Project": "false"}, "StringNotEquals": {"aws:RequestTag/Project": "EnvScale"}}},
-        {"Sid": "DenyMutatingLayerTagValue", "Effect": "Deny", "Action": ["ec2:CreateTags", "eks:TagResource"], "Resource": "*", "Condition": {"Null": {"aws:RequestTag/Layer": "false"}, "StringNotEquals": {"aws:RequestTag/Layer": "DisposableRuntime"}}},
+        {"Sid": "DnTg", "Effect": "Deny", "Action": ["ec2:DeleteTags", "eks:UntagResource"], "Resource": "*", "Condition": {"ForAnyValue:StringEquals": {"aws:TagKeys": ["Project", "Layer"]}}},
+        {"Sid": "DnPr", "Effect": "Deny", "Action": ["ec2:CreateTags", "eks:TagResource"], "Resource": "*", "Condition": {"Null": {"aws:RequestTag/Project": "false"}, "StringNotEquals": {"aws:RequestTag/Project": "EnvScale"}}},
+        {"Sid": "DnLy", "Effect": "Deny", "Action": ["ec2:CreateTags", "eks:TagResource"], "Resource": "*", "Condition": {"Null": {"aws:RequestTag/Layer": "false"}, "StringNotEquals": {"aws:RequestTag/Layer": "DisposableRuntime"}}},
     ]
 
     policies = {
@@ -207,53 +216,39 @@ def build_rendered_foundation_policies(foundation_dir: pathlib.Path) -> dict[str
         "role_github_deploy": {
             "Version": "2012-10-17",
             "Statement": shared_tfstate + [
-                {"Sid": "AllowRecoveryListScoped", "Effect": "Allow", "Action": ["s3:ListBucket"], "Resource": rec_arn, "Condition": {"StringLike": {"s3:prefix": ["releases/*", "lifecycle/*", "backups/*"]}}},
-                {"Sid": "AllowRecoveryBucketLocation", "Effect": "Allow", "Action": ["s3:GetBucketLocation"], "Resource": rec_arn},
-                {"Sid": "AllowRecoveryReleasesAndLifecycleRW", "Effect": "Allow", "Action": ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject"], "Resource": [f"{rec_arn}/releases/*", f"{rec_arn}/lifecycle/*"]},
-                {"Sid": "AllowRecoveryLifecycleLockRelease", "Effect": "Allow", "Action": ["s3:DeleteObject"], "Resource": f"{rec_arn}/lifecycle/active-op.lock"},
-                {"Sid": "AllowRecoveryBackupsReadOnly", "Effect": "Allow", "Action": ["s3:GetObject", "s3:GetObjectVersion"], "Resource": f"{rec_arn}/backups/*"},
-                {"Sid": "AllowRegionalMetadataDescribeOnly", "Effect": "Allow", "Action": ["ec2:Describe*", "ssm:DescribeParameters", "ssm:DescribeInstanceInformation", "ssm:ListCommandInvocations", "ssm:GetCommandInvocation"], "Resource": "*", "Condition": {"StringEquals": {"aws:RequestedRegion": REGION}}},
-                {"Sid": "AllowGetEc2RuntimeRoleAndProfile", "Effect": "Allow", "Action": ["iam:GetRole", "iam:GetInstanceProfile"], "Resource": [ec2_role_arn, ec2_prof_arn]},
-                {"Sid": "AllowPassEc2RuntimeRoleToEc2Only", "Effect": "Allow", "Action": ["iam:PassRole"], "Resource": ec2_role_arn, "Condition": {"StringEquals": {"iam:PassedToService": "ec2.amazonaws.com"}}},
-            ] + shared_ec2_prov + shared_ssm_cmd + shared_tag_denies + [
-                {"Sid": "DenyFoundationStateMutation", "Effect": "Deny", "Action": ["s3:PutObject", "s3:DeleteObject", "s3:DeleteObjectVersion"], "Resource": f"{tfstate_arn}/foundation/*"},
-                {"Sid": "DenyTfstateObjectDeletion", "Effect": "Deny", "Action": ["s3:DeleteObject", "s3:DeleteObjectVersion"], "Resource": f"{tfstate_arn}/*.tfstate"},
-                {"Sid": "DenyBucketAndVersionDeletion", "Effect": "Deny", "Action": ["s3:DeleteBucket", "s3:DeleteBucketPolicy", "s3:PutBucketPolicy", "s3:DeleteObjectVersion"], "Resource": [tfstate_arn, f"{tfstate_arn}/*", rec_arn, f"{rec_arn}/*"]},
-                {"Sid": "DenyBackupMutationsAndDeletions", "Effect": "Deny", "Action": ["s3:PutObject", "s3:DeleteObject"], "Resource": f"{rec_arn}/backups/*"},
-                {"Sid": "DenyReleaseArtifactDeletion", "Effect": "Deny", "Action": ["s3:DeleteObject"], "Resource": f"{rec_arn}/releases/*"},
-                {"Sid": "DenyLegacyVaultAccess", "Effect": "Deny", "Action": ["s3:*"], "Resource": [leg_arn, f"{leg_arn}/*"]},
-                {"Sid": "DenyDestructiveComputeAndEipRelease", "Effect": "Deny", "Action": ["ec2:TerminateInstances", "ec2:DeleteVolume", "ec2:DeleteVpc", "ec2:DeleteSubnet", "ec2:DeleteSecurityGroup", "ec2:DeleteRouteTable", "ec2:DeleteInternetGateway", "ec2:ReleaseAddress"], "Resource": "*"},
-                {"Sid": "DenySSMParameterValuesAndMutations", "Effect": "Deny", "Action": ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath", "ssm:PutParameter", "ssm:DeleteParameter", "ssm:DeleteParameters"], "Resource": ssm_all},
+                {"Sid": "RcLs", "Effect": "Allow", "Action": "s3:ListBucket", "Resource": rec_arn, "Condition": {"StringLike": {"s3:prefix": ["releases/*", "lifecycle/*", "backups/*"]}}},
+                {"Sid": "S3Rd", "Effect": "Allow", "Action": ["s3:GetBucketLocation", "s3:GetObject", "s3:GetObjectVersion"], "Resource": [tfstate_arn, f"{tfstate_arn}/foundation/terraform.tfstate", rec_arn, f"{rec_arn}/releases/*", f"{rec_arn}/lifecycle/*", f"{rec_arn}/backups/*"]},
+                {"Sid": "RcWr", "Effect": "Allow", "Action": "s3:PutObject", "Resource": [f"{rec_arn}/releases/*", f"{rec_arn}/lifecycle/*"]},
+                {"Sid": "Meta", "Effect": "Allow", "Action": ["ec2:Describe*", "ssm:DescribeParameters", "ssm:DescribeInstanceInformation", "ssm:ListCommandInvocations", "ssm:GetCommandInvocation"], "Resource": "*", "Condition": {"StringEquals": {"aws:RequestedRegion": REGION}}},
+                {"Sid": "IamR", "Effect": "Allow", "Action": ["iam:GetRole", "iam:GetInstanceProfile"], "Resource": [ec2_role_arn, ec2_prof_arn]},
+                {"Sid": "PsE2", "Effect": "Allow", "Action": "iam:PassRole", "Resource": ec2_role_arn, "Condition": {"StringEquals": {"iam:PassedToService": "ec2.amazonaws.com"}}},
+                {"Sid": "CrRt", "Effect": "Allow", "Action": ["ec2:CreateVpc", "ec2:CreateInternetGateway", "ec2:CreateVolume", "ec2:RunInstances"], "Resource": [f"arn:aws:ec2:{REGION}:{ACCOUNT}:vpc/*", f"arn:aws:ec2:{REGION}:{ACCOUNT}:internet-gateway/*", f"arn:aws:ec2:{REGION}:{ACCOUNT}:volume/*", f"arn:aws:ec2:{REGION}:{ACCOUNT}:instance/*", f"arn:aws:ec2:{REGION}:{ACCOUNT}:network-interface/*"], "Condition": req_envscale},
+                {"Sid": "Ec2L", "Effect": "Allow", "Action": ec2_nondestr, "Resource": ec2_tagged_arns, "Condition": res_envscale},
+            ] + shared_ec2_prov + shared_tag_denies + [
+                {"Sid": "DnSp", "Effect": "Deny", "Action": "s3:PutObject", "Resource": [f"{tfstate_arn}/foundation/*", f"{rec_arn}/backups/*"]},
+                {"Sid": "DnSd", "Effect": "Deny", "Action": "s3:DeleteObject", "Resource": [f"{tfstate_arn}/foundation/*", f"{tfstate_arn}/*.tfstate", f"{rec_arn}/backups/*", f"{rec_arn}/releases/*"]},
+                {"Sid": "DnLg", "Effect": "Deny", "Action": "s3:*", "Resource": [leg_arn, f"{leg_arn}/*"]},
+                {"Sid": "DnGl", "Effect": "Deny", "Action": ["s3:DeleteBucket", "s3:DeleteBucketPolicy", "s3:PutBucketPolicy", "s3:DeleteObjectVersion", "ec2:TerminateInstances", "ec2:DeleteVolume", "ec2:DeleteVpc", "ec2:DeleteSubnet", "ec2:DeleteSecurityGroup", "ec2:DeleteRouteTable", "ec2:DeleteInternetGateway", "ec2:ReleaseAddress", "ssm:GetParameter*", "ssm:PutParameter", "ssm:DeleteParameter*"], "Resource": "*"},
             ],
         },
         "role_github_recovery": {
             "Version": "2012-10-17",
             "Statement": shared_tfstate + [
-                {"Sid": "AllowRecoveryListScoped", "Effect": "Allow", "Action": ["s3:ListBucket"], "Resource": rec_arn, "Condition": {"StringLike": {"s3:prefix": ["backups/*", "releases/*", "lifecycle/*"]}}},
-                {"Sid": "AllowRecoveryBucketLocation", "Effect": "Allow", "Action": ["s3:GetBucketLocation"], "Resource": rec_arn},
-                {"Sid": "AllowRecoveryBackupsAndReleasesReadOnly", "Effect": "Allow", "Action": ["s3:GetObject", "s3:GetObjectVersion"], "Resource": [f"{rec_arn}/backups/*", f"{rec_arn}/releases/*"]},
-                {"Sid": "AllowRecoveryLifecycleAndPointerWrite", "Effect": "Allow", "Action": ["s3:PutObject"], "Resource": [f"{rec_arn}/lifecycle/*", f"{rec_arn}/releases/latest-known-good.json", f"{rec_arn}/releases/previous-known-good.json", f"{rec_arn}/backups/postgres/latest-valid.json"]},
-                {"Sid": "AllowRecoveryLifecycleLockRelease", "Effect": "Allow", "Action": ["s3:DeleteObject"], "Resource": f"{rec_arn}/lifecycle/active-op.lock"},
-                {"Sid": "AllowRegionalMetadataDescribeOnly", "Effect": "Allow", "Action": ["ec2:Describe*", "eks:DescribeCluster", "eks:DescribeNodegroup", "eks:ListClusters", "eks:ListNodegroups", "ssm:DescribeParameters", "ssm:DescribeInstanceInformation", "ssm:ListCommandInvocations", "ssm:GetCommandInvocation"], "Resource": "*", "Condition": {"StringEquals": {"aws:RequestedRegion": REGION}}},
-                {"Sid": "AllowTaggedRuntimeDestruction", "Effect": "Allow", "Action": ["ec2:TerminateInstances", "ec2:DetachVolume", "ec2:DeleteVolume", "ec2:DeleteSecurityGroup", "ec2:DisassociateRouteTable", "ec2:DeleteRoute", "ec2:DeleteRouteTable", "ec2:DetachInternetGateway", "ec2:DeleteInternetGateway", "ec2:DeleteSubnet", "ec2:DeleteVpc"], "Resource": ec2_tagged_arns, "Condition": res_envscale},
-                {"Sid": "AllowEnvScaleEksClusterCreation", "Effect": "Allow", "Action": ["eks:CreateCluster"], "Resource": f"arn:aws:eks:{REGION}:{ACCOUNT}:cluster/envscale-*", "Condition": req_envscale},
-                {"Sid": "AllowEnvScaleEksNodegroupCreation", "Effect": "Allow", "Action": ["eks:CreateNodegroup"], "Resource": eks_scoped_arns, "Condition": {"StringEquals": {"aws:ResourceTag/Project": "EnvScale", "aws:ResourceTag/Layer": "DisposableRuntime", "aws:RequestTag/Project": "EnvScale", "aws:RequestTag/Layer": "DisposableRuntime"}}},
-                {"Sid": "AllowEnvScaleEksTaggedLifecycleAndDelete", "Effect": "Allow", "Action": ["eks:DeleteCluster", "eks:DeleteNodegroup", "eks:UpdateClusterConfig", "eks:UpdateNodegroupConfig", "eks:UntagResource"], "Resource": eks_scoped_arns, "Condition": res_envscale},
-                {"Sid": "AllowEnvScaleEksTaggedResourceTagging", "Effect": "Allow", "Action": ["eks:TagResource"], "Resource": eks_scoped_arns, "Condition": {"StringEquals": {"aws:ResourceTag/Project": "EnvScale", "aws:ResourceTag/Layer": "DisposableRuntime", "aws:RequestTag/Project": "EnvScale", "aws:RequestTag/Layer": "DisposableRuntime"}}},
-                {"Sid": "AllowGetRuntimeAndEksRoles", "Effect": "Allow", "Action": ["iam:GetRole", "iam:GetInstanceProfile"], "Resource": [ec2_role_arn, ec2_prof_arn, f"arn:aws:iam::{ACCOUNT}:role/envscale-eks-*"]},
-                {"Sid": "AllowPassEc2AndNodeRolesToEc2Only", "Effect": "Allow", "Action": ["iam:PassRole"], "Resource": [ec2_role_arn, f"arn:aws:iam::{ACCOUNT}:role/envscale-eks-node-*"], "Condition": {"StringEquals": {"iam:PassedToService": "ec2.amazonaws.com"}}},
-                {"Sid": "AllowPassEksClusterRoleToEksOnly", "Effect": "Allow", "Action": ["iam:PassRole"], "Resource": f"arn:aws:iam::{ACCOUNT}:role/envscale-eks-cluster-*", "Condition": {"StringEquals": {"iam:PassedToService": "eks.amazonaws.com"}}},
-            ] + shared_ec2_prov + shared_ssm_cmd + shared_tag_denies + [
-                {"Sid": "DenyFoundationStaticEipRelease", "Effect": "Deny", "Action": ["ec2:ReleaseAddress"], "Resource": "*"},
-                {"Sid": "DenyFoundationStateMutation", "Effect": "Deny", "Action": ["s3:PutObject", "s3:DeleteObject", "s3:DeleteObjectVersion"], "Resource": f"{tfstate_arn}/foundation/*"},
-                {"Sid": "DenyTfstateObjectDeletion", "Effect": "Deny", "Action": ["s3:DeleteObject", "s3:DeleteObjectVersion"], "Resource": f"{tfstate_arn}/*.tfstate"},
-                {"Sid": "DenyBucketAndVersionDestruction", "Effect": "Deny", "Action": ["s3:DeleteBucket", "s3:DeleteBucketPolicy", "s3:PutBucketPolicy", "s3:DeleteObjectVersion"], "Resource": [tfstate_arn, f"{tfstate_arn}/*", rec_arn, f"{rec_arn}/*"]},
-                {"Sid": "DenyBackupArchiveWritesAndAllBackupDeletions", "Effect": "Deny", "Action": ["s3:PutObject"], "Resource": [f"{rec_arn}/backups/historical/*", f"{rec_arn}/backups/postgres/archive/*"]},
-                {"Sid": "DenyBackupDeletions", "Effect": "Deny", "Action": ["s3:DeleteObject"], "Resource": f"{rec_arn}/backups/*"},
-                {"Sid": "DenyReleaseArtifactDeletion", "Effect": "Deny", "Action": ["s3:DeleteObject"], "Resource": f"{rec_arn}/releases/*"},
-                {"Sid": "DenyLegacyVaultAccess", "Effect": "Deny", "Action": ["s3:*"], "Resource": [leg_arn, f"{leg_arn}/*"]},
-                {"Sid": "DenySSMParameterValuesAndMutations", "Effect": "Deny", "Action": ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath", "ssm:PutParameter", "ssm:DeleteParameter", "ssm:DeleteParameters"], "Resource": ssm_all},
-                {"Sid": "DenyFoundationIAMMutations", "Effect": "Deny", "Action": ["iam:Delete*", "iam:PutRolePolicy", "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:UpdateAssumeRolePolicy"], "Resource": [f"arn:aws:iam::{ACCOUNT}:role/envscale-ec2-runtime-role", f"arn:aws:iam::{ACCOUNT}:role/envscale-foundation-admin-role", f"arn:aws:iam::{ACCOUNT}:role/envscale-github-*", f"arn:aws:iam::{ACCOUNT}:instance-profile/envscale-*", f"arn:aws:iam::{ACCOUNT}:oidc-provider/*"]},
+                {"Sid": "RcLs", "Effect": "Allow", "Action": "s3:ListBucket", "Resource": rec_arn, "Condition": {"StringLike": {"s3:prefix": ["backups/*", "releases/*", "lifecycle/*"]}}},
+                {"Sid": "S3Rd", "Effect": "Allow", "Action": ["s3:GetBucketLocation", "s3:GetObject", "s3:GetObjectVersion"], "Resource": [tfstate_arn, f"{tfstate_arn}/foundation/terraform.tfstate", rec_arn, f"{rec_arn}/backups/*", f"{rec_arn}/releases/*"]},
+                {"Sid": "RcWr", "Effect": "Allow", "Action": "s3:PutObject", "Resource": [f"{rec_arn}/lifecycle/*", f"{rec_arn}/releases/latest-known-good.json", f"{rec_arn}/releases/previous-known-good.json", f"{rec_arn}/backups/postgres/latest-valid.json"]},
+                {"Sid": "Meta", "Effect": "Allow", "Action": ["ec2:Describe*", "eks:DescribeCluster", "eks:DescribeNodegroup", "eks:ListClusters", "eks:ListNodegroups", "ssm:DescribeParameters", "ssm:DescribeInstanceInformation", "ssm:ListCommandInvocations", "ssm:GetCommandInvocation"], "Resource": "*", "Condition": {"StringEquals": {"aws:RequestedRegion": REGION}}},
+                {"Sid": "CrRt", "Effect": "Allow", "Action": ["ec2:CreateVpc", "ec2:CreateInternetGateway", "ec2:CreateVolume", "ec2:RunInstances", "eks:CreateCluster"], "Resource": [f"arn:aws:ec2:{REGION}:{ACCOUNT}:vpc/*", f"arn:aws:ec2:{REGION}:{ACCOUNT}:internet-gateway/*", f"arn:aws:ec2:{REGION}:{ACCOUNT}:volume/*", f"arn:aws:ec2:{REGION}:{ACCOUNT}:instance/*", f"arn:aws:ec2:{REGION}:{ACCOUNT}:network-interface/*", f"arn:aws:eks:{REGION}:{ACCOUNT}:cluster/envscale-*"], "Condition": req_envscale},
+                {"Sid": "RtOp", "Effect": "Allow", "Action": ec2_nondestr + ec2_destr + ["eks:DeleteCluster", "eks:DeleteNodegroup", "eks:UpdateClusterConfig", "eks:UpdateNodegroupConfig", "eks:UntagResource"], "Resource": ec2_tagged_arns + eks_scoped_arns, "Condition": res_envscale},
+                {"Sid": "EksN", "Effect": "Allow", "Action": ["eks:CreateNodegroup", "eks:TagResource"], "Resource": eks_scoped_arns, "Condition": {"StringEquals": {"aws:ResourceTag/Project": "EnvScale", "aws:ResourceTag/Layer": "DisposableRuntime", "aws:RequestTag/Project": "EnvScale", "aws:RequestTag/Layer": "DisposableRuntime"}}},
+                {"Sid": "IamR", "Effect": "Allow", "Action": ["iam:GetRole", "iam:GetInstanceProfile"], "Resource": [ec2_role_arn, ec2_prof_arn, f"arn:aws:iam::{ACCOUNT}:role/envscale-eks-*"]},
+                {"Sid": "PsE2", "Effect": "Allow", "Action": "iam:PassRole", "Resource": [ec2_role_arn, f"arn:aws:iam::{ACCOUNT}:role/envscale-eks-node-*"], "Condition": {"StringEquals": {"iam:PassedToService": "ec2.amazonaws.com"}}},
+                {"Sid": "PsEk", "Effect": "Allow", "Action": "iam:PassRole", "Resource": f"arn:aws:iam::{ACCOUNT}:role/envscale-eks-cluster-*", "Condition": {"StringEquals": {"iam:PassedToService": "eks.amazonaws.com"}}},
+            ] + shared_ec2_prov + shared_tag_denies + [
+                {"Sid": "DnSp", "Effect": "Deny", "Action": "s3:PutObject", "Resource": [f"{tfstate_arn}/foundation/*", f"{rec_arn}/backups/historical/*", f"{rec_arn}/backups/postgres/archive/*"]},
+                {"Sid": "DnSd", "Effect": "Deny", "Action": "s3:DeleteObject", "Resource": [f"{tfstate_arn}/foundation/*", f"{tfstate_arn}/*.tfstate", f"{rec_arn}/backups/*", f"{rec_arn}/releases/*"]},
+                {"Sid": "DnLg", "Effect": "Deny", "Action": "s3:*", "Resource": [leg_arn, f"{leg_arn}/*"]},
+                {"Sid": "DnGl", "Effect": "Deny", "Action": ["s3:DeleteBucket", "s3:DeleteBucketPolicy", "s3:PutBucketPolicy", "s3:DeleteObjectVersion", "ec2:ReleaseAddress", "ssm:GetParameter*", "ssm:PutParameter", "ssm:DeleteParameter*", "iam:Delete*", "iam:PutRolePolicy", "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:UpdateAssumeRolePolicy"], "Resource": "*"},
             ],
         },
     }

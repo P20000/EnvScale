@@ -152,6 +152,20 @@ resource "aws_iam_role_policy" "github_foundation" {
         }
       },
       {
+        Sid    = "AllowBoundedRuntimeProvisionerRoleCreationAndBoundary"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateRole",
+          "iam:PutRolePermissionsBoundary",
+        ]
+        Resource = local.runtime_provisioner_role_arn
+        Condition = {
+          StringEquals = {
+            "iam:PermissionsBoundary" = local.runtime_provisioner_boundary_policy_arn
+          }
+        }
+      },
+      {
         Sid    = "AllowEnumeratedWorkloadRoleNonBoundaryUpdates"
         Effect = "Allow"
         Action = [
@@ -164,7 +178,7 @@ resource "aws_iam_role_policy" "github_foundation" {
           "iam:TagRole",
           "iam:UntagRole",
         ]
-        Resource = local.workload_managed_role_arns
+        Resource = concat(local.workload_managed_role_arns, [local.runtime_provisioner_role_arn])
       },
       {
         Sid    = "AllowBoundedEc2RuntimeCorePolicyAttachment"

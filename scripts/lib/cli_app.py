@@ -13,6 +13,7 @@ from .env_sync import ensure_env_files, verify_env_parity
 from .k8s_manager import K8sManager
 from .chaos_runner import ChaosRunner, CHAOS_SCENARIOS
 from .test_runner import TestRunner
+from .cli_cloud_ops import ops
 
 console = Console()
 pm = ProcessManager()
@@ -221,11 +222,13 @@ def infra():
     pass
 
 @infra.command("up")
-def infra_up():
+@click.option("--sha", default=None, help="Specific commit SHA to deploy after provisioning")
+@click.option("--manifest", default=None, help="Path to local validated release-manifest.json")
+def infra_up(sha, manifest):
     """Provision AWS EC2, configure VPC/S3, and sync DNS/secrets."""
     from .cloud_deployer import CloudDeployer
     deployer = CloudDeployer(log_fn=lambda m: console.print(f"[blue]{m}[/blue]"))
-    deployer.infra_up()
+    deployer.infra_up(release_sha=sha, manifest_path=manifest)
     console.print("[bold green]✔ Cloud Infrastructure Provisioned & Ready![/bold green]")
 
 @infra.command("stop")
@@ -269,11 +272,12 @@ def infra_status():
 @click.option("--prod", "mode", flag_value="prod", default=True, help="Production deploy: committed release images from GHCR (no local rsync)")
 @click.option("--dev", "mode", flag_value="dev", help="Development deploy: sync local snapshot to EC2")
 @click.option("--sha", default=None, help="Specific commit SHA or image tag to deploy (default: latest committed SHA)")
-def deploy_cmd(mode, sha):
+@click.option("--manifest", default=None, help="Path to local validated release-manifest.json")
+def deploy_cmd(mode, sha, manifest):
     """Deploy containers to active cloud EC2 host (--prod committed release, --dev local snapshot)."""
     from .cloud_deployer import CloudDeployer
     deployer = CloudDeployer(log_fn=lambda m: console.print(f"[cyan]{m}[/cyan]"))
-    deployer.deploy(release_sha=sha, mode=mode)
+    deployer.deploy(release_sha=sha, manifest_path=manifest, mode=mode)
     console.print("[bold green]✔ Deployment Complete & Verified![/bold green]")
 
 @cli.command("rollback")
@@ -324,6 +328,9 @@ def eks_deploy():
     deployer = EKSDeployer(log_fn=lambda m: console.print(f"[cyan]{m}[/cyan]"))
     deployer.deploy_workloads()
     console.print("[bold green]✔ Todo workloads deployed to EKS![/bold green]")
+
+
+cli.add_command(ops)
 
 
 

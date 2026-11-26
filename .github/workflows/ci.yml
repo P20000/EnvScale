@@ -136,6 +136,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: testing/deployment/requirements.txt
+
+      - name: Install Python Deployment Test Dependencies
+        run: python3 -m pip install -r testing/deployment/requirements.txt
 
       - name: Validate Example Release Manifest Against Schema
         run: |

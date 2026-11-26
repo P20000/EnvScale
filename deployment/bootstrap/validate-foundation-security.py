@@ -221,6 +221,7 @@ def test_live_aws_iam_simulation_and_analyzer(tfstate_bucket_policy: dict) -> No
 
     tf_b, rc_b, lg_b = f"arn:aws:s3:::{TFSTATE_BUCKET}", f"arn:aws:s3:::{RECOVERY_BUCKET}", f"arn:aws:s3:::{LEGACY_BUCKET}"
     wb_arn = f"arn:aws:iam::{ACCOUNT}:policy/envscale-workload-permissions-boundary"
+    rt_pb_arn = f"arn:aws:iam::{ACCOUNT}:policy/envscale-runtime-provisioner-permissions-boundary"
     ssm_core = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
     tag_res_ok = {"aws:ResourceTag/Project": "EnvScale", "aws:ResourceTag/Layer": "DisposableRuntime"}
     tag_res_other = {"aws:ResourceTag/Project": "Relmonition", "aws:ResourceTag/Layer": "Production"}
@@ -267,6 +268,11 @@ def test_live_aws_iam_simulation_and_analyzer(tfstate_bucket_policy: dict) -> No
         ("foundation PutObject foundation.tfstate", "role_github_foundation", "s3:PutObject", f"{tf_b}/foundation/terraform.tfstate", {}, None, "allowed"),
         ("foundation DeleteObject foundation.tflock", "role_github_foundation", "s3:DeleteObject", f"{tf_b}/foundation/terraform.tfstate.tflock", {"aws:SecureTransport": True, "aws:PrincipalAccount": ACCOUNT}, "tfstate_bucket_policy", "allowed"),
         ("foundation CreateRole deploy w/ boundary", "role_github_foundation", "iam:CreateRole", f"arn:aws:iam::{ACCOUNT}:role/envscale-github-deploy-role", {"iam:PermissionsBoundary": wb_arn}, None, "allowed"),
+        ("foundation CreateRole runtime_prov w/ boundary", "role_github_foundation", "iam:CreateRole", f"arn:aws:iam::{ACCOUNT}:role/envscale-runtime-provisioner-role", {"iam:PermissionsBoundary": rt_pb_arn}, None, "allowed"),
+        ("NEG: foundation CreateRole runtime_prov wrong boundary", "role_github_foundation", "iam:CreateRole", f"arn:aws:iam::{ACCOUNT}:role/envscale-runtime-provisioner-role", {"iam:PermissionsBoundary": wb_arn}, None, "implicitDeny"),
+        ("NEG: foundation CreatePolicyVersion rt boundary", "role_github_foundation", "iam:CreatePolicyVersion", rt_pb_arn, {}, None, "explicitDeny"),
+        ("foundation_plan GetRole runtime_provisioner", "role_github_foundation_plan", "iam:GetRole", f"arn:aws:iam::{ACCOUNT}:role/envscale-runtime-provisioner-role", {}, None, "allowed"),
+        ("foundation_admin CreatePolicyVersion rt boundary", "role_foundation_admin", "iam:CreatePolicyVersion", rt_pb_arn, {}, None, "allowed"),
         ("NEG: foundation CreateRole deploy w/o boundary", "role_github_foundation", "iam:CreateRole", f"arn:aws:iam::{ACCOUNT}:role/envscale-github-deploy-role", {}, None, "implicitDeny"),
         ("NEG: foundation CreateRole rogue role w/ boundary", "role_github_foundation", "iam:CreateRole", f"arn:aws:iam::{ACCOUNT}:role/rogue-admin-role", {"iam:PermissionsBoundary": wb_arn}, None, "implicitDeny"),
         ("foundation AttachRolePolicy ec2 SSMCore", "role_github_foundation", "iam:AttachRolePolicy", f"arn:aws:iam::{ACCOUNT}:role/envscale-ec2-runtime-role", {"iam:PolicyARN": ssm_core}, None, "allowed"),
@@ -422,6 +428,10 @@ def test_live_aws_iam_simulation_and_analyzer(tfstate_bucket_policy: dict) -> No
         assert_true(aws_dec == expected, f"[AWS simulate-custom-policy] {label}: got {aws_dec}, expected {expected}")
         assert_true(local_dec == expected, f"[Local Harness] {label}: got {local_dec}, expected {expected}")
         print(f"  [PASS] {label:<56} -> AWS={aws_dec} | LocalHarness={local_dec}")
+
+    import runtime_provisioner_iam as rt_iam  # noqa: E402
+    rt_counts = rt_iam.verify_runtime_iam_matrix(live_aws=True, tfstate_bucket_policy=tfstate_bucket_policy)
+    print(f"  [PASS] Two-role Runtime IAM live simulation matrix verified: {sum(rt_counts.values())} vectors ({rt_counts})")
 
     print("=== [4/6] Stateless AWS IAM Access Analyzer Policy Grammar Check ===")
     sim.run_access_analyzer_validation(policies)

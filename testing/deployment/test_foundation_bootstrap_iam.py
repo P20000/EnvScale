@@ -29,6 +29,7 @@ OPERATOR_ARN = f"arn:aws:iam::{ACCOUNT}:user/DEV-user-alpha"
 BOOTSTRAP_POL_PATH = BOOTSTRAP_DIR / "foundation-iam-bootstrap-policy.json"
 BOOTSTRAP_POL_ARN = f"arn:aws:iam::{ACCOUNT}:policy/envscale-foundation-iam-bootstrap-policy"
 WB_ARN = f"arn:aws:iam::{ACCOUNT}:policy/envscale-workload-permissions-boundary"
+RT_PB_ARN = f"arn:aws:iam::{ACCOUNT}:policy/envscale-runtime-provisioner-permissions-boundary"
 
 
 class TestFoundationBootstrapIam(unittest.TestCase):
@@ -74,6 +75,7 @@ class TestFoundationBootstrapIam(unittest.TestCase):
         policies = {BOOTSTRAP_POL_ARN: live_bp}
         if all_exist:
             policies[WB_ARN] = self.pols["role_workload_permissions_boundary"]
+            policies[RT_PB_ARN] = self.pols["boundary_runtime_provisioner"]
 
         def caller(op: str, params: list[str]):
             if op == "list-mfa-devices":
@@ -215,6 +217,7 @@ class TestFoundationBootstrapIam(unittest.TestCase):
                 roles["envscale-github-foundation-role"] = {"MaxSessionDuration": 3600, "AssumeRolePolicyDocument": self.pols["trust_github_foundation"]}
                 role_pols[("envscale-github-foundation-role", "envscale-github-foundation-policy")] = self.pols["role_github_foundation"]
                 policies[WB_ARN] = self.pols["role_workload_permissions_boundary"]
+                policies[RT_PB_ARN] = self.pols["boundary_runtime_provisioner"]
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
         with tempfile.TemporaryDirectory() as td:
@@ -240,11 +243,11 @@ class TestFoundationBootstrapIam(unittest.TestCase):
         self.assertEqual([c for c in cmds_new if c[:2] == ["terraform", "import"]], [])
         self.assertEqual(len([c for c in cmds_new if c[:2] == ["terraform", "apply"]]), 1)
 
-        # Case 2: Repeat run (admin & OIDC resources already present, missing from state) -> imports 7, no-op skips apply!
+        # Case 2: Repeat run (admin & OIDC resources already present, missing from state) -> imports 8, no-op skips apply!
         res_rep, cmds_rep = self._run_bootstrap_scenario(preexists=True, action_for_resources=["no-op"])
         self.assertTrue(res_rep["admin_role_preexisted"])
         self.assertFalse(res_rep["apply_executed"])
-        self.assertEqual(len([c for c in cmds_rep if c[:2] == ["terraform", "import"]]), 7)
+        self.assertEqual(len([c for c in cmds_rep if c[:2] == ["terraform", "import"]]), 8)
         self.assertEqual([c for c in cmds_rep if c[:2] == ["terraform", "apply"]], [])
 
         # Case 3: Pre-existing resources planning an unexpected update -> refuse blind overwrite unless --reconcile-existing.

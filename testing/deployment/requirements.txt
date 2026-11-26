@@ -1,0 +1,5 @@
+# Python dependencies required by the offline deployment contract, IAM, and Test Center CLI test suites.
+# Used by `.github/workflows/ci.yml` (`deployment-contract-checks`) and reproducible locally via:
+#   python3 -m pip install -r testing/deployment/requirements.txt
+click>=8.1.0,<9.0.0
+rich>=13.7.0,<15.0.0

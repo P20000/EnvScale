@@ -33,7 +33,10 @@
       "Effect": "Allow",
       "Action": [
         "s3:GetBucketPolicy",
-        "s3:GetBucketLocation"
+        "s3:GetBucketLocation",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:GetBucketVersioning",
+        "s3:GetEncryptionConfiguration"
       ],
       "Resource": "arn:aws:s3:::envscale-tfstate-982534376726-ap-south-1"
     },
@@ -108,7 +111,10 @@
         "iam:SetDefaultPolicyVersion",
         "iam:TagPolicy"
       ],
-      "Resource": "arn:aws:iam::982534376726:policy/envscale-workload-permissions-boundary"
+      "Resource": [
+        "arn:aws:iam::982534376726:policy/envscale-workload-permissions-boundary",
+        "arn:aws:iam::982534376726:policy/envscale-runtime-provisioner-permissions-boundary"
+      ]
     },
     {
       "Sid": "AllowBootstrapOidcProviderDiscovery",

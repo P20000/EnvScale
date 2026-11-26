@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 import os
 import time
 import subprocess
 from typing import List, Dict, Any, Callable
 from .config import PROJECT_ROOT, API_SERVER_DIR, K8S_STREAMER_DIR, WEB_DIR
+
+Tuple_Res = Any
 
 class TestRunner:
     def __init__(self, log_fn=None):
@@ -68,5 +72,3 @@ class TestRunner:
 
         p("All tests completed!", 1.0)
         return results
-
-Tuple_Res = Any
