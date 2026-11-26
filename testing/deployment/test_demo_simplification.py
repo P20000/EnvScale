@@ -10,6 +10,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 
@@ -430,8 +431,14 @@ class TestDemoSimplification(unittest.TestCase):
         )
         cloud_demo_flow.check_role_exists_for_mfa({"roles": {RUNTIME_ROLE: {"exists": True}}}, RUNTIME_ROLE)
 
-        # Exercise CloudPipelinePanel._ensure_role_session_interactive directly without GUI display
-        from scripts.lib.gui_adw import cloud_pipeline_panel
+        try:
+            from scripts.lib.gui_adw import cloud_pipeline_panel
+        except ModuleNotFoundError:
+            gi_mod, repo_mod = types.ModuleType("gi"), types.ModuleType("gi.repository")
+            gi_mod.require_version = lambda *a, **k: None  # type: ignore[attr-defined]
+            repo_mod.Adw, repo_mod.GLib, repo_mod.Gtk = mock.MagicMock(), mock.MagicMock(), types.SimpleNamespace(Box=object)  # type: ignore[attr-defined]
+            with mock.patch.dict(sys.modules, {"gi": gi_mod, "gi.repository": repo_mod}):
+                from scripts.lib.gui_adw import cloud_pipeline_panel
 
         dummy = mock.MagicMock()
         dummy.orchestrator = mock.MagicMock(runtime_profile=None, runtime_session=None, admin_session=None)

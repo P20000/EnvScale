@@ -401,6 +401,46 @@ class TestFoundationReconciliation(unittest.TestCase):
         self.assertIn("bootstrap_reconcile", pipe_src)
         self.assertNotIn("reconcile", demo_src.lower())
 
+    def test_bootstrap_apply_reuses_reviewed_plan_bin_without_regenerating_plan(self):
+        fake = FakeAwsEnvironment()
+        fake.gf_policy["Statement"].pop()
+        valid_doc = _make_bootstrap_plan_doc(actions_override={"aws_iam_role_policy.github_foundation": ["update"]})
+        tf_cmds, bs_cmds = [], []
+
+        with tempfile.TemporaryDirectory() as td:
+            reviewed_bin = pathlib.Path(td) / "reviewed.tfplan"
+            reviewed_bin.write_bytes(b"deterministic-reviewed-tfplan")
+            expected_sha = hashlib.sha256(b"deterministic-reviewed-tfplan").hexdigest()
+
+            def _run_reuse(cmd, **kwargs):
+                if cmd and cmd[0] == "terraform":
+                    tf_cmds.append(cmd[:3])
+                if cmd[:3] == ["terraform", "show", "-json"]:
+                    return subprocess.CompletedProcess(cmd, 0, json.dumps(valid_doc), "")
+                if len(cmd) >= 2 and cmd[1].endswith("bootstrap-state.sh"):
+                    bs_cmds.append(cmd)
+                    fake.gf_policy = json.loads(json.dumps(fake.rendered["role_github_foundation"]))
+                    return subprocess.CompletedProcess(cmd, 0, "[SUCCESS]", "")
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+
+            with self.assertRaises(RuntimeError) as bad_sha:
+                rec_lib.reconcile_foundation(
+                    FOUNDATION_DIR, dry_run=False, apply_bootstrap=True,
+                    plan_bin=str(reviewed_bin), expected_plan_sha256="f" * 64,
+                    aws_cli=fake, run_fn=_run_reuse,
+                )
+            self.assertIn("SHA-256 mismatch", str(bad_sha.exception))
+
+            res = rec_lib.reconcile_foundation(
+                FOUNDATION_DIR, dry_run=False, apply_bootstrap=True,
+                plan_bin=str(reviewed_bin), expected_plan_sha256=expected_sha,
+                aws_cli=fake, run_fn=_run_reuse,
+            )
+            self.assertEqual(res["status"], "APPLIED_BOOTSTRAP")
+            self.assertFalse(any(c[:2] == ["terraform", "plan"] for c in tf_cmds))
+            self.assertIn(str(reviewed_bin.resolve()), bs_cmds[0])
+            self.assertIn(expected_sha, bs_cmds[0])
+
 
 if __name__ == "__main__":
     unittest.main()

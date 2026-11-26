@@ -60,12 +60,13 @@ def generate_and_validate_bootstrap_plan(
     *,
     backend_hcl: Optional[pathlib.Path] = None,
     plan_dir: Optional[pathlib.Path] = None,
+    existing_plan_bin: Optional[pathlib.Path] = None,
     aws_cli: Optional[AwsCliFn] = None,
     aws_env: Optional[Dict[str, str]] = None,
     run_fn: RunFn = subprocess.run,
     inspection: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Generate a targeted bootstrap plan, verify state monotonicity, and run validate-foundation-plan.py."""
+    """Generate (or inspect an existing) targeted bootstrap plan, verify monotonicity, and run plan validator."""
     fdir = pathlib.Path(foundation_dir).resolve()
     report = inspection or inspect_foundation_state(fdir, aws_cli=aws_cli, aws_env=aws_env)
     prot = report["protected_iam"]
@@ -80,18 +81,23 @@ def generate_and_validate_bootstrap_plan(
     work_dir = pathlib.Path(plan_dir) if plan_dir else pathlib.Path(tempfile.mkdtemp(prefix="envscale-reconcile-plan-"))
     work_dir.mkdir(parents=True, exist_ok=True)
     os.chmod(work_dir, 0o700)
-    plan_bin = work_dir / "bootstrap.reconcile.tfplan"
     plan_json = work_dir / "bootstrap.reconcile.tfplan.json"
 
     hcl = backend_hcl or (fdir / "backend.hcl")
     if hcl.is_file():
         run_fn(["terraform", "init", "-input=false", f"-backend-config={hcl}"], cwd=str(fdir), env=aws_env, check=True)
-    targets = [f"-target={a}" for a in sorted(PROTECTED_FOUNDATION_IAM_ADDRESSES)]
-    run_fn(
-        ["terraform", "plan", "-input=false", "-lock=false", f"-out={plan_bin}", *targets],
-        cwd=str(fdir), env=aws_env, check=True,
-    )
-    os.chmod(plan_bin, 0o600)
+    if existing_plan_bin is not None:
+        plan_bin = pathlib.Path(existing_plan_bin).resolve()
+        if not plan_bin.is_file():
+            raise FileNotFoundError(f"Reviewed bootstrap plan binary not found: {plan_bin}")
+    else:
+        plan_bin = work_dir / "bootstrap.reconcile.tfplan"
+        targets = [f"-target={a}" for a in sorted(PROTECTED_FOUNDATION_IAM_ADDRESSES)]
+        run_fn(
+            ["terraform", "plan", "-input=false", "-lock=false", f"-out={plan_bin}", *targets],
+            cwd=str(fdir), env=aws_env, check=True,
+        )
+        os.chmod(plan_bin, 0o600)
 
     show_proc = run_fn(
         ["terraform", "show", "-json", str(plan_bin)],
@@ -154,6 +160,7 @@ def reconcile_foundation(
     dry_run: bool = True,
     apply_bootstrap: bool = False,
     expected_plan_sha256: Optional[str] = None,
+    plan_bin: Optional[str] = None,
     deploy_foundation: bool = False,
     plan_only_oidc: bool = False,
     ref: str = "develop",
@@ -171,7 +178,14 @@ def reconcile_foundation(
         return {"status": "NO_CHANGES", "classification": cls, "applied": False, "changes_made": 0, "report": report}
 
     if cls == STATE_BOOTSTRAP_REQUIRED:
-        plan_info = generate_and_validate_bootstrap_plan(fdir, aws_cli=aws_cli, aws_env=aws_env, run_fn=run_fn, inspection=report)
+        plan_info = generate_and_validate_bootstrap_plan(
+            fdir,
+            existing_plan_bin=pathlib.Path(plan_bin) if plan_bin else None,
+            aws_cli=aws_cli,
+            aws_env=aws_env,
+            run_fn=run_fn,
+            inspection=report,
+        )
         if dry_run or not apply_bootstrap:
             return {"status": "NEEDS_BOOTSTRAP_APPLY", "classification": cls, "applied": False, "plan": plan_info, "report": report}
 
@@ -247,6 +261,7 @@ def main() -> None:
     p.add_argument("--inspect", action="store_true", help="Read-only inspection and 4-state classification (default)")
     p.add_argument("--dry-run", action="store_true", help="Inspect and generate/validate bootstrap plan if needed without applying")
     p.add_argument("--apply-bootstrap", action="store_true", help="Apply reviewed bootstrap plan via bootstrap-state.sh")
+    p.add_argument("--plan-bin", default=None, help="Existing reviewed .tfplan binary path to inspect/apply without re-planning")
     p.add_argument("--confirm-plan-sha256", default=None, help="Reviewed bootstrap plan SHA-256 required for --apply-bootstrap")
     p.add_argument("--deploy-foundation", action="store_true", help="Dispatch .github/workflows/foundation.yml when Foundation deploy is required")
     p.add_argument("--plan-only", action="store_true", help="Dispatch foundation.yml with action=plan-only")
@@ -270,6 +285,7 @@ def main() -> None:
             dry_run=bool(args.dry_run),
             apply_bootstrap=bool(args.apply_bootstrap),
             expected_plan_sha256=args.confirm_plan_sha256,
+            plan_bin=args.plan_bin,
             deploy_foundation=bool(args.deploy_foundation),
             plan_only_oidc=bool(args.plan_only),
             ref=args.ref,
