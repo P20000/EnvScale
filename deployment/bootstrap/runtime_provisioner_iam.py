@@ -162,7 +162,7 @@ def build_ec2_runtime_policy(account_id: str = ACCOUNT, region: str = REGION) ->
     return {
         "Version": "2012-10-17",
         "Statement": [
-            {"Sid": "AllowSSMProdParameterRead", "Effect": "Allow", "Action": ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"], "Resource": f"arn:aws:ssm:{region}:{account_id}:parameter/envscale/prod/*"},
+            {"Sid": "AllowSSMProdParameterRead", "Effect": "Allow", "Action": ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"], "Resource": [f"arn:aws:ssm:{region}:{account_id}:parameter/envscale/prod", f"arn:aws:ssm:{region}:{account_id}:parameter/envscale/prod/*"]},
             {"Sid": "AllowSSMKmsDecryptViaSSMOnly", "Effect": "Allow", "Action": ["kms:Decrypt"], "Resource": f"arn:aws:kms:{region}:{account_id}:key/*", "Condition": {"StringEquals": {"kms:ViaService": f"ssm.{region}.amazonaws.com"}}},
             {"Sid": "AllowRecoveryReleasesAndHistoricalReadOnly", "Effect": "Allow", "Action": ["s3:GetObject", "s3:GetObjectVersion"], "Resource": [f"{rec_arn}/releases/*", f"{rec_arn}/backups/historical/*"]},
             {"Sid": "AllowRecoveryPostgresBackupsAndAlertsRW", "Effect": "Allow", "Action": ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject"], "Resource": [f"{rec_arn}/backups/postgres/*", f"{rec_arn}/lifecycle/alerts/*"]},
@@ -287,10 +287,12 @@ def build_runtime_iam_simulation_vectors(account_id: str = ACCOUNT, region: str 
     ]
     ec2_vectors = [
         ("ec2_runtime GetParameter /envscale/prod/*", "role_ec2_runtime", "ssm:GetParameter", f"arn:aws:ssm:{region}:{account_id}:parameter/envscale/prod/postgres_password", {}, None, "role_workload_permissions_boundary", "allowed"),
+        ("ec2_runtime GetParametersByPath /envscale/prod", "role_ec2_runtime", "ssm:GetParametersByPath", f"arn:aws:ssm:{region}:{account_id}:parameter/envscale/prod", {}, None, "role_workload_permissions_boundary", "allowed"),
         ("ec2_runtime GetParametersByPath /envscale/prod/*", "role_ec2_runtime", "ssm:GetParametersByPath", f"arn:aws:ssm:{region}:{account_id}:parameter/envscale/prod/", {}, None, "role_workload_permissions_boundary", "allowed"),
         ("ec2_runtime kms:Decrypt live SSM KMS via ssm", "role_ec2_runtime", "kms:Decrypt", LIVE_SSM_KMS_KEY_ARN, {"kms:ViaService": f"ssm.{region}.amazonaws.com"}, None, "role_workload_permissions_boundary", "allowed"),
         ("ec2_runtime GetObject recovery/releases/*", "role_ec2_runtime", "s3:GetObject", f"{rc_b}/releases/sha/release-manifest.json", {}, None, "role_workload_permissions_boundary", "allowed"),
         ("ec2_runtime PutObject recovery/backups/postgres/*", "role_ec2_runtime", "s3:PutObject", f"{rc_b}/backups/postgres/b.dump", {}, None, "role_workload_permissions_boundary", "allowed"),
+        ("NEG: ec2_runtime GetParametersByPath non-prod /other", "role_ec2_runtime", "ssm:GetParametersByPath", f"arn:aws:ssm:{region}:{account_id}:parameter/other", {}, None, "role_workload_permissions_boundary", "implicitDeny"),
         ("NEG: ec2_runtime GetParameter non-prod /other/*", "role_ec2_runtime", "ssm:GetParameter", f"arn:aws:ssm:{region}:{account_id}:parameter/other/app/secret", {}, None, "role_workload_permissions_boundary", "implicitDeny"),
         ("NEG: ec2_runtime PutParameter prod secret", "role_ec2_runtime", "ssm:PutParameter", f"arn:aws:ssm:{region}:{account_id}:parameter/envscale/prod/postgres_password", {}, None, "role_workload_permissions_boundary", "explicitDeny"),
         ("NEG: ec2_runtime kms:Decrypt w/o kms:ViaService", "role_ec2_runtime", "kms:Decrypt", LIVE_SSM_KMS_KEY_ARN, {}, None, "role_workload_permissions_boundary", "implicitDeny"),

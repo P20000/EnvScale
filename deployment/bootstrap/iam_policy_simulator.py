@@ -51,6 +51,7 @@ def build_rendered_foundation_policies(foundation_dir: pathlib.Path) -> dict[str
     tfstate_arn = f"arn:aws:s3:::{TFSTATE_BUCKET}"
     rec_arn = f"arn:aws:s3:::{RECOVERY_BUCKET}"
     leg_arn = f"arn:aws:s3:::{LEGACY_BUCKET}"
+    ssm_prod_prefix = f"arn:aws:ssm:{REGION}:{ACCOUNT}:parameter/envscale/prod"
     ssm_prod = f"arn:aws:ssm:{REGION}:{ACCOUNT}:parameter/envscale/prod/*"
     ssm_all = f"arn:aws:ssm:{REGION}:{ACCOUNT}:parameter/*"
     ssm_non_secret = [
@@ -191,7 +192,7 @@ def build_rendered_foundation_policies(foundation_dir: pathlib.Path) -> dict[str
         "role_ec2_runtime": {
             "Version": "2012-10-17",
             "Statement": [
-                {"Sid": "AllowSSMProdParameterRead", "Effect": "Allow", "Action": ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"], "Resource": ssm_prod},
+                {"Sid": "AllowSSMProdParameterRead", "Effect": "Allow", "Action": ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"], "Resource": [ssm_prod_prefix, ssm_prod]},
                 {"Sid": "AllowSSMKmsDecryptViaSSMOnly", "Effect": "Allow", "Action": ["kms:Decrypt"], "Resource": f"arn:aws:kms:{REGION}:{ACCOUNT}:key/*", "Condition": {"StringEquals": {"kms:ViaService": f"ssm.{REGION}.amazonaws.com"}}},
                 {"Sid": "AllowRecoveryReleasesAndHistoricalReadOnly", "Effect": "Allow", "Action": ["s3:GetObject", "s3:GetObjectVersion"], "Resource": [f"{rec_arn}/releases/*", f"{rec_arn}/backups/historical/*"]},
                 {"Sid": "AllowRecoveryPostgresBackupsAndAlertsRW", "Effect": "Allow", "Action": ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject"], "Resource": [f"{rec_arn}/backups/postgres/*", f"{rec_arn}/lifecycle/alerts/*"]},

@@ -27,14 +27,15 @@ StepCallback = Callable[[str, str, str, str], None]
 
 
 def _is_tls_propagation_error(errors: List[str]) -> bool:
-    """Return True when health check errors look strictly like initial Let's Encrypt TLS propagation."""
+    """Return True only for transient initial TLS propagation/handshake errors, never permanent cert/app errors."""
     if not errors:
         return False
-    app_markers = ("returned unexpected status", "returned error status", "returned unexpected code", "health payload invalid")
-    if any(any(m in err for m in app_markers) for err in errors):
+    hard = ("returned unexpected status", "returned error status", "returned unexpected code", "health payload invalid", "has expired", "expired", "hostname mismatch", "doesn't match", "self-signed", "self signed", "unknown ca", "revoked")
+    lower_errs = [err.lower() for err in errors]
+    if any(any(m in e for m in hard) for e in lower_errs):
         return False
-    tls_markers = ("SSL/TLS", "CERTIFICATE_VERIFY_FAILED", "certificate", "EOF occurred in violation of protocol")
-    return any(any(m in err for m in tls_markers) for err in errors)
+    tls = ("ssl/tls", "certificate_verify_failed", "tlsv1_alert_internal_error", "tlsv1 alert internal error", "handshake", "eof occurred in violation of protocol", "certificate")
+    return any(any(m in e for m in tls) for e in lower_errs)
 
 
 class CloudDeployer:
@@ -425,7 +426,7 @@ class CloudDeployer:
         step_id: Optional[str] = None,
         step_title: Optional[str] = None,
         auto_rollback: bool = True,
-        tls_retry_attempts: int = 3,
+        tls_retry_attempts: int = 6,
         tls_retry_delay_s: int = 10,
     ):
         instance_id = self.get_instance_id()

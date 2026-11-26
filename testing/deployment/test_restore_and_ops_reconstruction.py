@@ -80,6 +80,7 @@ class TestDbRestoreScriptOffline(unittest.TestCase):
             bin_dir / "aws",
             f"""#!/usr/bin/env bash
 set -euo pipefail
+if [[ "${{1:-}}" == "--version" ]]; then echo "aws-cli/2.15.0"; exit 0; fi
 if [[ "$1" == "s3api" && "$2" == "head-object" ]]; then
   printf '%s\\n' '{head_payload}'
   exit 0

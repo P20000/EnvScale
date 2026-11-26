@@ -18,6 +18,7 @@ locals {
   tfstate_bucket_arn      = "arn:aws:s3:::${local.tfstate_bucket_name}"
   legacy_vault_bucket_arn = "arn:aws:s3:::${local.legacy_vault_bucket_name}"
   recovery_bucket_arn     = "arn:aws:s3:::${local.recovery_bucket_name}"
+  ssm_prod_prefix_arn     = "arn:aws:ssm:${var.aws_region}:${var.aws_account_id}:parameter${local.ssm_prefix}"
   ssm_prod_param_arn      = "arn:aws:ssm:${var.aws_region}:${var.aws_account_id}:parameter${local.ssm_prefix}/*"
   ssm_all_param_arn       = "arn:aws:ssm:${var.aws_region}:${var.aws_account_id}:parameter/*"
 

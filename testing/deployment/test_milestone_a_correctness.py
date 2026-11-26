@@ -193,6 +193,7 @@ class TestPostgresRestoreIntegrityAndFailures(unittest.TestCase):
             bin_dir / "aws",
             f"""#!/usr/bin/env bash
 set -euo pipefail
+if [[ "${{1:-}}" == "--version" ]]; then echo "aws-cli/2.15.0"; exit 0; fi
 if [[ "$1" == "s3api" && "$2" == "head-object" ]]; then printf '%s\\n' '{head_json}'; exit 0; fi
 if [[ "$1" == "s3" && "$2" == "cp" ]]; then
   [[ {aws_cp_rc} -eq 0 ]] || exit {aws_cp_rc}
