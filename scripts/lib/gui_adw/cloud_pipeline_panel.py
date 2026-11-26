@@ -80,6 +80,9 @@ class CloudPipelinePanel(Gtk.Box):
     def _build_ui(self) -> None:
         top_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.btn_init_foundation = Gtk.Button(label="Initialize Foundation (One-Time)")
+        self.btn_init_foundation.set_tooltip_text(
+            "Inspect, reconcile, and initialize Persistent Foundation (Bootstrap IAM, GitHub OIDC, SSM Secrets)"
+        )
         self.btn_init_foundation.add_css_class("suggested-action")
         self.btn_init_foundation.connect("clicked", lambda _: self._run_init_foundation_async())
 
@@ -200,7 +203,9 @@ class CloudPipelinePanel(Gtk.Box):
         self._set_busy(True)
         def _task():
             try:
-                out = self.orchestrator.initialize_foundation(callbacks=self._callbacks(), raise_on_error=True)
+                out = self.orchestrator.initialize_foundation(
+                    callbacks=self._callbacks(), reconcile=True, raise_on_error=True
+                )
                 if out.get("status") == "SUCCEEDED" and self.on_complete:
                     self.on_complete()
             except Exception as exc:
@@ -284,6 +289,16 @@ class CloudPipelinePanel(Gtk.Box):
                 lines = ["Configure missing GitHub Environment variables with existing IAM role ARNs:"]
                 for k, (env_n, arn) in payload.get("vars", {}).items():
                     lines.append(f"• {k} ({env_n}) -> {arn}")
+                lbl.set_text("\n".join(lines))
+                body.append(lbl)
+            elif kind == "bootstrap_reconcile":
+                changes = payload.get("changes", [])
+                lines = [
+                    "Approve Bootstrap Protected IAM Reconciliation?",
+                    f"Plan SHA-256: {payload.get('plan_sha256', '')}",
+                    f"Changes ({len(changes)}):",
+                ]
+                lines.extend(f"  {','.join(c.get('actions', []))} {c.get('address', '')}" for c in changes[:12])
                 lbl.set_text("\n".join(lines))
                 body.append(lbl)
             elif kind == "foundation_apply":

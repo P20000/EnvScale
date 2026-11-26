@@ -281,10 +281,16 @@ def execute_initialize_foundation(
     callbacks: "OrchestratorCallbacks",
     *,
     ref: str = "develop",
+    reconcile: bool = False,
     raise_on_error: bool = False,
     **opts: Any,
 ) -> Dict[str, Any]:
     """One-time administrative Foundation & SSM secrets setup workflow (separate from runtime deploy)."""
+    if reconcile:
+        from .foundation_reconcile import execute_reconcile_foundation
+        return execute_reconcile_foundation(
+            orchestrator, callbacks, ref=ref, raise_on_error=raise_on_error, **opts
+        )
     tracker = orchestrator._make_tracker("foundation", callbacks)
     current_stage = "preflight"
     tracker.transition("PREFLIGHT", stage="preflight", message="Running preflight for one-time Foundation setup...")
