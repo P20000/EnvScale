@@ -18,6 +18,7 @@ from ..cloud_ops_dashboard import (
     fetch_ops_snapshot,
     fetch_remote_logs,
     trigger_remote_backup,
+    trigger_remote_restore,
     trigger_remote_rollback,
     trigger_remote_verify,
 )
@@ -33,11 +34,17 @@ class CloudOpsPanel(Gtk.Box):
         pm,
         step_fn: StepFn,
         get_aws_env: Callable[[], Optional[Dict[str, str]]],
+        restore_fn: Optional[Callable[[], Dict[str, Any]]] = None,
+        on_state_changed: Optional[Callable[[], None]] = None,
+        record_backup_key: Optional[Callable[[str], None]] = None,
     ):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         self.pm = pm
         self.step_fn = step_fn
         self.get_aws_env = get_aws_env
+        self.restore_fn = restore_fn
+        self.on_state_changed = on_state_changed
+        self.record_backup_key = record_backup_key
         self._cloud_url = "https://envscale.duckdns.org"
         self._build_ui()
 
@@ -59,6 +66,9 @@ class CloudOpsPanel(Gtk.Box):
         self.btn_backup = Gtk.Button(label="Backup DB")
         self.btn_backup.connect("clicked", lambda _: self._run_backup_async())
 
+        self.btn_restore = Gtk.Button(label="Restore DB")
+        self.btn_restore.connect("clicked", lambda _: self._run_restore_async())
+
         self.btn_rollback = Gtk.Button(label="Rollback")
         self.btn_rollback.add_css_class("destructive-action")
         self.btn_rollback.connect("clicked", lambda _: self._run_action_async("ops_rollback", "Remote Rollback", trigger_remote_rollback))
@@ -66,7 +76,7 @@ class CloudOpsPanel(Gtk.Box):
         self.btn_open_url = Gtk.Button(label="Open Cloud URL")
         self.btn_open_url.connect("clicked", lambda _: open_browser_url(self._cloud_url, log_fn=lambda m: self._safe_step("open_url", "Open Cloud URL", "log", m)))
 
-        for w in (self.btn_refresh, self.svc_dropdown, self.btn_logs, self.btn_verify, self.btn_backup, self.btn_rollback, self.btn_open_url):
+        for w in (self.btn_refresh, self.svc_dropdown, self.btn_logs, self.btn_verify, self.btn_backup, self.btn_restore, self.btn_rollback, self.btn_open_url):
             bar.append(w)
         self.append(bar)
 
@@ -198,10 +208,32 @@ class CloudOpsPanel(Gtk.Box):
             self._safe_step(sid, title, "start", "pg_dump -> aws s3 cp")
             try:
                 res = trigger_remote_backup(aws_env=self.get_aws_env(), step_fn=self._safe_step)
+                if self.record_backup_key and res.get("key"):
+                    self.record_backup_key(res["key"])
                 self._safe_step(sid, title, "success", res["s3_uri"])
             except Exception as exc:
                 self._safe_step(sid, title, "error", str(exc))
             finally:
+                if self.on_state_changed:
+                    self.on_state_changed()
                 self.refresh_async(include_http=False)
+        threading.Thread(target=_task, daemon=True).start()
+
+    def _run_restore_async(self) -> None:
+        GLib.idle_add(lambda: self.btn_restore.set_sensitive(False))
+
+        def _task():
+            sid, title = "ops_restore", "Restore Latest PostgreSQL Backup from S3"
+            self._safe_step(sid, title, "start", "envscale.sh restore -> verify.sh")
+            try:
+                res = self.restore_fn() if self.restore_fn else trigger_remote_restore(aws_env=self.get_aws_env(), step_fn=self._safe_step)
+                self._safe_step(sid, title, "success", f"{res['key']} (tables={res.get('canonical_tables', 0)}/12)")
+            except Exception as exc:
+                self._safe_step(sid, title, "error", str(exc))
+            finally:
+                GLib.idle_add(lambda: self.btn_restore.set_sensitive(True))
+                if self.on_state_changed:
+                    self.on_state_changed()
+                self.refresh_async(include_http=True)
         threading.Thread(target=_task, daemon=True).start()
 

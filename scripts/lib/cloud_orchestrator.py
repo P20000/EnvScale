@@ -24,7 +24,7 @@ from .cloud_identity import (
     redact_sensitive_text,
     verify_session_caller_identity,
 )
-from .cloud_ops_dashboard import fetch_ops_snapshot
+from .cloud_ops_dashboard import fetch_ops_snapshot, resolve_app_url
 from .cloud_preflight import (
     AdminSessionCallback,
     ApprovalCallback,
@@ -63,6 +63,8 @@ ALLOWED_CONTEXT_KEYS = frozenset({
     "domain",
     "app_url",
     "runtime_profile",
+    "last_backup_key",
+    "last_restore_key",
 })
 
 
@@ -398,7 +400,7 @@ class CloudOrchestrator:
             ip = deployer.get_public_ip()
             instance_id = deployer.get_instance_id()
             domain = env_cfg.get("DUCKDNS_DOMAIN", "envscale")
-            app_url = f"https://{domain}.duckdns.org" if env_cfg.get("DUCKDNS_TOKEN") else f"https://{ip}.sslip.io"
+            app_url = resolve_app_url(deployer, env_cfg, live_ip=ip)
             self.state_store.update_context(instance_id=instance_id, public_ip=ip, domain=domain, app_url=app_url, target_sha=target_sha, manifest_path=manifest_path)
             return {"status": "completed", "app_url": app_url, "instance_id": instance_id, "public_ip": ip, "summary": f"Live at {app_url}"}
 
@@ -454,3 +456,40 @@ class CloudOrchestrator:
                 return {"status": "blocked", "stopped_at": "preflight", "results": results, "state": self.state_store.load()}
 
         return {"status": "completed", "stopped_at": None, "results": results, "state": self.state_store.load()}
+
+    def destroy_runtime(self, callbacks: Optional[OrchestratorCallbacks] = None, **opts: Any) -> Dict[str, Any]:
+        """Execute fail-closed infrastructure destruction and synchronize PipelineStateStore."""
+        from .cloud_lifecycle import run_destroy_lifecycle
+        return run_destroy_lifecycle(self, callbacks or OrchestratorCallbacks(), **opts)
+
+    def restore_database(
+        self,
+        callbacks: Optional[OrchestratorCallbacks] = None,
+        backup_key: Optional[str] = None,
+        skip_verify: bool = False,
+        **opts: Any,
+    ) -> Dict[str, Any]:
+        """Restore a PostgreSQL backup from S3 onto the active runtime host."""
+        from .cloud_lifecycle import run_restore_lifecycle
+        return run_restore_lifecycle(self, callbacks or OrchestratorCallbacks(), backup_key=backup_key, skip_verify=skip_verify, **opts)
+
+    def reconstruct_runtime(
+        self,
+        callbacks: Optional[OrchestratorCallbacks] = None,
+        backup_key: Optional[str] = None,
+        target_sha: Optional[str] = None,
+        manifest_path: Optional[str] = None,
+        skip_restore: bool = False,
+        **opts: Any,
+    ) -> Dict[str, Any]:
+        """Provision a fresh runtime host, deploy pinned release, restore PostgreSQL, and verify health."""
+        from .cloud_lifecycle import run_reconstruct_lifecycle
+        return run_reconstruct_lifecycle(
+            self,
+            callbacks or OrchestratorCallbacks(),
+            backup_key=backup_key,
+            target_sha=target_sha,
+            manifest_path=manifest_path,
+            skip_restore=skip_restore,
+            **opts,
+        )
