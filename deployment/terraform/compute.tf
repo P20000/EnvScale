@@ -35,7 +35,12 @@ resource "aws_instance" "envscale_host" {
     throughput            = 125
     delete_on_termination = true
     tags = {
-      Name = "envscale-root-volume"
+      Name        = "envscale-root-volume"
+      Project     = "EnvScale"
+      Layer       = "DisposableRuntime"
+      Environment = var.environment
+      ManagedBy   = "Terraform"
+      Purpose     = "CollegeDemo"
     }
   }
 

@@ -185,13 +185,13 @@ variable "github_client_id" {
 }
 
 variable "approved_ami_owner_ids" {
-  description = "Approved AWS account IDs whose EBS-backed AMIs may be launched by disposable runtime roles (Canonical Ubuntu = 099720109477)."
+  description = "Approved AWS account IDs or EC2 ImageOwnerAlias values whose EBS-backed AMIs may be launched by disposable runtime roles (AWS evaluates ec2:Owner as 'amazon' for official Canonical/Amazon-aliased AMIs as well as '099720109477')."
   type        = list(string)
-  default     = ["099720109477"]
+  default     = ["099720109477", "amazon"]
 
   validation {
-    condition     = length(var.approved_ami_owner_ids) > 0 && alltrue([for id in var.approved_ami_owner_ids : can(regex("^[0-9]{12}$", id))])
-    error_message = "approved_ami_owner_ids must contain 12-digit AWS account IDs."
+    condition     = length(var.approved_ami_owner_ids) > 0 && alltrue([for id in var.approved_ami_owner_ids : can(regex("^([0-9]{12}|amazon)$", id))])
+    error_message = "approved_ami_owner_ids must contain 12-digit AWS account IDs or 'amazon'."
   }
 }
 

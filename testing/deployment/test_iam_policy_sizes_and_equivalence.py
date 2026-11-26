@@ -123,6 +123,7 @@ class TestIamPolicySizesAndEquivalence(unittest.TestCase):
             ("ec2:RunInstances", f"{EP}:subnet/sub-1", res, None, "allowed"),
             ("ec2:RunInstances", f"{EP}:network-interface/eni-1", res, None, "allowed"),
             ("ec2:RunInstances", sim.LIVE_UBUNTU_AMI_ARN, {"ec2:Owner": "099720109477", **reg}, None, "allowed"),
+            ("ec2:RunInstances", sim.LIVE_UBUNTU_AMI_ARN, {"ec2:Owner": "amazon", **reg}, None, "allowed"),
             ("ec2:RunInstances", sim.LIVE_UBUNTU_SNAP_ARN, {"ec2:Owner": "099720109477", **reg}, None, "allowed"),
             ("ec2:AuthorizeSecurityGroupIngress", f"{EP}:security-group/sg-1", res, None, "allowed"),
             ("ec2:RevokeSecurityGroupEgress", f"{EP}:security-group/sg-1", res, None, "allowed"),
