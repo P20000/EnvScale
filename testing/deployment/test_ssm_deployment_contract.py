@@ -440,6 +440,31 @@ class TestRepoInfrastructureContracts(unittest.TestCase):
         self.assertNotIn("@PranavDwivedi", codeowners)
         self.assertNotIn("@NehaSharma", codeowners)
 
+    def test_run_ssm_command_wraps_commands_in_bash_for_dash_compatibility(self):
+        captured = []
+
+        def _fake_subproc(cmd, **kwargs):
+            captured.append(cmd)
+            if "send-command" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, stdout="cmd-123\n", stderr="")
+            if "get-command-invocation" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps({"Status": "Success", "ResponseCode": 0}), stderr="")
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with mock.patch.object(ssm_deployer.subprocess, "run", side_effect=_fake_subproc):
+            ssm_deployer.run_ssm_command("i-0123456789abcdef0", ["set -euo pipefail", "printf '%s' 'ok-pipefail' | cat"])
+
+        send_cmd = next(c for c in captured if "send-command" in c)
+        params = json.loads(send_cmd[send_cmd.index("--parameters") + 1])
+        self.assertEqual(len(params["commands"]), 1)
+        self.assertTrue(params["commands"][0].startswith("/bin/bash -c "))
+
+        # Execute wrapped script under /bin/sh to verify dash + single-quote + pipefail safety
+        wrapped = ssm_deployer._wrap_commands_for_bash(["set -euo pipefail", "printf '%s' 'ok-pipefail' | cat"])
+        proc = subprocess.run(["/bin/sh", "-c", wrapped[0]], capture_output=True, text=True, check=False)
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        self.assertEqual(proc.stdout, "ok-pipefail")
+
 
 if __name__ == "__main__":
     unittest.main()

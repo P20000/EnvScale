@@ -142,6 +142,13 @@ def wait_for_ssm_online(
     raise RuntimeError(f"Timed out waiting for SSM agent on instance {instance_id} to become Online.")
 
 
+def _wrap_commands_for_bash(commands: List[str]) -> List[str]:
+    """Run SSM RunShellScript commands via /bin/bash because Ubuntu's /bin/sh (dash) rejects pipefail."""
+    if not commands:
+        return []
+    return [f"/bin/bash -c {shlex.quote(chr(10).join(commands))}"]
+
+
 def run_ssm_command(
     instance_id: str, commands: List[str], region: str = "ap-south-1",
     comment: str = "EnvScale SSM command", emit_fn: StepCallback = None,
@@ -149,7 +156,7 @@ def run_ssm_command(
     check: bool = True, aws_env: Optional[Dict[str, str]] = None,
 ) -> subprocess.CompletedProcess:
     """Execute shell commands on an EC2 instance via AWS SSM RunCommand."""
-    params_json = json.dumps({"commands": commands})
+    params_json = json.dumps({"commands": _wrap_commands_for_bash(commands)})
     run_kwargs: Dict[str, object] = {"capture_output": True, "text": True}
     if aws_env is not None:
         run_kwargs["env"] = aws_env
