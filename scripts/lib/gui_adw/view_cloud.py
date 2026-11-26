@@ -130,8 +130,8 @@ class CloudView(Gtk.Box):
     def _on_step_event(self, step_id: str, title: str, status: str, detail: str) -> None:
         safe_title = redact_sensitive_text(title)
         safe_detail = redact_sensitive_text(detail)
-        if status == "start":
-            self.demo_panel.set_busy(True, f"{safe_title}...")
+        if status == "start" and not step_id.endswith(("_err", "_error")):
+            self.demo_panel.update_progress(f"{safe_title}...")
 
         def _apply():
             if status == "start":
@@ -192,10 +192,10 @@ class CloudView(Gtk.Box):
                 self.ops_panel.refresh_async(include_http=True)
             except Exception as exc:
                 msg = redact_sensitive_text(f"{type(exc).__name__}: {exc}")
-                self.demo_panel.set_result(False, "Deploy Demo failed", msg)
                 self._on_step_event("demo_deploy_err", "Deploy Demo failed", "start", msg)
                 self._on_step_event("demo_deploy_err", "Deploy Demo failed", "log", traceback.format_exc().rstrip())
                 self._on_step_event("demo_deploy_err", "Deploy Demo failed", "error", msg)
+                self.demo_panel.set_result(False, "Deploy Demo failed", msg)
             finally:
                 self.pipeline_panel.refresh_stage_rows()
                 self.pipeline_panel._set_busy(False)
@@ -254,10 +254,10 @@ class CloudView(Gtk.Box):
             except Exception as exc:
                 err_id = f"{op_id}_error"
                 msg = redact_sensitive_text(f"{type(exc).__name__}: {exc}")
-                self.demo_panel.set_result(False, f"{title} failed", msg)
                 self._on_step_event(err_id, f"{title} failed", "start", msg)
                 self._on_step_event(err_id, f"{title} failed", "log", traceback.format_exc().rstrip())
                 self._on_step_event(err_id, f"{title} failed", "error", msg)
+                self.demo_panel.set_result(False, f"{title} failed", msg)
                 self.pm.emit_log("system", f"[cloud] {title} failed: {msg}")
             finally:
                 for b in (self.btn_pause, self.btn_resume, self.btn_destroy):

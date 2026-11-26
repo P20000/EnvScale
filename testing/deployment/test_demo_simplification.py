@@ -25,6 +25,7 @@ from scripts.lib import (  # noqa: E402
     cloud_lifecycle,
     cloud_ops_dashboard,
     cloud_orchestrator,
+    tfstate_sync,
 )
 from scripts.lib.cloud_config_utils import AwsSessionContext  # noqa: E402
 
@@ -206,7 +207,7 @@ class TestDemoSimplification(unittest.TestCase):
             # Wrong tags blocked
             bad_tags = {"Reservations": [{"Instances": [{"VpcId": "vpc-111", "Tags": [{"Key": "Project", "Value": "Other"}]}]}]}
             with (
-                mock.patch.object(cloud_demo_flow, "safe_restore_tfstate_from_s3", return_value={"status": "unchanged"}),
+                mock.patch.object(cloud_demo_flow, "verify_tfstate_consistency_with_s3", return_value={"status": "consistent"}),
                 self.assertRaises(RuntimeError) as ctx_tag,
             ):
                 cloud_demo_flow.verify_destroy_target_environment(
@@ -222,7 +223,7 @@ class TestDemoSimplification(unittest.TestCase):
                 "Reservations": [{"Instances": [{"VpcId": "vpc-wrong", "Tags": [{"Key": "Project", "Value": "EnvScale"}, {"Key": "Layer", "Value": "DisposableRuntime"}]}]}]
             }
             with (
-                mock.patch.object(cloud_demo_flow, "safe_restore_tfstate_from_s3", return_value={"status": "unchanged"}),
+                mock.patch.object(cloud_demo_flow, "verify_tfstate_consistency_with_s3", return_value={"status": "consistent"}),
                 self.assertRaises(RuntimeError) as ctx_vpc,
             ):
                 cloud_demo_flow.verify_destroy_target_environment(
@@ -305,9 +306,107 @@ class TestDemoSimplification(unittest.TestCase):
                 cloud_ops_dashboard.trigger_remote_backup()
             self.assertIn("ChecksumSHA256", str(ctx.exception))
 
+    def test_verify_tfstate_consistency_with_s3_never_mutates_local_state(self):
+        with tempfile.TemporaryDirectory() as td:
+            td_p = pathlib.Path(td)
+            local_p = td_p / "terraform.tfstate"
+
+            def _fake_s3_with(remote_doc: dict):
+                def _run(cmd, **kw):
+                    if cmd[:3] == ["aws", "s3api", "head-object"]:
+                        return subprocess.CompletedProcess(cmd, 0, stdout="{}", stderr="")
+                    if cmd[:3] == ["aws", "s3", "cp"]:
+                        pathlib.Path(cmd[4]).write_text(json.dumps(remote_doc), encoding="utf-8")
+                        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+                    return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="unexpected")
+                return _run
+
+            # 1. Newer valid local state (serial 9 > remote 5) succeeds without touching local file
+            newer_local = {"version": 4, "serial": 9, "lineage": "lin-a", "resources": [{"type": "aws_vpc", "instances": [{"attributes": {"id": "vpc-1"}}]}]}
+            older_remote = {"version": 4, "serial": 5, "lineage": "lin-a", "resources": []}
+            local_raw = json.dumps(newer_local)
+            local_p.write_text(local_raw, encoding="utf-8")
+            res = tfstate_sync.verify_tfstate_consistency_with_s3(
+                local_path=local_p, account_id=ACCOUNT, region=REGION, run_fn=_fake_s3_with(older_remote)
+            )
+            self.assertEqual(res["status"], "local_newer")
+            self.assertEqual(local_p.read_text(encoding="utf-8"), local_raw)
+
+            # 2. Older local state blocked without overwriting
+            older_local = json.dumps({"version": 4, "serial": 2, "lineage": "lin-a", "resources": []})
+            local_p.write_text(older_local, encoding="utf-8")
+            with self.assertRaises(RuntimeError) as ctx_old:
+                tfstate_sync.verify_tfstate_consistency_with_s3(
+                    local_path=local_p, account_id=ACCOUNT, region=REGION, run_fn=_fake_s3_with(newer_local)
+                )
+            self.assertIn("older than remote", str(ctx_old.exception))
+            self.assertEqual(local_p.read_text(encoding="utf-8"), older_local)
+
+            # 3. Empty local (0 resources) vs active remote from DIFFERENT lineage blocked & NEVER overwritten!
+            empty_local = json.dumps({"version": 4, "serial": 1, "lineage": "lin-fresh", "resources": []})
+            active_remote = {"version": 4, "serial": 12, "lineage": "lin-old-stale", "resources": [{"type": "aws_vpc", "instances": [{"attributes": {"id": "vpc-stale"}}]}]}
+            local_p.write_text(empty_local, encoding="utf-8")
+            with self.assertRaises(RuntimeError) as ctx_lin:
+                tfstate_sync.verify_tfstate_consistency_with_s3(
+                    local_path=local_p, account_id=ACCOUNT, region=REGION, run_fn=_fake_s3_with(active_remote)
+                )
+            self.assertIn("lineage", str(ctx_lin.exception).lower())
+            self.assertEqual(local_p.read_text(encoding="utf-8"), empty_local)
+
+            # 4. Missing local while remote exists blocked & NEVER creates local file
+            local_p.unlink()
+            with self.assertRaises(RuntimeError) as ctx_miss:
+                tfstate_sync.verify_tfstate_consistency_with_s3(
+                    local_path=local_p, account_id=ACCOUNT, region=REGION, run_fn=_fake_s3_with(active_remote)
+                )
+            self.assertIn("missing while remote state", str(ctx_miss.exception))
+            self.assertFalse(local_p.exists())
+
+            # 5. Consistent state passes
+            local_p.write_text(json.dumps(active_remote), encoding="utf-8")
+            ok_res = tfstate_sync.verify_tfstate_consistency_with_s3(
+                local_path=local_p, account_id=ACCOUNT, region=REGION, run_fn=_fake_s3_with(active_remote)
+            )
+            self.assertEqual(ok_res["status"], "consistent")
+
+    def test_deploy_demo_normalizes_short_target_sha_against_local_manifest(self):
+        full_sha = "a1b2c3d4" * 5
+        seen_deploy_shas = []
+        with tempfile.TemporaryDirectory() as td:
+            td_p = pathlib.Path(td)
+            manifest = td_p / "release-manifest.json"
+            manifest.write_text(json.dumps({"release_id": "rel-short-sha", "git": {"commit_sha": full_sha}}), encoding="utf-8")
+            orch = cloud_orchestrator.CloudOrchestrator(
+                state_store=cloud_orchestrator.PipelineStateStore(td_p / "state.json"),
+                runtime_session=_make_runtime_session(),
+                allow_ram_handoff=False,
+            )
+
+            def _fake_stage(sid, callbacks=None, **opts):
+                if sid == "deploy":
+                    seen_deploy_shas.append(opts.get("target_sha"))
+                return {"status": "completed", "app_url": "https://envscale.duckdns.org", "instance_id": "i-1", "public_ip": "1.2.3.4"}
+
+            with (
+                mock.patch.object(orch, "_require_verified_runtime_env", return_value={"AWS_REGION": REGION}),
+                mock.patch.object(cloud_demo_flow.shutil, "which", return_value="/usr/bin/ok"),
+                mock.patch.object(cloud_demo_flow, "verify_runtime_instance_profile", return_value={"profile_name": "p"}),
+                mock.patch.object(cloud_demo_flow.CloudDeployer, "ensure_s3_vault", return_value=None),
+                mock.patch.object(cloud_demo_flow, "verify_ssm_parameters_present", return_value=["duckdns_domain"]),
+                mock.patch.object(cloud_demo_flow.CloudDeployer, "get_aws_context", return_value={"recovery_bucket": REC_BUCKET}),
+                mock.patch.object(cloud_demo_flow, "resolve_and_validate_manifest", return_value=manifest) as m_val,
+                mock.patch.object(cloud_demo_flow, "_maybe_start_stopped_host", return_value=None),
+                mock.patch.object(orch, "run_stage", side_effect=_fake_stage),
+            ):
+                orch.deploy_demo(target_sha=full_sha[:7], manifest_path=str(manifest))
+
+            self.assertEqual(m_val.call_args.kwargs["commit_sha"], full_sha)
+            self.assertEqual(seen_deploy_shas, [full_sha])
+
     def test_gui_and_cli_demo_contracts(self):
         view_src = (REPO_ROOT / "scripts/lib/gui_adw/view_cloud.py").read_text(encoding="utf-8")
         pipe_src = (REPO_ROOT / "scripts/lib/gui_adw/cloud_pipeline_panel.py").read_text(encoding="utf-8")
+        demo_src = (REPO_ROOT / "scripts/lib/gui_adw/demo_cloud_panel.py").read_text(encoding="utf-8")
         self.assertIn("DemoCloudPanel", view_src)
         self.assertIn("Advanced Operations & Administration", view_src)
         self.assertIn("set_expanded(False)", view_src)
@@ -315,9 +414,13 @@ class TestDemoSimplification(unittest.TestCase):
         self.assertIn("orchestrator.destroy_runtime", view_src)
         self.assertIn("orchestrator.restore_database", view_src)
         self.assertIn("orchestrator.reconstruct_runtime", view_src)
+        self.assertIn("update_progress", view_src)
         self.assertIn("allow_ram_handoff=False", pipe_src)
+        self.assertIn("self.orchestrator.runtime_session = sess", pipe_src)
         self.assertNotIn("load_ram_admin_session", pipe_src)
         self.assertNotIn("load_ram_runtime_session", pipe_src)
+        self.assertNotIn("Environment & Verification Result", demo_src)
+        self.assertIn("def update_progress", demo_src)
 
         res = CliRunner().invoke(cli_app.cli, ["ops", "demo-deploy", "--help"])
         self.assertEqual(res.exit_code, 0, msg=res.output)
@@ -325,3 +428,4 @@ class TestDemoSimplification(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

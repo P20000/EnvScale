@@ -429,13 +429,19 @@ class CloudPipelinePanel(Gtk.Box):
         token_code = self._run_ui_modal(_build_totp)
         if not token_code:
             raise RuntimeError(f"MFA role assumption cancelled for '{role_name}'.")
-        return assume_fn(
+        sess = assume_fn(
             mfa_serial=serial,
             token_code=token_code,
             account_id=info["account_id"],
             region=info["region"],
             aws_env=base_env,
         )
+        if role_name == RUNTIME_PROVISIONER_ROLE_NAME:
+            self.orchestrator.runtime_session = sess
+        else:
+            self.orchestrator.admin_session = sess
+        self._notify_session_changed()
+        return sess
 
     def _prompt_secrets_input(self, existing: List[str], missing: List[str], defaults: Dict[str, str]) -> Dict[str, str]:
         def _build(finish):

@@ -19,7 +19,7 @@ from .ssm_deployer import (
     verify_ssm_parameters_present,
     wait_for_ssm_online,
 )
-from .tfstate_sync import parse_and_validate_tfstate, safe_restore_tfstate_from_s3
+from .tfstate_sync import parse_and_validate_tfstate, verify_tfstate_consistency_with_s3
 
 if TYPE_CHECKING:
     from .cloud_orchestrator import CloudOrchestrator, OrchestratorCallbacks, PipelineStateStore
@@ -172,7 +172,7 @@ def run_demo_deploy(
         release_id = str(doc.get("release_id") or release_id)
         if eff_sha and not manifest_sha.startswith(eff_sha):
             need_release_fetch = True
-        elif not eff_sha:
+        else:
             eff_sha = manifest_sha
 
     if need_release_fetch:
@@ -265,7 +265,7 @@ def verify_destroy_target_environment(
             f"allowed demo scope ({DEFAULT_ACCOUNT_ID}, {DEFAULT_REGION})."
         )
     tf_path = tf_state_path or _default_tfstate_path()
-    safe_restore_tfstate_from_s3(
+    verify_tfstate_consistency_with_s3(
         local_path=tf_path, account_id=account_id, region=region, aws_env=aws_env, run_fn=run_fn
     )
     ident = extract_tfstate_deployment_identity(tf_path) if os.path.isfile(tf_path) else {}
@@ -333,3 +333,4 @@ def verify_destroy_cleanup(
                     f"Teardown verification failed: EC2 instance {destroyed_instance_id} is still in state '{inst_state}'."
                 )
     return {"verified": True, "remaining_resources": 0, "instance_state": inst_state}
+

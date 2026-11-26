@@ -60,7 +60,7 @@ class DemoCloudPanel(Gtk.Box):
         self.group.add(self.row_status)
 
         self.row_result = Adw.ActionRow(
-            title="Environment & Verification Result",
+            title="Environment and Verification Result",
             subtitle="No active demo environment recorded yet",
         )
         self.btn_open_url = Gtk.Button(label="Open Application")
@@ -101,6 +101,16 @@ class DemoCloudPanel(Gtk.Box):
             if status_text:
                 self.row_status.set_subtitle(GLib.markup_escape_text(redact_sensitive_text(status_text)[:180], -1))
                 self._set_badge(self.badge_status, "RUNNING" if busy else "IDLE", "accent" if busy else "dim-label")
+
+        GLib.idle_add(_apply)
+
+    def update_progress(self, status_text: str) -> None:
+        safe = redact_sensitive_text(status_text)[:180]
+
+        def _apply():
+            if self._busy:
+                self.row_status.set_subtitle(GLib.markup_escape_text(safe, -1))
+                self._set_badge(self.badge_status, "RUNNING", "accent")
 
         GLib.idle_add(_apply)
 
@@ -152,3 +162,4 @@ class DemoCloudPanel(Gtk.Box):
                     )
 
         GLib.idle_add(_apply)
+
