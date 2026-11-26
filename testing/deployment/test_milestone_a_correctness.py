@@ -345,7 +345,12 @@ class TestLifecycleAndStateStoreFailures(unittest.TestCase):
     def test_destroy_and_restore_failures_and_skip_verify(self):
         with tempfile.TemporaryDirectory() as td:
             orch, store = self._make_orch(pathlib.Path(td))
-            with mock.patch.object(orch, "_require_verified_runtime_env", return_value={"AWS_REGION": REGION}), mock.patch.object(cloud_lifecycle.CloudDeployer, "infra_destroy", side_effect=RuntimeError("boom")):
+            with (
+                mock.patch.object(orch, "_require_verified_runtime_env", return_value={"AWS_REGION": REGION}),
+                mock.patch.object(cloud_lifecycle, "verify_destroy_target_environment", return_value={"verified": True, "instance_id": "i-old"}),
+                mock.patch.object(cloud_lifecycle, "verify_destroy_cleanup", return_value={"verified": True, "remaining_resources": 0}),
+                mock.patch.object(cloud_lifecycle.CloudDeployer, "infra_destroy", side_effect=RuntimeError("boom")),
+            ):
                 with self.assertRaises(RuntimeError):
                     orch.destroy_runtime()
             st = store.load()
@@ -404,7 +409,12 @@ class TestLifecycleAndStateStoreFailures(unittest.TestCase):
             self.assertEqual(st["context"]["last_restore_key"], "backups/postgres/b2.dump")
             self.assertEqual(st["stages"]["verify"]["status"], "failed")
 
-            with mock.patch.object(orch, "_require_verified_runtime_env", return_value={"AWS_REGION": REGION}), mock.patch.object(cloud_lifecycle.CloudDeployer, "infra_destroy", return_value={"key": "backups/postgres/b3.dump"}):
+            with (
+                mock.patch.object(orch, "_require_verified_runtime_env", return_value={"AWS_REGION": REGION}),
+                mock.patch.object(cloud_lifecycle, "verify_destroy_target_environment", return_value={"verified": True, "instance_id": "i-new"}),
+                mock.patch.object(cloud_lifecycle, "verify_destroy_cleanup", return_value={"verified": True, "remaining_resources": 0}),
+                mock.patch.object(cloud_lifecycle.CloudDeployer, "infra_destroy", return_value={"key": "backups/postgres/b3.dump"}),
+            ):
                 orch.destroy_runtime()
             st = store.load()
             self.assertEqual(st["context"]["last_backup_key"], "backups/postgres/b3.dump")
@@ -414,7 +424,7 @@ class TestLifecycleAndStateStoreFailures(unittest.TestCase):
         view_src = (REPO_ROOT / "scripts/lib/gui_adw/view_cloud.py").read_text(encoding="utf-8")
         panel_src = (REPO_ROOT / "scripts/lib/gui_adw/cloud_ops_panel.py").read_text(encoding="utf-8")
         self.assertIn("Adw.MessageDialog", view_src)
-        self.assertIn("orchestrator.destroy_runtime", view_src)
+        self.assertTrue("orchestrator.destroy_environment" in view_src or "orchestrator.destroy_runtime" in view_src)
         self.assertIn("orchestrator.restore_database", view_src)
         self.assertIn("self.restore_fn()", panel_src)
 

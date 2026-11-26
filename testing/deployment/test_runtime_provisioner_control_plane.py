@@ -438,22 +438,38 @@ class TestCanonicalRecoveryBucketAndLegacyCleanup(unittest.TestCase):
                 deployer.ensure_s3_vault()
 
     def test_ops_dashboard_uses_canonical_bucket_and_fails_closed_on_backup(self):
+        import base64
+        import hashlib
         seen_s3_args = []
+        raw_sha = hashlib.sha256(b"pgdump-test").hexdigest()
+        chk_b64 = base64.b64encode(bytes.fromhex(raw_sha)).decode("ascii")
 
         def _fake_aws(args, aws_env=None):
             if args[0] == "s3api":
                 seen_s3_args.append(args)
+                if "head-object" in args:
+                    return subprocess.CompletedProcess(
+                        args, 0,
+                        stdout=json.dumps({"ContentLength": 1024, "ChecksumSHA256": chk_b64, "Metadata": {"sha256": raw_sha, "byte_size": "1024"}}),
+                        stderr="",
+                    )
                 return subprocess.CompletedProcess(args, 0, stdout='{"LocationConstraint":"ap-south-1"}', stderr="")
             if args[0] == "ec2":
                 return subprocess.CompletedProcess(args, 0, stdout='{"Reservations":[]}', stderr="")
             return subprocess.CompletedProcess(args, 0, stdout='{"InstanceInformationList":[]}', stderr="")
+
+        def _fake_ssm(instance_id, cmds, **kw):
+            s3_line = next(c for c in cmds if "ENVSCALE_BACKUP_RESULT=" in c)
+            key = next(t for t in s3_line.split() if "backups/postgres/" in t).strip("'\"")
+            out = f'ENVSCALE_BACKUP_RESULT={{"bucket":"{CANONICAL_BUCKET}","key":"{key}","size":1024,"sha256":"{raw_sha}","toc_entries":3}}'
+            return subprocess.CompletedProcess([], 0, stdout=out, stderr="")
 
         with (
             mock.patch.object(cloud_ops_dashboard.CloudDeployer, "get_instance_id", return_value="i-0123"),
             mock.patch.object(cloud_ops_dashboard.CloudDeployer, "get_public_ip", return_value="1.2.3.4"),
             mock.patch.object(cloud_ops_dashboard.CloudDeployer, "get_aws_context", return_value={"account_id": ACCOUNT, "region": REGION, "recovery_bucket": CANONICAL_BUCKET}),
             mock.patch.object(cloud_ops_dashboard, "_aws_cmd", side_effect=_fake_aws),
-            mock.patch.object(cloud_ops_dashboard, "run_ssm_command", return_value=subprocess.CompletedProcess([], 0, stdout="", stderr="")),
+            mock.patch.object(cloud_ops_dashboard, "run_ssm_command", side_effect=_fake_ssm),
             mock.patch.object(cloud_ops_dashboard, "load_deployment_env", return_value={}),
         ):
             snap = cloud_ops_dashboard.fetch_ops_snapshot(include_http_health=False)
@@ -462,6 +478,8 @@ class TestCanonicalRecoveryBucketAndLegacyCleanup(unittest.TestCase):
         self.assertEqual(snap["backups"]["bucket"], CANONICAL_BUCKET)
         self.assertTrue(res["s3_uri"].startswith(f"s3://{CANONICAL_BUCKET}/backups/postgres/backup_"))
         self.assertTrue(res["s3_uri"].endswith(".dump"))
+        self.assertEqual(res["sha256"], raw_sha)
+        self.assertEqual(res["checksum_sha256"], chk_b64)
         self.assertTrue(any(CANONICAL_BUCKET in a for a in seen_s3_args))
 
         with (

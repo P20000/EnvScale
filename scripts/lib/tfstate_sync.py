@@ -236,3 +236,55 @@ def safe_restore_tfstate_from_s3(
     if emit_fn and step_id and step_title:
         emit_fn(step_id, step_title, "log", f"Restored manual Terraform state copy (serial={remote['serial']}) from {uri}")
     return {"status": "restored", "uri": uri, "serial": remote["serial"], "lineage": remote["lineage"]}
+
+
+def verify_tfstate_consistency_with_s3(
+    *,
+    local_path: str | pathlib.Path,
+    account_id: str,
+    region: str,
+    aws_env: Optional[Dict[str, str]] = None,
+    run_fn: _RunFn = subprocess.run,
+) -> Dict[str, Any]:
+    """Strictly read-only consistency check against S3 state copy (never modifies local_path)."""
+    bucket, key = tfstate_bucket_and_key(account_id, region)
+    uri = f"s3://{bucket}/{key}"
+    remote_exists = _head_remote_tfstate(bucket, key, region, aws_env, run_fn)
+    local_exists = os.path.isfile(local_path)
+
+    if not remote_exists:
+        if local_exists:
+            local = parse_and_validate_tfstate(local_path)
+            return {"status": "remote_missing", "uri": uri, "serial": local["serial"], "lineage": local["lineage"]}
+        return {"status": "both_missing", "uri": uri}
+
+    if not local_exists:
+        raise RuntimeError(
+            f"Destruction blocked: local Terraform state {local_path} is missing while remote state {uri} exists. "
+            "Reconcile state explicitly before destroying."
+        )
+
+    local = parse_and_validate_tfstate(local_path)
+    with tempfile.TemporaryDirectory(prefix="envscale-tfstate-verify-") as tmp_dir:
+        _, remote = _download_remote_tfstate_temp(bucket, key, region, pathlib.Path(tmp_dir), aws_env, run_fn)
+
+    if local["lineage"] == remote["lineage"]:
+        if local["serial"] < remote["serial"]:
+            raise RuntimeError(
+                f"Destruction blocked: local Terraform state (serial={local['serial']}) is older than "
+                f"remote state {uri} (serial={remote['serial']}). Reconcile state before destroying."
+            )
+        if local["serial"] == remote["serial"]:
+            if local["sha256"] == remote["sha256"]:
+                return {"status": "consistent", "uri": uri, "serial": local["serial"], "lineage": local["lineage"]}
+            raise RuntimeError(
+                f"Destruction blocked: local Terraform state diverged from remote state {uri} at serial {local['serial']}."
+            )
+        return {"status": "local_newer", "uri": uri, "serial": local["serial"], "lineage": local["lineage"]}
+
+    if local["resource_count"] == 0 and remote["resource_count"] == 0:
+        return {"status": "both_empty", "uri": uri, "serial": local["serial"], "lineage": local["lineage"]}
+    raise RuntimeError(
+        f"Destruction blocked: local Terraform state lineage ({local['lineage']}) conflicts with "
+        f"remote state {uri} lineage ({remote['lineage']}). Refusing to overwrite or destroy mismatched state."
+    )

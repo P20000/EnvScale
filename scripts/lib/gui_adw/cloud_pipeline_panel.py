@@ -1,4 +1,4 @@
-"""GTK4/Libadwaita 7-stage Provision & Deploy pipeline panel and secure modal dialogs."""
+"""GTK4/Libadwaita Foundation Administration and Internal Stage Diagnostics panel (Advanced Operations)."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk
 
+from ..cloud_demo_flow import check_role_exists_for_mfa
 from ..cloud_identity import (
     ADMIN_ROLE_NAME,
     RUNTIME_PROVISIONER_ROLE_NAME,
@@ -21,8 +22,6 @@ from ..cloud_identity import (
     complete_virtual_mfa_enrollment,
     inspect_aws_identity,
     list_aws_profiles,
-    load_ram_admin_session,
-    load_ram_runtime_session,
     redact_sensitive_text,
     start_virtual_mfa_enrollment,
 )
@@ -32,22 +31,31 @@ StepFn = Callable[[str, str, str, str], None]
 
 
 class CloudPipelinePanel(Gtk.Box):
-    """Unified 7-stage resumable workflow controls and interactive approval/MFA/secrets dialogs."""
+    """One-time Foundation setup, Admin MFA/secrets dialogs, and read-only 7-stage diagnostic ledger."""
 
-    def __init__(self, pm, step_fn: StepFn, on_complete: Optional[Callable[[], None]] = None):
+    def __init__(
+        self,
+        pm,
+        step_fn: StepFn,
+        on_complete: Optional[Callable[[], None]] = None,
+        on_session_changed: Optional[Callable[[], None]] = None,
+        on_mfa_error: Optional[Callable[[str, Exception], None]] = None,
+    ):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         self.pm = pm
         self.step_fn = step_fn
         self.on_complete = on_complete
+        self.on_session_changed = on_session_changed
+        self.on_mfa_error = on_mfa_error
         self.orchestrator = CloudOrchestrator(
-            admin_session=load_ram_admin_session(),
-            runtime_session=load_ram_runtime_session(),
+            admin_session=None,
+            runtime_session=None,
+            allow_ram_handoff=False,
             step_fn=self._safe_step,
         )
         self._busy = False
         self._stage_rows: Dict[str, Adw.ActionRow] = {}
         self._stage_badges: Dict[str, Gtk.Label] = {}
-        self._stage_buttons: Dict[str, Gtk.Button] = {}
         self._profiles: List[str] = ["(default)"] + list_aws_profiles()
 
         self._build_ui()
@@ -56,25 +64,32 @@ class CloudPipelinePanel(Gtk.Box):
     def _safe_step(self, step_id: str, title: str, status: str, detail: str = "") -> None:
         self.step_fn(step_id, title, status, redact_sensitive_text(detail))
 
+    def _notify_session_changed(self) -> None:
+        if self.on_session_changed:
+            self.on_session_changed()
+
     def get_runtime_aws_env(self) -> Optional[Dict[str, str]]:
         return self.orchestrator.get_runtime_aws_env()
 
+    def ensure_runtime_aws_env(self) -> Dict[str, str]:
+        env = self.orchestrator._require_verified_runtime_env(self._callbacks())
+        self._notify_session_changed()
+        self.refresh_stage_rows()
+        return env
+
     def _build_ui(self) -> None:
         top_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        self.btn_run_all = Gtk.Button(label="Provision & Deploy")
-        self.btn_run_all.add_css_class("suggested-action")
-        self.btn_run_all.connect("clicked", lambda _: self._run_pipeline_async())
-
-        self.btn_preflight = Gtk.Button(label="Run Preflight")
-        self.btn_preflight.connect("clicked", lambda _: self._run_single_stage_async("preflight"))
+        self.btn_init_foundation = Gtk.Button(label="Initialize Foundation (One-Time)")
+        self.btn_init_foundation.set_tooltip_text(
+            "Inspect, reconcile, and initialize Persistent Foundation (Bootstrap IAM, GitHub OIDC, SSM Secrets)"
+        )
+        self.btn_init_foundation.add_css_class("suggested-action")
+        self.btn_init_foundation.connect("clicked", lambda _: self._run_init_foundation_async())
 
         self.btn_mfa = Gtk.Button(label="Admin MFA")
         self.btn_mfa.connect("clicked", lambda _: self._on_mfa_clicked(ADMIN_ROLE_NAME))
 
-        self.btn_runtime_mfa = Gtk.Button(label="Runtime MFA")
-        self.btn_runtime_mfa.connect("clicked", lambda _: self._on_mfa_clicked(RUNTIME_PROVISIONER_ROLE_NAME))
-
-        self.btn_reset = Gtk.Button(label="Reset Stages")
+        self.btn_reset = Gtk.Button(label="Reset State")
         self.btn_reset.connect("clicked", self._on_reset_clicked)
 
         profile_lbl = Gtk.Label(label="AWS Profile:")
@@ -90,29 +105,24 @@ class CloudPipelinePanel(Gtk.Box):
         self.badge_runtime = Gtk.Label(label="RUNTIME: NONE")
         self.badge_runtime.add_css_class("dim-label")
 
-        for w in (self.btn_run_all, self.btn_preflight, self.btn_mfa, self.btn_runtime_mfa, self.btn_reset, profile_lbl, self.profile_dropdown, self.badge_admin, self.badge_runtime):
+        for w in (self.btn_init_foundation, self.btn_mfa, self.btn_reset, profile_lbl, self.profile_dropdown, self.badge_admin, self.badge_runtime):
             top_bar.append(w)
         self.append(top_bar)
 
         self.stage_group = Adw.PreferencesGroup()
-        self.stage_group.set_title("Control Plane Pipeline (Resumable 7-Stage Deployment)")
-        self.stage_group.set_description("Run 'Provision & Deploy' end-to-end or execute/resume any individual stage.")
+        self.stage_group.set_title("Foundation Setup and Internal Stage Diagnostics")
+        self.stage_group.set_description("Read-only diagnostic ledger updated automatically by unified orchestration workflows.")
         for idx, (sid, title) in enumerate(STAGE_DEFINITIONS, start=1):
             row = Adw.ActionRow()
-            row.set_title(f"{idx}. {title}")
+            row.set_title(GLib.markup_escape_text(f"{idx}. {title}", -1))
             row.set_subtitle("Pending")
 
             badge = Gtk.Label(label="PENDING")
             badge.add_css_class("dim-label")
             row.add_suffix(badge)
 
-            btn = Gtk.Button(label="Run")
-            btn.connect("clicked", lambda _, s=sid: self._run_single_stage_async(s))
-            row.add_suffix(btn)
-
             self._stage_rows[sid] = row
             self._stage_badges[sid] = badge
-            self._stage_buttons[sid] = btn
             self.stage_group.add(row)
         self.append(self.stage_group)
 
@@ -128,11 +138,12 @@ class CloudPipelinePanel(Gtk.Box):
             return
         self.orchestrator.state_store.reset()
         self.refresh_stage_rows()
+        self._notify_session_changed()
 
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy
         def _apply():
-            for w in (self.btn_run_all, self.btn_preflight, self.btn_mfa, self.btn_runtime_mfa, self.btn_reset, *self._stage_buttons.values()):
+            for w in (self.btn_init_foundation, self.btn_mfa, self.btn_reset):
                 w.set_sensitive(not busy)
         GLib.idle_add(_apply)
 
@@ -186,40 +197,24 @@ class CloudPipelinePanel(Gtk.Box):
             on_secrets_input=self._prompt_secrets_input,
         )
 
-    def _run_pipeline_async(self) -> None:
+    def _run_init_foundation_async(self) -> None:
         if self._busy:
             return
         self._set_busy(True)
         def _task():
             try:
-                out = self.orchestrator.run_pipeline(resume=True, callbacks=self._callbacks())
-                if out.get("status") == "completed" and self.on_complete:
+                out = self.orchestrator.initialize_foundation(
+                    callbacks=self._callbacks(), reconcile=True, raise_on_error=True
+                )
+                if out.get("status") == "SUCCEEDED" and self.on_complete:
                     self.on_complete()
             except Exception as exc:
                 msg = redact_sensitive_text(f"{type(exc).__name__}: {exc}")
-                self._safe_step("pipeline_err", "Provision & Deploy Failed", "start", msg)
-                self._safe_step("pipeline_err", "Provision & Deploy Failed", "log", traceback.format_exc().rstrip())
-                self._safe_step("pipeline_err", "Provision & Deploy Failed", "error", msg)
+                self._safe_step("foundation_init_err", "Foundation Initialization Failed", "start", msg)
+                self._safe_step("foundation_init_err", "Foundation Initialization Failed", "log", traceback.format_exc().rstrip())
+                self._safe_step("foundation_init_err", "Foundation Initialization Failed", "error", msg)
             finally:
-                self.refresh_stage_rows()
-                self._set_busy(False)
-        threading.Thread(target=_task, daemon=True).start()
-
-    def _run_single_stage_async(self, stage_id: str) -> None:
-        if self._busy:
-            return
-        self._set_busy(True)
-        def _task():
-            try:
-                self.orchestrator.run_stage(stage_id, callbacks=self._callbacks())
-                if stage_id in ("provision", "deploy", "verify") and self.on_complete:
-                    self.on_complete()
-            except Exception as exc:
-                msg = redact_sensitive_text(f"{type(exc).__name__}: {exc}")
-                self._safe_step(f"stage_{stage_id}_err", f"Stage '{stage_id}' Failed", "start", msg)
-                self._safe_step(f"stage_{stage_id}_err", f"Stage '{stage_id}' Failed", "log", traceback.format_exc().rstrip())
-                self._safe_step(f"stage_{stage_id}_err", f"Stage '{stage_id}' Failed", "error", msg)
-            finally:
+                self._notify_session_changed()
                 self.refresh_stage_rows()
                 self._set_busy(False)
         threading.Thread(target=_task, daemon=True).start()
@@ -233,18 +228,17 @@ class CloudPipelinePanel(Gtk.Box):
         title = "MFA Runtime Provisioner Session" if is_runtime else "MFA Admin Session"
         def _task():
             try:
-                sess = self._ensure_role_session_interactive(role_name)
-                if is_runtime:
-                    self.orchestrator.runtime_session = sess
-                else:
-                    self.orchestrator.admin_session = sess
+                sess = self._ensure_role_session_interactive(role_name, reuse_active=False)
                 self._safe_step(step_id, title, "start", f"Assume {role_name}")
                 self._safe_step(step_id, title, "success", f"Assumed until {sess.expires_at_utc}")
             except Exception as exc:
                 msg = redact_sensitive_text(str(exc))
                 self._safe_step(step_id, title, "start", f"Assume {role_name}")
                 self._safe_step(step_id, title, "error", msg)
+                if self.on_mfa_error:
+                    self.on_mfa_error(role_name, exc)
             finally:
+                self._notify_session_changed()
                 self.refresh_stage_rows()
                 self._set_busy(False)
         threading.Thread(target=_task, daemon=True).start()
@@ -297,6 +291,16 @@ class CloudPipelinePanel(Gtk.Box):
                     lines.append(f"• {k} ({env_n}) -> {arn}")
                 lbl.set_text("\n".join(lines))
                 body.append(lbl)
+            elif kind == "bootstrap_reconcile":
+                changes = payload.get("changes", [])
+                lines = [
+                    "Approve Bootstrap Protected IAM Reconciliation?",
+                    f"Plan SHA-256: {payload.get('plan_sha256', '')}",
+                    f"Changes ({len(changes)}):",
+                ]
+                lines.extend(f"  {','.join(c.get('actions', []))} {c.get('address', '')}" for c in changes[:12])
+                lbl.set_text("\n".join(lines))
+                body.append(lbl)
             elif kind == "foundation_apply":
                 counts = payload.get("plan_summary", {}).get("counts", {})
                 changes = payload.get("plan_summary", {}).get("changes", [])
@@ -331,31 +335,28 @@ class CloudPipelinePanel(Gtk.Box):
             return win
         return bool(self._run_ui_modal(_build))
 
-    def _ensure_role_session_interactive(self, role_name: str = ADMIN_ROLE_NAME) -> AwsSessionContext:
+    def _ensure_role_session_interactive(
+        self, role_name: str = ADMIN_ROLE_NAME, *, reuse_active: bool = True
+    ) -> AwsSessionContext:
         if role_name == ADMIN_ROLE_NAME:
-            ram_loader, assume_fn, modal_title, btn_label = (
-                load_ram_admin_session, assume_foundation_admin_role, "Assume Foundation Admin Role (MFA)", "Assume Admin Role"
+            existing, assume_fn, modal_title, btn_label = (
+                self.orchestrator.admin_session, assume_foundation_admin_role, "Assume Foundation Admin Role (MFA)", "Assume Admin Role"
             )
         elif role_name == RUNTIME_PROVISIONER_ROLE_NAME:
-            ram_loader, assume_fn, modal_title, btn_label = (
-                load_ram_runtime_session, assume_runtime_provisioner_role, "Assume Runtime Provisioner Role (MFA)", "Assume Runtime Role"
+            existing, assume_fn, modal_title, btn_label = (
+                self.orchestrator.runtime_session, assume_runtime_provisioner_role, "Assume Runtime Provisioner Role (MFA)", "Assume Runtime Role"
             )
         else:
             raise ValueError(f"Unsupported MFA role '{role_name}'.")
+
+        if reuse_active and isinstance(existing, AwsSessionContext) and not existing.is_expired():
+            return existing
 
         base_env = build_profile_env(self.orchestrator.runtime_profile) if self.orchestrator.runtime_profile else None
         info = inspect_aws_identity(aws_env=base_env, profile=self.orchestrator.runtime_profile)
         if not info.get("authenticated"):
             raise RuntimeError(info.get("error", "AWS CLI is not authenticated."))
-
-        ram_kw: Dict[str, str] = {}
-        if info.get("account_id"):
-            ram_kw["account_id"] = info["account_id"]
-        if info.get("region"):
-            ram_kw["region"] = info["region"]
-        ram_session = ram_loader(**ram_kw)
-        if ram_session is not None:
-            return ram_session
+        check_role_exists_for_mfa(info, role_name)
 
         serials = info.get("mfa_serials", [])
         if not serials:
@@ -418,13 +419,19 @@ class CloudPipelinePanel(Gtk.Box):
         token_code = self._run_ui_modal(_build_totp)
         if not token_code:
             raise RuntimeError(f"MFA role assumption cancelled for '{role_name}'.")
-        return assume_fn(
+        sess = assume_fn(
             mfa_serial=serial,
             token_code=token_code,
             account_id=info["account_id"],
             region=info["region"],
             aws_env=base_env,
         )
+        if role_name == RUNTIME_PROVISIONER_ROLE_NAME:
+            self.orchestrator.runtime_session = sess
+        else:
+            self.orchestrator.admin_session = sess
+        self._notify_session_changed()
+        return sess
 
     def _prompt_secrets_input(self, existing: List[str], missing: List[str], defaults: Dict[str, str]) -> Dict[str, str]:
         def _build(finish):
@@ -469,4 +476,3 @@ class CloudPipelinePanel(Gtk.Box):
             body.append(btns)
             return win
         return self._run_ui_modal(_build) or {}
-

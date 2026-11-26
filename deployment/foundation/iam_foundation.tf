@@ -217,6 +217,17 @@ resource "aws_iam_role_policy" "github_foundation" {
         ]
       },
       {
+        Sid      = "AllowBoundedPassEc2RuntimeRoleToInstanceProfile"
+        Effect   = "Allow"
+        Action   = ["iam:PassRole"]
+        Resource = local.ec2_runtime_role_arn
+        Condition = {
+          StringEquals = {
+            "iam:PassedToService" = "ec2.amazonaws.com"
+          }
+        }
+      },
+      {
         Sid    = "AllowNonSecretSSMParametersOnly"
         Effect = "Allow"
         Action = [

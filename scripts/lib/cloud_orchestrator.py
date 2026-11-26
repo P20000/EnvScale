@@ -7,8 +7,7 @@ import os
 import pathlib
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Optional
 
 from .cloud_deployer import CloudDeployer
 from .cloud_host_runner import load_deployment_env
@@ -25,6 +24,16 @@ from .cloud_identity import (
     verify_session_caller_identity,
 )
 from .cloud_ops_dashboard import fetch_ops_snapshot, resolve_app_url
+from .cloud_pipeline_state import (
+    ALLOWED_CONTEXT_KEYS,
+    DEPLOY_UI_STAGES,
+    EXECUTION_PHASES,
+    STAGE_DEFINITIONS,
+    STAGE_IDS,
+    ExecutionTracker,
+    PipelineStateStore,
+    build_failure_info,
+)
 from .cloud_preflight import (
     AdminSessionCallback,
     ApprovalCallback,
@@ -40,117 +49,7 @@ from .config import PROJECT_ROOT
 
 StepCallback = Optional[Callable[[str, str, str, str], None]]
 LogCallback = Optional[Callable[[str], None]]
-
-STAGE_DEFINITIONS: Tuple[Tuple[str, str], ...] = (
-    ("preflight", "Preflight & Identity"),
-    ("foundation", "Foundation Setup (OIDC)"),
-    ("secrets", "Secrets & SSM Seeding"),
-    ("release", "Release Manifest & Digests"),
-    ("provision", "EC2 Provision & Cloud-Init"),
-    ("deploy", "App Deploy, Migrations & TLS"),
-    ("verify", "Operations Health Verify"),
-)
-STAGE_IDS = tuple(sid for sid, _ in STAGE_DEFINITIONS)
-
-ALLOWED_CONTEXT_KEYS = frozenset({
-    "target_sha",
-    "release_id",
-    "manifest_path",
-    "cd_run_id",
-    "foundation_run_id",
-    "instance_id",
-    "public_ip",
-    "domain",
-    "app_url",
-    "runtime_profile",
-    "last_backup_key",
-    "last_restore_key",
-})
-
-
-class PipelineStateStore:
-    """Atomic JSON persistence for non-sensitive 7-stage pipeline progress."""
-
-    def __init__(self, state_path: Optional[pathlib.Path] = None):
-        default_path = pathlib.Path(PROJECT_ROOT) / ".envscale_test_center_logs" / "cloud_pipeline_state.json"
-        self.path = pathlib.Path(state_path) if state_path else default_path
-
-    def _default_state(self) -> Dict[str, Any]:
-        return {
-            "updated_at_utc": "",
-            "context": {},
-            "stages": {
-                sid: {"title": title, "status": "pending", "updated_at_utc": "", "summary": "", "error": ""}
-                for sid, title in STAGE_DEFINITIONS
-            },
-        }
-
-    def load(self) -> Dict[str, Any]:
-        if not self.path.is_file():
-            return self._default_state()
-        try:
-            raw = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return self._default_state()
-        base = self._default_state()
-        ctx = {k: v for k, v in (raw.get("context") or {}).items() if k in ALLOWED_CONTEXT_KEYS}
-        base["context"] = ctx
-        base["updated_at_utc"] = raw.get("updated_at_utc", "")
-        saved_stages = raw.get("stages") or {}
-        for sid, title in STAGE_DEFINITIONS:
-            if isinstance(saved_stages.get(sid), dict):
-                entry = saved_stages[sid]
-                base["stages"][sid] = {
-                    "title": title,
-                    "status": entry.get("status", "pending"),
-                    "updated_at_utc": entry.get("updated_at_utc", ""),
-                    "summary": redact_sensitive_text(str(entry.get("summary", ""))),
-                    "error": redact_sensitive_text(str(entry.get("error", ""))),
-                }
-        return base
-
-    def save(self, state: Dict[str, Any]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        sanitized = {
-            "updated_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "context": {k: v for k, v in (state.get("context") or {}).items() if k in ALLOWED_CONTEXT_KEYS},
-            "stages": state.get("stages") or {},
-        }
-        tmp = self.path.with_suffix(".tmp")
-        fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(sanitized, fh, indent=2)
-        tmp.replace(self.path)
-
-    def update_stage(self, stage_id: str, status: str, summary: str = "", error: str = "") -> Dict[str, Any]:
-        state = self.load()
-        if stage_id in state["stages"]:
-            state["stages"][stage_id]["status"] = status
-            state["stages"][stage_id]["updated_at_utc"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            state["stages"][stage_id]["summary"] = redact_sensitive_text(summary)
-            state["stages"][stage_id]["error"] = redact_sensitive_text(error)
-        self.save(state)
-        return state
-
-    def update_context(self, **kwargs: Any) -> Dict[str, Any]:
-        state = self.load()
-        for k, v in kwargs.items():
-            if k in ALLOWED_CONTEXT_KEYS and v is not None:
-                state["context"][k] = v
-        self.save(state)
-        return state
-
-    def next_incomplete_stage(self) -> Optional[str]:
-        state = self.load()
-        for sid in STAGE_IDS:
-            if state["stages"].get(sid, {}).get("status") != "completed":
-                return sid
-        return None
-
-    def reset(self) -> Dict[str, Any]:
-        fresh = self._default_state()
-        self.save(fresh)
-        return fresh
+ProgressCallback = Optional[Callable[[Dict[str, Any]], None]]
 
 
 @dataclass
@@ -159,10 +58,11 @@ class OrchestratorCallbacks:
     on_mfa_session: AdminSessionCallback = None
     on_runtime_mfa_session: AdminSessionCallback = None
     on_secrets_input: SecretsInputCallback = None
+    on_progress: ProgressCallback = None
 
 
 class CloudOrchestrator:
-    """Single control-plane coordinator for EnvScale's 7-stage cloud deployment lifecycle."""
+    """Single control-plane coordinator for EnvScale's deployment, destruction, and foundation lifecycles."""
 
     def __init__(
         self,
@@ -172,6 +72,8 @@ class CloudOrchestrator:
         state_store: Optional[PipelineStateStore] = None,
         step_fn: StepCallback = None,
         log_fn: LogCallback = None,
+        allow_ram_handoff: bool = True,
+        progress_fn: ProgressCallback = None,
     ):
         self.state_store = state_store or PipelineStateStore()
         saved_profile = self.state_store.load().get("context", {}).get("runtime_profile")
@@ -180,6 +82,19 @@ class CloudOrchestrator:
         self.runtime_session = runtime_session
         self.step_fn = step_fn
         self.log_fn = log_fn
+        self.allow_ram_handoff = allow_ram_handoff
+        self.progress_fn = progress_fn
+        self.execution_state: Dict[str, Any] = ExecutionTracker("deploy").snapshot()
+
+    def _make_tracker(self, workflow: str, cb: Optional[OrchestratorCallbacks] = None) -> ExecutionTracker:
+        def _emit_progress(snap: Dict[str, Any]) -> None:
+            self.execution_state = snap
+            if self.progress_fn:
+                self.progress_fn(snap)
+            if cb and cb.on_progress:
+                cb.on_progress(snap)
+
+        return ExecutionTracker(workflow=workflow, progress_fn=_emit_progress)
 
     def _emit_step(self, step_id: str, title: str, status: str, detail: str = "") -> None:
         safe = redact_sensitive_text(detail)
@@ -223,7 +138,7 @@ class CloudOrchestrator:
                     raise RuntimeError(f"STS session for '{RUNTIME_PROVISIONER_ROLE_NAME}' has expired; re-assume with TOTP MFA.")
                 session = None
 
-        if session is None:
+        if session is None and self.allow_ram_handoff:
             session = load_ram_runtime_session(account_id=account_id, region=region, verify_caller=True)
 
         if session is None and cb.on_runtime_mfa_session is not None:
@@ -232,12 +147,7 @@ class CloudOrchestrator:
                 raise RuntimeError(f"MFA role assumption for '{RUNTIME_PROVISIONER_ROLE_NAME}' failed or was cancelled.")
 
         if session is not None:
-            verify_session_caller_identity(
-                session,
-                expected_role_name=RUNTIME_PROVISIONER_ROLE_NAME,
-                expected_account_id=account_id,
-                expected_region=region,
-            )
+            verify_session_caller_identity(session, expected_role_name=RUNTIME_PROVISIONER_ROLE_NAME, expected_account_id=account_id, expected_region=region)
             sess_env = session.build_env()
             ident = inspect_aws_identity(aws_env=sess_env)
             if ident.get("bootstrap_deny_active"):
@@ -252,6 +162,8 @@ class CloudOrchestrator:
         ident = inspect_aws_identity(aws_env=profile_env, profile=self.runtime_profile)
         if not ident.get("authenticated"):
             raise RuntimeError(ident.get("error", "AWS identity not authenticated for runtime provisioning."))
+        from .cloud_demo_flow import check_role_exists_for_mfa
+        check_role_exists_for_mfa(ident, RUNTIME_PROVISIONER_ROLE_NAME)
         if ident.get("bootstrap_deny_active"):
             raise RuntimeError(
                 ident.get("deny_explanation")
@@ -456,6 +368,26 @@ class CloudOrchestrator:
                 return {"status": "blocked", "stopped_at": "preflight", "results": results, "state": self.state_store.load()}
 
         return {"status": "completed", "stopped_at": None, "results": results, "state": self.state_store.load()}
+
+    def deploy_environment(self, callbacks: Optional[OrchestratorCallbacks] = None, **opts: Any) -> Dict[str, Any]:
+        """Single unified deployment entry point: auth -> preflight -> release -> tfstate -> provision/start -> deploy -> verify."""
+        from .cloud_demo_flow import execute_deploy_environment
+        return execute_deploy_environment(self, callbacks or OrchestratorCallbacks(), **opts)
+
+    def destroy_environment(self, callbacks: Optional[OrchestratorCallbacks] = None, **opts: Any) -> Dict[str, Any]:
+        """Single unified destruction entry point with target, backup, state, and cleanup safeguards."""
+        from .cloud_lifecycle import execute_destroy_environment
+        return execute_destroy_environment(self, callbacks or OrchestratorCallbacks(), **opts)
+
+    def initialize_foundation(self, callbacks: Optional[OrchestratorCallbacks] = None, **opts: Any) -> Dict[str, Any]:
+        """One-time administrative Foundation & SSM secrets setup workflow (separate from runtime deploy)."""
+        from .cloud_lifecycle import execute_initialize_foundation
+        return execute_initialize_foundation(self, callbacks or OrchestratorCallbacks(), **opts)
+
+    def deploy_demo(self, callbacks: Optional[OrchestratorCallbacks] = None, **opts: Any) -> Dict[str, Any]:
+        """Compatibility wrapper around deploy_environment(raise_on_error=True)."""
+        opts.setdefault("raise_on_error", True)
+        return self.deploy_environment(callbacks=callbacks, **opts)
 
     def destroy_runtime(self, callbacks: Optional[OrchestratorCallbacks] = None, **opts: Any) -> Dict[str, Any]:
         """Execute fail-closed infrastructure destruction and synchronize PipelineStateStore."""

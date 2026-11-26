@@ -14,6 +14,9 @@ from .k8s_manager import K8sManager
 from .chaos_runner import ChaosRunner, CHAOS_SCENARIOS
 from .test_runner import TestRunner
 from .cli_cloud_ops import ops
+from .foundation_reconcile import register_ops_reconcile_command
+
+register_ops_reconcile_command(ops)
 
 console = Console()
 pm = ProcessManager()
