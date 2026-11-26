@@ -69,9 +69,12 @@ if [ ! -d /opt/envscale/.git ]; then
             break
         fi
         echo "[WARN] git clone attempt $${attempt}/3 failed; retrying in 5s..." >&2
-        sleep 5
+        if [ "$${attempt}" -lt 3 ]; then
+            sleep 5
+        fi
     done
     if [ "$CLONE_OK" != "true" ] || [ ! -d /opt/envscale/.git ]; then
+        rm -rf /opt/envscale
         echo "[FATAL] Failed cloning EnvScale repository into /opt/envscale after 3 attempts." >&2
         exit 1
     fi

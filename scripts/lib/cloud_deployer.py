@@ -20,6 +20,7 @@ from .ssm_deployer import (
     verify_no_host_destroy_safety, verify_runtime_instance_profile, verify_s3_postgres_backup_object,
     verify_ssm_parameters_present, wait_for_ssm_online,
 )
+from .tfstate_sync import safe_backup_tfstate_to_s3, safe_restore_tfstate_from_s3, tfstate_bucket_and_key
 
 LogCallback = Callable[[str], None]
 StepCallback = Callable[[str, str, str, str], None]
@@ -121,25 +122,27 @@ class CloudDeployer:
             self._emit_step(step_id, step_title, "log", f"Verified canonical recovery bucket: s3://{bucket}")
 
     def _tfstate_s3_uri(self, ctx: Dict[str, str]) -> str:
-        account_id = (ctx.get("account_id") or DEFAULT_ACCOUNT_ID).strip() or DEFAULT_ACCOUNT_ID
-        region = (ctx.get("region") or DEFAULT_REGION).strip() or DEFAULT_REGION
-        return f"s3://envscale-tfstate-{account_id}-{region}/runtime/terraform.tfstate"
+        acct = (ctx.get("account_id") or DEFAULT_ACCOUNT_ID).strip() or DEFAULT_ACCOUNT_ID
+        reg = (ctx.get("region") or DEFAULT_REGION).strip() or DEFAULT_REGION
+        bucket, key = tfstate_bucket_and_key(acct, reg)
+        return f"s3://{bucket}/{key}"
+
+    def _tfstate_kwargs(self, step_id: Optional[str], step_title: Optional[str]) -> Dict[str, Any]:
+        ctx = self.get_aws_context()
+        return {
+            "local_path": os.path.join(TERRAFORM_DIR, "terraform.tfstate"),
+            "account_id": (ctx.get("account_id") or DEFAULT_ACCOUNT_ID).strip() or DEFAULT_ACCOUNT_ID,
+            "region": (ctx.get("region") or DEFAULT_REGION).strip() or DEFAULT_REGION,
+            "aws_env": self._aws_env, "emit_fn": self._emit_step, "step_id": step_id, "step_title": step_title,
+        }
 
     def backup_to_s3(self, step_id: Optional[str] = None, step_title: Optional[str] = None):
-        """Back up runtime Terraform state to the canonical tfstate S3 bucket/runtime prefix."""
-        ctx = self.get_aws_context()
-        tf_state = os.path.join(TERRAFORM_DIR, "terraform.tfstate")
-        if os.path.exists(tf_state):
-            self._run_cmd(["aws", "s3", "cp", tf_state, self._tfstate_s3_uri(ctx)], step_id=step_id, step_title=step_title)
+        """Validate local state and upload manual S3 tfstate backup copy safely."""
+        return safe_backup_tfstate_to_s3(run_cmd_fn=self._run_cmd, **self._tfstate_kwargs(step_id, step_title))
 
     def restore_from_s3(self, step_id: Optional[str] = None, step_title: Optional[str] = None):
-        """Restore runtime Terraform state from the canonical tfstate S3 bucket/runtime prefix."""
-        ctx = self.get_aws_context()
-        state_uri = self._tfstate_s3_uri(ctx)
-        tf_state = os.path.join(TERRAFORM_DIR, "terraform.tfstate")
-        check_state = subprocess.run(["aws", "s3", "ls", state_uri], capture_output=True, **self._env_kw())
-        if check_state.returncode == 0:
-            self._run_cmd(["aws", "s3", "cp", state_uri, tf_state], step_id=step_id, step_title=step_title)
+        """Validate and atomically restore manual S3 tfstate copy without overwriting newer local state."""
+        return safe_restore_tfstate_from_s3(**self._tfstate_kwargs(step_id, step_title))
 
     def _get_tf_outputs(self) -> Dict[str, Any]:
         tf_state = os.path.join(TERRAFORM_DIR, "terraform.tfstate")
@@ -447,25 +450,17 @@ class CloudDeployer:
             self._emit_step(s, t, "log", "Skipping local DuckDNS sync; EC2 runtime syncs DuckDNS from SSM /envscale/prod/duckdns_token.")
 
         manifest_file = resolve_and_validate_manifest(
-            commit_sha=sha,
-            manifest_path=manifest_path,
+            commit_sha=sha, manifest_path=manifest_path,
             recovery_bucket=aws_ctx.get("recovery_bucket") or aws_ctx.get("s3_bucket"),
-            region=region,
-            aws_env=self._aws_env,
+            region=region, aws_env=self._aws_env,
         )
         manifest_b64 = base64.b64encode(manifest_file.read_bytes()).decode("ascii")
         commands = build_remote_deploy_commands(commit_sha=sha, manifest_b64=manifest_b64, region=region)
 
         self._emit_step(s, t, "log", f"Dispatching exact-SHA SSM deployment ({sha[:7]}) on {instance_id}...")
         run_ssm_command(
-            instance_id,
-            commands,
-            region=region,
-            comment=f"EnvScale SSM deploy {sha[:12]}",
-            emit_fn=self._step_fn,
-            step_id=s,
-            step_title=t,
-            aws_env=self._aws_env,
+            instance_id, commands, region=region, comment=f"EnvScale SSM deploy {sha[:12]}",
+            emit_fn=self._step_fn, step_id=s, step_title=t, aws_env=self._aws_env,
         )
 
         time.sleep(3)

@@ -324,15 +324,19 @@ class TestSsmCommandsAndCleanup(unittest.TestCase):
 
     def test_cloud_deployer_s3_never_persists_ssh_key(self):
         deployer = cloud_deployer.CloudDeployer(log_fn=lambda _: None)
-        with (
-            mock.patch.object(deployer, "get_aws_context", return_value={"account_id": "123", "region": "ap-south-1", "s3_bucket": "bkt"}),
-            mock.patch.object(deployer, "_run_cmd") as mock_cmd,
-            mock.patch.object(os.path, "exists", return_value=True),
-        ):
-            deployer.backup_to_s3()
-        called_cmds = [str(c.args[0]) for c in mock_cmd.call_args_list]
-        self.assertTrue(any("terraform.tfstate" in cmd for cmd in called_cmds))
-        self.assertFalse(any("envscale_key.pem" in cmd for cmd in called_cmds))
+        with tempfile.TemporaryDirectory() as td:
+            tf_state = pathlib.Path(td) / "terraform.tfstate"
+            tf_state.write_text(json.dumps({"version": 4, "serial": 1, "lineage": "lin-test", "resources": []}), encoding="utf-8")
+            with (
+                mock.patch.object(cloud_deployer, "TERRAFORM_DIR", td),
+                mock.patch.object(deployer, "get_aws_context", return_value={"account_id": "123", "region": "ap-south-1", "s3_bucket": "bkt"}),
+                mock.patch.object(deployer, "_run_cmd") as mock_cmd,
+                mock.patch("scripts.lib.tfstate_sync._head_remote_tfstate", return_value=False),
+            ):
+                deployer.backup_to_s3()
+            called_cmds = [str(c.args[0]) for c in mock_cmd.call_args_list]
+            self.assertTrue(any("terraform.tfstate" in cmd for cmd in called_cmds))
+            self.assertFalse(any("envscale_key.pem" in cmd for cmd in called_cmds))
 
     def test_verify_runtime_instance_profile_checks_profile_and_role(self):
         ok_payload = {"InstanceProfile": {"Roles": [{"RoleName": "envscale-ec2-runtime-role"}]}}

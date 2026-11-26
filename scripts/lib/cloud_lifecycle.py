@@ -6,8 +6,8 @@ import pathlib
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from .cloud_deployer import CloudDeployer
-from .cloud_identity import DEFAULT_ACCOUNT_ID, DEFAULT_REGION
-from .cloud_ops_dashboard import fetch_ops_snapshot, trigger_remote_restore
+from .cloud_identity import DEFAULT_ACCOUNT_ID, DEFAULT_REGION, redact_sensitive_text
+from .cloud_ops_dashboard import trigger_remote_restore
 from .config import PROJECT_ROOT
 
 if TYPE_CHECKING:
@@ -21,6 +21,7 @@ def sync_state_after_destroy(state_store: "PipelineStateStore", backup_meta: Opt
         "instance_id": "",
         "public_ip": "",
         "app_url": "",
+        "last_restore_key": "",
     }
     if backup_key:
         ctx_updates["last_backup_key"] = backup_key
@@ -40,17 +41,21 @@ def run_destroy_lifecycle(
     region: str = DEFAULT_REGION,
 ) -> Dict[str, Any]:
     """Run fail-closed CloudDeployer.infra_destroy() and synchronize PipelineStateStore."""
-    verified_env = orchestrator._require_verified_runtime_env(
-        callbacks,
-        account_id=account_id,
-        region=region,
-    )
-    deployer = CloudDeployer(
-        log_fn=orchestrator.log_fn,
-        step_fn=orchestrator.step_fn,
-        aws_env=verified_env,
-    )
-    backup_meta = deployer.infra_destroy() or {}
+    try:
+        verified_env = orchestrator._require_verified_runtime_env(
+            callbacks,
+            account_id=account_id,
+            region=region,
+        )
+        deployer = CloudDeployer(
+            log_fn=orchestrator.log_fn,
+            step_fn=orchestrator.step_fn,
+            aws_env=verified_env,
+        )
+        backup_meta = deployer.infra_destroy() or {}
+    except Exception as exc:
+        orchestrator.state_store.update_stage("provision", "failed", error=f"Destroy failed: {redact_sensitive_text(str(exc))}")
+        raise
     state = sync_state_after_destroy(orchestrator.state_store, backup_meta)
     return {"status": "completed", "backup": backup_meta, "state": state}
 
@@ -65,18 +70,24 @@ def run_restore_lifecycle(
     region: str = DEFAULT_REGION,
 ) -> Dict[str, Any]:
     """Restore a PostgreSQL dump from S3 onto the active runtime host and update PipelineStateStore."""
-    verified_env = orchestrator._require_verified_runtime_env(
-        callbacks,
-        account_id=account_id,
-        region=region,
-    )
-    chosen_key = (backup_key or "").strip() or None
-    res = trigger_remote_restore(
-        backup_key=chosen_key,
-        aws_env=verified_env,
-        step_fn=orchestrator.step_fn,
-        skip_verify=skip_verify,
-    )
+    orchestrator.state_store.update_stage("verify", "running", summary="Restoring PostgreSQL backup...")
+    try:
+        verified_env = orchestrator._require_verified_runtime_env(
+            callbacks,
+            account_id=account_id,
+            region=region,
+        )
+        chosen_key = (backup_key or "").strip() or None
+        res = trigger_remote_restore(
+            backup_key=chosen_key,
+            aws_env=verified_env,
+            step_fn=orchestrator.step_fn,
+            skip_verify=skip_verify,
+        )
+    except Exception as exc:
+        orchestrator.state_store.update_stage("verify", "failed", error=f"Database restore failed: {redact_sensitive_text(str(exc))}")
+        raise
+
     orchestrator.state_store.update_context(last_restore_key=res["key"])
     summary = (
         f"Restored {res['key']} "
@@ -84,6 +95,8 @@ def run_restore_lifecycle(
     )
     if res.get("verify_passed"):
         orchestrator.state_store.update_stage("verify", "completed", summary=summary)
+    else:
+        orchestrator.state_store.update_stage("verify", "pending", summary=f"Restored {res['key']} (post-restore verify skipped)")
     return {"status": "completed", **res, "summary": summary, "state": orchestrator.state_store.load()}
 
 
@@ -107,6 +120,8 @@ def run_reconstruct_lifecycle(
         release_res = orchestrator.run_stage("release", callbacks=callbacks, target_sha=target_sha)
         eff_manifest = release_res.get("manifest_path", "")
 
+    orchestrator.state_store.update_stage("deploy", "pending", summary="Awaiting reconstruction")
+    orchestrator.state_store.update_stage("verify", "pending", summary="Awaiting reconstruction")
     prov_res = orchestrator.run_stage("provision", callbacks=callbacks, account_id=account_id, region=region)
     dep_res = orchestrator.run_stage(
         "deploy",
@@ -119,18 +134,27 @@ def run_reconstruct_lifecycle(
 
     restore_res: Dict[str, Any] = {"status": "skipped"}
     if not skip_restore:
-        verified_env = orchestrator._require_verified_runtime_env(
-            callbacks,
-            account_id=account_id,
-            region=region,
-        )
-        effective_key = (backup_key or "").strip() or (ctx.get("last_backup_key") or "").strip() or None
-        restore_res = trigger_remote_restore(
-            backup_key=effective_key,
-            aws_env=verified_env,
-            step_fn=orchestrator.step_fn,
-            skip_verify=False,
-        )
+        orchestrator.state_store.update_stage("verify", "running", summary="Restoring PostgreSQL backup...")
+        try:
+            verified_env = orchestrator._require_verified_runtime_env(
+                callbacks,
+                account_id=account_id,
+                region=region,
+            )
+            effective_key = (backup_key or "").strip() or (ctx.get("last_backup_key") or "").strip() or None
+            restore_res = trigger_remote_restore(
+                backup_key=effective_key,
+                aws_env=verified_env,
+                step_fn=orchestrator.step_fn,
+                skip_verify=False,
+            )
+        except Exception as exc:
+            orchestrator.state_store.update_stage(
+                "verify",
+                "failed",
+                error=f"Database restore failed: {redact_sensitive_text(str(exc))}",
+            )
+            raise
         orchestrator.state_store.update_context(last_restore_key=restore_res["key"])
 
     verify_res = orchestrator.run_stage("verify", callbacks=callbacks, account_id=account_id, region=region)
@@ -145,4 +169,3 @@ def run_reconstruct_lifecycle(
         "app_url": dep_res.get("app_url") or verify_res.get("app_url") or "",
         "state": final_state,
     }
-

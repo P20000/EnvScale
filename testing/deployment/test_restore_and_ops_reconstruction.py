@@ -73,10 +73,17 @@ class TestDbRestoreScriptOffline(unittest.TestCase):
 
         # Fake docker + aws CLI on PATH
         dump_b64 = base64.b64encode(dump_bytes).decode("ascii")
+        dump_sha = hashlib.sha256(dump_bytes).hexdigest()
+        dump_chk_b64 = base64.b64encode(hashlib.sha256(dump_bytes).digest()).decode("ascii")
+        head_payload = json.dumps({"ContentLength": len(dump_bytes), "ChecksumSHA256": dump_chk_b64, "Metadata": {"sha256": dump_sha}})
         _write_exe(
             bin_dir / "aws",
             f"""#!/usr/bin/env bash
 set -euo pipefail
+if [[ "$1" == "s3api" && "$2" == "head-object" ]]; then
+  printf '%s\\n' '{head_payload}'
+  exit 0
+fi
 if [[ "$1" == "s3" && "$2" == "cp" ]]; then
   dst="$4"
   printf '%s' "{dump_b64}" | base64 -d > "$dst"
@@ -260,6 +267,7 @@ class TestOpsReconstructionAndContracts(unittest.TestCase):
 
     def test_trigger_remote_restore_selects_latest_verifies_head_and_parses_result(self):
         sha = "a" * 64
+        chk_b64 = base64.b64encode(bytes.fromhex(sha)).decode("ascii")
         ssm_out = 'ENVSCALE_RESTORE_RESULT={"source":"s3://b/k","size":2048,"sha256":"' + sha + '","toc_entries":14,"canonical_tables":12,"migrations":4,"row_counts":{"users":5},"verify_passed":true}'
 
         def _fake_aws(args, aws_env=None):
@@ -274,7 +282,7 @@ class TestOpsReconstructionAndContracts(unittest.TestCase):
             if "head-object" in args:
                 return subprocess.CompletedProcess(
                     args, 0,
-                    stdout=json.dumps({"ContentLength": 2048, "Metadata": {"sha256": sha}}),
+                    stdout=json.dumps({"ContentLength": 2048, "ChecksumSHA256": chk_b64, "Metadata": {"sha256": sha}}),
                     stderr="",
                 )
             return subprocess.CompletedProcess(args, 1, stdout="", stderr="unexpected")
@@ -297,14 +305,18 @@ class TestOpsReconstructionAndContracts(unittest.TestCase):
 
     def test_cloud_deployer_state_backup_uses_canonical_tfstate_runtime_key(self):
         deployer = cloud_deployer.CloudDeployer(log_fn=lambda _: None)
-        with (
-            mock.patch.object(deployer, "get_aws_context", return_value={"account_id": ACCOUNT, "region": REGION, "s3_bucket": REC_BUCKET}),
-            mock.patch.object(deployer, "_run_cmd") as m_cmd,
-            mock.patch.object(os.path, "exists", return_value=True),
-        ):
-            deployer.backup_to_s3()
-        cmd = m_cmd.call_args.args[0]
-        self.assertIn(f"s3://{TF_BUCKET}/runtime/terraform.tfstate", cmd)
+        with tempfile.TemporaryDirectory() as td:
+            tf_state = pathlib.Path(td) / "terraform.tfstate"
+            tf_state.write_text(json.dumps({"version": 4, "serial": 2, "lineage": "lin-a", "resources": []}), encoding="utf-8")
+            with (
+                mock.patch.object(cloud_deployer, "TERRAFORM_DIR", td),
+                mock.patch.object(deployer, "get_aws_context", return_value={"account_id": ACCOUNT, "region": REGION, "s3_bucket": REC_BUCKET}),
+                mock.patch.object(deployer, "_run_cmd") as m_cmd,
+                mock.patch("scripts.lib.tfstate_sync._head_remote_tfstate", return_value=False),
+            ):
+                deployer.backup_to_s3()
+            cmd = m_cmd.call_args.args[0]
+            self.assertIn(f"s3://{TF_BUCKET}/runtime/terraform.tfstate", cmd)
 
     def test_destroy_and_reconstruct_sync_pipeline_state(self):
         with tempfile.TemporaryDirectory() as td:

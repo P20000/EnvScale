@@ -117,6 +117,17 @@ if ! [[ "$VERIFY_TIMEOUT" =~ ^[0-9]+$ ]] || (( VERIFY_TIMEOUT < 5 )); then
   exit 1
 fi
 
+if [[ "$LOCAL_SMOKE" != "true" ]]; then
+  if [[ ! -f "$ENV_FILE" ]]; then
+    log_error "Rendered Compose env file missing: ${ENV_FILE}"
+    exit 1
+  fi
+  if [[ "$SKIP_VERIFY" != "true" && ! -f "$MANIFEST_PATH" ]]; then
+    log_error "Release manifest missing: ${MANIFEST_PATH}"
+    exit 1
+  fi
+fi
+
 mkdir -p "$(dirname "$ENVSCALE_LOCK_FILE")" "${ENVSCALE_CONFIG_DIR}" "${ENVSCALE_STATE_DIR}/releases"
 chmod 700 "${ENVSCALE_CONFIG_DIR}" "${ENVSCALE_STATE_DIR}" "${ENVSCALE_STATE_DIR}/releases" 2>/dev/null || true
 
@@ -143,6 +154,40 @@ trap 'rm -f "$TMP_DUMP" "$TMP_TOC"' EXIT INT TERM
 
 if [[ -n "$S3_URI" ]]; then
   SOURCE_LABEL="$S3_URI"
+  if [[ -z "$EXPECTED_SHA256" ]]; then
+    HEAD_JSON="$(aws s3api head-object --bucket "$BUCKET" --key "$KEY" --region "$AWS_REGION" --checksum-mode ENABLED --output json)" || {
+      log_error "Failed inspecting S3 object metadata for ${S3_URI}"
+      exit 1
+    }
+    EXPECTED_SHA256="$(python3 - "$HEAD_JSON" <<'PYEOF'
+import base64, binascii, json, sys
+doc = json.loads(sys.argv[1] or "{}")
+chk_b64 = str(doc.get("ChecksumSHA256") or "").strip()
+native_hex = ""
+if chk_b64:
+    if "-" in chk_b64:
+        raise SystemExit("Composite multipart ChecksumSHA256 is not accepted.")
+    try:
+        raw = base64.b64decode(chk_b64, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise SystemExit(f"Malformed Base64 ChecksumSHA256: {exc}")
+    if len(raw) != 32 or base64.b64encode(raw).decode("ascii") != chk_b64:
+        raise SystemExit("Invalid 32-byte ChecksumSHA256 digest length.")
+    native_hex = raw.hex().lower()
+meta = doc.get("Metadata") if isinstance(doc.get("Metadata"), dict) else {}
+meta_sha = str(meta.get("sha256") or meta.get("SHA256") or "").strip().lower()
+if native_hex and meta_sha and meta_sha != native_hex:
+    raise SystemExit(f"Metadata.sha256 ({meta_sha}) disagrees with native ChecksumSHA256 ({native_hex}).")
+if native_hex:
+    print(native_hex)
+elif len(meta_sha) == 64 and all(c in "0123456789abcdef" for c in meta_sha):
+    print(meta_sha)
+PYEOF
+    )" || {
+      log_error "S3 checksum metadata validation failed for ${S3_URI}"
+      exit 1
+    }
+  fi
   log_info "Downloading PostgreSQL dump from ${S3_URI}..."
   if ! aws s3 cp "$S3_URI" "$TMP_DUMP" --region "$AWS_REGION"; then
     log_error "Failed downloading backup from ${S3_URI}"
@@ -229,7 +274,12 @@ if ! [[ "$TBL_COUNT" =~ ^[0-9]+$ ]] || (( TBL_COUNT != 12 )); then
 fi
 
 MIG_COUNT="$(docker exec "$PG_CONTAINER" psql -U "$RESTORE_POSTGRES_USER" -d "$RESTORE_POSTGRES_DB" -At -v ON_ERROR_STOP=1 \
-  -c "SELECT count(*) FROM drizzle.__drizzle_migrations;" </dev/null 2>/dev/null | tr -d '[:space:]' || echo "0")"
+  -c "SELECT count(*) FROM drizzle.__drizzle_migrations;" </dev/null)"
+MIG_COUNT="$(tr -d '[:space:]' <<<"$MIG_COUNT")"
+if ! [[ "$MIG_COUNT" =~ ^[0-9]+$ ]] || (( MIG_COUNT <= 0 )); then
+  log_error "Post-restore migration validation failed: expected > 0 records in drizzle.__drizzle_migrations, found ${MIG_COUNT:-0}"
+  exit 1
+fi
 
 ROW_COUNTS_JSON="$(docker exec -i "$PG_CONTAINER" psql -U "$RESTORE_POSTGRES_USER" -d "$RESTORE_POSTGRES_DB" -At -v ON_ERROR_STOP=1 <<'SQLEOF'
 SELECT json_build_object(
@@ -251,11 +301,9 @@ if [[ "$APP_CONTAINERS_MANAGED" == "true" ]]; then
 fi
 
 VERIFY_PASSED="false"
-if [[ "$SKIP_VERIFY" != "true" && "$APP_CONTAINERS_MANAGED" == "true" && -f "$MANIFEST_PATH" ]]; then
+if [[ "$SKIP_VERIFY" != "true" && "$LOCAL_SMOKE" != "true" ]]; then
   "${SCRIPT_DIR}/verify.sh" --manifest "$MANIFEST_PATH" --env-file "$ENV_FILE" --timeout "$VERIFY_TIMEOUT"
   VERIFY_PASSED="true"
-elif [[ "$SKIP_VERIFY" != "true" && "$LOCAL_SMOKE" != "true" ]]; then
-  log_warn "Skipping full verify.sh because manifest or rendered.compose.env is unavailable; schema/data restore validated."
 fi
 
 if [[ -f "$MANIFEST_PATH" ]]; then

@@ -34,11 +34,17 @@ class CloudOpsPanel(Gtk.Box):
         pm,
         step_fn: StepFn,
         get_aws_env: Callable[[], Optional[Dict[str, str]]],
+        restore_fn: Optional[Callable[[], Dict[str, Any]]] = None,
+        on_state_changed: Optional[Callable[[], None]] = None,
+        record_backup_key: Optional[Callable[[str], None]] = None,
     ):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         self.pm = pm
         self.step_fn = step_fn
         self.get_aws_env = get_aws_env
+        self.restore_fn = restore_fn
+        self.on_state_changed = on_state_changed
+        self.record_backup_key = record_backup_key
         self._cloud_url = "https://envscale.duckdns.org"
         self._build_ui()
 
@@ -202,23 +208,32 @@ class CloudOpsPanel(Gtk.Box):
             self._safe_step(sid, title, "start", "pg_dump -> aws s3 cp")
             try:
                 res = trigger_remote_backup(aws_env=self.get_aws_env(), step_fn=self._safe_step)
+                if self.record_backup_key and res.get("key"):
+                    self.record_backup_key(res["key"])
                 self._safe_step(sid, title, "success", res["s3_uri"])
             except Exception as exc:
                 self._safe_step(sid, title, "error", str(exc))
             finally:
+                if self.on_state_changed:
+                    self.on_state_changed()
                 self.refresh_async(include_http=False)
         threading.Thread(target=_task, daemon=True).start()
 
     def _run_restore_async(self) -> None:
+        GLib.idle_add(lambda: self.btn_restore.set_sensitive(False))
+
         def _task():
             sid, title = "ops_restore", "Restore Latest PostgreSQL Backup from S3"
             self._safe_step(sid, title, "start", "envscale.sh restore -> verify.sh")
             try:
-                res = trigger_remote_restore(aws_env=self.get_aws_env(), step_fn=self._safe_step)
+                res = self.restore_fn() if self.restore_fn else trigger_remote_restore(aws_env=self.get_aws_env(), step_fn=self._safe_step)
                 self._safe_step(sid, title, "success", f"{res['key']} (tables={res.get('canonical_tables', 0)}/12)")
             except Exception as exc:
                 self._safe_step(sid, title, "error", str(exc))
             finally:
+                GLib.idle_add(lambda: self.btn_restore.set_sensitive(True))
+                if self.on_state_changed:
+                    self.on_state_changed()
                 self.refresh_async(include_http=True)
         threading.Thread(target=_task, daemon=True).start()
 

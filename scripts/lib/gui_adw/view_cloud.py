@@ -12,7 +12,6 @@ from gi.repository import Adw, GLib, Gtk
 
 from ..cloud_deployer import CloudDeployer
 from ..cloud_identity import redact_sensitive_text
-from ..cloud_lifecycle import sync_state_after_destroy
 from ..eks_deployer import EKSDeployer
 from .cloud_ops_panel import CloudOpsPanel
 from .cloud_pipeline_panel import CloudPipelinePanel
@@ -43,6 +42,9 @@ class CloudView(Gtk.Box):
             self.pm,
             self._on_step_event,
             get_aws_env=self.pipeline_panel.get_runtime_aws_env,
+            restore_fn=lambda: self.pipeline_panel.orchestrator.restore_database(callbacks=self.pipeline_panel._callbacks()),
+            on_state_changed=self.pipeline_panel.refresh_stage_rows,
+            record_backup_key=lambda k: self.pipeline_panel.orchestrator.state_store.update_context(last_backup_key=k),
         )
         self.append(self.ops_panel)
 
@@ -146,14 +148,17 @@ class CloudView(Gtk.Box):
 
     def _run_infra_op(self, op_id: str, title: str, method_name: str) -> None:
         def _task():
+            for b in (self.btn_pause, self.btn_resume, self.btn_destroy):
+                GLib.idle_add(lambda btn=b: btn.set_sensitive(False))
             try:
-                deployer = CloudDeployer(
-                    step_fn=self._on_step_event,
-                    aws_env=self.pipeline_panel.get_runtime_aws_env(),
-                )
-                result = getattr(deployer, method_name)()
                 if method_name == "infra_destroy":
-                    sync_state_after_destroy(self.pipeline_panel.orchestrator.state_store, result or {})
+                    self.pipeline_panel.orchestrator.destroy_runtime(callbacks=self.pipeline_panel._callbacks())
+                else:
+                    deployer = CloudDeployer(
+                        step_fn=self._on_step_event,
+                        aws_env=self.pipeline_panel.get_runtime_aws_env(),
+                    )
+                    getattr(deployer, method_name)()
             except Exception as exc:
                 err_id = f"{op_id}_error"
                 msg = redact_sensitive_text(f"{type(exc).__name__}: {exc}")
@@ -162,6 +167,8 @@ class CloudView(Gtk.Box):
                 self._on_step_event(err_id, f"{title} failed", "error", msg)
                 self.pm.emit_log("system", f"[cloud] {title} failed: {msg}")
             finally:
+                for b in (self.btn_pause, self.btn_resume, self.btn_destroy):
+                    GLib.idle_add(lambda btn=b: btn.set_sensitive(True))
                 self._refresh_status()
         threading.Thread(target=_task, daemon=True).start()
 

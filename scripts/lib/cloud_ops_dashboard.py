@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, List, Optional
 from .cloud_deployer import CloudDeployer
 from .cloud_host_runner import load_deployment_env, verify_deployment_health
 from .cloud_identity import DEFAULT_ACCOUNT_ID, DEFAULT_REGION, redact_sensitive_text, resolve_recovery_bucket
+from .postgres_backup_verifier import _decode_and_validate_native_s3_checksum_sha256, _parse_s3_last_modified
 from .ssm_deployer import run_ssm_command
 
 StepCallback = Optional[Callable[[str, str, str, str], None]]
@@ -300,7 +301,8 @@ def trigger_remote_backup(aws_env: Optional[Dict[str, str]] = None, step_fn: Ste
         err = redact_sensitive_text((head.stderr or head.stdout or "Bucket unreachable").strip())
         raise RuntimeError(f"Canonical recovery bucket 's3://{rec_bucket}' is not accessible ({err}).")
     stamp = time.strftime("%Y%m%d_%H%M%S")
-    s3_uri = f"s3://{rec_bucket}/backups/postgres/backup_{stamp}.dump"
+    backup_key = f"backups/postgres/backup_{stamp}.dump"
+    s3_uri = f"s3://{rec_bucket}/{backup_key}"
     dump_cmd = f"docker exec envscale-postgres pg_dump --format=custom -U envscale envscale | aws s3 cp - {shlex.quote(s3_uri)}"
 
     run_ssm_command(
@@ -313,7 +315,7 @@ def trigger_remote_backup(aws_env: Optional[Dict[str, str]] = None, step_fn: Ste
         step_title="Remote PostgreSQL Backup to S3",
         aws_env=aws_env,
     )
-    return {"s3_uri": s3_uri, "instance_id": instance_id}
+    return {"s3_uri": s3_uri, "key": backup_key, "instance_id": instance_id}
 
 
 def parse_restore_ssm_output(stdout: str) -> Dict[str, Any]:
@@ -324,7 +326,7 @@ def parse_restore_ssm_output(stdout: str) -> Dict[str, Any]:
         if s.startswith(RESTORE_RESULT_PREFIX):
             marker = s[len(RESTORE_RESULT_PREFIX):].strip()
     if not marker:
-        return {}
+        raise RuntimeError("PostgreSQL restore SSM command did not return ENVSCALE_RESTORE_RESULT payload.")
     try:
         data = json.loads(marker)
     except json.JSONDecodeError as exc:
@@ -335,15 +337,31 @@ def parse_restore_ssm_output(stdout: str) -> Dict[str, Any]:
 
 
 def _select_latest_dump_key(bucket: str, region: str, aws_env: Optional[Dict[str, str]]) -> str:
-    listing = _list_s3_backups(bucket, POSTGRES_BACKUP_PREFIX, region, aws_env)
-    if listing.get("error"):
-        raise RuntimeError(f"Failed listing PostgreSQL backups in s3://{bucket}/{POSTGRES_BACKUP_PREFIX}: {listing['error']}")
-    for item in listing.get("items") or []:
-        key = str(item.get("key") or "").strip()
-        size = item.get("size") or 0
-        if key.startswith(POSTGRES_BACKUP_PREFIX) and key.endswith(".dump") and int(size) > 0:
-            return key
-    raise RuntimeError(f"No non-empty PostgreSQL backup (.dump) found under s3://{bucket}/{POSTGRES_BACKUP_PREFIX}.")
+    res = _aws_cmd(
+        ["s3api", "list-objects-v2", "--bucket", bucket, "--prefix", POSTGRES_BACKUP_PREFIX, "--region", region, "--output", "json"],
+        aws_env=aws_env,
+    )
+    if res.returncode != 0:
+        err = redact_sensitive_text((res.stderr or res.stdout or f"exit {res.returncode}").strip())
+        raise RuntimeError(f"Failed listing PostgreSQL backups in s3://{bucket}/{POSTGRES_BACKUP_PREFIX}: {err}")
+    payload = json.loads(res.stdout or "{}")
+    candidates = []
+    for entry in payload.get("Contents") or []:
+        key = str(entry.get("Key") or "").strip()
+        if not key.startswith(POSTGRES_BACKUP_PREFIX) or not key.endswith(".dump"):
+            continue
+        dt = _parse_s3_last_modified(entry.get("LastModified"), f"s3://{bucket}/{key}")
+        candidates.append((dt, key, entry.get("Size")))
+    if not candidates:
+        raise RuntimeError(f"No PostgreSQL backup (.dump) found under s3://{bucket}/{POSTGRES_BACKUP_PREFIX}.")
+    candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    _, latest_key, raw_size = candidates[0]
+    if not isinstance(raw_size, int) or isinstance(raw_size, bool) or raw_size <= 0:
+        raise RuntimeError(
+            f"Newest S3 backup s3://{bucket}/{latest_key} has invalid Size ({raw_size!r}); "
+            "pass --key explicitly rather than silently falling back to an older dump."
+        )
+    return latest_key
 
 
 def trigger_remote_restore(
@@ -386,8 +404,14 @@ def trigger_remote_restore(
     obj_doc = json.loads(head_obj.stdout or "{}")
     if int(obj_doc.get("ContentLength") or 0) <= 0:
         raise RuntimeError(f"S3 backup s3://{rec_bucket}/{chosen_key} is empty (ContentLength <= 0).")
+    s3_target = f"s3://{rec_bucket}/{chosen_key}"
+    chk_b64 = str(obj_doc.get("ChecksumSHA256") or "").strip()
     meta_sha = str((obj_doc.get("Metadata") or {}).get("sha256") or "").strip().lower()
-    if len(meta_sha) == 64 and all(c in "0123456789abcdef" for c in meta_sha):
+    if chk_b64:
+        expected_sha = _decode_and_validate_native_s3_checksum_sha256(chk_b64, s3_target)
+        if meta_sha and meta_sha != expected_sha:
+            raise RuntimeError(f"S3 backup {s3_target} Metadata.sha256 disagrees with ChecksumSHA256.")
+    elif len(meta_sha) == 64 and all(c in "0123456789abcdef" for c in meta_sha):
         expected_sha = meta_sha
 
     restore_cmd = (
@@ -410,6 +434,15 @@ def trigger_remote_restore(
         aws_env=aws_env,
     )
     parsed = parse_restore_ssm_output(ssm_res.stdout or "")
+    if parsed.get("canonical_tables") != 12:
+        raise RuntimeError(f"Restore validation failed: canonical_tables={parsed.get('canonical_tables')!r} (expected 12).")
+    mig_n = parsed.get("migrations")
+    if not isinstance(mig_n, int) or isinstance(mig_n, bool) or mig_n <= 0:
+        raise RuntimeError(f"Restore validation failed: migrations={mig_n!r} (expected > 0).")
+    if expected_sha and str(parsed.get("sha256") or "").lower() != expected_sha:
+        raise RuntimeError("Restore validation failed: restored SHA-256 does not match S3 checksum.")
+    if not skip_verify and not parsed.get("verify_passed"):
+        raise RuntimeError("Restore validation failed: post-restore verify.sh did not pass.")
     return {
         "bucket": rec_bucket,
         "key": chosen_key,

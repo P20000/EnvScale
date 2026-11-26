@@ -403,6 +403,8 @@ def ops_backup(profile):
     """Trigger a remote PostgreSQL backup to S3 via AWS SSM."""
     aws_env = _cli_runtime_aws_env(profile, require_runtime_role=True)
     res = trigger_remote_backup(aws_env=aws_env, step_fn=_cli_step_fn)
+    if res.get("key"):
+        PipelineStateStore().update_context(last_backup_key=res["key"])
     console.print(f"[bold green]✔ Backup uploaded:[/bold green] {res['s3_uri']}")
 
 
