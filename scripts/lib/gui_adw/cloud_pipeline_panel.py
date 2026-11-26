@@ -21,8 +21,6 @@ from ..cloud_identity import (
     complete_virtual_mfa_enrollment,
     inspect_aws_identity,
     list_aws_profiles,
-    load_ram_admin_session,
-    load_ram_runtime_session,
     redact_sensitive_text,
     start_virtual_mfa_enrollment,
 )
@@ -34,14 +32,22 @@ StepFn = Callable[[str, str, str, str], None]
 class CloudPipelinePanel(Gtk.Box):
     """Unified 7-stage resumable workflow controls and interactive approval/MFA/secrets dialogs."""
 
-    def __init__(self, pm, step_fn: StepFn, on_complete: Optional[Callable[[], None]] = None):
+    def __init__(
+        self,
+        pm,
+        step_fn: StepFn,
+        on_complete: Optional[Callable[[], None]] = None,
+        on_session_changed: Optional[Callable[[], None]] = None,
+    ):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         self.pm = pm
         self.step_fn = step_fn
         self.on_complete = on_complete
+        self.on_session_changed = on_session_changed
         self.orchestrator = CloudOrchestrator(
-            admin_session=load_ram_admin_session(),
-            runtime_session=load_ram_runtime_session(),
+            admin_session=None,
+            runtime_session=None,
+            allow_ram_handoff=False,
             step_fn=self._safe_step,
         )
         self._busy = False
@@ -56,8 +62,18 @@ class CloudPipelinePanel(Gtk.Box):
     def _safe_step(self, step_id: str, title: str, status: str, detail: str = "") -> None:
         self.step_fn(step_id, title, status, redact_sensitive_text(detail))
 
+    def _notify_session_changed(self) -> None:
+        if self.on_session_changed:
+            self.on_session_changed()
+
     def get_runtime_aws_env(self) -> Optional[Dict[str, str]]:
         return self.orchestrator.get_runtime_aws_env()
+
+    def ensure_runtime_aws_env(self) -> Dict[str, str]:
+        env = self.orchestrator._require_verified_runtime_env(self._callbacks())
+        self._notify_session_changed()
+        self.refresh_stage_rows()
+        return env
 
     def _build_ui(self) -> None:
         top_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -201,6 +217,7 @@ class CloudPipelinePanel(Gtk.Box):
                 self._safe_step("pipeline_err", "Provision & Deploy Failed", "log", traceback.format_exc().rstrip())
                 self._safe_step("pipeline_err", "Provision & Deploy Failed", "error", msg)
             finally:
+                self._notify_session_changed()
                 self.refresh_stage_rows()
                 self._set_busy(False)
         threading.Thread(target=_task, daemon=True).start()
@@ -220,6 +237,7 @@ class CloudPipelinePanel(Gtk.Box):
                 self._safe_step(f"stage_{stage_id}_err", f"Stage '{stage_id}' Failed", "log", traceback.format_exc().rstrip())
                 self._safe_step(f"stage_{stage_id}_err", f"Stage '{stage_id}' Failed", "error", msg)
             finally:
+                self._notify_session_changed()
                 self.refresh_stage_rows()
                 self._set_busy(False)
         threading.Thread(target=_task, daemon=True).start()
@@ -233,11 +251,7 @@ class CloudPipelinePanel(Gtk.Box):
         title = "MFA Runtime Provisioner Session" if is_runtime else "MFA Admin Session"
         def _task():
             try:
-                sess = self._ensure_role_session_interactive(role_name)
-                if is_runtime:
-                    self.orchestrator.runtime_session = sess
-                else:
-                    self.orchestrator.admin_session = sess
+                sess = self._ensure_role_session_interactive(role_name, reuse_active=False)
                 self._safe_step(step_id, title, "start", f"Assume {role_name}")
                 self._safe_step(step_id, title, "success", f"Assumed until {sess.expires_at_utc}")
             except Exception as exc:
@@ -245,6 +259,7 @@ class CloudPipelinePanel(Gtk.Box):
                 self._safe_step(step_id, title, "start", f"Assume {role_name}")
                 self._safe_step(step_id, title, "error", msg)
             finally:
+                self._notify_session_changed()
                 self.refresh_stage_rows()
                 self._set_busy(False)
         threading.Thread(target=_task, daemon=True).start()
@@ -331,31 +346,27 @@ class CloudPipelinePanel(Gtk.Box):
             return win
         return bool(self._run_ui_modal(_build))
 
-    def _ensure_role_session_interactive(self, role_name: str = ADMIN_ROLE_NAME) -> AwsSessionContext:
+    def _ensure_role_session_interactive(
+        self, role_name: str = ADMIN_ROLE_NAME, *, reuse_active: bool = True
+    ) -> AwsSessionContext:
         if role_name == ADMIN_ROLE_NAME:
-            ram_loader, assume_fn, modal_title, btn_label = (
-                load_ram_admin_session, assume_foundation_admin_role, "Assume Foundation Admin Role (MFA)", "Assume Admin Role"
+            existing, assume_fn, modal_title, btn_label = (
+                self.orchestrator.admin_session, assume_foundation_admin_role, "Assume Foundation Admin Role (MFA)", "Assume Admin Role"
             )
         elif role_name == RUNTIME_PROVISIONER_ROLE_NAME:
-            ram_loader, assume_fn, modal_title, btn_label = (
-                load_ram_runtime_session, assume_runtime_provisioner_role, "Assume Runtime Provisioner Role (MFA)", "Assume Runtime Role"
+            existing, assume_fn, modal_title, btn_label = (
+                self.orchestrator.runtime_session, assume_runtime_provisioner_role, "Assume Runtime Provisioner Role (MFA)", "Assume Runtime Role"
             )
         else:
             raise ValueError(f"Unsupported MFA role '{role_name}'.")
+
+        if reuse_active and isinstance(existing, AwsSessionContext) and not existing.is_expired():
+            return existing
 
         base_env = build_profile_env(self.orchestrator.runtime_profile) if self.orchestrator.runtime_profile else None
         info = inspect_aws_identity(aws_env=base_env, profile=self.orchestrator.runtime_profile)
         if not info.get("authenticated"):
             raise RuntimeError(info.get("error", "AWS CLI is not authenticated."))
-
-        ram_kw: Dict[str, str] = {}
-        if info.get("account_id"):
-            ram_kw["account_id"] = info["account_id"]
-        if info.get("region"):
-            ram_kw["region"] = info["region"]
-        ram_session = ram_loader(**ram_kw)
-        if ram_session is not None:
-            return ram_session
 
         serials = info.get("mfa_serials", [])
         if not serials:

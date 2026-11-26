@@ -5,6 +5,7 @@ from __future__ import annotations
 import pathlib
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
+from .cloud_demo_flow import verify_destroy_cleanup, verify_destroy_target_environment
 from .cloud_deployer import CloudDeployer
 from .cloud_identity import DEFAULT_ACCOUNT_ID, DEFAULT_REGION, redact_sensitive_text
 from .cloud_ops_dashboard import trigger_remote_restore
@@ -40,7 +41,7 @@ def run_destroy_lifecycle(
     account_id: str = DEFAULT_ACCOUNT_ID,
     region: str = DEFAULT_REGION,
 ) -> Dict[str, Any]:
-    """Run fail-closed CloudDeployer.infra_destroy() and synchronize PipelineStateStore."""
+    """Verify target, run fail-closed CloudDeployer.infra_destroy(), confirm cleanup, and sync state."""
     try:
         verified_env = orchestrator._require_verified_runtime_env(
             callbacks,
@@ -52,12 +53,29 @@ def run_destroy_lifecycle(
             step_fn=orchestrator.step_fn,
             aws_env=verified_env,
         )
+        target_info = verify_destroy_target_environment(
+            deployer,
+            aws_env=verified_env,
+            account_id=account_id,
+            region=region,
+        )
         backup_meta = deployer.infra_destroy() or {}
+        cleanup_info = verify_destroy_cleanup(
+            str(target_info.get("instance_id") or ""),
+            aws_env=verified_env,
+            region=region,
+        )
     except Exception as exc:
         orchestrator.state_store.update_stage("provision", "failed", error=f"Destroy failed: {redact_sensitive_text(str(exc))}")
         raise
     state = sync_state_after_destroy(orchestrator.state_store, backup_meta)
-    return {"status": "completed", "backup": backup_meta, "state": state}
+    return {
+        "status": "completed",
+        "backup": backup_meta,
+        "target": target_info,
+        "cleanup": cleanup_info,
+        "state": state,
+    }
 
 
 def run_restore_lifecycle(

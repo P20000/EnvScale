@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import subprocess
 import time
@@ -11,7 +12,16 @@ from typing import Any, Callable, Dict, List, Optional
 from .cloud_deployer import CloudDeployer
 from .cloud_host_runner import load_deployment_env, verify_deployment_health
 from .cloud_identity import DEFAULT_ACCOUNT_ID, DEFAULT_REGION, redact_sensitive_text, resolve_recovery_bucket
-from .postgres_backup_verifier import _decode_and_validate_native_s3_checksum_sha256, _parse_s3_last_modified
+from .config import TERRAFORM_DIR
+from .postgres_backup_verifier import (
+    _decode_and_validate_native_s3_checksum_sha256,
+    _parse_s3_last_modified,
+    build_postgres_backup_ssm_commands,
+    extract_tfstate_deployment_identity,
+    generate_postgres_backup_key,
+    parse_postgres_backup_ssm_output,
+    verify_s3_postgres_backup_object,
+)
 from .ssm_deployer import run_ssm_command
 
 StepCallback = Optional[Callable[[str, str, str, str], None]]
@@ -281,8 +291,8 @@ def trigger_remote_verify(aws_env: Optional[Dict[str, str]] = None, step_fn: Ste
     return redact_sensitive_text(res.stdout or "")
 
 
-def trigger_remote_backup(aws_env: Optional[Dict[str, str]] = None, step_fn: StepCallback = None) -> Dict[str, str]:
-    """Dump production PostgreSQL on EC2 and upload directly to the canonical recovery bucket via SSM."""
+def trigger_remote_backup(aws_env: Optional[Dict[str, str]] = None, step_fn: StepCallback = None) -> Dict[str, Any]:
+    """Dump production PostgreSQL on EC2, verify pg_restore --list & ChecksumSHA256 in S3."""
     deployer = CloudDeployer(aws_env=aws_env)
     instance_id = deployer.get_instance_id()
     if not instance_id:
@@ -292,30 +302,37 @@ def trigger_remote_backup(aws_env: Optional[Dict[str, str]] = None, step_fn: Ste
     account_id = ctx["account_id"] or DEFAULT_ACCOUNT_ID
     env_cfg = load_deployment_env()
     rec_bucket = resolve_recovery_bucket(
-        account_id=account_id,
-        region=region,
-        configured_bucket=env_cfg.get("RECOVERY_BUCKET"),
+        account_id=account_id, region=region, configured_bucket=env_cfg.get("RECOVERY_BUCKET"),
     )
     head = _aws_cmd(["s3api", "get-bucket-location", "--bucket", rec_bucket, "--region", region], aws_env=aws_env)
     if head.returncode != 0:
         err = redact_sensitive_text((head.stderr or head.stdout or "Bucket unreachable").strip())
         raise RuntimeError(f"Canonical recovery bucket 's3://{rec_bucket}' is not accessible ({err}).")
-    stamp = time.strftime("%Y%m%d_%H%M%S")
-    backup_key = f"backups/postgres/backup_{stamp}.dump"
+    tf_state = os.path.join(TERRAFORM_DIR, "terraform.tfstate")
+    dep_ident = extract_tfstate_deployment_identity(tf_state) if os.path.isfile(tf_state) else {}
+    backup_key = generate_postgres_backup_key(instance_id)
     s3_uri = f"s3://{rec_bucket}/{backup_key}"
-    dump_cmd = f"docker exec envscale-postgres pg_dump --format=custom -U envscale envscale | aws s3 cp - {shlex.quote(s3_uri)}"
-
-    run_ssm_command(
+    ssm_res = run_ssm_command(
         instance_id,
-        ["set -euo pipefail", dump_cmd],
-        region=region,
-        comment="EnvScale manual PostgreSQL backup",
-        emit_fn=step_fn,
-        step_id="ops_backup",
-        step_title="Remote PostgreSQL Backup to S3",
-        aws_env=aws_env,
+        build_postgres_backup_ssm_commands(
+            rec_bucket, backup_key, region=region, instance_id=instance_id,
+            tf_lineage=dep_ident.get("tf_lineage", ""), vpc_id=dep_ident.get("vpc_id", ""),
+            release_id=dep_ident.get("release_id", ""), commit_sha=dep_ident.get("commit_sha", ""),
+        ),
+        region=region, comment="EnvScale verified PostgreSQL backup", emit_fn=step_fn,
+        step_id="ops_backup", step_title="Remote PostgreSQL Backup to S3", check=True, aws_env=aws_env,
     )
-    return {"s3_uri": s3_uri, "key": backup_key, "instance_id": instance_id}
+    dump_meta = parse_postgres_backup_ssm_output(ssm_res.stdout or "", expected_bucket=rec_bucket, expected_key=backup_key)
+    verified = verify_s3_postgres_backup_object(
+        bucket=rec_bucket, backup_key=backup_key, region=region,
+        expected_size=dump_meta["size"], expected_sha256=dump_meta["sha256"],
+        aws_env=aws_env, run_fn=lambda cmd, **kw: _aws_cmd(cmd[1:], aws_env=kw.get("env")),
+    )
+    return {
+        "s3_uri": s3_uri, "key": backup_key, "instance_id": instance_id,
+        "content_length": verified["content_length"], "sha256": verified["sha256"],
+        "checksum_sha256": verified["checksum_sha256"],
+    }
 
 
 def parse_restore_ssm_output(stdout: str) -> Dict[str, Any]:

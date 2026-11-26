@@ -337,6 +337,8 @@ class TestOpsReconstructionAndContracts(unittest.TestCase):
 
             with (
                 mock.patch.object(orch, "_require_verified_runtime_env", return_value={"AWS_REGION": REGION}),
+                mock.patch.object(cloud_lifecycle, "verify_destroy_target_environment", return_value={"verified": True, "instance_id": "i-old"}),
+                mock.patch.object(cloud_lifecycle, "verify_destroy_cleanup", return_value={"verified": True, "remaining_resources": 0}),
                 mock.patch.object(cloud_lifecycle.CloudDeployer, "infra_destroy", return_value={"bucket": REC_BUCKET, "key": "backups/postgres/b1.dump", "content_length": 4096, "sha256": "b" * 64}),
             ):
                 d_res = orch.destroy_runtime()

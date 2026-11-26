@@ -172,6 +172,7 @@ class CloudOrchestrator:
         state_store: Optional[PipelineStateStore] = None,
         step_fn: StepCallback = None,
         log_fn: LogCallback = None,
+        allow_ram_handoff: bool = True,
     ):
         self.state_store = state_store or PipelineStateStore()
         saved_profile = self.state_store.load().get("context", {}).get("runtime_profile")
@@ -180,6 +181,7 @@ class CloudOrchestrator:
         self.runtime_session = runtime_session
         self.step_fn = step_fn
         self.log_fn = log_fn
+        self.allow_ram_handoff = allow_ram_handoff
 
     def _emit_step(self, step_id: str, title: str, status: str, detail: str = "") -> None:
         safe = redact_sensitive_text(detail)
@@ -223,7 +225,7 @@ class CloudOrchestrator:
                     raise RuntimeError(f"STS session for '{RUNTIME_PROVISIONER_ROLE_NAME}' has expired; re-assume with TOTP MFA.")
                 session = None
 
-        if session is None:
+        if session is None and self.allow_ram_handoff:
             session = load_ram_runtime_session(account_id=account_id, region=region, verify_caller=True)
 
         if session is None and cb.on_runtime_mfa_session is not None:
@@ -232,12 +234,7 @@ class CloudOrchestrator:
                 raise RuntimeError(f"MFA role assumption for '{RUNTIME_PROVISIONER_ROLE_NAME}' failed or was cancelled.")
 
         if session is not None:
-            verify_session_caller_identity(
-                session,
-                expected_role_name=RUNTIME_PROVISIONER_ROLE_NAME,
-                expected_account_id=account_id,
-                expected_region=region,
-            )
+            verify_session_caller_identity(session, expected_role_name=RUNTIME_PROVISIONER_ROLE_NAME, expected_account_id=account_id, expected_region=region)
             sess_env = session.build_env()
             ident = inspect_aws_identity(aws_env=sess_env)
             if ident.get("bootstrap_deny_active"):
@@ -456,6 +453,11 @@ class CloudOrchestrator:
                 return {"status": "blocked", "stopped_at": "preflight", "results": results, "state": self.state_store.load()}
 
         return {"status": "completed", "stopped_at": None, "results": results, "state": self.state_store.load()}
+
+    def deploy_demo(self, callbacks: Optional[OrchestratorCallbacks] = None, **opts: Any) -> Dict[str, Any]:
+        """Single-command Demo Deploy: preflight -> release -> provision/start -> deploy -> verify."""
+        from .cloud_demo_flow import run_demo_deploy
+        return run_demo_deploy(self, callbacks or OrchestratorCallbacks(), **opts)
 
     def destroy_runtime(self, callbacks: Optional[OrchestratorCallbacks] = None, **opts: Any) -> Dict[str, Any]:
         """Execute fail-closed infrastructure destruction and synchronize PipelineStateStore."""

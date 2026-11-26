@@ -358,6 +358,24 @@ def ops_deploy_flow(stage, from_stage, profile, fresh):
         console.print(f"[bold yellow]Pipeline paused at stage '{out.get('stopped_at')}' (status={status}). Re-run 'ops deploy-flow' to resume.[/bold yellow]")
 
 
+@ops.command("demo-deploy")
+@click.option("--sha", default=None, help="Specific commit SHA to deploy")
+@click.option("--manifest", default=None, help="Path to local validated release-manifest.json")
+@click.option("--branch", default="develop", help="Git branch for release manifest lookup")
+@click.option("--profile", default=None, help="Optional AWS CLI profile")
+def ops_demo_deploy(sha, manifest, branch, profile):
+    """Single-command Demo Deploy: preflight -> release -> provision/start -> deploy -> verify."""
+    orch, cbs = _make_orchestrator(profile)
+    res = orch.deploy_demo(callbacks=cbs, target_sha=sha, manifest_path=manifest, branch=branch)
+    console.print(Panel(
+        f"[bold]Application URL:[/bold] {res.get('app_url') or '-'}\n"
+        f"[bold]Instance ID:[/bold] {res.get('instance_id') or '-'} (IP={res.get('public_ip') or '-'})\n"
+        f"[bold]Release:[/bold] {res.get('release_id') or '-'}",
+        title="Demo Environment Ready",
+        border_style="green",
+    ))
+
+
 @ops.command("dashboard")
 @click.option("--profile", default=None, help="Optional AWS CLI profile")
 @click.option("--skip-http", is_flag=True, default=False, help="Skip external HTTPS probe")
