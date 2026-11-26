@@ -424,7 +424,7 @@ class TestLifecycleAndStateStoreFailures(unittest.TestCase):
         view_src = (REPO_ROOT / "scripts/lib/gui_adw/view_cloud.py").read_text(encoding="utf-8")
         panel_src = (REPO_ROOT / "scripts/lib/gui_adw/cloud_ops_panel.py").read_text(encoding="utf-8")
         self.assertIn("Adw.MessageDialog", view_src)
-        self.assertIn("orchestrator.destroy_runtime", view_src)
+        self.assertTrue("orchestrator.destroy_environment" in view_src or "orchestrator.destroy_runtime" in view_src)
         self.assertIn("orchestrator.restore_database", view_src)
         self.assertIn("self.restore_fn()", panel_src)
 

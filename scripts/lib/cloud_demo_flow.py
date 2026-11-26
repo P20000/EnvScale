@@ -7,7 +7,7 @@ import os
 import pathlib
 import shutil
 import subprocess
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 from .cloud_deployer import CloudDeployer
 from .cloud_identity import (
@@ -34,23 +34,51 @@ _RunFn = Callable[..., subprocess.CompletedProcess]
 
 
 class FoundationNotInitializedError(RuntimeError):
-    """Raised when Persistent Foundation IAM resources are not yet provisioned in AWS."""
+    """Raised when Persistent Foundation IAM resources or SSM secrets are not yet provisioned in AWS."""
+
+    def __init__(self, message: str, missing_prerequisites: Optional[List[str]] = None):
+        super().__init__(message)
+        self.missing_prerequisites: List[str] = list(missing_prerequisites or [])
 
 
-def check_role_exists_for_mfa(aws_info: Dict[str, Any], role_name: str) -> None:
-    """Fail fast before TOTP entry when the Runtime Provisioner role is absent in AWS."""
-    if role_name != RUNTIME_PROVISIONER_ROLE_NAME:
-        return
-    role_entry = (aws_info.get("roles") or {}).get(role_name)
+def inspect_missing_foundation_prerequisites(
+    aws_info: Dict[str, Any],
+    *,
+    account_id: str = DEFAULT_ACCOUNT_ID,
+    region: str = DEFAULT_REGION,
+) -> List[str]:
+    """Return human-readable missing Persistent Foundation IAM prerequisites from inspect_aws_identity()."""
+    missing: List[str] = []
+    roles = aws_info.get("roles") or {}
+    role_entry = roles.get(RUNTIME_PROVISIONER_ROLE_NAME)
     if (
         isinstance(role_entry, dict)
         and role_entry.get("exists") is False
         and "AccessDenied" not in str(role_entry.get("error") or "")
     ):
+        missing.append(f"IAM role '{RUNTIME_PROVISIONER_ROLE_NAME}'")
+
+    prof_entry = aws_info.get("instance_profile")
+    if (
+        isinstance(prof_entry, dict)
+        and prof_entry.get("exists") is False
+        and "AccessDenied" not in str(prof_entry.get("error") or "")
+    ):
+        missing.append("IAM instance profile 'envscale-ec2-runtime-profile'")
+    return missing
+
+
+def check_role_exists_for_mfa(aws_info: Dict[str, Any], role_name: str) -> None:
+    """Fail fast before TOTP entry when Persistent Foundation runtime IAM resources are absent in AWS."""
+    if role_name != RUNTIME_PROVISIONER_ROLE_NAME:
+        return
+    missing = inspect_missing_foundation_prerequisites(aws_info)
+    if missing and any(RUNTIME_PROVISIONER_ROLE_NAME in item for item in missing):
         raise FoundationNotInitializedError(
-            f"Missing IAM role '{role_name}' in AWS. Complete Foundation IAM reconciliation "
-            "(bootstrap-state.sh --bootstrap-foundation-iam --reconcile-existing) and Persistent "
-            "Foundation deployment (foundation.yml) before assuming the Runtime role."
+            f"Missing AWS Foundation resource(s): {', '.join(missing)}. "
+            "Run one-time Foundation setup ('Initialize Foundation' under Advanced Operations; "
+            "bootstrap-state.sh --bootstrap-foundation-iam --reconcile-existing / foundation.yml) before deploying.",
+            missing_prerequisites=missing,
         )
 
 
@@ -64,6 +92,7 @@ def run_demo_preflight(
     *,
     account_id: str = DEFAULT_ACCOUNT_ID,
     region: str = DEFAULT_REGION,
+    tracker: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Run internal demo preflight using a single Runtime Provisioner STS session (no Admin MFA)."""
     sid, title = "demo_preflight", "Demo Preflight"
@@ -74,14 +103,25 @@ def run_demo_preflight(
             raise RuntimeError(f"Missing required CLI tool(s) on PATH: {', '.join(missing_tools)}.")
 
         verified_env = orchestrator._require_verified_runtime_env(callbacks, account_id=account_id, region=region)
+        if tracker is not None:
+            tracker.mark_ui_stage("preflight", "completed")
+            tracker.transition(
+                "PREFLIGHT",
+                stage="prerequisites",
+                ui_stage="readiness",
+                ui_status="running",
+                message="Checking Foundation instance profile, S3 recovery bucket, and SSM parameters...",
+            )
+
         try:
             verify_runtime_instance_profile(emit_fn=orchestrator.step_fn, step_id=sid, step_title=title, aws_env=verified_env)
             CloudDeployer(log_fn=orchestrator.log_fn, step_fn=orchestrator.step_fn, aws_env=verified_env).ensure_s3_vault(
                 step_id=sid, step_title=title
             )
         except Exception as exc:
-            raise RuntimeError(
-                f"{exc} Complete Persistent Foundation setup under 'Advanced Operations & Administration' first."
+            raise FoundationNotInitializedError(
+                f"{exc} Run one-time Foundation setup under 'Advanced Operations and Administration' first.",
+                missing_prerequisites=[str(exc)],
             ) from exc
 
         try:
@@ -89,8 +129,14 @@ def run_demo_preflight(
                 region=region, aws_env=verified_env, emit_fn=orchestrator.step_fn, step_id=sid, step_title=title
             )
         except Exception as exc:
+            msg = str(exc)
+            if "missing" in msg.lower():
+                raise FoundationNotInitializedError(
+                    f"{msg} Run one-time 'Initialize Foundation' under 'Advanced Operations and Administration' first.",
+                    missing_prerequisites=["/envscale/prod/* SSM parameters"],
+                ) from exc
             raise RuntimeError(
-                f"{exc} Seed /envscale/prod/* secrets under 'Advanced Operations & Administration' first."
+                f"{msg} Seed /envscale/prod/* secrets under 'Advanced Operations and Administration' first."
             ) from exc
     except Exception as exc:
         orchestrator._emit_step(sid, title, "error", str(exc))
@@ -169,7 +215,21 @@ def _maybe_start_stopped_host(
         raise
 
 
-def run_demo_deploy(
+def _recovery_hint_for_stage(stage: str) -> str:
+    hints = {
+        "auth": "Authenticate the Runtime Provisioner STS session with a 6-digit TOTP code and retry Deploy.",
+        "preflight": "Install missing local CLI tools on PATH and retry Deploy.",
+        "prerequisites": "Expand Advanced Operations and run 'Initialize Foundation (One-Time)'.",
+        "release": "Ensure a successful cd.yml build exists on develop or pass a valid release-manifest.json.",
+        "tfstate_sync": "Reconcile local and S3 runtime Terraform state before provisioning.",
+        "provision": "Inspect Execution Logs for Terraform/EC2 errors; run Destroy Environment if partial resources remain.",
+        "deploy": "Inspect Execution Logs; automatic rollback was attempted if the host failed verification.",
+        "verify": "Host is active but HTTPS health check failed. Inspect Execution Logs or run Destroy Environment.",
+    }
+    return hints.get(stage, "Inspect Execution Logs for diagnostic details before retrying.")
+
+
+def execute_deploy_environment(
     orchestrator: "CloudOrchestrator",
     callbacks: "OrchestratorCallbacks",
     *,
@@ -178,73 +238,134 @@ def run_demo_deploy(
     branch: str = "develop",
     account_id: str = DEFAULT_ACCOUNT_ID,
     region: str = DEFAULT_REGION,
+    raise_on_error: bool = False,
 ) -> Dict[str, Any]:
-    """Single-click Demo Deploy: preflight -> release manifest -> provision/start -> deploy -> verify."""
-    pre = run_demo_preflight(orchestrator, callbacks, account_id=account_id, region=region)
-    verified_env = pre["aws_env"]
-    orchestrator.state_store.update_stage("preflight", "completed", summary="Demo preflight passed")
+    """Unified deployment pipeline: auth -> preflight -> release -> tfstate -> provision/start -> deploy -> verify."""
+    tracker = orchestrator._make_tracker("deploy", callbacks)
+    current_stage, current_ui = "preflight", "preflight"
+    rollback_attempted = False
+    infra_active = bool(CloudDeployer().get_instance_id())
+    release_id = str(orchestrator.state_store.load().get("context", {}).get("release_id") or "")
+    resumed = None
 
-    ctx = orchestrator.state_store.load().get("context", {})
-    candidate = manifest_path or ctx.get("manifest_path") or ""
-    default_manifest = pathlib.Path(PROJECT_ROOT) / "release-manifest.json"
-    if not candidate and default_manifest.is_file():
-        candidate = str(default_manifest)
+    tracker.transition("PREFLIGHT", stage="preflight", ui_stage="preflight", ui_status="running", message="Validating tools and Runtime STS session...")
+    try:
+        current_stage = "auth"
+        pre = run_demo_preflight(orchestrator, callbacks, account_id=account_id, region=region, tracker=tracker)
+        verified_env = pre["aws_env"]
+        current_ui = "readiness"
+        current_stage = "release"
 
-    need_release_fetch = not candidate or not pathlib.Path(candidate).is_file()
-    eff_sha = (target_sha or "").strip()
-    release_id = str(ctx.get("release_id") or "")
-    if not need_release_fetch:
-        doc = json.loads(pathlib.Path(candidate).read_text(encoding="utf-8"))
-        manifest_sha = str((doc.get("git") or {}).get("commit_sha") or "")
-        release_id = str(doc.get("release_id") or release_id)
-        if eff_sha and not manifest_sha.startswith(eff_sha):
-            need_release_fetch = True
+        ctx = orchestrator.state_store.load().get("context", {})
+        candidate = manifest_path or ctx.get("manifest_path") or ""
+        default_manifest = pathlib.Path(PROJECT_ROOT) / "release-manifest.json"
+        if not candidate and default_manifest.is_file():
+            candidate = str(default_manifest)
+        need_release_fetch = not candidate or not pathlib.Path(candidate).is_file()
+        eff_sha = (target_sha or "").strip()
+        if not need_release_fetch:
+            doc = json.loads(pathlib.Path(candidate).read_text(encoding="utf-8"))
+            manifest_sha = str((doc.get("git") or {}).get("commit_sha") or "")
+            release_id = str(doc.get("release_id") or release_id)
+            if eff_sha and not manifest_sha.startswith(eff_sha):
+                need_release_fetch = True
+            else:
+                eff_sha = manifest_sha
+
+        if need_release_fetch:
+            rel = orchestrator.run_stage("release", callbacks=callbacks, target_sha=target_sha, branch=branch)
+            candidate, eff_sha, release_id = rel["manifest_path"], rel["commit_sha"], rel["release_id"]
         else:
-            eff_sha = manifest_sha
+            deployer_ctx = CloudDeployer(log_fn=orchestrator.log_fn, step_fn=orchestrator.step_fn, aws_env=verified_env).get_aws_context()
+            candidate = str(resolve_and_validate_manifest(
+                commit_sha=eff_sha, manifest_path=candidate,
+                recovery_bucket=deployer_ctx.get("recovery_bucket"), region=region, aws_env=verified_env,
+            ))
+            orchestrator.state_store.update_context(target_sha=eff_sha, manifest_path=candidate, release_id=release_id)
+            orchestrator.state_store.update_stage("release", "completed", summary=f"{release_id} ({eff_sha[:7]})")
 
-    if need_release_fetch:
-        rel = orchestrator.run_stage("release", callbacks=callbacks, target_sha=target_sha, branch=branch)
-        candidate = rel["manifest_path"]
-        eff_sha = rel["commit_sha"]
-        release_id = rel["release_id"]
-    else:
-        deployer_ctx = CloudDeployer(log_fn=orchestrator.log_fn, step_fn=orchestrator.step_fn, aws_env=verified_env).get_aws_context()
-        validated = resolve_and_validate_manifest(
-            commit_sha=eff_sha,
-            manifest_path=candidate,
-            recovery_bucket=deployer_ctx.get("recovery_bucket"),
-            region=region,
-            aws_env=verified_env,
-        )
-        candidate = str(validated)
-        orchestrator.state_store.update_context(target_sha=eff_sha, manifest_path=candidate, release_id=release_id)
-        orchestrator.state_store.update_stage("release", "completed", summary=f"{release_id} ({eff_sha[:7]})")
+        orchestrator.state_store.update_stage("preflight", "completed", summary="Demo preflight passed")
+        tracker.mark_ui_stage("readiness", "completed")
 
-    deployer = CloudDeployer(log_fn=orchestrator.log_fn, step_fn=orchestrator.step_fn, aws_env=verified_env)
-    resumed = _maybe_start_stopped_host(deployer, aws_env=verified_env, region=region, emit_fn=orchestrator.step_fn)
-    if resumed:
-        orchestrator.state_store.update_context(instance_id=resumed["instance_id"], public_ip=resumed["ip"])
-        orchestrator.state_store.update_stage(
-            "provision", "completed", summary=f"Started stopped EC2 {resumed['instance_id']} ({resumed['ip']})"
-        )
-    else:
-        orchestrator.run_stage("provision", callbacks=callbacks, account_id=account_id, region=region)
+        current_ui, current_stage = "provision", "tfstate_sync"
+        tracker.transition("PROVISIONING", stage="tfstate_sync", ui_stage="provision", ui_status="running", message="Synchronizing Terraform state...")
+        deployer = CloudDeployer(log_fn=orchestrator.log_fn, step_fn=orchestrator.step_fn, aws_env=verified_env)
+        deployer.restore_from_s3(step_id="stage_tfstate_sync", step_title="Synchronizing Terraform State")
 
-    dep = orchestrator.run_stage(
-        "deploy", callbacks=callbacks, target_sha=eff_sha, manifest_path=candidate, account_id=account_id, region=region
-    )
-    ver = orchestrator.run_stage("verify", callbacks=callbacks, account_id=account_id, region=region)
-    state = orchestrator.state_store.load()
-    final_ctx = state.get("context", {})
-    return {
-        "status": "completed",
-        "app_url": ver.get("app_url") or dep.get("app_url") or final_ctx.get("app_url") or "",
-        "instance_id": dep.get("instance_id") or final_ctx.get("instance_id") or "",
-        "public_ip": dep.get("public_ip") or final_ctx.get("public_ip") or "",
-        "release_id": release_id,
-        "resumed": bool(resumed),
-        "state": state,
-    }
+        current_stage = "provision"
+        tracker.transition("PROVISIONING", stage="provision", ui_stage="provision", ui_status="running", message="Provisioning or starting EC2 infrastructure...")
+        resumed = _maybe_start_stopped_host(deployer, aws_env=verified_env, region=region, emit_fn=orchestrator.step_fn)
+        if resumed:
+            orchestrator.state_store.update_context(instance_id=resumed["instance_id"], public_ip=resumed["ip"])
+            orchestrator.state_store.update_stage("provision", "completed", summary=f"Started stopped EC2 {resumed['instance_id']} ({resumed['ip']})")
+        else:
+            orchestrator.run_stage("provision", callbacks=callbacks, account_id=account_id, region=region)
+        infra_active = True
+        tracker.mark_ui_stage("provision", "completed")
+
+        current_ui, current_stage = "deploy", "deploy"
+        tracker.transition("DEPLOYING", stage="deploy", ui_stage="deploy", ui_status="running", message="Deploying host configuration and application stack...")
+        orig_step_fn = orchestrator.step_fn
+
+        def _watch_rollback(sid: str, title: str, status: str, detail: str = "") -> None:
+            nonlocal rollback_attempted
+            if "Triggering automatic rollback" in (detail or ""):
+                rollback_attempted = True
+                tracker.transition("RECOVERING", stage="rollback", ui_stage="deploy", ui_status="running", message="Verification failed; automatic rollback in progress...", outcome="RECOVERING")
+            if orig_step_fn:
+                orig_step_fn(sid, title, status, detail)
+
+        orchestrator.step_fn = _watch_rollback
+        try:
+            dep = orchestrator.run_stage("deploy", callbacks=callbacks, target_sha=eff_sha, manifest_path=candidate, account_id=account_id, region=region)
+        finally:
+            orchestrator.step_fn = orig_step_fn
+        tracker.mark_ui_stage("deploy", "completed")
+
+        current_ui, current_stage = "verify", "verify"
+        tracker.transition("VERIFYING", stage="verify", ui_stage="verify", ui_status="running", message="Verifying HTTPS endpoints and application health...")
+        ver = orchestrator.run_stage("verify", callbacks=callbacks, account_id=account_id, region=region)
+        tracker.mark_ui_stage("verify", "completed")
+
+        state = orchestrator.state_store.load()
+        final_ctx = state.get("context", {})
+        app_url = ver.get("app_url") or dep.get("app_url") or final_ctx.get("app_url") or ""
+        tracker.succeed(outcome="READY", message=f"Live at {app_url}" if app_url else "Runtime verified")
+        return {
+            "status": "SUCCEEDED", "outcome": "READY", "phase": "SUCCEEDED",
+            "app_url": app_url, "instance_id": dep.get("instance_id") or final_ctx.get("instance_id") or "",
+            "public_ip": dep.get("public_ip") or final_ctx.get("public_ip") or "",
+            "release_id": release_id, "resumed": bool(resumed), "failure": None, "state": state,
+        }
+    except Exception as exc:
+        infra_active = infra_active or bool(CloudDeployer().get_instance_id())
+        if isinstance(exc, FoundationNotInitializedError):
+            tracker.fail(
+                phase="FOUNDATION_NOT_INITIALIZED", outcome="BLOCKED", failed_stage="prerequisites",
+                ui_stage=current_ui, error=str(exc), rollback_attempted=False, infrastructure_active=infra_active,
+                recovery_action="Expand Advanced Operations and run 'Initialize Foundation (One-Time)' (after one-time IAM reconciliation if required).",
+                missing_prerequisites=exc.missing_prerequisites,
+            )
+        else:
+            tracker.fail(
+                phase="FAILED", outcome="FAILED", failed_stage=current_stage, ui_stage=current_ui,
+                error=str(exc), rollback_attempted=rollback_attempted, infrastructure_active=infra_active,
+                recovery_action=_recovery_hint_for_stage(current_stage),
+            )
+        if raise_on_error:
+            raise
+        final_ctx = orchestrator.state_store.load().get("context", {})
+        return {
+            "status": tracker.phase, "outcome": tracker.outcome, "phase": tracker.phase,
+            "app_url": "", "instance_id": str(final_ctx.get("instance_id") or ""),
+            "public_ip": str(final_ctx.get("public_ip") or ""), "release_id": release_id,
+            "resumed": False, "failure": tracker.failure, "state": orchestrator.state_store.load(),
+        }
+
+
+def run_demo_deploy(orchestrator: "CloudOrchestrator", callbacks: "OrchestratorCallbacks", **opts: Any) -> Dict[str, Any]:
+    """Backwards-compatible wrapper around execute_deploy_environment(raise_on_error=True)."""
+    return execute_deploy_environment(orchestrator, callbacks, raise_on_error=True, **opts)
 
 
 def inspect_destroy_target(

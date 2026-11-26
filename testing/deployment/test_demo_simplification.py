@@ -131,13 +131,14 @@ class TestDemoSimplification(unittest.TestCase):
                 mock.patch.object(cloud_demo_flow.CloudDeployer, "ensure_s3_vault", return_value=None),
                 mock.patch.object(cloud_demo_flow, "verify_ssm_parameters_present", return_value=["duckdns_domain"]),
                 mock.patch.object(cloud_demo_flow.CloudDeployer, "get_aws_context", return_value={"recovery_bucket": REC_BUCKET}),
+                mock.patch.object(cloud_demo_flow.CloudDeployer, "restore_from_s3", return_value={"status": "unchanged"}),
                 mock.patch.object(cloud_demo_flow, "resolve_and_validate_manifest", return_value=manifest),
                 mock.patch.object(cloud_demo_flow, "_maybe_start_stopped_host", return_value=None),
                 mock.patch.object(orch, "run_stage", side_effect=_fake_run_stage),
             ):
                 res = orch.deploy_demo(manifest_path=str(manifest))
 
-            self.assertEqual(res["status"], "completed")
+            self.assertEqual(res["status"], "SUCCEEDED")
             self.assertEqual(res["app_url"], "https://envscale.duckdns.org")
             self.assertEqual(called_stages, ["provision", "deploy", "verify"])
 
@@ -174,6 +175,7 @@ class TestDemoSimplification(unittest.TestCase):
                 mock.patch.object(cloud_demo_flow.CloudDeployer, "ensure_s3_vault", return_value=None),
                 mock.patch.object(cloud_demo_flow, "verify_ssm_parameters_present", return_value=["duckdns_domain"]),
                 mock.patch.object(cloud_demo_flow.CloudDeployer, "get_aws_context", return_value={"recovery_bucket": REC_BUCKET}),
+                mock.patch.object(cloud_demo_flow.CloudDeployer, "restore_from_s3", return_value={"status": "unchanged"}),
                 mock.patch.object(cloud_demo_flow, "resolve_and_validate_manifest", return_value=manifest),
                 mock.patch.object(cloud_demo_flow, "_maybe_start_stopped_host", return_value={"instance_id": "i-stopped", "ip": "5.6.7.8", "resumed": True}),
                 mock.patch.object(orch, "run_stage", side_effect=_fake_stage),
@@ -394,6 +396,7 @@ class TestDemoSimplification(unittest.TestCase):
                 mock.patch.object(cloud_demo_flow.CloudDeployer, "ensure_s3_vault", return_value=None),
                 mock.patch.object(cloud_demo_flow, "verify_ssm_parameters_present", return_value=["duckdns_domain"]),
                 mock.patch.object(cloud_demo_flow.CloudDeployer, "get_aws_context", return_value={"recovery_bucket": REC_BUCKET}),
+                mock.patch.object(cloud_demo_flow.CloudDeployer, "restore_from_s3", return_value={"status": "unchanged"}),
                 mock.patch.object(cloud_demo_flow, "resolve_and_validate_manifest", return_value=manifest) as m_val,
                 mock.patch.object(cloud_demo_flow, "_maybe_start_stopped_host", return_value=None),
                 mock.patch.object(orch, "run_stage", side_effect=_fake_stage),
@@ -457,22 +460,26 @@ class TestDemoSimplification(unittest.TestCase):
         pipe_src = (REPO_ROOT / "scripts/lib/gui_adw/cloud_pipeline_panel.py").read_text(encoding="utf-8")
         demo_src = (REPO_ROOT / "scripts/lib/gui_adw/demo_cloud_panel.py").read_text(encoding="utf-8")
         self.assertIn("DemoCloudPanel", view_src)
-        self.assertIn("Advanced Operations & Administration", view_src)
+        self.assertIn("Advanced Operations and Administration", view_src)
         self.assertIn("set_expanded(False)", view_src)
         self.assertIn("Adw.MessageDialog", view_src)
-        self.assertIn("orchestrator.destroy_runtime", view_src)
+        self.assertIn("orchestrator.destroy_environment", view_src)
+        self.assertIn("orchestrator.deploy_environment", view_src)
         self.assertIn("orchestrator.restore_database", view_src)
         self.assertIn("orchestrator.reconstruct_runtime", view_src)
-        self.assertIn("update_progress", view_src)
+        self.assertIn("apply_progress_event", view_src)
         self.assertIn("FOUNDATION NOT INITIALIZED", view_src)
         self.assertIn("FoundationNotInitializedError", view_src)
         self.assertIn("allow_ram_handoff=False", pipe_src)
         self.assertIn("self.orchestrator.runtime_session = sess", pipe_src)
         self.assertIn("check_role_exists_for_mfa", pipe_src)
+        self.assertIn("initialize_foundation", pipe_src)
+        self.assertNotIn("Provision & Deploy", pipe_src)
+        self.assertNotIn("Run Preflight", pipe_src)
         self.assertNotIn("load_ram_admin_session", pipe_src)
         self.assertNotIn("load_ram_runtime_session", pipe_src)
         self.assertNotIn("Environment & Verification Result", demo_src)
-        self.assertIn("def update_progress", demo_src)
+        self.assertIn("def apply_progress_event", demo_src)
 
         res = CliRunner().invoke(cli_app.cli, ["ops", "demo-deploy", "--help"])
         self.assertEqual(res.exit_code, 0, msg=res.output)

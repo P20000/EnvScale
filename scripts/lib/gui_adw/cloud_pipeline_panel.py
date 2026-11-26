@@ -1,4 +1,4 @@
-"""GTK4/Libadwaita 7-stage Provision & Deploy pipeline panel and secure modal dialogs."""
+"""GTK4/Libadwaita Foundation Administration and Internal Stage Diagnostics panel (Advanced Operations)."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ StepFn = Callable[[str, str, str, str], None]
 
 
 class CloudPipelinePanel(Gtk.Box):
-    """Unified 7-stage resumable workflow controls and interactive approval/MFA/secrets dialogs."""
+    """One-time Foundation setup, Admin MFA/secrets dialogs, and read-only 7-stage diagnostic ledger."""
 
     def __init__(
         self,
@@ -56,7 +56,6 @@ class CloudPipelinePanel(Gtk.Box):
         self._busy = False
         self._stage_rows: Dict[str, Adw.ActionRow] = {}
         self._stage_badges: Dict[str, Gtk.Label] = {}
-        self._stage_buttons: Dict[str, Gtk.Button] = {}
         self._profiles: List[str] = ["(default)"] + list_aws_profiles()
 
         self._build_ui()
@@ -80,20 +79,14 @@ class CloudPipelinePanel(Gtk.Box):
 
     def _build_ui(self) -> None:
         top_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        self.btn_run_all = Gtk.Button(label="Provision & Deploy")
-        self.btn_run_all.add_css_class("suggested-action")
-        self.btn_run_all.connect("clicked", lambda _: self._run_pipeline_async())
-
-        self.btn_preflight = Gtk.Button(label="Run Preflight")
-        self.btn_preflight.connect("clicked", lambda _: self._run_single_stage_async("preflight"))
+        self.btn_init_foundation = Gtk.Button(label="Initialize Foundation (One-Time)")
+        self.btn_init_foundation.add_css_class("suggested-action")
+        self.btn_init_foundation.connect("clicked", lambda _: self._run_init_foundation_async())
 
         self.btn_mfa = Gtk.Button(label="Admin MFA")
         self.btn_mfa.connect("clicked", lambda _: self._on_mfa_clicked(ADMIN_ROLE_NAME))
 
-        self.btn_runtime_mfa = Gtk.Button(label="Runtime MFA")
-        self.btn_runtime_mfa.connect("clicked", lambda _: self._on_mfa_clicked(RUNTIME_PROVISIONER_ROLE_NAME))
-
-        self.btn_reset = Gtk.Button(label="Reset Stages")
+        self.btn_reset = Gtk.Button(label="Reset State")
         self.btn_reset.connect("clicked", self._on_reset_clicked)
 
         profile_lbl = Gtk.Label(label="AWS Profile:")
@@ -109,29 +102,24 @@ class CloudPipelinePanel(Gtk.Box):
         self.badge_runtime = Gtk.Label(label="RUNTIME: NONE")
         self.badge_runtime.add_css_class("dim-label")
 
-        for w in (self.btn_run_all, self.btn_preflight, self.btn_mfa, self.btn_runtime_mfa, self.btn_reset, profile_lbl, self.profile_dropdown, self.badge_admin, self.badge_runtime):
+        for w in (self.btn_init_foundation, self.btn_mfa, self.btn_reset, profile_lbl, self.profile_dropdown, self.badge_admin, self.badge_runtime):
             top_bar.append(w)
         self.append(top_bar)
 
         self.stage_group = Adw.PreferencesGroup()
-        self.stage_group.set_title("Control Plane Pipeline (Resumable 7-Stage Deployment)")
-        self.stage_group.set_description("Run 'Provision & Deploy' end-to-end or execute/resume any individual stage.")
+        self.stage_group.set_title("Foundation Setup and Internal Stage Diagnostics")
+        self.stage_group.set_description("Read-only diagnostic ledger updated automatically by unified orchestration workflows.")
         for idx, (sid, title) in enumerate(STAGE_DEFINITIONS, start=1):
             row = Adw.ActionRow()
-            row.set_title(f"{idx}. {title}")
+            row.set_title(GLib.markup_escape_text(f"{idx}. {title}", -1))
             row.set_subtitle("Pending")
 
             badge = Gtk.Label(label="PENDING")
             badge.add_css_class("dim-label")
             row.add_suffix(badge)
 
-            btn = Gtk.Button(label="Run")
-            btn.connect("clicked", lambda _, s=sid: self._run_single_stage_async(s))
-            row.add_suffix(btn)
-
             self._stage_rows[sid] = row
             self._stage_badges[sid] = badge
-            self._stage_buttons[sid] = btn
             self.stage_group.add(row)
         self.append(self.stage_group)
 
@@ -147,11 +135,12 @@ class CloudPipelinePanel(Gtk.Box):
             return
         self.orchestrator.state_store.reset()
         self.refresh_stage_rows()
+        self._notify_session_changed()
 
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy
         def _apply():
-            for w in (self.btn_run_all, self.btn_preflight, self.btn_mfa, self.btn_runtime_mfa, self.btn_reset, *self._stage_buttons.values()):
+            for w in (self.btn_init_foundation, self.btn_mfa, self.btn_reset):
                 w.set_sensitive(not busy)
         GLib.idle_add(_apply)
 
@@ -205,40 +194,20 @@ class CloudPipelinePanel(Gtk.Box):
             on_secrets_input=self._prompt_secrets_input,
         )
 
-    def _run_pipeline_async(self) -> None:
+    def _run_init_foundation_async(self) -> None:
         if self._busy:
             return
         self._set_busy(True)
         def _task():
             try:
-                out = self.orchestrator.run_pipeline(resume=True, callbacks=self._callbacks())
-                if out.get("status") == "completed" and self.on_complete:
+                out = self.orchestrator.initialize_foundation(callbacks=self._callbacks(), raise_on_error=True)
+                if out.get("status") == "SUCCEEDED" and self.on_complete:
                     self.on_complete()
             except Exception as exc:
                 msg = redact_sensitive_text(f"{type(exc).__name__}: {exc}")
-                self._safe_step("pipeline_err", "Provision & Deploy Failed", "start", msg)
-                self._safe_step("pipeline_err", "Provision & Deploy Failed", "log", traceback.format_exc().rstrip())
-                self._safe_step("pipeline_err", "Provision & Deploy Failed", "error", msg)
-            finally:
-                self._notify_session_changed()
-                self.refresh_stage_rows()
-                self._set_busy(False)
-        threading.Thread(target=_task, daemon=True).start()
-
-    def _run_single_stage_async(self, stage_id: str) -> None:
-        if self._busy:
-            return
-        self._set_busy(True)
-        def _task():
-            try:
-                self.orchestrator.run_stage(stage_id, callbacks=self._callbacks())
-                if stage_id in ("provision", "deploy", "verify") and self.on_complete:
-                    self.on_complete()
-            except Exception as exc:
-                msg = redact_sensitive_text(f"{type(exc).__name__}: {exc}")
-                self._safe_step(f"stage_{stage_id}_err", f"Stage '{stage_id}' Failed", "start", msg)
-                self._safe_step(f"stage_{stage_id}_err", f"Stage '{stage_id}' Failed", "log", traceback.format_exc().rstrip())
-                self._safe_step(f"stage_{stage_id}_err", f"Stage '{stage_id}' Failed", "error", msg)
+                self._safe_step("foundation_init_err", "Foundation Initialization Failed", "start", msg)
+                self._safe_step("foundation_init_err", "Foundation Initialization Failed", "log", traceback.format_exc().rstrip())
+                self._safe_step("foundation_init_err", "Foundation Initialization Failed", "error", msg)
             finally:
                 self._notify_session_changed()
                 self.refresh_stage_rows()
@@ -492,4 +461,3 @@ class CloudPipelinePanel(Gtk.Box):
             body.append(btns)
             return win
         return self._run_ui_modal(_build) or {}
-

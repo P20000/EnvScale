@@ -46,6 +46,7 @@ class CloudView(Gtk.Box):
             on_destroy=self._confirm_destroy,
             log_fn=lambda m: self._on_step_event("demo_url", "Open Application", "log", m),
         )
+        self.pipeline_panel.orchestrator.progress_fn = self.demo_panel.apply_progress_event
         self.append(self.demo_panel)
 
         self.ops_panel = CloudOpsPanel(
@@ -59,7 +60,7 @@ class CloudView(Gtk.Box):
             record_backup_key=lambda k: self.pipeline_panel.orchestrator.state_store.update_context(last_backup_key=k),
         )
 
-        # Host power controls (collapsed under Advanced Operations)
+        # Host power controls (collapsed under Advanced Operations; Destroy lives in Live Demo Control)
         host_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.btn_pause = Gtk.Button(label="Pause Host")
         self.btn_pause.connect("clicked", lambda _: self._run_infra_op("infra_stop", "Pause Host", "infra_stop"))
@@ -67,14 +68,10 @@ class CloudView(Gtk.Box):
         self.btn_resume = Gtk.Button(label="Resume Host")
         self.btn_resume.connect("clicked", lambda _: self._run_infra_op("infra_start", "Resume Host", "infra_start"))
 
-        self.btn_destroy = Gtk.Button(label="Destroy Host")
-        self.btn_destroy.add_css_class("destructive-action")
-        self.btn_destroy.connect("clicked", lambda _: self._confirm_destroy())
-
-        for w in (self.btn_pause, self.btn_resume, self.btn_destroy):
+        for w in (self.btn_pause, self.btn_resume):
             host_bar.append(w)
 
-        # AWS EKS Managed Kubernetes Cluster Section
+        # AWS EKS Managed Kubernetes Cluster Section (collapsed separately)
         eks_actions_card = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         eks_actions_card.set_margin_top(4)
 
@@ -101,20 +98,30 @@ class CloudView(Gtk.Box):
         self.row_eks.add_suffix(self.badge_eks_status)
         self.eks_pref_group.add(self.row_eks)
 
+        eks_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        eks_box.set_margin_top(6)
+        eks_box.append(eks_actions_card)
+        eks_box.append(self.eks_pref_group)
+        self.eks_expander = Gtk.Expander(label="AWS EKS Cluster (Optional)")
+        self.eks_expander.set_expanded(False)
+        self.eks_expander.set_child(eks_box)
+
         advanced_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         advanced_box.set_margin_top(8)
         advanced_box.append(self.ops_panel)
         advanced_box.append(host_bar)
         advanced_box.append(self.pipeline_panel)
-        advanced_box.append(eks_actions_card)
-        advanced_box.append(self.eks_pref_group)
+        advanced_box.append(self.eks_expander)
 
-        self.advanced_expander = Gtk.Expander(label="Advanced Operations & Administration")
+        self.advanced_expander = Gtk.Expander(label="Advanced Operations and Administration")
         self.advanced_expander.set_expanded(False)
         self.advanced_expander.set_child(advanced_box)
         self.append(self.advanced_expander)
 
-        self.append(self.log_panel)
+        self.logs_expander = Gtk.Expander(label="Execution Logs")
+        self.logs_expander.set_expanded(False)
+        self.logs_expander.set_child(self.log_panel)
+        self.append(self.logs_expander)
         self._refresh_status()
 
     def _on_pipeline_complete(self) -> None:
@@ -192,27 +199,23 @@ class CloudView(Gtk.Box):
         if self.pipeline_panel._busy:
             return
         self.pipeline_panel._set_busy(True)
-        self.demo_panel.set_busy(True, "Running preflight, provision/start, deploy, and health check...")
+        self.demo_panel.set_busy(True, "Starting unified deployment pipeline...")
 
         def _task():
             try:
-                res = self.pipeline_panel.orchestrator.deploy_demo(callbacks=self.pipeline_panel._callbacks())
-                app_url = res.get("app_url") or ""
-                inst_id = res.get("instance_id") or "-"
-                rel_id = res.get("release_id") or "-"
-                self.demo_panel.set_result(
-                    True,
-                    f"Live at {app_url}" if app_url else "Demo deployment verified",
-                    f"Instance: {inst_id} | Release: {rel_id} | URL: {app_url}",
-                    app_url=app_url,
-                )
-                self.ops_panel.refresh_async(include_http=True)
+                res = self.pipeline_panel.orchestrator.deploy_environment(callbacks=self.pipeline_panel._callbacks())
+                self.demo_panel.apply_final_result(res, workflow="deploy")
+                if res.get("status") == "SUCCEEDED":
+                    self.ops_panel.refresh_async(include_http=True)
+                else:
+                    GLib.idle_add(lambda: self.logs_expander.set_expanded(True))
             except Exception as exc:
                 msg = redact_sensitive_text(f"{type(exc).__name__}: {exc}")
-                self._on_step_event("demo_deploy_err", "Deploy Demo failed", "start", msg)
-                self._on_step_event("demo_deploy_err", "Deploy Demo failed", "log", traceback.format_exc().rstrip())
-                self._on_step_event("demo_deploy_err", "Deploy Demo failed", "error", msg)
-                self._surface_demo_error("Deploy Demo", exc)
+                self._on_step_event("demo_deploy_err", "Deploy Environment failed", "start", msg)
+                self._on_step_event("demo_deploy_err", "Deploy Environment failed", "log", traceback.format_exc().rstrip())
+                self._on_step_event("demo_deploy_err", "Deploy Environment failed", "error", msg)
+                self._surface_demo_error("Deploy Environment", exc)
+                GLib.idle_add(lambda: self.logs_expander.set_expanded(True))
             finally:
                 self.pipeline_panel.refresh_stage_rows()
                 self.pipeline_panel._set_busy(False)
@@ -239,28 +242,23 @@ class CloudView(Gtk.Box):
             body=body,
         )
         dialog.add_response("cancel", "Cancel")
-        dialog.add_response("destroy", "Backup & Destroy")
+        dialog.add_response("destroy", "Backup and Destroy")
         dialog.set_response_appearance("destroy", Adw.ResponseAppearance.DESTRUCTIVE)
         dialog.set_default_response("cancel")
-        dialog.connect("response", lambda _d, resp: self._run_infra_op("infra_destroy", "Destroy Demo", "infra_destroy") if resp == "destroy" else None)
+        dialog.connect("response", lambda _d, resp: self._run_infra_op("infra_destroy", "Destroy Environment", "infra_destroy") if resp == "destroy" else None)
         dialog.present()
 
     def _run_infra_op(self, op_id: str, title: str, method_name: str) -> None:
         self.demo_panel.set_busy(True, f"{title} in progress...")
         def _task():
-            for b in (self.btn_pause, self.btn_resume, self.btn_destroy):
+            for b in (self.btn_pause, self.btn_resume):
                 GLib.idle_add(lambda btn=b: btn.set_sensitive(False))
             try:
                 if method_name == "infra_destroy":
-                    res = self.pipeline_panel.orchestrator.destroy_runtime(callbacks=self.pipeline_panel._callbacks())
-                    bkp = res.get("backup") or {}
-                    cln = res.get("cleanup") or {}
-                    sha_short = str(bkp.get("sha256") or "")[:12]
-                    self.demo_panel.set_result(
-                        True,
-                        "Demo destroyed and cleanup verified",
-                        f"Backup: {bkp.get('key', '-')} (sha256={sha_short}...) | Remaining resources: {cln.get('remaining_resources', 0)}",
-                    )
+                    res = self.pipeline_panel.orchestrator.destroy_environment(callbacks=self.pipeline_panel._callbacks())
+                    self.demo_panel.apply_final_result(res, workflow="destroy")
+                    if res.get("status") != "SUCCEEDED":
+                        GLib.idle_add(lambda: self.logs_expander.set_expanded(True))
                 else:
                     aws_env = self.pipeline_panel.ensure_runtime_aws_env()
                     deployer = CloudDeployer(
@@ -275,9 +273,10 @@ class CloudView(Gtk.Box):
                 self._on_step_event(err_id, f"{title} failed", "log", traceback.format_exc().rstrip())
                 self._on_step_event(err_id, f"{title} failed", "error", msg)
                 self._surface_demo_error(title, exc)
+                GLib.idle_add(lambda: self.logs_expander.set_expanded(True))
                 self.pm.emit_log("system", f"[cloud] {title} failed: {msg}")
             finally:
-                for b in (self.btn_pause, self.btn_resume, self.btn_destroy):
+                for b in (self.btn_pause, self.btn_resume):
                     GLib.idle_add(lambda btn=b: btn.set_sensitive(True))
                 self.demo_panel.set_busy(False)
                 self._refresh_status()

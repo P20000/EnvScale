@@ -60,15 +60,8 @@ class CloudOpsPanel(Gtk.Box):
 
     def _build_ui(self) -> None:
         bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        self.btn_refresh = Gtk.Button(label="Refresh Dashboard")
+        self.btn_refresh = Gtk.Button(label="Refresh Status")
         self.btn_refresh.connect("clicked", lambda _: self.refresh_async(include_http=True))
-
-        self.svc_dropdown = Gtk.DropDown.new(Gtk.StringList.new(list(ALLOWED_REMOTE_SERVICES)), None)
-        self.btn_logs = Gtk.Button(label="Fetch Remote Logs")
-        self.btn_logs.connect("clicked", lambda _: self._fetch_logs_async())
-
-        self.btn_verify = Gtk.Button(label="Verify Host")
-        self.btn_verify.connect("clicked", lambda _: self._run_action_async("ops_verify", "Remote Verify", trigger_remote_verify))
 
         self.btn_backup = Gtk.Button(label="Backup DB")
         self.btn_backup.connect("clicked", lambda _: self._run_backup_async())
@@ -83,10 +76,11 @@ class CloudOpsPanel(Gtk.Box):
         self.btn_rollback.add_css_class("destructive-action")
         self.btn_rollback.connect("clicked", lambda _: self._run_action_async("ops_rollback", "Remote Rollback", trigger_remote_rollback))
 
-        self.btn_open_url = Gtk.Button(label="Open Cloud URL")
-        self.btn_open_url.connect("clicked", lambda _: open_browser_url(self._cloud_url, log_fn=lambda m: self._safe_step("open_url", "Open Cloud URL", "log", m)))
+        self.svc_dropdown = Gtk.DropDown.new(Gtk.StringList.new(list(ALLOWED_REMOTE_SERVICES)), None)
+        self.btn_logs = Gtk.Button(label="Fetch Remote Logs")
+        self.btn_logs.connect("clicked", lambda _: self._fetch_logs_async())
 
-        for w in (self.btn_refresh, self.svc_dropdown, self.btn_logs, self.btn_verify, self.btn_backup, self.btn_restore, self.btn_reconstruct, self.btn_rollback, self.btn_open_url):
+        for w in (self.btn_refresh, self.btn_backup, self.btn_restore, self.btn_reconstruct, self.btn_rollback, self.svc_dropdown, self.btn_logs):
             bar.append(w)
         self.append(bar)
 
@@ -94,10 +88,10 @@ class CloudOpsPanel(Gtk.Box):
         group.set_title("Live Operations Dashboard")
         group.set_description("Runtime EC2 host, AWS SSM agent, Compose containers, active release, HTTPS, and S3 backups.")
 
-        self.row_ec2, self.badge_ec2 = self._make_row("EC2 Host & IP", "Not checked yet", "UNKNOWN")
+        self.row_ec2, self.badge_ec2 = self._make_row("EC2 Host and IP", "Not checked yet", "UNKNOWN")
         self.row_ssm, self.badge_ssm = self._make_row("SSM Connectivity", "Not checked yet", "UNKNOWN")
         self.row_containers, self.badge_containers = self._make_row("Containers Health", "Awaiting SSM probe", "-")
-        self.row_release, self.badge_release = self._make_row("Active Release & History", "No active release loaded", "-")
+        self.row_release, self.badge_release = self._make_row("Active Release and History", "No active release loaded", "-")
         self.row_health, self.badge_health = self._make_row("HTTPS / TLS Health", self._cloud_url, "-")
         self.row_backups, self.badge_backups = self._make_row("S3 Backups", "Not checked yet", "-")
 

@@ -366,7 +366,7 @@ def ops_deploy_flow(stage, from_stage, profile, fresh):
 def ops_demo_deploy(sha, manifest, branch, profile):
     """Single-command Demo Deploy: preflight -> release -> provision/start -> deploy -> verify."""
     orch, cbs = _make_orchestrator(profile)
-    res = orch.deploy_demo(callbacks=cbs, target_sha=sha, manifest_path=manifest, branch=branch)
+    res = orch.deploy_environment(callbacks=cbs, target_sha=sha, manifest_path=manifest, branch=branch, raise_on_error=True)
     console.print(Panel(
         f"[bold]Application URL:[/bold] {res.get('app_url') or '-'}\n"
         f"[bold]Instance ID:[/bold] {res.get('instance_id') or '-'} (IP={res.get('public_ip') or '-'})\n"
