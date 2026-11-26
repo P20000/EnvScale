@@ -25,6 +25,7 @@ _SCRIPT_DIR = str(pathlib.Path(__file__).resolve().parent)
 if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
 
+from plan_drift_guard import validate_resource_drift  # noqa: E402
 from plan_iam_safety import PROTECTED_FOUNDATION_IAM_ADDRESSES, check_iam_resource_change_safety, check_protected_iam_immutability  # noqa: E402
 
 SUPPORTED_TERRAFORM_VERSION = "1.14.9"
@@ -103,7 +104,7 @@ def validate_plan_doc(
     elif effective_mode == "bootstrap" and plan_doc.get("complete") not in (True, False):
         errors.append(f"Plan document complete is {plan_doc.get('complete')!r} (strictly requires boolean True or False)")
 
-    for field in ("deferred_changes", "deferred_action_invocations", "action_invocations", "resource_drift"):
+    for field in ("deferred_changes", "deferred_action_invocations", "action_invocations"):
         if field in plan_doc:
             val = plan_doc.get(field)
             if not isinstance(val, list):
@@ -159,12 +160,11 @@ def validate_plan_doc(
         else:
             errors.append(f"Resource change '{addr}' has unrecognized mode '{rmode}' (strictly requires 'managed' or 'data')")
 
+    if "resource_drift" in plan_doc:
+        errors.extend(validate_resource_drift(plan_doc.get("resource_drift"), effective_mode=effective_mode, approved_managed=APPROVED_MANAGED_RESOURCES, seen_managed=seen_managed))
     expected_managed = PROTECTED_FOUNDATION_IAM_ADDRESSES if effective_mode == "bootstrap" else set(APPROVED_MANAGED_RESOURCES)
     for m in sorted(expected_managed - set(seen_managed)):
         errors.append(f"Missing expected managed foundation resource in plan: '{m}'")
-    if effective_mode != "bootstrap":
-        for md in sorted(set(APPROVED_DATA_SOURCES) - set(seen_data)):
-            errors.append(f"Missing expected approved data source in plan: '{md}'")
 
     seen_prior_data: set[str] = set()
     seen_prior_managed: set[str] = set()
@@ -192,6 +192,10 @@ def validate_plan_doc(
                 seen_prior_data.add(paddr)
         else:
             errors.append(f"Unexpected prior_state resource '{paddr}' with mode='{pmode}'")
+
+    if effective_mode in ("initial", "update"):
+        have_data = set(seen_data) if effective_mode == "initial" else (set(seen_data) | seen_prior_data)
+        errors.extend(f"Missing expected approved data source in plan: '{md}'" for md in sorted(set(APPROVED_DATA_SOURCES) - have_data))
 
     if effective_mode in ("initial", "update"):
         for req_boot in sorted(PROTECTED_FOUNDATION_IAM_ADDRESSES - seen_prior_managed):
