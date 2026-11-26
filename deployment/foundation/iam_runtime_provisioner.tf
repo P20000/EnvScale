@@ -139,6 +139,19 @@ resource "aws_iam_role_policy" "runtime_provisioner" {
         }
       },
       {
+        Sid      = "DisassocEni"
+        Effect   = "Allow"
+        Action   = ["ec2:DisassociateAddress"]
+        Resource = "arn:aws:ec2:${var.aws_region}:${var.aws_account_id}:network-interface/*"
+        Condition = {
+          StringEquals = { "aws:RequestedRegion" = var.aws_region }
+          Null = {
+            "aws:ResourceTag/Project" = "true"
+            "aws:ResourceTag/Layer"   = "true"
+          }
+        }
+      },
+      {
         Sid    = "RunInstAmi"
         Effect = "Allow"
         Action = ["ec2:RunInstances"]

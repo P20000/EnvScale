@@ -54,6 +54,14 @@ class TestRuntimeProvisionerTwoRoleIam(unittest.TestCase):
         seps = (",", ":")
         # AWS IAM limits: 10,240 chars for inline role policies, 6,144 chars for managed policies.
         self.assertLessEqual(len(json.dumps(policies["role_runtime_provisioner"], separators=seps)), 10240)
+        disassoc_stmt = next((s for s in policies["role_runtime_provisioner"]["Statement"] if s["Sid"] == "DisassocEni"), None)
+        self.assertIsNotNone(disassoc_stmt)
+        self.assertEqual(disassoc_stmt["Action"], ["ec2:DisassociateAddress"])
+        self.assertEqual(disassoc_stmt["Resource"], f"arn:aws:ec2:{b2.REGION}:{b2.ACCOUNT}:network-interface/*")
+        self.assertEqual(
+            disassoc_stmt["Condition"],
+            {"StringEquals": {"aws:RequestedRegion": b2.REGION}, "Null": {"aws:ResourceTag/Project": "true", "aws:ResourceTag/Layer": "true"}},
+        )
         self.assertLessEqual(len(json.dumps(policies["boundary_runtime_provisioner"], separators=seps)), 6144)
         self.assertLessEqual(len(json.dumps(policies["role_ec2_runtime"], separators=seps)), 10240)
         self.assertLessEqual(len(json.dumps(rendered_foundation["role_workload_permissions_boundary"], separators=seps)), 6144)
@@ -108,6 +116,7 @@ class TestRuntimeProvisionerTwoRoleIam(unittest.TestCase):
             "permissions_boundary = aws_iam_policy.runtime_provisioner_permissions_boundary.arn",
             'resource "aws_iam_role_policy" "runtime_provisioner"',
             'name = "envscale-runtime-provisioner-policy"',
+            'Sid      = "DisassocEni"',
             "Principal = { AWS = var.runtime_provisioner_trusted_principal_arns }",
         ):
             self.assertIn(req, rt_tf)
@@ -189,6 +198,24 @@ class TestRuntimeProvisionerTwoRoleIam(unittest.TestCase):
         self.assertEqual(sim.eval_iam_policy_local_harness(pols["role_github_foundation_plan"], "iam:GetRole", rt_role, {}), "allowed")
         self.assertEqual(sim.eval_iam_policy_local_harness(pols["role_github_foundation_plan"], "iam:GetPolicy", rt_pb, {}), "allowed")
         self.assertEqual(sim.eval_iam_policy_local_harness(pols["role_foundation_admin"], "iam:CreatePolicy", rt_pb, {}), "allowed")
+
+    def test_disassociate_address_dual_resource_scope(self):
+        pols = b2.build_all_runtime_iam_policies(FOUNDATION_DIR)
+        prov = pols["role_runtime_provisioner"]
+        pb = pols["boundary_runtime_provisioner"]
+        ep = f"arn:aws:ec2:{b2.REGION}:{b2.ACCOUNT}"
+        cases = [
+            (f"{ep}:elastic-ip/eipalloc-disposable", {"aws:ResourceTag/Project": "EnvScale", "aws:ResourceTag/Layer": "DisposableRuntime", "aws:RequestedRegion": b2.REGION}, "ec2:DisassociateAddress", "allowed"),
+            (f"{ep}:network-interface/eni-primary", {"aws:RequestedRegion": b2.REGION}, "ec2:DisassociateAddress", "allowed"),
+            (f"{ep}:network-interface/eni-other", {"aws:ResourceTag/Project": "Relmonition", "aws:ResourceTag/Layer": "Production", "aws:RequestedRegion": b2.REGION}, "ec2:DisassociateAddress", "implicitDeny"),
+            (f"arn:aws:ec2:us-east-1:{b2.ACCOUNT}:network-interface/eni-primary", {"aws:RequestedRegion": "us-east-1"}, "ec2:DisassociateAddress", "implicitDeny"),
+            (f"{ep}:elastic-ip/eipalloc-persistent", {"aws:ResourceTag/Project": "EnvScale", "aws:ResourceTag/Layer": "PersistentFoundation", "aws:RequestedRegion": b2.REGION}, "ec2:DisassociateAddress", "implicitDeny"),
+            (f"{ep}:elastic-ip/eipalloc-untagged", {"aws:RequestedRegion": b2.REGION}, "ec2:DisassociateAddress", "implicitDeny"),
+            (f"{ep}:network-interface/eni-primary", {"aws:RequestedRegion": b2.REGION}, "ec2:DeleteNetworkInterface", "implicitDeny"),
+        ]
+        for res, ctx, act, exp in cases:
+            with self.subTest(action=act, resource=res, ctx=ctx):
+                self.assertEqual(sim.eval_iam_policy_local_harness(prov, act, res, ctx, None, pb), exp)
 
     def test_runtime_provisioner_and_ec2_matrices_offline(self):
         counts = b2.verify_runtime_iam_matrix(live_aws=False)
