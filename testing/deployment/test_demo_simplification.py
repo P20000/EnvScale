@@ -403,6 +403,55 @@ class TestDemoSimplification(unittest.TestCase):
             self.assertEqual(m_val.call_args.kwargs["commit_sha"], full_sha)
             self.assertEqual(seen_deploy_shas, [full_sha])
 
+    def test_missing_runtime_role_skips_totp_prompt_and_preserves_admin_mfa(self):
+        missing_info = {
+            "authenticated": True,
+            "account_id": ACCOUNT,
+            "region": REGION,
+            "mfa_serials": [f"arn:aws:iam::{ACCOUNT}:mfa/test-totp"],
+            "roles": {
+                RUNTIME_ROLE: {"exists": False, "arn": "", "error": "NoSuchEntity"},
+                cloud_identity.ADMIN_ROLE_NAME: {"exists": True, "arn": f"arn:aws:iam::{ACCOUNT}:role/{cloud_identity.ADMIN_ROLE_NAME}"},
+            },
+        }
+        with self.assertRaises(cloud_demo_flow.FoundationNotInitializedError) as ctx:
+            cloud_demo_flow.check_role_exists_for_mfa(missing_info, RUNTIME_ROLE)
+        self.assertIn(RUNTIME_ROLE, str(ctx.exception))
+        self.assertIn("foundation.yml", str(ctx.exception))
+        self.assertIn("bootstrap-foundation-iam", str(ctx.exception))
+
+        # Admin MFA and AccessDenied/existing checks must not raise FoundationNotInitializedError
+        cloud_demo_flow.check_role_exists_for_mfa(missing_info, cloud_identity.ADMIN_ROLE_NAME)
+        cloud_demo_flow.check_role_exists_for_mfa(
+            {"roles": {RUNTIME_ROLE: {"exists": False, "error": "AccessDenied"}}}, RUNTIME_ROLE
+        )
+        cloud_demo_flow.check_role_exists_for_mfa({"roles": {RUNTIME_ROLE: {"exists": True}}}, RUNTIME_ROLE)
+
+        # Exercise CloudPipelinePanel._ensure_role_session_interactive directly without GUI display
+        from scripts.lib.gui_adw import cloud_pipeline_panel
+
+        dummy = mock.MagicMock()
+        dummy.orchestrator = mock.MagicMock(runtime_profile=None, runtime_session=None, admin_session=None)
+        dummy._run_ui_modal.return_value = "123456"
+        admin_sess = _make_runtime_session()
+
+        with (
+            mock.patch.object(cloud_pipeline_panel, "inspect_aws_identity", return_value=missing_info),
+            mock.patch.object(cloud_pipeline_panel, "assume_runtime_provisioner_role") as m_rt_assume,
+            mock.patch.object(cloud_pipeline_panel, "assume_foundation_admin_role", return_value=admin_sess) as m_adm_assume,
+        ):
+            with self.assertRaises(cloud_demo_flow.FoundationNotInitializedError):
+                cloud_pipeline_panel.CloudPipelinePanel._ensure_role_session_interactive(dummy, RUNTIME_ROLE)
+            dummy._run_ui_modal.assert_not_called()
+            m_rt_assume.assert_not_called()
+
+            got_admin = cloud_pipeline_panel.CloudPipelinePanel._ensure_role_session_interactive(
+                dummy, cloud_identity.ADMIN_ROLE_NAME, reuse_active=False
+            )
+            self.assertIs(got_admin, admin_sess)
+            dummy._run_ui_modal.assert_called_once()
+            m_adm_assume.assert_called_once()
+
     def test_gui_and_cli_demo_contracts(self):
         view_src = (REPO_ROOT / "scripts/lib/gui_adw/view_cloud.py").read_text(encoding="utf-8")
         pipe_src = (REPO_ROOT / "scripts/lib/gui_adw/cloud_pipeline_panel.py").read_text(encoding="utf-8")
@@ -415,8 +464,11 @@ class TestDemoSimplification(unittest.TestCase):
         self.assertIn("orchestrator.restore_database", view_src)
         self.assertIn("orchestrator.reconstruct_runtime", view_src)
         self.assertIn("update_progress", view_src)
+        self.assertIn("FOUNDATION NOT INITIALIZED", view_src)
+        self.assertIn("FoundationNotInitializedError", view_src)
         self.assertIn("allow_ram_handoff=False", pipe_src)
         self.assertIn("self.orchestrator.runtime_session = sess", pipe_src)
+        self.assertIn("check_role_exists_for_mfa", pipe_src)
         self.assertNotIn("load_ram_admin_session", pipe_src)
         self.assertNotIn("load_ram_runtime_session", pipe_src)
         self.assertNotIn("Environment & Verification Result", demo_src)

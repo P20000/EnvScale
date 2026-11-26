@@ -114,16 +114,27 @@ class DemoCloudPanel(Gtk.Box):
 
         GLib.idle_add(_apply)
 
-    def set_result(self, ok: bool, headline: str, detail: str, app_url: str = "") -> None:
+    def set_result(
+        self,
+        ok: bool,
+        headline: str,
+        detail: str,
+        app_url: str = "",
+        *,
+        badge_text: Optional[str] = None,
+        badge_style: Optional[str] = None,
+    ) -> None:
         safe_head = redact_sensitive_text(headline)[:180]
         safe_det = redact_sensitive_text(detail)[:220]
         clean_url = (app_url or "").strip()
+        b_text = badge_text or ("PASS" if ok else "FAILED")
+        b_style = badge_style or ("success" if ok else "error")
 
         def _apply():
             self._app_url = clean_url
             self.btn_open_url.set_sensitive(bool(clean_url))
             self.row_status.set_subtitle(GLib.markup_escape_text(safe_head, -1))
-            self._set_badge(self.badge_status, "PASS" if ok else "FAILED", "success" if ok else "error")
+            self._set_badge(self.badge_status, b_text, b_style)
             self.row_result.set_subtitle(GLib.markup_escape_text(safe_det, -1))
 
         GLib.idle_add(_apply)

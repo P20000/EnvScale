@@ -10,7 +10,13 @@ import subprocess
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 from .cloud_deployer import CloudDeployer
-from .cloud_identity import DEFAULT_ACCOUNT_ID, DEFAULT_REGION, redact_sensitive_text, resolve_recovery_bucket
+from .cloud_identity import (
+    DEFAULT_ACCOUNT_ID,
+    DEFAULT_REGION,
+    RUNTIME_PROVISIONER_ROLE_NAME,
+    redact_sensitive_text,
+    resolve_recovery_bucket,
+)
 from .config import PROJECT_ROOT, TERRAFORM_DIR
 from .postgres_backup_verifier import extract_tfstate_deployment_identity
 from .ssm_deployer import (
@@ -25,6 +31,27 @@ if TYPE_CHECKING:
     from .cloud_orchestrator import CloudOrchestrator, OrchestratorCallbacks, PipelineStateStore
 
 _RunFn = Callable[..., subprocess.CompletedProcess]
+
+
+class FoundationNotInitializedError(RuntimeError):
+    """Raised when Persistent Foundation IAM resources are not yet provisioned in AWS."""
+
+
+def check_role_exists_for_mfa(aws_info: Dict[str, Any], role_name: str) -> None:
+    """Fail fast before TOTP entry when the Runtime Provisioner role is absent in AWS."""
+    if role_name != RUNTIME_PROVISIONER_ROLE_NAME:
+        return
+    role_entry = (aws_info.get("roles") or {}).get(role_name)
+    if (
+        isinstance(role_entry, dict)
+        and role_entry.get("exists") is False
+        and "AccessDenied" not in str(role_entry.get("error") or "")
+    ):
+        raise FoundationNotInitializedError(
+            f"Missing IAM role '{role_name}' in AWS. Complete Foundation IAM reconciliation "
+            "(bootstrap-state.sh --bootstrap-foundation-iam --reconcile-existing) and Persistent "
+            "Foundation deployment (foundation.yml) before assuming the Runtime role."
+        )
 
 
 def _default_tfstate_path() -> str:

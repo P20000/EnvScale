@@ -11,6 +11,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk
 
+from ..cloud_demo_flow import check_role_exists_for_mfa
 from ..cloud_identity import (
     ADMIN_ROLE_NAME,
     RUNTIME_PROVISIONER_ROLE_NAME,
@@ -38,12 +39,14 @@ class CloudPipelinePanel(Gtk.Box):
         step_fn: StepFn,
         on_complete: Optional[Callable[[], None]] = None,
         on_session_changed: Optional[Callable[[], None]] = None,
+        on_mfa_error: Optional[Callable[[str, Exception], None]] = None,
     ):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         self.pm = pm
         self.step_fn = step_fn
         self.on_complete = on_complete
         self.on_session_changed = on_session_changed
+        self.on_mfa_error = on_mfa_error
         self.orchestrator = CloudOrchestrator(
             admin_session=None,
             runtime_session=None,
@@ -258,6 +261,8 @@ class CloudPipelinePanel(Gtk.Box):
                 msg = redact_sensitive_text(str(exc))
                 self._safe_step(step_id, title, "start", f"Assume {role_name}")
                 self._safe_step(step_id, title, "error", msg)
+                if self.on_mfa_error:
+                    self.on_mfa_error(role_name, exc)
             finally:
                 self._notify_session_changed()
                 self.refresh_stage_rows()
@@ -367,6 +372,7 @@ class CloudPipelinePanel(Gtk.Box):
         info = inspect_aws_identity(aws_env=base_env, profile=self.orchestrator.runtime_profile)
         if not info.get("authenticated"):
             raise RuntimeError(info.get("error", "AWS CLI is not authenticated."))
+        check_role_exists_for_mfa(info, role_name)
 
         serials = info.get("mfa_serials", [])
         if not serials:

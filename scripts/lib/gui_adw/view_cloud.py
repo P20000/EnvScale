@@ -10,7 +10,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk
 
-from ..cloud_demo_flow import inspect_destroy_target
+from ..cloud_demo_flow import FoundationNotInitializedError, inspect_destroy_target
 from ..cloud_deployer import CloudDeployer
 from ..cloud_identity import RUNTIME_PROVISIONER_ROLE_NAME, redact_sensitive_text
 from ..eks_deployer import EKSDeployer
@@ -38,6 +38,7 @@ class CloudView(Gtk.Box):
             self._on_step_event,
             on_complete=self._on_pipeline_complete,
             on_session_changed=self._sync_demo_panel,
+            on_mfa_error=self._on_mfa_error,
         )
         self.demo_panel = DemoCloudPanel(
             on_sign_in=self._run_demo_sign_in,
@@ -168,6 +169,22 @@ class CloudView(Gtk.Box):
             GLib.idle_add(_update)
         threading.Thread(target=_task, daemon=True).start()
 
+    def _surface_demo_error(self, title: str, exc: Exception) -> None:
+        if isinstance(exc, FoundationNotInitializedError):
+            self.demo_panel.set_result(
+                False,
+                "Foundation not initialized",
+                redact_sensitive_text(str(exc)),
+                badge_text="FOUNDATION NOT INITIALIZED",
+                badge_style="warning",
+            )
+        else:
+            self.demo_panel.set_result(False, f"{title} failed", redact_sensitive_text(f"{type(exc).__name__}: {exc}"))
+
+    def _on_mfa_error(self, role_name: str, exc: Exception) -> None:
+        if role_name == RUNTIME_PROVISIONER_ROLE_NAME:
+            self._surface_demo_error("AWS Demo Sign-In", exc)
+
     def _run_demo_sign_in(self) -> None:
         self.pipeline_panel._on_mfa_clicked(RUNTIME_PROVISIONER_ROLE_NAME)
 
@@ -195,7 +212,7 @@ class CloudView(Gtk.Box):
                 self._on_step_event("demo_deploy_err", "Deploy Demo failed", "start", msg)
                 self._on_step_event("demo_deploy_err", "Deploy Demo failed", "log", traceback.format_exc().rstrip())
                 self._on_step_event("demo_deploy_err", "Deploy Demo failed", "error", msg)
-                self.demo_panel.set_result(False, "Deploy Demo failed", msg)
+                self._surface_demo_error("Deploy Demo", exc)
             finally:
                 self.pipeline_panel.refresh_stage_rows()
                 self.pipeline_panel._set_busy(False)
@@ -257,7 +274,7 @@ class CloudView(Gtk.Box):
                 self._on_step_event(err_id, f"{title} failed", "start", msg)
                 self._on_step_event(err_id, f"{title} failed", "log", traceback.format_exc().rstrip())
                 self._on_step_event(err_id, f"{title} failed", "error", msg)
-                self.demo_panel.set_result(False, f"{title} failed", msg)
+                self._surface_demo_error(title, exc)
                 self.pm.emit_log("system", f"[cloud] {title} failed: {msg}")
             finally:
                 for b in (self.btn_pause, self.btn_resume, self.btn_destroy):
