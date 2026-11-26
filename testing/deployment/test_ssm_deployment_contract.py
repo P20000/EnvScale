@@ -167,6 +167,7 @@ class TestSsmCommandsAndCleanup(unittest.TestCase):
         cmds = ssm_deployer.build_remote_deploy_commands(SAMPLE_SHA, "e30=")
         joined = "\n".join(cmds)
         self.assertIn("test -d /opt/envscale/.git", joined)
+        self.assertIn("safe.directory /opt/envscale", joined)
         self.assertIn(f"git fetch --no-tags origin {SAMPLE_SHA}", joined)
         self.assertIn(f"git checkout --detach {SAMPLE_SHA}", joined)
         self.assertNotIn("origin/develop", joined)
@@ -402,6 +403,8 @@ class TestRepoInfrastructureContracts(unittest.TestCase):
             cd_yml.index("aws ec2 describe-instances"),
         )
         self.assertIn("deploy-fallback-summary:", cd_yml)
+        self.assertIn("safe.directory /opt/envscale", cd_yml)
+        self.assertIn("/bin/bash -c", cd_yml)
         self.assertIn("if: needs.check-deploy-target.outputs.ec2_configured != 'true'", cd_yml)
         self.assertIn("$GITHUB_STEP_SUMMARY", cd_yml)
 
