@@ -108,7 +108,10 @@
         "iam:SetDefaultPolicyVersion",
         "iam:TagPolicy"
       ],
-      "Resource": "arn:aws:iam::982534376726:policy/envscale-workload-permissions-boundary"
+      "Resource": [
+        "arn:aws:iam::982534376726:policy/envscale-workload-permissions-boundary",
+        "arn:aws:iam::982534376726:policy/envscale-runtime-provisioner-permissions-boundary"
+      ]
     },
     {
       "Sid": "AllowBootstrapOidcProviderDiscovery",

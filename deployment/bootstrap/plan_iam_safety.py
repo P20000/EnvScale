@@ -207,7 +207,7 @@ def check_iam_resource_change_safety(rc: dict[str, Any]) -> list[str]:
     ):
         errors.append(f"S3 public access block '{addr}' weakens public access blocking: {after}")
     if rtype == "aws_s3_bucket_policy" and isinstance(after.get("policy"), str) and after["policy"]:
-        if "DenyInsecureTransport" not in after["policy"] or "DenyBucketAndVersionDestruction" not in after["policy"]:
+        if "DenyInsecureTransport" not in after["policy"] or "DenyBucketAndObjectVersionDestruction" not in after["policy"]:
             errors.append(f"S3 bucket policy '{addr}' missing mandatory transport/destruction Deny statements.")
     return errors
 
@@ -287,6 +287,7 @@ def validate_foundation_iam_bootstrap_policy(policy_path: Any, account_id: str =
     allowed_prefixes = (
         f"arn:aws:iam::{account_id}:role/envscale-",
         f"arn:aws:iam::{account_id}:policy/envscale-workload-permissions-boundary",
+        f"arn:aws:iam::{account_id}:policy/envscale-runtime-provisioner-permissions-boundary",
         f"arn:aws:iam::{account_id}:policy/envscale-foundation-iam-bootstrap-policy",
         f"arn:aws:iam::{account_id}:user/",
         f"arn:aws:iam::{account_id}:oidc-provider/token.actions.githubusercontent.com",
