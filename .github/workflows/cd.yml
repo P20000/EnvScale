@@ -264,6 +264,7 @@ jobs:
           cmds = [
               "set -euo pipefail",
               "test -d /opt/envscale/.git || { echo '[FATAL] EC2 repository checkout is missing.'; exit 1; }",
+              "git config --system --get-all safe.directory 2>/dev/null | grep -Fxq /opt/envscale || git config --system --add safe.directory /opt/envscale",
               "cd /opt/envscale",
               f"git fetch --no-tags origin {sha}",
               f"git checkout --detach {sha}",
@@ -276,7 +277,7 @@ jobs:
               "chmod 600 /var/lib/envscale/pending-release-manifest.json",
               "ENVSCALE_SECRETS_FILE=/etc/envscale/secrets.env /opt/envscale/envscale.sh deploy --manifest /var/lib/envscale/pending-release-manifest.json",
           ]
-          print(json.dumps({"commands": cmds}))
+          print(json.dumps({"commands": [f"/bin/bash -c {shlex.quote(chr(10).join(cmds))}"]}))
           PYEOF
           )" \
             --query "Command.CommandId" \

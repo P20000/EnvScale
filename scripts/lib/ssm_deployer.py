@@ -293,6 +293,7 @@ def build_remote_deploy_commands(
     return [
         "set -euo pipefail",
         "test -d /opt/envscale/.git || { echo '[FATAL] EC2 repository checkout is missing.'; exit 1; }",
+        "git config --system --get-all safe.directory 2>/dev/null | grep -Fxq /opt/envscale || git config --system --add safe.directory /opt/envscale",
         "cd /opt/envscale",
         f"git fetch --no-tags origin {q_sha}",
         f"git checkout --detach {q_sha}",
