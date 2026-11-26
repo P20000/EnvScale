@@ -15,6 +15,33 @@ from .ssm_deployer import run_ssm_command
 
 StepCallback = Optional[Callable[[str, str, str, str], None]]
 ALLOWED_REMOTE_SERVICES = ("all", "api-server", "k8s-streamer", "web", "postgres", "redis")
+RESTORE_RESULT_PREFIX = "ENVSCALE_RESTORE_RESULT="
+POSTGRES_BACKUP_PREFIX = "backups/postgres/"
+
+
+def resolve_app_url(
+    deployer: CloudDeployer,
+    env_cfg: Optional[Dict[str, str]] = None,
+    live_ip: str = "",
+) -> str:
+    """Resolve canonical HTTPS application URL using Terraform output, configured DuckDNS domain, or sslip.io fallback."""
+    try:
+        tf_url = str((deployer._get_tf_outputs().get("app_url") or {}).get("value") or "").strip()
+    except Exception:
+        tf_url = ""
+    if tf_url.startswith("https://"):
+        return tf_url.rstrip("/")
+
+    cfg = env_cfg if env_cfg is not None else load_deployment_env()
+    duck_dom = (cfg.get("DUCKDNS_DOMAIN") or "").strip()
+    if duck_dom:
+        host = duck_dom if duck_dom.endswith(".duckdns.org") else f"{duck_dom}.duckdns.org"
+        return f"https://{host}"
+
+    ip = (live_ip or "").strip()
+    if ip:
+        return f"https://{ip}.sslip.io"
+    return ""
 
 
 def _aws_cmd(args: List[str], aws_env: Optional[Dict[str, str]] = None) -> subprocess.CompletedProcess:
@@ -161,13 +188,10 @@ def fetch_ops_snapshot(
                 probe_data["error"] = redact_sensitive_text(str(exc))
 
     live_ip = ec2_info.get("public_ip") or tf_ip
-    target_host = ""
-    if env_cfg.get("DUCKDNS_TOKEN", "").strip() and domain:
-        target_host = f"{domain}.duckdns.org"
-    elif live_ip:
-        target_host = f"{live_ip}.sslip.io"
+    app_url = resolve_app_url(deployer, env_cfg, live_ip=live_ip)
+    target_host = app_url[len("https://"):].split("/", 1)[0] if app_url.startswith("https://") else ""
 
-    health: Dict[str, Any] = {"checked": False, "ok": False, "target_url": f"https://{target_host}" if target_host else "", "errors": []}
+    health: Dict[str, Any] = {"checked": False, "ok": False, "target_url": app_url, "errors": []}
     if include_http_health and target_host and ec2_info.get("state") in ("running", "not_provisioned", "error"):
         if ec2_info.get("state") == "running":
             ok, errs = verify_deployment_health(target_host, emit=step_fn, step_id="ops_health", step_title="Live Health Check")
@@ -178,7 +202,7 @@ def fetch_ops_snapshot(
         region=region,
         configured_bucket=env_cfg.get("RECOVERY_BUCKET"),
     )
-    backups = _list_s3_backups(rec_bucket, "backups/", region, aws_env)
+    backups = _list_s3_backups(rec_bucket, POSTGRES_BACKUP_PREFIX, region, aws_env)
 
     return {
         "aws_error": aws_error,
@@ -290,6 +314,114 @@ def trigger_remote_backup(aws_env: Optional[Dict[str, str]] = None, step_fn: Ste
         aws_env=aws_env,
     )
     return {"s3_uri": s3_uri, "instance_id": instance_id}
+
+
+def parse_restore_ssm_output(stdout: str) -> Dict[str, Any]:
+    """Parse structured ENVSCALE_RESTORE_RESULT payload from db-restore.sh SSM stdout."""
+    marker = ""
+    for line in (stdout or "").splitlines():
+        s = line.strip()
+        if s.startswith(RESTORE_RESULT_PREFIX):
+            marker = s[len(RESTORE_RESULT_PREFIX):].strip()
+    if not marker:
+        return {}
+    try:
+        data = json.loads(marker)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Malformed PostgreSQL restore result from SSM: {exc}") from exc
+    if not isinstance(data, dict):
+        raise RuntimeError("Invalid PostgreSQL restore result structure from SSM.")
+    return data
+
+
+def _select_latest_dump_key(bucket: str, region: str, aws_env: Optional[Dict[str, str]]) -> str:
+    listing = _list_s3_backups(bucket, POSTGRES_BACKUP_PREFIX, region, aws_env)
+    if listing.get("error"):
+        raise RuntimeError(f"Failed listing PostgreSQL backups in s3://{bucket}/{POSTGRES_BACKUP_PREFIX}: {listing['error']}")
+    for item in listing.get("items") or []:
+        key = str(item.get("key") or "").strip()
+        size = item.get("size") or 0
+        if key.startswith(POSTGRES_BACKUP_PREFIX) and key.endswith(".dump") and int(size) > 0:
+            return key
+    raise RuntimeError(f"No non-empty PostgreSQL backup (.dump) found under s3://{bucket}/{POSTGRES_BACKUP_PREFIX}.")
+
+
+def trigger_remote_restore(
+    backup_key: Optional[str] = None,
+    aws_env: Optional[Dict[str, str]] = None,
+    step_fn: StepCallback = None,
+    skip_verify: bool = False,
+) -> Dict[str, Any]:
+    """Restore a PostgreSQL .dump backup from S3 onto the active EC2 host via envscale.sh restore."""
+    deployer = CloudDeployer(aws_env=aws_env)
+    instance_id = deployer.get_instance_id()
+    if not instance_id:
+        raise RuntimeError("No active EC2 instance ID in Terraform state.")
+    ctx = deployer.get_aws_context()
+    region = ctx["region"]
+    account_id = ctx["account_id"] or DEFAULT_ACCOUNT_ID
+    env_cfg = load_deployment_env()
+    rec_bucket = resolve_recovery_bucket(
+        account_id=account_id,
+        region=region,
+        configured_bucket=env_cfg.get("RECOVERY_BUCKET"),
+    )
+    head = _aws_cmd(["s3api", "get-bucket-location", "--bucket", rec_bucket, "--region", region], aws_env=aws_env)
+    if head.returncode != 0:
+        err = redact_sensitive_text((head.stderr or head.stdout or "Bucket unreachable").strip())
+        raise RuntimeError(f"Canonical recovery bucket 's3://{rec_bucket}' is not accessible ({err}).")
+
+    chosen_key = (backup_key or "").strip() or _select_latest_dump_key(rec_bucket, region, aws_env)
+    if not chosen_key.startswith(POSTGRES_BACKUP_PREFIX) or not chosen_key.endswith(".dump"):
+        raise ValueError(f"Invalid PostgreSQL backup key '{chosen_key}' (must match {POSTGRES_BACKUP_PREFIX}*.dump).")
+
+    expected_sha = ""
+    head_obj = _aws_cmd(
+        ["s3api", "head-object", "--bucket", rec_bucket, "--key", chosen_key, "--region", region, "--checksum-mode", "ENABLED", "--output", "json"],
+        aws_env=aws_env,
+    )
+    if head_obj.returncode != 0:
+        err = redact_sensitive_text((head_obj.stderr or head_obj.stdout or "head-object failed").strip())
+        raise RuntimeError(f"S3 backup s3://{rec_bucket}/{chosen_key} is not accessible: {err}")
+    obj_doc = json.loads(head_obj.stdout or "{}")
+    if int(obj_doc.get("ContentLength") or 0) <= 0:
+        raise RuntimeError(f"S3 backup s3://{rec_bucket}/{chosen_key} is empty (ContentLength <= 0).")
+    meta_sha = str((obj_doc.get("Metadata") or {}).get("sha256") or "").strip().lower()
+    if len(meta_sha) == 64 and all(c in "0123456789abcdef" for c in meta_sha):
+        expected_sha = meta_sha
+
+    restore_cmd = (
+        f"ENVSCALE_SECRETS_FILE=/etc/envscale/secrets.env /opt/envscale/envscale.sh restore "
+        f"--bucket {shlex.quote(rec_bucket)} --key {shlex.quote(chosen_key)} --region {shlex.quote(region)}"
+    )
+    if expected_sha:
+        restore_cmd += f" --expected-sha256 {shlex.quote(expected_sha)}"
+    if skip_verify:
+        restore_cmd += " --skip-verify"
+
+    ssm_res = run_ssm_command(
+        instance_id,
+        ["set -euo pipefail", restore_cmd],
+        region=region,
+        comment="EnvScale PostgreSQL restore from S3",
+        emit_fn=step_fn,
+        step_id="ops_restore",
+        step_title="Remote PostgreSQL Restore from S3",
+        aws_env=aws_env,
+    )
+    parsed = parse_restore_ssm_output(ssm_res.stdout or "")
+    return {
+        "bucket": rec_bucket,
+        "key": chosen_key,
+        "s3_uri": f"s3://{rec_bucket}/{chosen_key}",
+        "instance_id": instance_id,
+        "content_length": int(obj_doc.get("ContentLength") or parsed.get("size") or 0),
+        "sha256": str(parsed.get("sha256") or expected_sha),
+        "canonical_tables": parsed.get("canonical_tables", 0),
+        "migrations": parsed.get("migrations", 0),
+        "row_counts": parsed.get("row_counts", {}),
+        "verify_passed": bool(parsed.get("verify_passed", False)),
+    }
 
 
 def trigger_remote_rollback(aws_env: Optional[Dict[str, str]] = None, step_fn: StepCallback = None) -> None:

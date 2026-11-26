@@ -120,22 +120,26 @@ class CloudDeployer:
         if step_id and step_title:
             self._emit_step(step_id, step_title, "log", f"Verified canonical recovery bucket: s3://{bucket}")
 
+    def _tfstate_s3_uri(self, ctx: Dict[str, str]) -> str:
+        account_id = (ctx.get("account_id") or DEFAULT_ACCOUNT_ID).strip() or DEFAULT_ACCOUNT_ID
+        region = (ctx.get("region") or DEFAULT_REGION).strip() or DEFAULT_REGION
+        return f"s3://envscale-tfstate-{account_id}-{region}/runtime/terraform.tfstate"
+
     def backup_to_s3(self, step_id: Optional[str] = None, step_title: Optional[str] = None):
-        """Back up Terraform state only (no SSH private key persistence)."""
+        """Back up runtime Terraform state to the canonical tfstate S3 bucket/runtime prefix."""
         ctx = self.get_aws_context()
-        bucket = ctx["s3_bucket"]
         tf_state = os.path.join(TERRAFORM_DIR, "terraform.tfstate")
         if os.path.exists(tf_state):
-            self._run_cmd(["aws", "s3", "cp", tf_state, f"s3://{bucket}/state/terraform.tfstate"], step_id=step_id, step_title=step_title)
+            self._run_cmd(["aws", "s3", "cp", tf_state, self._tfstate_s3_uri(ctx)], step_id=step_id, step_title=step_title)
 
     def restore_from_s3(self, step_id: Optional[str] = None, step_title: Optional[str] = None):
-        """Restore Terraform state only (zero SSH private key downloads)."""
+        """Restore runtime Terraform state from the canonical tfstate S3 bucket/runtime prefix."""
         ctx = self.get_aws_context()
-        bucket = ctx["s3_bucket"]
+        state_uri = self._tfstate_s3_uri(ctx)
         tf_state = os.path.join(TERRAFORM_DIR, "terraform.tfstate")
-        check_state = subprocess.run(["aws", "s3", "ls", f"s3://{bucket}/state/terraform.tfstate"], capture_output=True, **self._env_kw())
+        check_state = subprocess.run(["aws", "s3", "ls", state_uri], capture_output=True, **self._env_kw())
         if check_state.returncode == 0:
-            self._run_cmd(["aws", "s3", "cp", f"s3://{bucket}/state/terraform.tfstate", tf_state], step_id=step_id, step_title=step_title)
+            self._run_cmd(["aws", "s3", "cp", state_uri, tf_state], step_id=step_id, step_title=step_title)
 
     def _get_tf_outputs(self) -> Dict[str, Any]:
         tf_state = os.path.join(TERRAFORM_DIR, "terraform.tfstate")

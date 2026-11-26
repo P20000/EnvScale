@@ -293,19 +293,98 @@ jobs:
             --instance-id "${INSTANCE_ID}" \
             --query "Status" \
             --output text)"
-          aws ssm get-command-invocation \
+          RESP_CODE="$(aws ssm get-command-invocation \
+            --region "${AWS_REGION}" \
+            --command-id "${COMMAND_ID}" \
+            --instance-id "${INSTANCE_ID}" \
+            --query "ResponseCode" \
+            --output text 2>/dev/null || echo "unknown")"
+          SSM_OUT="$(aws ssm get-command-invocation \
             --region "${AWS_REGION}" \
             --command-id "${COMMAND_ID}" \
             --instance-id "${INSTANCE_ID}" \
             --query "StandardOutputContent" \
-            --output text
+            --output text 2>/dev/null || true)"
+          printf '%s\n' "${SSM_OUT}"
+
+          {
+            echo "### CD Live SSM Rollout Summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "| :--- | :--- |"
+            echo "| **Commit SHA** | \`${TARGET_SHA}\` |"
+            echo "| **Instance ID** | \`${INSTANCE_ID}\` |"
+            echo "| **SSM Command ID** | \`${COMMAND_ID}\` |"
+            echo "| **SSM Status / Code** | \`${STATUS}\` (\`${RESP_CODE}\`) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
           if [ "${STATUS}" != "Success" ]; then
-            aws ssm get-command-invocation \
+            SSM_ERR="$(aws ssm get-command-invocation \
               --region "${AWS_REGION}" \
               --command-id "${COMMAND_ID}" \
               --instance-id "${INSTANCE_ID}" \
               --query "StandardErrorContent" \
-              --output text >&2
+              --output text 2>/dev/null || true)"
+            printf '%s\n' "${SSM_ERR}" >&2
+            {
+              echo ""
+              echo "#### Failure Diagnostics (tail)"
+              echo '```text'
+              printf '%s\n' "${SSM_ERR}" | tail -n 60
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Verify External HTTPS Application Endpoints
+        if: steps.check_creds.outputs.has_creds == 'true'
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+          DUCKDNS_DOMAIN: ${{ vars.DUCKDNS_DOMAIN }}
+          INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID || vars.EC2_INSTANCE_ID }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+        run: |
+          set -euo pipefail
+          TARGET_URL="${APP_URL}"
+          if [ -z "${TARGET_URL}" ] && [ -n "${DUCKDNS_DOMAIN}" ]; then
+            TARGET_URL="https://${DUCKDNS_DOMAIN}.duckdns.org"
+          elif [ -z "${TARGET_URL}" ]; then
+            PUBLIC_IP="$(aws ec2 describe-instances \
+              --region "${AWS_REGION}" \
+              --instance-ids "${INSTANCE_ID}" \
+              --query "Reservations[0].Instances[0].PublicIpAddress" \
+              --output text 2>/dev/null || true)"
+            if [ -n "${PUBLIC_IP}" ] && [ "${PUBLIC_IP}" != "None" ]; then
+              TARGET_URL="https://${PUBLIC_IP}.sslip.io"
+            fi
+          fi
+
+          if [ -z "${TARGET_URL}" ]; then
+            echo "::notice ::Skipping external HTTPS probe because no APP_URL, DUCKDNS_DOMAIN, or public IPv4 is available."
+            exit 0
+          fi
+
+          TARGET_URL="${TARGET_URL%/}"
+          EXT_OK="false"
+          for attempt in 1 2 3; do
+            API_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${TARGET_URL}/api/health" || echo "000")"
+            STR_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${TARGET_URL}/healthz" || echo "000")"
+            GUARD_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${TARGET_URL}/api/v1/workspaces" || echo "000")"
+            if [ "${API_CODE}" = "200" ] && [ "${STR_CODE}" = "200" ] && [ "${GUARD_CODE}" = "401" ]; then
+              EXT_OK="true"
+              break
+            fi
+            sleep 10
+          done
+
+          {
+            echo ""
+            echo "#### External HTTPS Verification (\`${TARGET_URL}\`)"
+            echo "- \`/api/health\`: \`${API_CODE}\` | \`/healthz\`: \`${STR_CODE}\` | \`/api/v1/workspaces\` guard: \`${GUARD_CODE}\` | Result: \`${EXT_OK}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${EXT_OK}" != "true" ]; then
+            echo "::error ::External HTTPS health check failed for ${TARGET_URL} (api=${API_CODE}, streamer=${STR_CODE}, guard=${GUARD_CODE})"
             exit 1
           fi
 

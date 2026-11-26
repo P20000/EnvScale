@@ -415,3 +415,62 @@ def ops_verify(profile):
     if out:
         console.print(out)
 
+
+@ops.command("destroy")
+@click.option("--profile", default=None, help="Optional AWS CLI profile")
+@click.option("--yes", "assume_yes", is_flag=True, default=False, help="Skip interactive confirmation prompt")
+def ops_destroy(profile, assume_yes):
+    """Verify PostgreSQL backup in S3, destroy runtime infrastructure, and reset pipeline state."""
+    if not assume_yes and not Confirm.ask("[bold red]Verify DB backup and destroy all disposable runtime AWS resources?[/bold red]"):
+        raise click.Abort()
+    orch, cbs = _make_orchestrator(profile)
+    res = orch.destroy_runtime(callbacks=cbs)
+    bkp = res.get("backup", {})
+    console.print(Panel(
+        f"[bold]Verified S3 Backup:[/bold] s3://{bkp.get('bucket', '-')}/{bkp.get('key', '-')}\n"
+        f"[bold]Size / SHA-256:[/bold] {bkp.get('content_length', 0)} bytes | {str(bkp.get('sha256', ''))[:16]}...\n"
+        "[bold]Pipeline State:[/bold] Runtime stages reset to pending (ready for reconstruction)",
+        title="Runtime Destroyed Safely",
+        border_style="yellow",
+    ))
+
+
+@ops.command("restore")
+@click.option("--key", default=None, help="Specific S3 key under backups/postgres/*.dump (defaults to latest)")
+@click.option("--profile", default=None, help="Optional AWS CLI profile")
+@click.option("--skip-verify", is_flag=True, default=False, help="Skip verify.sh after DB schema/table restore")
+def ops_restore(key, profile, skip_verify):
+    """Restore PostgreSQL backup from S3 onto the active runtime EC2 host and verify schema/data."""
+    orch, cbs = _make_orchestrator(profile)
+    res = orch.restore_database(callbacks=cbs, backup_key=key, skip_verify=skip_verify)
+    tbl = Table(title="PostgreSQL Restore Summary", header_style="bold green")
+    tbl.add_column("Check")
+    tbl.add_column("Result")
+    tbl.add_row("Backup S3 URI", res.get("s3_uri", "-"))
+    tbl.add_row("SHA-256", str(res.get("sha256", "-"))[:24])
+    tbl.add_row("Canonical Tables", f"{res.get('canonical_tables', 0)}/12")
+    tbl.add_row("Applied Migrations", str(res.get("migrations", 0)))
+    tbl.add_row("Row Counts", str(res.get("row_counts") or {}))
+    tbl.add_row("Post-Restore Verify", "PASSED" if res.get("verify_passed") else "SKIPPED/UNVERIFIED")
+    console.print(tbl)
+
+
+@ops.command("reconstruct")
+@click.option("--key", default=None, help="Specific S3 backup key to restore (defaults to saved/latest backup)")
+@click.option("--sha", default=None, help="Specific release commit SHA to deploy")
+@click.option("--manifest", default=None, help="Path to local validated release-manifest.json")
+@click.option("--profile", default=None, help="Optional AWS CLI profile")
+@click.option("--skip-restore", is_flag=True, default=False, help="Provision & deploy without running DB restore")
+def ops_reconstruct(key, sha, manifest, profile, skip_restore):
+    """Reconstruct runtime EC2 host, deploy pinned release, restore PostgreSQL data, and verify health."""
+    orch, cbs = _make_orchestrator(profile)
+    res = orch.reconstruct_runtime(callbacks=cbs, backup_key=key, target_sha=sha, manifest_path=manifest, skip_restore=skip_restore)
+    rest = res.get("restore") or {}
+    console.print(Panel(
+        f"[bold]Application URL:[/bold] {res.get('app_url') or '-'}\n"
+        f"[bold]Restored Backup:[/bold] {rest.get('s3_uri') or rest.get('status', '-')}\n"
+        f"[bold]Restored Tables / Rows:[/bold] {rest.get('canonical_tables', '-')}/12 | {rest.get('row_counts') or '-'}",
+        title="Reconstruction & Verification Complete",
+        border_style="green",
+    ))
+

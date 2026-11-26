@@ -30,8 +30,11 @@ if [[ -d "/opt/envscale" && "$SCRIPT_DIR" == "/opt/envscale" ]]; then
     verify)
       exec "${RUNTIME_SCRIPTS}/verify.sh" "$@"
       ;;
+    restore)
+      exec "${RUNTIME_SCRIPTS}/db-restore.sh" "$@"
+      ;;
     *)
-      echo "Usage on EC2 host: ./envscale.sh <deploy|rollback|verify> [options]" >&2
+      echo "Usage on EC2 host: ./envscale.sh <deploy|rollback|verify|restore> [options]" >&2
       exit 1
       ;;
   esac

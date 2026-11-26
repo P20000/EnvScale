@@ -61,7 +61,20 @@ kubectl wait --for=condition=Ready node --all --timeout=60s || true
 
 echo "=== [3/5] Setting up Project Workspace & Reverse Proxy ==="
 if [ ! -d /opt/envscale/.git ]; then
-    git clone -b develop https://github.com/P20000/EnvScale.git /opt/envscale || mkdir -p /opt/envscale
+    CLONE_OK="false"
+    for attempt in 1 2 3; do
+        rm -rf /opt/envscale
+        if git clone -b develop https://github.com/P20000/EnvScale.git /opt/envscale; then
+            CLONE_OK="true"
+            break
+        fi
+        echo "[WARN] git clone attempt $${attempt}/3 failed; retrying in 5s..." >&2
+        sleep 5
+    done
+    if [ "$CLONE_OK" != "true" ] || [ ! -d /opt/envscale/.git ]; then
+        echo "[FATAL] Failed cloning EnvScale repository into /opt/envscale after 3 attempts." >&2
+        exit 1
+    fi
 fi
 chown -R ubuntu:ubuntu /opt/envscale
 

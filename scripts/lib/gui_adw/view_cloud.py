@@ -12,6 +12,7 @@ from gi.repository import Adw, GLib, Gtk
 
 from ..cloud_deployer import CloudDeployer
 from ..cloud_identity import redact_sensitive_text
+from ..cloud_lifecycle import sync_state_after_destroy
 from ..eks_deployer import EKSDeployer
 from .cloud_ops_panel import CloudOpsPanel
 from .cloud_pipeline_panel import CloudPipelinePanel
@@ -55,7 +56,7 @@ class CloudView(Gtk.Box):
 
         self.btn_destroy = Gtk.Button(label="Destroy Host")
         self.btn_destroy.add_css_class("destructive-action")
-        self.btn_destroy.connect("clicked", lambda _: self._run_infra_op("infra_destroy", "Destroy Host", "infra_destroy"))
+        self.btn_destroy.connect("clicked", lambda _: self._confirm_destroy())
 
         for w in (self.btn_pause, self.btn_resume, self.btn_destroy):
             host_bar.append(w)
@@ -130,6 +131,19 @@ class CloudView(Gtk.Box):
             GLib.idle_add(_update)
         threading.Thread(target=_task, daemon=True).start()
 
+    def _confirm_destroy(self) -> None:
+        dialog = Adw.MessageDialog(
+            transient_for=self.get_root(),
+            heading="Destroy Disposable Runtime Host?",
+            body="EnvScale will verify a fresh PostgreSQL S3 backup first, then tear down EC2/VPC resources and reset runtime pipeline state.",
+        )
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("destroy", "Backup & Destroy")
+        dialog.set_response_appearance("destroy", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.connect("response", lambda _d, resp: self._run_infra_op("infra_destroy", "Destroy Host", "infra_destroy") if resp == "destroy" else None)
+        dialog.present()
+
     def _run_infra_op(self, op_id: str, title: str, method_name: str) -> None:
         def _task():
             try:
@@ -137,7 +151,9 @@ class CloudView(Gtk.Box):
                     step_fn=self._on_step_event,
                     aws_env=self.pipeline_panel.get_runtime_aws_env(),
                 )
-                getattr(deployer, method_name)()
+                result = getattr(deployer, method_name)()
+                if method_name == "infra_destroy":
+                    sync_state_after_destroy(self.pipeline_panel.orchestrator.state_store, result or {})
             except Exception as exc:
                 err_id = f"{op_id}_error"
                 msg = redact_sensitive_text(f"{type(exc).__name__}: {exc}")
