@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Icon } from "../ui/Icon";
 import {
   mdiContentCopy,
@@ -10,7 +10,7 @@ import {
   mdiRefresh,
 } from "@mdi/js";
 import { Button } from "../ui/button";
-import { API_BASE_URL, STREAMER_BASE_URL } from "../../config/api";
+import { API_BASE_URL, STREAMER_BASE_URL, apiCreateManifestToken, getStreamerToken } from "../../config/api";
 
 interface AgentInstallStepProps {
   clusterId: string;
@@ -23,12 +23,43 @@ export function AgentInstallStep({ clusterId, clusterName, onConnected }: AgentI
   const [status, setStatus] = useState<"waiting" | "connected">("waiting");
   const [isChecking, setIsChecking] = useState(false);
   const [tunnelUrl, setTunnelUrl] = useState("");
+  const [manifestToken, setManifestToken] = useState<string>("");
+  const [manifestLoading, setManifestLoading] = useState<boolean>(true);
+  const [manifestError, setManifestError] = useState<string | null>(null);
+  const [pollError, setPollError] = useState<string | null>(null);
 
-  // Retrieve user JWT token
-  const token =
-    localStorage.getItem("envscale_auth_token") ||
-    localStorage.getItem("envscale_access_token") ||
-    "";
+  const loadManifestToken = useCallback(async () => {
+    setManifestLoading(true);
+    setManifestError(null);
+    const res = await apiCreateManifestToken(clusterId);
+    if (res.token) {
+      setManifestToken(res.token);
+      setManifestError(null);
+    } else {
+      setManifestToken("");
+      setManifestError(res.error || "Unable to issue manifest download token");
+    }
+    setManifestLoading(false);
+  }, [clusterId]);
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const res = await apiCreateManifestToken(clusterId);
+      if (!active) return;
+      if (res.token) {
+        setManifestToken(res.token);
+        setManifestError(null);
+      } else {
+        setManifestToken("");
+        setManifestError(res.error || "Unable to issue manifest download token");
+      }
+      setManifestLoading(false);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [clusterId]);
 
   const isLocalhost =
     typeof window !== "undefined" &&
@@ -41,37 +72,53 @@ export function AgentInstallStep({ clusterId, clusterName, onConnected }: AgentI
       ? (isLocalhost ? "http://localhost:3000" : window.location.origin)
       : "http://localhost:3000";
 
-  const manifestUrl = `${hostUrl}/api/v1/clusters/${clusterId}/agent.yaml?token=${token}${
-    tunnelUrl.trim() ? `&serverUrl=${encodeURIComponent(tunnelUrl.trim())}` : ""
-  }`;
-  const installCmd = `kubectl apply -f "${manifestUrl}"`;
+  const manifestUrl = manifestToken
+    ? `${hostUrl}/api/v1/clusters/${clusterId}/agent.yaml?token=${encodeURIComponent(manifestToken)}${
+        tunnelUrl.trim() ? `&serverUrl=${encodeURIComponent(tunnelUrl.trim())}` : ""
+      }`
+    : "";
+  const installCmd = manifestUrl ? `kubectl apply -f "${manifestUrl}"` : "";
 
   const copyToClipboard = () => {
+    if (!installCmd) return;
     navigator.clipboard.writeText(installCmd);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const checkConnection = async () => {
-    setIsChecking(true);
-    try {
-      const streamerHost = STREAMER_BASE_URL.startsWith("http")
+  const resolveStreamerHost = useCallback(
+    () =>
+      STREAMER_BASE_URL.startsWith("http")
         ? STREAMER_BASE_URL
         : typeof window !== "undefined"
         ? (isLocalhost ? "http://localhost:8080" : window.location.origin)
-        : "http://localhost:8080";
+        : "http://localhost:8080",
+    [isLocalhost]
+  );
+
+  const checkConnection = async () => {
+    setIsChecking(true);
+    setPollError(null);
+    try {
+      const streamerHost = resolveStreamerHost();
+      const streamerTok = await getStreamerToken();
+      if (!streamerTok) {
+        setPollError("Session expired or streamer token unavailable. Please sign in again.");
+        return;
+      }
 
       const res = await fetch(
-        `${streamerHost}/api/v1/clusters/snapshot?clusterId=${encodeURIComponent(
-          clusterId
-        )}&token=${encodeURIComponent(token)}`,
+        `${streamerHost}/api/v1/clusters/snapshot?clusterId=${encodeURIComponent(clusterId)}`,
         {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          headers: { Authorization: `Bearer ${streamerTok}` },
         }
       );
 
       if (res.ok) {
+        setPollError(null);
         setStatus("connected");
+      } else if (res.status === 401 || res.status === 403) {
+        setPollError(`Cluster access rejected (HTTP ${res.status}). Check workspace permissions.`);
       }
     } catch {
       // Still waiting
@@ -87,23 +134,25 @@ export function AgentInstallStep({ clusterId, clusterName, onConnected }: AgentI
     let isMounted = true;
     const poll = async () => {
       try {
-        const streamerHost = STREAMER_BASE_URL.startsWith("http")
-          ? STREAMER_BASE_URL
-          : typeof window !== "undefined"
-          ? window.location.origin
-          : "https://envscale.duckdns.org";
+        const streamerHost = resolveStreamerHost();
+        const streamerTok = await getStreamerToken();
+        if (!streamerTok) {
+          if (isMounted) setPollError("Unable to acquire streamer session token.");
+          return;
+        }
 
         const res = await fetch(
-          `${streamerHost}/api/v1/clusters/snapshot?clusterId=${encodeURIComponent(
-            clusterId
-          )}&token=${encodeURIComponent(token)}`,
+          `${streamerHost}/api/v1/clusters/snapshot?clusterId=${encodeURIComponent(clusterId)}`,
           {
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            headers: { Authorization: `Bearer ${streamerTok}` },
           }
         );
 
         if (res.ok && isMounted) {
+          setPollError(null);
           setStatus("connected");
+        } else if ((res.status === 401 || res.status === 403) && isMounted) {
+          setPollError(`Cluster access rejected (HTTP ${res.status}).`);
         }
       } catch {
         // Still waiting
@@ -118,7 +167,7 @@ export function AgentInstallStep({ clusterId, clusterName, onConnected }: AgentI
       clearTimeout(timeout);
       clearInterval(interval);
     };
-  }, [clusterId, token, status]);
+  }, [clusterId, status, resolveStreamerHost]);
 
   return (
     <div className="space-y-4">
@@ -143,18 +192,36 @@ export function AgentInstallStep({ clusterId, clusterName, onConnected }: AgentI
             <Icon path={mdiConsole} size={0.65} className="text-blue-400" />
             Terminal Installation Command
           </label>
-          <button
-            type="button"
-            onClick={copyToClipboard}
-            className="flex items-center gap-1 text-[11px] font-mono text-blue-400 hover:text-blue-300 transition-colors"
-          >
-            <Icon path={copied ? mdiCheck : mdiContentCopy} size={0.6} />
-            {copied ? "Copied!" : "Copy Command"}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void loadManifestToken()}
+              disabled={manifestLoading}
+              className="flex items-center gap-1 text-[11px] font-mono text-neutral-300 hover:text-neutral-100 transition-colors disabled:opacity-50"
+            >
+              <Icon path={mdiRefresh} size={0.55} className={manifestLoading ? "animate-spin" : ""} />
+              Regenerate
+            </button>
+            <button
+              type="button"
+              onClick={copyToClipboard}
+              disabled={!installCmd || manifestLoading}
+              className="flex items-center gap-1 text-[11px] font-mono text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-40"
+            >
+              <Icon path={copied ? mdiCheck : mdiContentCopy} size={0.6} />
+              {copied ? "Copied!" : "Copy Command"}
+            </button>
+          </div>
         </div>
 
         <div className="relative rounded-xl border border-zinc-800 bg-black/60 p-3.5 font-mono text-xs text-neutral-200">
-          <p className="break-all select-all text-emerald-400/90 leading-relaxed">{installCmd}</p>
+          {manifestError ? (
+            <p className="text-red-400 leading-relaxed">{manifestError}</p>
+          ) : manifestLoading || !installCmd ? (
+            <p className="text-neutral-400 leading-relaxed">Generating single-use manifest download token...</p>
+          ) : (
+            <p className="break-all select-all text-emerald-400/90 leading-relaxed">{installCmd}</p>
+          )}
         </div>
 
         {isLocalhost && (
@@ -193,7 +260,13 @@ export function AgentInstallStep({ clusterId, clusterName, onConnected }: AgentI
       </div>
 
       {status === "waiting" ? (
-        <div className="flex items-center justify-between rounded-xl border border-amber-500/20 bg-amber-500/10 p-3.5">
+        <div className="space-y-2">
+          {pollError && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+              {pollError}
+            </div>
+          )}
+          <div className="flex items-center justify-between rounded-xl border border-amber-500/20 bg-amber-500/10 p-3.5">
           <div className="flex items-center gap-2.5">
             <Icon path={mdiClockOutline} size={0.7} className="animate-spin text-amber-400" />
             <div>
@@ -212,6 +285,7 @@ export function AgentInstallStep({ clusterId, clusterName, onConnected }: AgentI
             <Icon path={mdiRefresh} size={0.55} className={isChecking ? "animate-spin" : ""} />
             {isChecking ? "Checking..." : "Check"}
           </button>
+          </div>
         </div>
       ) : (
         <div className="flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3.5">

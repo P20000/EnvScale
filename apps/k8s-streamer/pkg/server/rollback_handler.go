@@ -3,11 +3,11 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -38,17 +38,30 @@ func setupRollbackRoutes(mux *http.ServeMux, clusterManager *k8s.ClusterManager,
 			return
 		}
 
-		// 1. Strict Auth Guard: enforce valid JWT token verification (or allowAnonymous in local dev)
-		allowAnonymous := os.Getenv("ALLOW_ANONYMOUS_WS") == "true"
-		claims, err := websocket.AuthenticateRequest(r)
-		if err != nil && !allowAnonymous {
-			log.Printf("[Rollout Auth Failed] Unauthorized rollback attempt from %s: %v", r.RemoteAddr, err)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(map[string]string{
-				"error": "Authentication required: valid Bearer token is mandatory to execute deployment rollbacks",
-			})
-			return
+		// 1. Strict Auth Guard: enforce valid Bearer JWT token verification
+		claims, err := websocket.AuthenticateBearerRequest(r)
+		if err != nil {
+			if errors.Is(err, websocket.ErrMissingToken) || errors.Is(err, websocket.ErrMissingSecret) {
+				if authErr := websocket.CheckClusterOperationAuthorization(nil, "anon-check", "ADMIN"); authErr == nil {
+					claims = nil
+				} else {
+					log.Printf("[Rollout Auth Failed] Unauthorized rollback attempt from %s: %v", r.RemoteAddr, err)
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusUnauthorized)
+					json.NewEncoder(w).Encode(map[string]string{
+						"error": "Authentication required: valid Bearer token is mandatory to execute deployment rollbacks",
+					})
+					return
+				}
+			} else {
+				log.Printf("[Rollout Auth Failed] Invalid token on rollback attempt from %s: %v", r.RemoteAddr, err)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				json.NewEncoder(w).Encode(map[string]string{
+					"error": fmt.Sprintf("Authentication required: %v", err),
+				})
+				return
+			}
 		}
 
 		userIdentifier := "authenticated-user"
@@ -94,16 +107,14 @@ func setupRollbackRoutes(mux *http.ServeMux, clusterManager *k8s.ClusterManager,
 			return
 		}
 
-		// Verify that caller has authorization to target cluster
-		if !allowAnonymous && claims != nil {
-			if authErr := websocket.CheckClusterAuthorization(claims, req.ClusterID); authErr != nil {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusForbidden)
-				json.NewEncoder(w).Encode(map[string]string{
-					"error": fmt.Sprintf("Cluster authorization denied: %v", authErr),
-				})
-				return
-			}
+		// Verify that caller has ADMIN operational authorization to target cluster
+		if authErr := websocket.CheckClusterOperationAuthorization(claims, req.ClusterID, "ADMIN"); authErr != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error": fmt.Sprintf("Cluster authorization denied: %v", authErr),
+			})
+			return
 		}
 
 		clientset, err := clusterManager.GetClientset(req.ClusterID)

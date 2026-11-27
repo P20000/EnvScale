@@ -148,7 +148,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
         }
         set({ token, user: fullUser, isAuthenticated: true });
       } else {
-        ["envscale_auth_token", "envscale_access_token", "envscale_user"].forEach((k) => localStorage.removeItem(k));
+        ["envscale_auth_token", "envscale_access_token", "envscale_streamer_token", "envscale_user"].forEach((k) => localStorage.removeItem(k));
         set({ token: null, user: null, isAuthenticated: false });
       }
     },
@@ -470,14 +470,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
     },
 
     logoutAll: async () => {
-      const isViteDev =
-        typeof window !== "undefined" &&
-        (window.location.port === "5173" || window.location.port === "5174");
-      const streamerUrl =
-        import.meta.env.VITE_STREAMER_BASE_URL ||
-        (!isViteDev && typeof window !== "undefined" && window.location.origin ? window.location.origin : "http://localhost:8080");
-      fetch(`${streamerUrl}/api/v1/clusters/unregister-all`, { method: "POST" }).catch(() => {});
-      ["envscale_auth_token", "envscale_access_token", "envscale_user", "envscale_saved_accounts", "envscale-topology-storage-v2"].forEach((k) => localStorage.removeItem(k));
+      ["envscale_auth_token", "envscale_access_token", "envscale_streamer_token", "envscale_user", "envscale_saved_accounts", "envscale-topology-storage-v2"].forEach((k) => localStorage.removeItem(k));
       useTopologyStore.getState().resetStore();
       set({
         token: null,

@@ -3,9 +3,11 @@ package agent
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
@@ -30,6 +32,8 @@ type Config struct {
 	ServerURL      string
 	Token          string
 	KubeconfigPath string
+	CACertPath     string
+	CACertPEM      string
 }
 
 // LoadConfigFromEnv loads configuration from standard environment variables
@@ -52,12 +56,54 @@ func LoadConfigFromEnv() Config {
 		token = os.Getenv("ENVSCALE_TOKEN")
 	}
 
+	caCertPath := os.Getenv("CA_CERT_PATH")
+	if caCertPath == "" {
+		caCertPath = os.Getenv("ENVSCALE_CA_CERT_PATH")
+	}
+	caCertPEM := os.Getenv("CA_CERT_PEM")
+	if caCertPEM == "" {
+		caCertPEM = os.Getenv("ENVSCALE_CA_CERT_PEM")
+	}
+
 	return Config{
 		ClusterID:      clusterID,
 		ServerURL:      serverURL,
 		Token:          token,
 		KubeconfigPath: os.Getenv("KUBECONFIG"),
+		CACertPath:     caCertPath,
+		CACertPEM:      caCertPEM,
 	}
+}
+
+// buildAgentTLSConfig constructs a strict TLS configuration using the system trust store
+// and an optional explicitly configured CA certificate path or PEM bundle.
+func buildAgentTLSConfig(caCertPath, caCertPEM string) (*tls.Config, error) {
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	}
+
+	if caCertPath != "" {
+		pemBytes, err := os.ReadFile(caCertPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read CA_CERT_PATH %q: %w", caCertPath, err)
+		}
+		if !pool.AppendCertsFromPEM(pemBytes) {
+			return nil, fmt.Errorf("CA_CERT_PATH %q contains no valid PEM certificates", caCertPath)
+		}
+	}
+
+	if caCertPEM != "" {
+		if !pool.AppendCertsFromPEM([]byte(caCertPEM)) {
+			return nil, fmt.Errorf("CA_CERT_PEM contains no valid PEM certificates")
+		}
+	}
+
+	return &tls.Config{
+		RootCAs:            pool,
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: false,
+	}, nil
 }
 
 // wsSender implements ws.EventPublisher to forward events over outbound WebSocket
@@ -156,25 +202,46 @@ func runStreamingPipeline(cfg Config, im *k8s.InformerManager, outCh <-chan []by
 
 	q := parsedURL.Query()
 	q.Set("clusterId", cfg.ClusterID)
-	if cfg.Token != "" {
-		q.Set("token", cfg.Token)
-	}
 	parsedURL.RawQuery = q.Encode()
+
+	headers := http.Header{}
+	if cfg.Token != "" {
+		headers.Set("Authorization", "Bearer "+cfg.Token)
+	}
+
+	sanitizedURL := fmt.Sprintf("%s://%s%s?clusterId=%s", parsedURL.Scheme, parsedURL.Host, parsedURL.Path, url.QueryEscape(cfg.ClusterID))
+
+	tlsCfg, tlsErr := buildAgentTLSConfig(cfg.CACertPath, cfg.CACertPEM)
+	if tlsErr != nil {
+		log.Fatalf("[Agent] Invalid TLS CA configuration: %v", tlsErr)
+	}
 
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 15 * time.Second,
-		TLSClientConfig:  &tls.Config{InsecureSkipVerify: true}, // Allow custom/DuckDNS self-signed certs
+		TLSClientConfig:  tlsCfg,
 	}
 
 	backoff := 2 * time.Second
 	maxBackoff := 30 * time.Second
 
 	for {
-		log.Printf("[Agent] Connecting outbound to %s...", parsedURL.String())
-		conn, _, err := dialer.Dial(parsedURL.String(), nil)
+		log.Printf("[Agent] Connecting outbound to %s...", sanitizedURL)
+		conn, resp, err := dialer.Dial(parsedURL.String(), headers)
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
 		if err != nil {
-			log.Printf("[Agent] Dial error: %v. Retrying in %v...", err, backoff)
-			time.Sleep(backoff)
+			if resp != nil {
+				log.Printf("[Agent] Handshake failed (HTTP %d): %v. Retrying in %v...", resp.StatusCode, err, backoff)
+			} else {
+				log.Printf("[Agent] Dial error: %v. Retrying in %v...", err, backoff)
+			}
+			select {
+			case <-stopSig:
+				log.Println("[Agent] Shutdown signal received during reconnect backoff.")
+				return
+			case <-time.After(backoff):
+			}
 			backoff = backoff * 2
 			if backoff > maxBackoff {
 				backoff = maxBackoff
@@ -210,6 +277,13 @@ func runStreamingPipeline(cfg Config, im *k8s.InformerManager, outCh <-chan []by
 
 		for active {
 			select {
+			case <-stopSig:
+				log.Println("[Agent] Shutdown signal received; closing outbound WebSocket.")
+				resyncTicker.Stop()
+				pingTicker.Stop()
+				_ = conn.Close()
+				return
+
 			case <-done:
 				active = false
 
@@ -233,7 +307,12 @@ func runStreamingPipeline(cfg Config, im *k8s.InformerManager, outCh <-chan []by
 		pingTicker.Stop()
 		_ = conn.Close()
 		log.Printf("[Agent] Disconnected from server. Reconnecting in %v...", backoff)
-		time.Sleep(backoff)
+		select {
+		case <-stopSig:
+			log.Println("[Agent] Shutdown signal received during reconnect backoff.")
+			return
+		case <-time.After(backoff):
+		}
 	}
 }
 

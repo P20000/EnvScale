@@ -242,6 +242,10 @@ func (im *InformerManager) setupConfigInformers() {
 		},
 	})
 
+	if !im.watchSecrets {
+		return
+	}
+
 	secInformer := im.factory.Core().V1().Secrets().Informer()
 	secInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
@@ -367,6 +371,9 @@ func (im *InformerManager) getConfigMapsSnapshot() []types.ConfigMapStatusDelta 
 }
 
 func (im *InformerManager) getSecretsSnapshot() []types.SecretStatusDelta {
+	if !im.watchSecrets {
+		return []types.SecretStatusDelta{}
+	}
 	var result []types.SecretStatusDelta
 	secList := im.factory.Core().V1().Secrets().Informer().GetStore().List()
 	for _, obj := range secList {

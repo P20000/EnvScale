@@ -3,7 +3,6 @@ package k8s
 import (
 	"fmt"
 	"log"
-	"strings"
 	"sync"
 
 	"k8s.io/client-go/kubernetes"
@@ -142,33 +141,14 @@ func (cm *ClusterManager) UnregisterAllClusters() {
 }
 
 
-// resolveInformerManagerLocked resolves an InformerManager by ID, name, or local development alias.
+// resolveInformerManagerLocked resolves an InformerManager strictly by exact clusterID.
 // Caller must hold cm.mu (either read or write lock).
 func (cm *ClusterManager) resolveInformerManagerLocked(clusterID string) (*InformerManager, bool) {
-	if im, ok := cm.clusters[clusterID]; ok {
-		return im, true
+	if clusterID == "" {
+		return nil, false
 	}
-	// Case-insensitive exact match
-	for id, im := range cm.clusters {
-		if strings.EqualFold(id, clusterID) {
-			return im, true
-		}
-	}
-	// Fallback for single registered cluster, or common local development aliases
-	if len(cm.clusters) > 0 {
-		lower := strings.ToLower(clusterID)
-		if lower == "minikube" || lower == "minikube-local" || lower == "local" || lower == "default" || lower == "development" {
-			for _, im := range cm.clusters {
-				return im, true
-			}
-		}
-		if len(cm.clusters) == 1 {
-			for _, im := range cm.clusters {
-				return im, true
-			}
-		}
-	}
-	return nil, false
+	im, ok := cm.clusters[clusterID]
+	return im, ok
 }
 
 // GetClusterSnapshot retrieves the current cached state of pods, nodes, services, and workloads for a given cluster.

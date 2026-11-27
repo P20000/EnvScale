@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 
 	"github.com/EnvScale/k8s-streamer/pkg/chaos"
 	"github.com/EnvScale/k8s-streamer/pkg/k8s"
@@ -48,8 +49,21 @@ func registerChaosRoutes(
 				return
 			}
 
-			claims := ExtractClaims(r)
-			if authErr := websocket.CheckClusterAuthorization(claims, req.ClusterID); authErr != nil {
+			claims, err := websocket.AuthenticateBearerRequest(r)
+			if err != nil {
+				if err == websocket.ErrMissingToken || err == websocket.ErrMissingSecret {
+					if authErr := websocket.CheckClusterOperationAuthorization(nil, req.ClusterID, "ADMIN"); authErr == nil {
+						claims = nil
+					} else {
+						writeAuthError(w, http.StatusUnauthorized, fmt.Sprintf("Authentication required: %v", err))
+						return
+					}
+				} else {
+					writeAuthError(w, http.StatusUnauthorized, fmt.Sprintf("Authentication required: %v", err))
+					return
+				}
+			}
+			if authErr := websocket.CheckClusterOperationAuthorization(claims, req.ClusterID, "ADMIN"); authErr != nil {
 				writeAuthError(w, http.StatusForbidden, fmt.Sprintf("Cluster authorization denied: %v", authErr))
 				return
 			}
@@ -63,6 +77,19 @@ func registerChaosRoutes(
 				req.Force,
 			)
 			if err != nil {
+				var safetyErr *chaos.ErrPDBSafetyCheckFailed
+				if errors.As(err, &safetyErr) {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusServiceUnavailable)
+					json.NewEncoder(w).Encode(map[string]interface{}{
+						"status":    "pdb_safety_check_failed",
+						"workload":  safetyErr.Workload,
+						"namespace": safetyErr.Namespace,
+						"message":   safetyErr.Message,
+					})
+					return
+				}
+
 				var pdbErr *chaos.ErrPDBViolation
 				if errors.As(err, &pdbErr) {
 					w.Header().Set("Content-Type", "application/json")
@@ -101,6 +128,31 @@ func registerChaosRoutes(
 				return
 			}
 
+			faultClusterID, exists := chaosInjector.GetFaultClusterID(req.FaultID)
+			if !exists {
+				http.Error(w, fmt.Sprintf("Fault %q not found", req.FaultID), http.StatusNotFound)
+				return
+			}
+
+			claims, err := websocket.AuthenticateBearerRequest(r)
+			if err != nil {
+				if err == websocket.ErrMissingToken || err == websocket.ErrMissingSecret {
+					if authErr := websocket.CheckClusterOperationAuthorization(nil, faultClusterID, "ADMIN"); authErr == nil {
+						claims = nil
+					} else {
+						writeAuthError(w, http.StatusUnauthorized, fmt.Sprintf("Authentication required: %v", err))
+						return
+					}
+				} else {
+					writeAuthError(w, http.StatusUnauthorized, fmt.Sprintf("Authentication required: %v", err))
+					return
+				}
+			}
+			if authErr := websocket.CheckClusterOperationAuthorization(claims, faultClusterID, "ADMIN"); authErr != nil {
+				writeAuthError(w, http.StatusForbidden, fmt.Sprintf("Cluster authorization denied: %v", authErr))
+				return
+			}
+
 			if err := chaosInjector.ClearFault(r.Context(), req.FaultID); err != nil {
 				http.Error(w, fmt.Sprintf("Failed to clear fault: %v", err), http.StatusInternalServerError)
 				return
@@ -125,12 +177,15 @@ func registerChaosRoutes(
 		}
 
 		clusterID := r.URL.Query().Get("clusterId")
+		claims := ExtractClaims(r)
 		if clusterID != "" {
-			claims := ExtractClaims(r)
 			if authErr := websocket.CheckClusterAuthorization(claims, clusterID); authErr != nil {
 				writeAuthError(w, http.StatusForbidden, fmt.Sprintf("Cluster authorization denied: %v", authErr))
 				return
 			}
+		} else if !websocket.IsServiceToken(claims) && os.Getenv("ALLOW_ANONYMOUS_WS") != "true" {
+			http.Error(w, "clusterId query parameter is required", http.StatusBadRequest)
+			return
 		}
 
 		faults := chaosInjector.ListFaults(clusterID)

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { STREAMER_BASE_URL, getAuthHeaders } from "../config/api";
+import { STREAMER_BASE_URL, getStreamerToken } from "../config/api";
 
 export interface TelemetryPoint {
   timestamp: number;
@@ -72,11 +72,19 @@ export const useMetricsStore = create<MetricsState>((set, get) => ({
   fetchMetricsHistory: async (clusterId) => {
     if (!clusterId) return;
     try {
+      const streamerTok = await getStreamerToken();
+      if (!streamerTok) {
+        console.warn("Unable to fetch metrics history: streamer session token unavailable");
+        return;
+      }
       const res = await fetch(
         `${STREAMER_BASE_URL}/api/v1/clusters/metrics/history?clusterId=${encodeURIComponent(clusterId)}`,
-        { headers: getAuthHeaders() }
+        { headers: { Authorization: `Bearer ${streamerTok}` } }
       );
-      if (!res.ok) return;
+      if (!res.ok) {
+        console.warn(`Failed to fetch metrics history (HTTP ${res.status})`);
+        return;
+      }
       const data = await res.json();
       if (Array.isArray(data.history) && data.history.length > 0) {
         get().setMetricsHistory(data.history);

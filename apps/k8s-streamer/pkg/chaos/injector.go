@@ -285,6 +285,17 @@ func (inj *Injector) ListFaults(clusterID string) []ActiveFaultInfo {
 	return result
 }
 
+// GetFaultClusterID resolves the owning clusterID for an active faultID.
+func (inj *Injector) GetFaultClusterID(faultID string) (string, bool) {
+	inj.mu.RLock()
+	defer inj.mu.RUnlock()
+	f, ok := inj.activeFaults[faultID]
+	if !ok || f == nil {
+		return "", false
+	}
+	return f.ClusterID, true
+}
+
 // ActiveFaultCount returns the total number of currently active injections.
 func (inj *Injector) ActiveFaultCount() int {
 	inj.mu.RLock()

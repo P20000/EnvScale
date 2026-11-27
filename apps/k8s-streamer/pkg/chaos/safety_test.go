@@ -2,14 +2,20 @@ package chaos
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/EnvScale/k8s-streamer/pkg/types"
 )
@@ -217,5 +223,87 @@ func TestConcurrentMultiFaultEdgeCase(t *testing.T) {
 	}
 	if forcedFault == nil || !forcedFault.PDBBreached {
 		t.Errorf("expected forced fault to have PDBBreached=true")
+	}
+}
+
+type failingClientsetProvider struct{ err error }
+
+func (f *failingClientsetProvider) GetClientset(clusterID string) (kubernetes.Interface, error) {
+	return nil, f.err
+}
+
+func TestChaosPDBSafety_FailsClosedOnLookupErrorsTimeoutsAndForbidden(t *testing.T) {
+	makePod := func() *corev1.Pod {
+		return &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "api-pod-1",
+				Namespace: "prod",
+				Labels:    map[string]string{"app": "api"},
+			},
+		}
+	}
+
+	// 1. PDB list returns 403 Forbidden -> must fail closed EVEN with force=true and NOT delete pod
+	csForbiddenPDB := fake.NewSimpleClientset(makePod())
+	csForbiddenPDB.PrependReactor("list", "poddisruptionbudgets", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewForbidden(schema.GroupResource{Group: "policy", Resource: "poddisruptionbudgets"}, "", errors.New("rbac denied"))
+	})
+	inj1 := NewInjector(&mockClientsetProvider{clientset: csForbiddenPDB}, &mockBroadcaster{})
+	for _, force := range []bool{false, true} {
+		_, err := inj1.InjectFault(context.Background(), "c-1", "prod", "api-pod-1", FaultCrash, force)
+		var safetyErr *ErrPDBSafetyCheckFailed
+		if !errors.As(err, &safetyErr) {
+			t.Fatalf("SEC-M5: expected *ErrPDBSafetyCheckFailed when PDB list is 403 (force=%v), got %T: %v", force, err, err)
+		}
+	}
+	if _, getErr := csForbiddenPDB.CoreV1().Pods("prod").Get(context.Background(), "api-pod-1", metav1.GetOptions{}); getErr != nil {
+		t.Fatalf("SEC-M5: target pod was deleted despite PDB lookup failure: %v", getErr)
+	}
+
+	// 2. Pod lookup returns 403 Forbidden -> must fail closed and leave pod intact
+	csForbiddenPod := fake.NewSimpleClientset(makePod())
+	csForbiddenPod.PrependReactor("get", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewForbidden(schema.GroupResource{Resource: "pods"}, "api-pod-1", errors.New("rbac denied"))
+	})
+	inj2 := NewInjector(&mockClientsetProvider{clientset: csForbiddenPod}, &mockBroadcaster{})
+	_, err := inj2.InjectFault(context.Background(), "c-1", "prod", "api-pod-1", FaultCrash, false)
+	var safetyErrPod *ErrPDBSafetyCheckFailed
+	if !errors.As(err, &safetyErrPod) {
+		t.Fatalf("SEC-M5: expected *ErrPDBSafetyCheckFailed on pod lookup 403, got %T: %v", err, err)
+	}
+
+	// 3. Timed-out / cancelled context -> must fail closed
+	csHealthy := fake.NewSimpleClientset(makePod())
+	inj3 := NewInjector(&mockClientsetProvider{clientset: csHealthy}, &mockBroadcaster{})
+	expiredCtx, cancel := context.WithTimeout(context.Background(), -time.Second)
+	defer cancel()
+	_, err = inj3.InjectFault(expiredCtx, "c-1", "prod", "api-pod-1", FaultCrash, true)
+	var safetyErrTimeout *ErrPDBSafetyCheckFailed
+	if !errors.As(err, &safetyErrTimeout) {
+		t.Fatalf("SEC-M5: expected *ErrPDBSafetyCheckFailed on expired context, got %T: %v", err, err)
+	}
+
+	// 4. Clientset provider error -> must fail closed
+	inj4 := NewInjector(&failingClientsetProvider{err: errors.New("cluster unreachable")}, &mockBroadcaster{})
+	_, err = inj4.InjectFault(context.Background(), "c-1", "prod", "api-pod-1", FaultCrash, true)
+	var safetyErrProvider *ErrPDBSafetyCheckFailed
+	if !errors.As(err, &safetyErrProvider) {
+		t.Fatalf("SEC-M5: expected *ErrPDBSafetyCheckFailed on provider error, got %T: %v", err, err)
+	}
+
+	// 5. Live policy/v1 PDB with DisruptionsAllowed=0 blocks fault without needing external PDBChecker
+	livePDB := &policyv1.PodDisruptionBudget{
+		ObjectMeta: metav1.ObjectMeta{Name: "api-pdb", Namespace: "prod"},
+		Spec: policyv1.PodDisruptionBudgetSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "api"}},
+		},
+		Status: policyv1.PodDisruptionBudgetStatus{DisruptionsAllowed: 0},
+	}
+	csLivePDB := fake.NewSimpleClientset(makePod(), livePDB)
+	inj5 := NewInjector(&mockClientsetProvider{clientset: csLivePDB}, &mockBroadcaster{})
+	_, err = inj5.InjectFault(context.Background(), "c-1", "prod", "api-pod-1", FaultCrash, false)
+	var pdbViolation *ErrPDBViolation
+	if !errors.As(err, &pdbViolation) {
+		t.Fatalf("expected live policyv1 PDB with 0 allowed disruptions to return *ErrPDBViolation, got %T: %v", err, err)
 	}
 }

@@ -3,15 +3,75 @@ import bcrypt from "bcrypt";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import jwt from "jsonwebtoken";
 import { db } from "../db/client.js";
-import { clusters, refreshTokens, users, workspaceMembers } from "../db/schema.js";
+import { clusters, refreshTokens, users, workspaceMembers, workspaces } from "../db/schema.js";
 
-const getAccessTokenSecret = () =>
-  process.env.JWT_ACCESS_SECRET || "default_dev_access_secret_do_not_use_in_prod";
-const getRefreshTokenSecret = () =>
-  process.env.JWT_REFRESH_SECRET || "default_dev_refresh_secret_do_not_use_in_prod";
+import { type WorkspaceRole } from "../middleware/auth.middleware.js";
+
+const PLACEHOLDER_JWT_SECRETS = new Set([
+  "default_dev_access_secret_do_not_use_in_prod",
+  "default_dev_refresh_secret_do_not_use_in_prod",
+  "replace-with-a-long-random-access-secret",
+  "replace-with-a-different-long-random-refresh-secret",
+]);
+
+const getAccessTokenSecret = () => {
+  const secret = process.env.JWT_ACCESS_SECRET;
+  if (!secret || !secret.trim()) {
+    throw new Error("JWT_ACCESS_SECRET is not configured");
+  }
+  if (process.env.NODE_ENV === "production" && PLACEHOLDER_JWT_SECRETS.has(secret.trim())) {
+    throw new Error("JWT_ACCESS_SECRET uses a disallowed placeholder value in production");
+  }
+  return secret;
+};
+
+const getRefreshTokenSecret = () => {
+  const secret = process.env.JWT_REFRESH_SECRET;
+  if (!secret || !secret.trim()) {
+    throw new Error("JWT_REFRESH_SECRET is not configured");
+  }
+  if (process.env.NODE_ENV === "production" && PLACEHOLDER_JWT_SECRETS.has(secret.trim())) {
+    throw new Error("JWT_REFRESH_SECRET uses a disallowed placeholder value in production");
+  }
+  return secret;
+};
 const refreshTokenLifetimeMs = 7 * 24 * 60 * 60 * 1000;
 
 export type AuthUser = typeof users.$inferSelect;
+
+const usedManifestDownloadJtis = new Map<string, number>();
+const MAX_TRACKED_MANIFEST_JTIS = 5000;
+
+/**
+ * Consumes a single-use manifest download JTI. Returns true on first use, false on replay.
+ */
+export const consumeManifestDownloadJti = (jti: string, expUnixSeconds?: number): boolean => {
+  if (!jti) return false;
+  const nowSec = Math.floor(Date.now() / 1000);
+  for (const [key, exp] of usedManifestDownloadJtis) {
+    if (exp <= nowSec) {
+      usedManifestDownloadJtis.delete(key);
+    }
+  }
+  if (usedManifestDownloadJtis.has(jti)) {
+    return false;
+  }
+  if (usedManifestDownloadJtis.size >= MAX_TRACKED_MANIFEST_JTIS) {
+    const oldestKey = usedManifestDownloadJtis.keys().next().value;
+    if (oldestKey) {
+      usedManifestDownloadJtis.delete(oldestKey);
+    }
+  }
+  const expiresAtSec = typeof expUnixSeconds === "number" && expUnixSeconds > nowSec ? expUnixSeconds : nowSec + 300;
+  usedManifestDownloadJtis.set(jti, expiresAtSec);
+  return true;
+};
+
+const rolePriority: Record<WorkspaceRole, number> = {
+  VIEWER: 1,
+  MEMBER: 2,
+  ADMIN: 3,
+};
 
 export const hashPassword = (password: string) => bcrypt.hash(password, 12);
 
@@ -23,55 +83,107 @@ const hashRefreshToken = (token: string) =>
 
 export const createAccessToken = (user: AuthUser, extraClaims?: Record<string, unknown>) =>
   jwt.sign(
-    { sub: user.id, email: user.email, role: user.role, ...(extraClaims || {}) },
+    { sub: user.id, email: user.email, role: user.role, tokenType: "user", ...(extraClaims || {}) },
     getAccessTokenSecret(),
     { expiresIn: "7d" }
   );
 
+export const createStreamerToken = (user: AuthUser, clusterRoles: Record<string, WorkspaceRole>) =>
+  jwt.sign(
+    {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      tokenType: "user",
+      clusterRoles,
+      allowedClusterIds: Object.keys(clusterRoles),
+    },
+    getAccessTokenSecret(),
+    { expiresIn: "15m" }
+  );
+
 export const createServiceToken = (subject: string = "api-server") =>
   jwt.sign(
-    { sub: subject, role: "ADMIN", allowedClusterIds: ["*"] },
+    { sub: subject, role: "SERVICE", tokenType: "service", allowedClusterIds: ["*"] },
     getAccessTokenSecret(),
-    { expiresIn: "1h" }
+    { expiresIn: "15m" }
   );
 
 export const createAgentToken = (clusterId: string) =>
   jwt.sign(
-    { sub: `agent-${clusterId}`, role: "MEMBER", allowedClusterIds: [clusterId] },
+    { sub: `agent-${clusterId}`, tokenType: "agent", clusterId },
     getAccessTokenSecret(),
-    { expiresIn: "365d" }
+    { expiresIn: "30d" }
   );
 
-export const getUserAccessibleClusterIds = async (userId: string, role?: string | null): Promise<string[]> => {
-  if (role && role.toUpperCase() === "ADMIN") {
-    return ["*"];
-  }
+export const createManifestDownloadToken = (userId: string, clusterId: string) =>
+  jwt.sign(
+    {
+      sub: userId,
+      tokenType: "manifest_download",
+      clusterId,
+      jti: randomBytes(16).toString("hex"),
+    },
+    getAccessTokenSecret(),
+    { expiresIn: "5m" }
+  );
 
-  // Find all workspaces where user is a member or owner
+/**
+ * Resolves the caller's effective WorkspaceRole per cluster UUID (including workspace ownership as ADMIN).
+ * Never grants cross-workspace wildcards for global ADMIN users and never indexes by mutable cluster name.
+ */
+export const getUserClusterRoles = async (userId: string): Promise<Record<string, WorkspaceRole>> => {
   const userWorkspaces = await db
-    .select({ workspaceId: workspaceMembers.workspaceId })
+    .select({ workspaceId: workspaceMembers.workspaceId, role: workspaceMembers.role })
     .from(workspaceMembers)
     .where(eq(workspaceMembers.userId, userId));
 
-  const workspaceIds = userWorkspaces.map((w) => w.workspaceId);
-  if (workspaceIds.length === 0) {
-    return [];
+  const ownedWorkspaces = await db
+    .select({ id: workspaces.id })
+    .from(workspaces)
+    .where(eq(workspaces.ownerId, userId));
+
+  const workspaceRoleMap = new Map<string, WorkspaceRole>();
+  for (const owned of ownedWorkspaces) {
+    if (owned.id) {
+      workspaceRoleMap.set(owned.id, "ADMIN");
+    }
+  }
+  for (const w of userWorkspaces) {
+    const normalized = (w.role?.toUpperCase() || "VIEWER") as WorkspaceRole;
+    if (normalized in rolePriority) {
+      const existing = workspaceRoleMap.get(w.workspaceId);
+      if (!existing || rolePriority[normalized] > rolePriority[existing]) {
+        workspaceRoleMap.set(w.workspaceId, normalized);
+      }
+    }
   }
 
-  // Find all clusters in these workspaces
+  const workspaceIds = Array.from(workspaceRoleMap.keys());
+  if (workspaceIds.length === 0) {
+    return {};
+  }
+
   const clusterRows = await db
-    .select({ id: clusters.id, name: clusters.name })
+    .select({ id: clusters.id, workspaceId: clusters.workspaceId })
     .from(clusters)
     .where(inArray(clusters.workspaceId, workspaceIds));
 
-  // Include both UUIDs and cluster names so client can authorize by ID or name
-  const allowed = new Set<string>();
+  const clusterRoles: Record<string, WorkspaceRole> = {};
   for (const c of clusterRows) {
-    if (c.id) allowed.add(c.id);
-    if (c.name) allowed.add(c.name);
+    const wsRole = workspaceRoleMap.get(c.workspaceId);
+    if (!c.id || !wsRole) continue;
+    const existing = clusterRoles[c.id];
+    if (!existing || rolePriority[wsRole] > rolePriority[existing]) {
+      clusterRoles[c.id] = wsRole;
+    }
   }
-  return Array.from(allowed);
+
+  return clusterRoles;
 };
+
+export const getUserAccessibleClusterIds = async (userId: string, _role?: string | null): Promise<string[]> =>
+  Object.keys(await getUserClusterRoles(userId));
 
 const createRefreshToken = async (userId: string) => {
   const token = randomBytes(48).toString("base64url");

@@ -33,16 +33,8 @@ func IsOriginAllowed(r *http.Request) bool {
 		return true // Non-browser clients, cURL, and native apps
 	}
 
-	// Always allow DuckDNS domains for EnvScale deployments
-	if strings.HasSuffix(origin, ".duckdns.org") || strings.HasSuffix(origin, "duckdns.org") {
-		return true
-	}
-
-	// Dynamic host matching (supports reverse proxies like Caddy)
+	// Exact same-host match (without trusting spoofable X-Forwarded-Host or wildcard *.duckdns.org)
 	if reqHost := r.Host; reqHost != "" && (origin == "http://"+reqHost || origin == "https://"+reqHost) {
-		return true
-	}
-	if fwdHost := r.Header.Get("X-Forwarded-Host"); fwdHost != "" && (origin == "http://"+fwdHost || origin == "https://"+fwdHost) {
 		return true
 	}
 
@@ -51,14 +43,15 @@ func IsOriginAllowed(r *http.Request) bool {
 		allowedEnv = os.Getenv("ALLOWED_ORIGINS")
 	}
 
-	if allowedEnv == "*" || strings.Contains(allowedEnv, "*") {
+	isProduction := os.Getenv("NODE_ENV") == "production" || os.Getenv("ENV") == "production" || os.Getenv("GIN_MODE") == "release"
+	if !isProduction && (allowedEnv == "*" || strings.Contains(allowedEnv, "*")) {
 		return true
 	}
 
 	var allowedList []string
 	if allowedEnv != "" {
 		for _, o := range strings.Split(allowedEnv, ",") {
-			if trimmed := strings.TrimSpace(o); trimmed != "" {
+			if trimmed := strings.TrimSpace(o); trimmed != "" && trimmed != "*" {
 				allowedList = append(allowedList, trimmed)
 			}
 		}

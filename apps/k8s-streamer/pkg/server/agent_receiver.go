@@ -2,9 +2,10 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
-	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -13,6 +14,8 @@ import (
 	"github.com/EnvScale/k8s-streamer/pkg/types"
 	ws "github.com/EnvScale/k8s-streamer/pkg/websocket"
 )
+
+var agentSessionSeq atomic.Uint64
 
 var agentUpgrader = websocket.Upgrader{
 	ReadBufferSize:  1024 * 1024, // 1MB buffer
@@ -30,13 +33,26 @@ func HandleAgentWebSocket(hub *ws.Hub, clusterManager *k8s.ClusterManager, w htt
 		return
 	}
 
-	// Verify authentication token
-	claims, err := ws.AuthenticateRequest(r)
-	if err != nil && os.Getenv("ALLOW_ANONYMOUS_WS") != "true" {
-		http.Error(w, "Unauthorized: "+err.Error(), http.StatusUnauthorized)
+	// Verify agent authentication token strictly from Authorization header (never ?token= query param)
+	// and bind strictly to target clusterId
+	claims, err := ws.AuthenticateBearerRequest(r)
+	if err != nil {
+		if err == ws.ErrMissingToken || err == ws.ErrMissingSecret {
+			if authErr := ws.CheckAgentAuthorization(nil, clusterID); authErr == nil {
+				claims = nil
+			} else {
+				http.Error(w, "Unauthorized: "+err.Error(), http.StatusUnauthorized)
+				return
+			}
+		} else {
+			http.Error(w, "Unauthorized: "+err.Error(), http.StatusUnauthorized)
+			return
+		}
+	}
+	if authErr := ws.CheckAgentAuthorization(claims, clusterID); authErr != nil {
+		http.Error(w, "Forbidden: "+authErr.Error(), http.StatusForbidden)
 		return
 	}
-	_ = claims
 
 	conn, err := agentUpgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -45,7 +61,9 @@ func HandleAgentWebSocket(hub *ws.Hub, clusterManager *k8s.ClusterManager, w htt
 	}
 	defer conn.Close()
 
-	log.Printf("[AgentReceiver] Agent connected for cluster '%s' from %s", clusterID, r.RemoteAddr)
+	sessionID := fmt.Sprintf("agent-sess-%d-%d", time.Now().UnixNano(), agentSessionSeq.Add(1))
+	clusterManager.AgentRegistry().RegisterSession(clusterID, sessionID)
+	log.Printf("[AgentReceiver] Agent connected for cluster '%s' (session=%s) from %s", clusterID, sessionID, r.RemoteAddr)
 
 	conn.SetReadLimit(16 * 1024 * 1024) // 16 MB max for high-density snapshots
 	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
@@ -58,11 +76,11 @@ func HandleAgentWebSocket(hub *ws.Hub, clusterManager *k8s.ClusterManager, w htt
 		messageType, message, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("[AgentReceiver] Connection closed unexpectedly for cluster %s: %v", clusterID, err)
+				log.Printf("[AgentReceiver] Connection closed unexpectedly for cluster %s (session=%s): %v", clusterID, sessionID, err)
 			} else {
-				log.Printf("[AgentReceiver] Agent disconnected for cluster %s", clusterID)
+				log.Printf("[AgentReceiver] Agent disconnected for cluster %s (session=%s)", clusterID, sessionID)
 			}
-			clusterManager.AgentRegistry().MarkDisconnected(clusterID)
+			clusterManager.AgentRegistry().MarkDisconnectedSession(clusterID, sessionID)
 			break
 		}
 

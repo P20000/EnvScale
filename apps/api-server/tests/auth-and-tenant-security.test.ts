@@ -40,7 +40,10 @@ const VIEWER = makeUser(VIEWER_ID, "viewer@envscale.dev", "Viewer");
 const ADMIN_USER = makeUser(ADMIN_ID, "admin@envscale.dev", "Admin", "ADMIN");
 
 const signJwt = (sub: string, role = "user") =>
-  jwt.sign({ sub, role }, JWT_SECRET, { expiresIn: "1h" });
+  jwt.sign({ sub, role, tokenType: "user" }, JWT_SECRET, { expiresIn: "1h" });
+
+const signServiceJwt = (sub: "k8s-streamer" | "api-server" = "k8s-streamer") =>
+  jwt.sign({ sub, role: "SERVICE", tokenType: "service" }, JWT_SECRET, { expiresIn: "15m" });
 
 type QueryMock = {
   selectQueue: unknown[][];
@@ -183,7 +186,7 @@ describe("Phase 1 Auth & Tenant Security Boundaries", () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${signJwt("k8s-streamer", "ADMIN")}`,
+          Authorization: `Bearer ${signServiceJwt("k8s-streamer")}`,
           Connection: "close",
         },
         body: JSON.stringify({ accountId: ALICE_ID }),
@@ -209,8 +212,9 @@ describe("Phase 1 Auth & Tenant Security Boundaries", () => {
       queryState.selectQueue.push(
         [ALICE],
         [ALICE],
-        [{ workspaceId: WS_ALICE }],
-        [{ id: CLUSTER_ID, name: "prod-k8s" }],
+        [{ workspaceId: WS_ALICE, role: "ADMIN" }],
+        [],
+        [{ id: CLUSTER_ID, workspaceId: WS_ALICE }],
         [{ workspace: { id: WS_ALICE, name: "Alice WS", slug: "alice-ws" }, role: "ADMIN" }]
       );
       const res = await fetch(`${baseUrl}/api/v1/auth/switch-session`, {
@@ -234,8 +238,9 @@ describe("Phase 1 Auth & Tenant Security Boundaries", () => {
       queryState.selectQueue.push(
         [ALICE],
         [ALICE],
-        [{ workspaceId: WS_ALICE }],
-        [{ id: CLUSTER_ID, name: "prod-k8s" }],
+        [{ workspaceId: WS_ALICE, role: "ADMIN" }],
+        [],
+        [{ id: CLUSTER_ID, workspaceId: WS_ALICE }],
         [{ workspace: { id: WS_ALICE, name: "Alice WS", slug: "alice-ws" }, role: "ADMIN" }]
       );
       const res = await fetch(`${baseUrl}/api/v1/auth/switch-session`, {
@@ -256,7 +261,7 @@ describe("Phase 1 Auth & Tenant Security Boundaries", () => {
 
       const svcRes = await fetch(`${baseUrl}/api/v1/clusters/${CLUSTER_ID}/agent.yaml`, {
         headers: {
-          Authorization: `Bearer ${signJwt("k8s-streamer", "ADMIN")}`,
+          Authorization: `Bearer ${signServiceJwt("k8s-streamer")}`,
           Connection: "close",
         },
       });
@@ -322,17 +327,66 @@ describe("Phase 1 Auth & Tenant Security Boundaries", () => {
       assert.deepEqual(await viewerGet.json(), { positions: { n1: { x: 10, y: 20 } } });
     });
 
-    it("allows authorized MEMBER manifest download and layout updates/resets", async () => {
+    it("allows authorized MEMBER manifest download via scoped manifest-token and layout updates/resets", async () => {
       const memberMembership = [{ clusterId: CLUSTER_ID, workspaceId: WS_ALICE, ownerId: BOB_ID, memberRole: "MEMBER" }];
 
-      queryState.selectQueue.push([ALICE], memberMembership, [{ id: CLUSTER_ID, name: "prod-k8s" }]);
-      const yamlRes = await fetch(
+      // SEC-H4: Reject long-lived user JWT in ?token= query parameter
+      const queryUserJwtRes = await fetch(
         `${baseUrl}/api/v1/clusters/${CLUSTER_ID}/agent.yaml?token=${encodeURIComponent(signJwt(ALICE_ID))}`,
         { headers: { Connection: "close" } }
       );
+      assert.equal(queryUserJwtRes.status, 401);
+
+      // SEC-H4: Mint 5m scoped single-use manifest_download token for authorized MEMBER
+      queryState.selectQueue.push([ALICE], memberMembership);
+      const tokenMintRes = await fetch(`${baseUrl}/api/v1/clusters/${CLUSTER_ID}/manifest-token`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${signJwt(ALICE_ID)}`, Connection: "close" },
+      });
+      assert.equal(tokenMintRes.status, 200);
+      assert.equal(tokenMintRes.headers.get("cache-control"), "no-store");
+      const minted = (await tokenMintRes.json()) as { token: string; expiresInSeconds: number };
+      assert.equal(minted.expiresInSeconds, 300);
+
+      queryState.selectQueue.push([ALICE], memberMembership, [{ id: CLUSTER_ID, name: "prod-k8s" }]);
+      const yamlUrl = `${baseUrl}/api/v1/clusters/${CLUSTER_ID}/agent.yaml?token=${encodeURIComponent(minted.token)}`;
+      const yamlRes = await fetch(yamlUrl, { headers: { Connection: "close" } });
       assert.equal(yamlRes.status, 200);
+      assert.equal(yamlRes.headers.get("cache-control"), "no-store");
       assert.match(yamlRes.headers.get("content-type") || "", /application\/yaml/);
-      assert.match(await yamlRes.text(), new RegExp(CLUSTER_ID));
+      const yamlBody = await yamlRes.text();
+      assert.match(yamlBody, new RegExp(CLUSTER_ID));
+      assert.match(yamlBody, /kind:\s*Secret/);
+      assert.match(yamlBody, /secretKeyRef/);
+
+      // Replaying single-use manifest_download token fails 401; injected serverUrl fails 400; service token fails 403
+      const replayRes = await fetch(yamlUrl, { headers: { Connection: "close" } });
+      assert.equal(replayRes.status, 401);
+
+      queryState.selectQueue.push([ALICE], memberMembership);
+      const minted2 = (await (await fetch(`${baseUrl}/api/v1/clusters/${CLUSTER_ID}/manifest-token`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${signJwt(ALICE_ID)}`, Connection: "close" },
+      })).json()) as { token: string };
+      queryState.selectQueue.push([ALICE], memberMembership, [{ id: CLUSTER_ID, name: "prod-k8s" }]);
+      const badServerUrlRes = await fetch(
+        `${baseUrl}/api/v1/clusters/${CLUSTER_ID}/agent.yaml?token=${encodeURIComponent(minted2.token)}&serverUrl=${encodeURIComponent("http://evil\"\nenv: injected")}`,
+        { headers: { Connection: "close" } }
+      );
+      assert.equal(badServerUrlRes.status, 400);
+
+      const svcListRes = await fetch(`${baseUrl}/api/v1/clusters`, {
+        headers: { Authorization: `Bearer ${signServiceJwt("k8s-streamer")}`, Connection: "close" },
+      });
+      assert.equal(svcListRes.status, 403);
+
+      // SEC-H6: Top-level DELETE /api/v1/clusters/:clusterId rejects MEMBER/VIEWER with 403
+      queryState.selectQueue.push([ALICE], memberMembership);
+      const memberDelRes = await fetch(`${baseUrl}/api/v1/clusters/${CLUSTER_ID}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${signJwt(ALICE_ID)}`, Connection: "close" },
+      });
+      assert.equal(memberDelRes.status, 403);
 
       queryState.selectQueue.push([ALICE]);
       const badLayout = await fetch(`${baseUrl}/api/v1/clusters/${CLUSTER_ID}/layout`, {
@@ -392,7 +446,7 @@ describe("Phase 1 Auth & Tenant Security Boundaries", () => {
       assert.equal(human.status, 403);
 
       const queryService = await fetch(
-        `${baseUrl}/api/v1/incidents/internal/trigger?token=${encodeURIComponent(signJwt("k8s-streamer", "ADMIN"))}`,
+        `${baseUrl}/api/v1/incidents/internal/trigger?token=${encodeURIComponent(signServiceJwt("k8s-streamer"))}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json", Connection: "close" },
@@ -405,7 +459,7 @@ describe("Phase 1 Auth & Tenant Security Boundaries", () => {
     it("validates Zod schema and creates incidents for valid Bearer service tokens", async () => {
       const serviceHeader = {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${signJwt("k8s-streamer", "ADMIN")}`,
+        Authorization: `Bearer ${signServiceJwt("k8s-streamer")}`,
         Connection: "close",
       };
 

@@ -22,9 +22,14 @@ export const generateAgentManifest = (options: AgentManifestOptions): string => 
     image = process.env.AGENT_IMAGE || "ghcr.io/p20000/envscale-k8s-streamer:latest",
   } = options;
 
+  if (/[\r\n"]/.test(clusterId) || /[\r\n"]/.test(serverUrl)) {
+    throw new Error("Invalid characters in manifest parameters");
+  }
+  const safeClusterName = clusterName.replace(/[\r\n]/g, " ");
+
   return `# ==============================================================================
 # EnvScale In-Cluster Observability Agent Manifest
-# Target Cluster: ${clusterName} (${clusterId})
+# Target Cluster: ${safeClusterName} (${clusterId})
 # Generated for automated outbound streaming to: ${serverUrl}
 # ==============================================================================
 apiVersion: v1
@@ -56,7 +61,6 @@ rules:
       - persistentvolumeclaims
       - persistentvolumes
       - configmaps
-      - secrets
       - events
     verbs: ["get", "list", "watch"]
   - apiGroups: ["apps"]
@@ -103,6 +107,15 @@ roleRef:
   name: envscale-agent-role
   apiGroup: rbac.authorization.k8s.io
 ---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: envscale-agent-credentials
+  namespace: envscale-agent
+type: Opaque
+stringData:
+  CLUSTER_TOKEN: "${token}"
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -134,7 +147,10 @@ spec:
             - name: SERVER_URL
               value: "${serverUrl}"
             - name: CLUSTER_TOKEN
-              value: "${token}"
+              valueFrom:
+                secretKeyRef:
+                  name: envscale-agent-credentials
+                  key: CLUSTER_TOKEN
           resources:
             requests:
               cpu: "50m"

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/EnvScale/k8s-streamer/pkg/chaos"
@@ -106,9 +107,6 @@ func SetupRoutes(
 				http.Error(w, fmt.Sprintf("Failed to register in-cluster: %v", err), http.StatusInternalServerError)
 				return
 			}
-			if req.ClusterName != "" {
-				clusterManager.RegisterClusterAlias(req.ClusterID, req.ClusterName)
-			}
 		} else {
 			if req.Kubeconfig == "" {
 				http.Error(w, "kubeconfig is required when not in cluster mode", http.StatusBadRequest)
@@ -123,9 +121,6 @@ func SetupRoutes(
 			if err := clusterManager.RegisterCluster(req.ClusterID, rawKubeconfig); err != nil {
 				http.Error(w, fmt.Sprintf("Failed to register cluster: %v", err), http.StatusBadRequest)
 				return
-			}
-			if req.ClusterName != "" {
-				clusterManager.RegisterClusterAlias(req.ClusterID, req.ClusterName)
 			}
 		}
 
@@ -220,20 +215,36 @@ func SetupRoutes(
 	mux.HandleFunc("/api/v1/clusters", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			RequireAuth(func(w http.ResponseWriter, r *http.Request) {
+				allClusters := clusterManager.ListClusters()
+				claims := ExtractClaims(r)
+				authorized, isService := websocket.AuthorizedClusterIDs(claims)
+				allowAnonymous := os.Getenv("ALLOW_ANONYMOUS_WS") == "true"
+
+				filtered := make(map[string]bool)
+				if isService || (claims == nil && allowAnonymous) {
+					filtered = allClusters
+				} else {
+					for id, running := range allClusters {
+						if authorized[id] {
+							filtered[id] = running
+						}
+					}
+				}
+
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
 				json.NewEncoder(w).Encode(map[string]interface{}{
-					"clusters": clusterManager.ListClusters(),
-					"total":    clusterManager.ActiveClusterCount(),
+					"clusters": filtered,
+					"total":    len(filtered),
 				})
 			})(w, r)
 			return
 		}
 
 		if r.Method == http.MethodDelete {
-			RequireClusterAuth(func(r *http.Request) string {
+			RequireClusterOperationAuth(func(r *http.Request) string {
 				return r.URL.Query().Get("clusterId")
-			}, func(w http.ResponseWriter, r *http.Request) {
+			}, []string{"ADMIN"}, func(w http.ResponseWriter, r *http.Request) {
 				clusterID := r.URL.Query().Get("clusterId")
 				if clusterID == "" {
 					http.Error(w, "clusterId query parameter required", http.StatusBadRequest)
@@ -350,12 +361,28 @@ func SetupRoutes(
 		switch r.Method {
 		case http.MethodGet:
 			RequireAuth(func(w http.ResponseWriter, r *http.Request) {
-				rules := metricEvaluator.ListRules()
+				allRules := metricEvaluator.ListRules()
+				claims := ExtractClaims(r)
+				authorized, isService := websocket.AuthorizedClusterIDs(claims)
+				allowAnonymous := os.Getenv("ALLOW_ANONYMOUS_WS") == "true"
+
+				var filtered []k8s.AlertRule
+				if isService || (claims == nil && allowAnonymous) {
+					filtered = allRules
+				} else {
+					filtered = make([]k8s.AlertRule, 0)
+					for _, rule := range allRules {
+						if rule.ClusterID != "" && authorized[rule.ClusterID] {
+							filtered = append(filtered, rule)
+						}
+					}
+				}
+
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
 				json.NewEncoder(w).Encode(map[string]interface{}{
-					"rules": rules,
-					"total": len(rules),
+					"rules": filtered,
+					"total": len(filtered),
 				})
 			})(w, r)
 

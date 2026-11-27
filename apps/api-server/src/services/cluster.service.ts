@@ -3,6 +3,7 @@ import { KubeConfig, CoreV1Api } from "@kubernetes/client-node";
 import { db } from "../db/client.js";
 import { clusters } from "../db/schema.js";
 import { encryptKubeconfig } from "../utils/crypto.js";
+import { KubeconfigSecurityError, validateKubeconfigSecurity } from "../utils/kubeconfig-validator.js";
 import { clusterConnectSchema, idSchema } from "../schemas/request.schemas.js";
 import { syncClusterWithStreamer } from "./cluster-sync.service.js";
 import { createServiceToken } from "./auth.service.js";
@@ -66,26 +67,27 @@ const notifyStreamerGateway = async (endpoint: string, method: "POST" | "DELETE"
 };
 
 const validateKubeconfig = async (kubeconfig: string) => {
-  const kubeConfig = new KubeConfig();
+  let apiServerUrl: string;
   try {
-    kubeConfig.loadFromString(kubeconfig);
-  } catch {
-    throw new ClusterConnectionError("Invalid kubeconfig: YAML syntax parsing failed");
+    ({ apiServerUrl } = validateKubeconfigSecurity(kubeconfig));
+  } catch (err) {
+    if (err instanceof KubeconfigSecurityError) {
+      throw new ClusterConnectionError(err.message);
+    }
+    throw err;
   }
 
-  const cluster = kubeConfig.getCurrentCluster();
-  if (!cluster?.server) {
-    throw new ClusterConnectionError("Kubeconfig error: missing active context cluster server URL");
-  }
+  const kubeConfig = new KubeConfig();
+  kubeConfig.loadFromString(kubeconfig);
 
   try {
     const api = kubeConfig.makeApiClient(CoreV1Api);
     await api.getAPIResources();
   } catch (err) {
-    console.warn(`[ClusterService] Notice: API server reachability handshake check skipped for ${cluster.server}:`, err instanceof Error ? err.message : err);
+    console.warn(`[ClusterService] Notice: API server reachability handshake check skipped for ${apiServerUrl}:`, err instanceof Error ? err.message : err);
   }
 
-  return { apiServerUrl: cluster.server };
+  return { apiServerUrl };
 };
 
 export const connectCluster = async (

@@ -357,8 +357,7 @@ export const getStreamerToken = async (): Promise<string | null> => {
     if (res.ok) {
       const data = await res.json();
       if (data.token) {
-        localStorage.setItem("envscale_auth_token", data.token);
-        localStorage.setItem("envscale_access_token", data.token);
+        localStorage.setItem("envscale_streamer_token", data.token);
       }
       return data.token || null;
     }
@@ -368,114 +367,14 @@ export const getStreamerToken = async (): Promise<string | null> => {
   return null;
 };
 
-export interface RollbackParams {
-  clusterId: string;
-  namespace: string;
-  deploymentName: string;
-  replicaSetName?: string;
-  targetRevision?: string;
-  targetHash?: string;
-}
-
-export interface RollbackResponse {
-  success: boolean;
-  message?: string;
-  error?: string;
-}
-
-/**
- * Trigger an authenticated rollback of a deployment to a target ReplicaSet
- * Endpoint: POST /api/v1/clusters/:id/rollout/rollback
- */
-export async function apiRollbackDeployment(params: RollbackParams): Promise<RollbackResponse> {
-  try {
-    let token = await getStreamerToken();
-    if (!token) {
-      const rawAuth = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
-      if (rawAuth && rawAuth !== "null") token = rawAuth;
-    }
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-
-    const res = await fetch(`${STREAMER_BASE_URL}/api/v1/clusters/${encodeURIComponent(params.clusterId)}/rollout/rollback`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(params),
-    });
-
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      return { success: false, error: data.error || `Rollback failed (HTTP ${res.status})` };
-    }
-    return { success: true, message: data.message || "Rollback initiated successfully" };
-  } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : "Network error during rollback";
-    return { success: false, error: errorMsg };
-  }
-}
-
-/**
- * Retrieve saved canvas layout positions for a cluster
- * Endpoint: GET /api/v1/clusters/:clusterId/layout
- */
-export async function apiGetClusterLayout(clusterId: string): Promise<Record<string, { x: number; y: number }>> {
-  try {
-    const res = await fetch(`${API_BASE_URL}/api/v1/clusters/${encodeURIComponent(clusterId)}/layout`, {
-      headers: getAuthHeaders(),
-      credentials: "include",
-    });
-    if (res.ok) {
-      const data = await res.json();
-      return (data?.positions || {}) as Record<string, { x: number; y: number }>;
-    }
-  } catch (err) {
-    console.warn(`Failed to fetch layout for cluster ${clusterId}:`, err);
-  }
-  return {};
-}
-
-/**
- * Persist custom canvas layout positions for a cluster
- * Endpoint: PUT /api/v1/clusters/:clusterId/layout
- */
-export async function apiSaveClusterLayout(
-  clusterId: string,
-  positions: Record<string, { x: number; y: number }>
-): Promise<boolean> {
-  try {
-    const res = await fetch(`${API_BASE_URL}/api/v1/clusters/${encodeURIComponent(clusterId)}/layout`, {
-      method: "PUT",
-      headers: getAuthHeaders("application/json"),
-      credentials: "include",
-      body: JSON.stringify({ positions }),
-    });
-    return res.ok;
-  } catch (err) {
-    console.warn(`Failed to save layout for cluster ${clusterId}:`, err);
-    return false;
-  }
-}
-
-/**
- * Reset custom canvas layout positions for a cluster (reverts to autolayout)
- * Endpoint: DELETE /api/v1/clusters/:clusterId/layout
- */
-export async function apiResetClusterLayout(clusterId: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${API_BASE_URL}/api/v1/clusters/${encodeURIComponent(clusterId)}/layout`, {
-      method: "DELETE",
-      headers: getAuthHeaders(),
-      credentials: "include",
-    });
-    return res.ok;
-  } catch (err) {
-    console.warn(`Failed to reset layout for cluster ${clusterId}:`, err);
-    return false;
-  }
-}
+export {
+  type ManifestTokenResponse,
+  type RollbackParams,
+  type RollbackResponse,
+  apiCreateManifestToken,
+  apiRollbackDeployment,
+  apiGetClusterLayout,
+  apiSaveClusterLayout,
+  apiResetClusterLayout,
+} from "./clusterOperationsApi";
 

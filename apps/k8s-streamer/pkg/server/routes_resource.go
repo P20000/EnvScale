@@ -32,8 +32,8 @@ func registerResourceRoutes(mux *http.ServeMux, clusterManager *k8s.ClusterManag
 			return
 		}
 
-		// Authenticate and authorize request
-		claims, err := websocket.AuthenticateRequest(r)
+		// Authenticate and authorize request (strictly Bearer header, ADMIN-only)
+		claims, err := websocket.AuthenticateBearerRequest(r)
 		if err != nil {
 			writeAuthError(w, http.StatusUnauthorized, fmt.Sprintf("Authentication required: %v", err))
 			return
@@ -54,7 +54,7 @@ func registerResourceRoutes(mux *http.ServeMux, clusterManager *k8s.ClusterManag
 			return
 		}
 
-		if authErr := websocket.CheckClusterAuthorization(claims, req.ClusterID); authErr != nil {
+		if authErr := websocket.CheckClusterOperationAuthorization(claims, req.ClusterID, "ADMIN"); authErr != nil {
 			writeAuthError(w, http.StatusForbidden, fmt.Sprintf("Cluster authorization denied: %v", authErr))
 			return
 		}

@@ -3,7 +3,6 @@ package k8s
 import (
 	"fmt"
 	"log"
-	"strings"
 	"sync"
 	"time"
 
@@ -39,10 +38,15 @@ type InformerManager struct {
 	dedup           *DedupCache
 	metricsHistory  []types.ClusterMetricPoint
 	metricsMu       sync.RWMutex
+	watchSecrets    bool
 }
 
 // NewInformerManager creates an InformerManager from raw Kubeconfig bytes
 func NewInformerManager(kubeconfigBytes []byte, hub *websocket.Hub, clusterID string) (*InformerManager, error) {
+	if err := ValidateKubeconfigSecurity(kubeconfigBytes); err != nil {
+		return nil, err
+	}
+
 	clientConfig, err := clientcmd.NewClientConfigFromBytes(kubeconfigBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse kubeconfig: %w", err)
@@ -55,28 +59,12 @@ func NewInformerManager(kubeconfigBytes []byte, hub *websocket.Hub, clusterID st
 
 	restConfig.Timeout = 4 * time.Second
 	clientset, err := kubernetes.NewForConfig(restConfig)
-	var pingErr error
-	if err == nil {
-		_, pingErr = clientset.Discovery().ServerVersion()
-	} else {
-		pingErr = err
+	if err != nil {
+		return nil, fmt.Errorf("failed to build kubernetes client: %w", err)
 	}
 
-	if pingErr != nil && (strings.Contains(pingErr.Error(), "x509") || strings.Contains(pingErr.Error(), "unknown authority") || strings.Contains(pingErr.Error(), "verification error")) {
-		log.Printf("[K8s Informer] Self-signed TLS CA detected for cluster %s (%v). Retrying with Insecure=true fallback...", clusterID, pingErr)
-		restConfig.Insecure = true
-		restConfig.CAData = nil
-		restConfig.CAFile = ""
-		if cs, err2 := kubernetes.NewForConfig(restConfig); err2 == nil {
-			if _, err3 := cs.Discovery().ServerVersion(); err3 == nil {
-				clientset = cs
-				pingErr = nil
-			}
-		}
-	}
-
-	if pingErr != nil {
-		return nil, fmt.Errorf("cluster API server unreachable: %w", pingErr)
+	if _, pingErr := clientset.Discovery().ServerVersion(); pingErr != nil {
+		return nil, fmt.Errorf("cluster API server unreachable or TLS verification failed: %w", pingErr)
 	}
 
 	metricsClient, err := metricsv.NewForConfig(restConfig)

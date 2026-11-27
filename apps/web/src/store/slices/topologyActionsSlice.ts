@@ -10,16 +10,30 @@ import {
   syncSelectedNode,
   sanitizeManifestSnapshot,
 } from "../helpers/topologyHelpers";
-import { STREAMER_BASE_URL } from "../../config/api";
+import { STREAMER_BASE_URL, getStreamerToken } from "../../config/api";
 
-const getAuthHeaders = (): Record<string, string> => {
-  const token = localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (token && token !== "null") {
-    headers["Authorization"] = `Bearer ${token}`;
+const resolveStreamerAuthHeaders = async (): Promise<Record<string, string> | null> => {
+  const token = await getStreamerToken();
+  if (token) {
+    return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
   }
-  return headers;
+  return null;
 };
+
+async function extractErrorMessage(res: Response): Promise<string> {
+  try {
+    const text = await res.text();
+    if (!text) return `HTTP ${res.status}`;
+    try {
+      const parsed = JSON.parse(text) as { error?: string; message?: string };
+      return parsed.error || parsed.message || text;
+    } catch {
+      return text;
+    }
+  } catch {
+    return `HTTP ${res.status}`;
+  }
+}
 
 export function handleUndoAction(
   get: () => TopologyState,
@@ -33,63 +47,108 @@ export function handleUndoAction(
     const clusterId = get().activeCluster;
     if (!clusterId) return;
 
-    fetch(`${STREAMER_BASE_URL}/api/v1/resource/apply`, {
-      method: "POST",
-      headers: getAuthHeaders(),
-      credentials: "include",
-      body: JSON.stringify({
-        clusterId,
-        namespace: action.namespace,
-        resourceKind: action.resourceKind,
-        resourceName: action.resourceName,
-        manifest: action.manifestSnapshot,
-      }),
-    }).catch(() => {});
+    void (async () => {
+      const headers = await resolveStreamerAuthHeaders();
+      if (!headers) {
+        const authErrAlert: NotificationItem = {
+          id: `notif-undo-err-${Date.now()}`,
+          title: `Undo failed: ${action.resourceName}`,
+          message: "Unable to acquire streamer session token. Please sign in again.",
+          time: "Just now",
+          severity: "CRITICAL",
+          read: false,
+          cluster: clusterId,
+        };
+        set({ notifications: [authErrAlert, ...get().notifications].slice(0, 50) });
+        return;
+      }
 
-    const restoredNode: Node = {
-      id: action.resourceName.startsWith("svc-") || action.resourceName.startsWith("pod-")
-        ? action.resourceName
-        : `${action.resourceKind.toLowerCase()}-${action.resourceName}`,
-      type:
-        action.resourceKind.toLowerCase() === "service"
-          ? "k8sService"
-          : action.resourceKind.toLowerCase() === "pod"
-          ? "k8sPod"
-          : "k8sWorkload",
-      position: { x: 300, y: 200 },
-      data: {
-        name: action.resourceName,
-        namespace: action.namespace,
-        status: "Running",
-        rawResource: action.manifestSnapshot,
-      },
-    };
+      try {
+        const res = await fetch(`${STREAMER_BASE_URL}/api/v1/resource/apply`, {
+          method: "POST",
+          headers,
+          credentials: "include",
+          body: JSON.stringify({
+            clusterId,
+            namespace: action.namespace,
+            resourceKind: action.resourceKind,
+            resourceName: action.resourceName,
+            manifest: action.manifestSnapshot,
+          }),
+        });
 
-    const currentRaw = get().rawNodes || [];
-    const updatedRaw = [...currentRaw, restoredNode];
-    const restoredEdges = [...(get().edges || []), ...(action.associatedEdges || [])];
+        if (!res.ok) {
+          const detail = await extractErrorMessage(res);
+          const errAlert: NotificationItem = {
+            id: `notif-undo-err-${Date.now()}`,
+            title: `Undo failed (${res.status}): ${action.resourceName}`,
+            message: detail,
+            time: "Just now",
+            severity: "CRITICAL",
+            read: false,
+            cluster: clusterId,
+          };
+          set({ notifications: [errAlert, ...get().notifications].slice(0, 50) });
+          return;
+        }
 
-    const newAlert: NotificationItem = {
-      id: `notif-undo-${Date.now()}`,
-      title: `Undo: Restoring ${action.resourceName}`,
-      message: `Re-applied declarative manifest for ${action.resourceName} to ${action.namespace} in ${clusterId}.`,
-      time: "Just now",
-      severity: "INFO",
-      read: false,
-      cluster: clusterId,
-    };
+        const restoredNode: Node = {
+          id: action.resourceName.startsWith("svc-") || action.resourceName.startsWith("pod-")
+            ? action.resourceName
+            : `${action.resourceKind.toLowerCase()}-${action.resourceName}`,
+          type:
+            action.resourceKind.toLowerCase() === "service"
+              ? "k8sService"
+              : action.resourceKind.toLowerCase() === "pod"
+              ? "k8sPod"
+              : "k8sWorkload",
+          position: { x: 300, y: 200 },
+          data: {
+            name: action.resourceName,
+            namespace: action.namespace,
+            status: "Running",
+            rawResource: action.manifestSnapshot,
+          },
+        };
 
-    set({
-      undoStack: remainingUndo,
-      redoStack: [action, ...get().redoStack].slice(0, 20),
-      rawNodes: updatedRaw,
-      services: extractServices(updatedRaw),
-      pods: extractPods(updatedRaw),
-      edges: restoredEdges,
-      notifications: [newAlert, ...get().notifications].slice(0, 50),
-    });
+        const currentRaw = get().rawNodes || [];
+        const updatedRaw = [...currentRaw, restoredNode];
+        const restoredEdges = [...(get().edges || []), ...(action.associatedEdges || [])];
 
-    get().applyDagreLayout();
+        const newAlert: NotificationItem = {
+          id: `notif-undo-${Date.now()}`,
+          title: `Undo: Restoring ${action.resourceName}`,
+          message: `Re-applied declarative manifest for ${action.resourceName} to ${action.namespace} in ${clusterId}.`,
+          time: "Just now",
+          severity: "INFO",
+          read: false,
+          cluster: clusterId,
+        };
+
+        set({
+          undoStack: remainingUndo,
+          redoStack: [action, ...get().redoStack].slice(0, 20),
+          rawNodes: updatedRaw,
+          services: extractServices(updatedRaw),
+          pods: extractPods(updatedRaw),
+          edges: restoredEdges,
+          notifications: [newAlert, ...get().notifications].slice(0, 50),
+        });
+
+        get().applyDagreLayout();
+      } catch (err) {
+        const netAlert: NotificationItem = {
+          id: `notif-undo-err-${Date.now()}`,
+          title: `Undo failed: ${action.resourceName}`,
+          message: err instanceof Error ? err.message : "Network error while restoring resource",
+          time: "Just now",
+          severity: "CRITICAL",
+          read: false,
+          cluster: clusterId,
+        };
+        set({ notifications: [netAlert, ...get().notifications].slice(0, 50) });
+      }
+    })();
   }
 }
 
@@ -105,35 +164,80 @@ export function handleRedoAction(
     const clusterId = get().activeCluster;
     if (!clusterId) return;
 
-    fetch(`${STREAMER_BASE_URL}/api/v1/resource/delete`, {
-      method: "POST",
-      headers: getAuthHeaders(),
-      credentials: "include",
-      body: JSON.stringify({
-        clusterId,
-        namespace: action.namespace,
-        resourceKind: action.resourceKind,
-        resourceName: action.resourceName,
-      }),
-    }).catch(() => {});
+    void (async () => {
+      const headers = await resolveStreamerAuthHeaders();
+      if (!headers) {
+        const authErrAlert: NotificationItem = {
+          id: `notif-redo-err-${Date.now()}`,
+          title: `Redo failed: ${action.resourceName}`,
+          message: "Unable to acquire streamer session token. Please sign in again.",
+          time: "Just now",
+          severity: "CRITICAL",
+          read: false,
+          cluster: clusterId,
+        };
+        set({ notifications: [authErrAlert, ...get().notifications].slice(0, 50) });
+        return;
+      }
 
-    get().removeTarget(action.resourceName, { skipHistory: true });
+      try {
+        const res = await fetch(`${STREAMER_BASE_URL}/api/v1/resource/delete`, {
+          method: "POST",
+          headers,
+          credentials: "include",
+          body: JSON.stringify({
+            clusterId,
+            namespace: action.namespace,
+            resourceKind: action.resourceKind,
+            resourceName: action.resourceName,
+          }),
+        });
 
-    const newAlert: NotificationItem = {
-      id: `notif-redo-${Date.now()}`,
-      title: `Redo: Re-deleting ${action.resourceName}`,
-      message: `Re-issued deletion for ${action.resourceName} in ${action.namespace}.`,
-      time: "Just now",
-      severity: "WARNING",
-      read: false,
-      cluster: clusterId,
-    };
+        if (!res.ok) {
+          const detail = await extractErrorMessage(res);
+          const errAlert: NotificationItem = {
+            id: `notif-redo-err-${Date.now()}`,
+            title: `Redo failed (${res.status}): ${action.resourceName}`,
+            message: detail,
+            time: "Just now",
+            severity: "CRITICAL",
+            read: false,
+            cluster: clusterId,
+          };
+          set({ notifications: [errAlert, ...get().notifications].slice(0, 50) });
+          return;
+        }
 
-    set({
-      redoStack: remainingRedo,
-      undoStack: [action, ...get().undoStack].slice(0, 20),
-      notifications: [newAlert, ...get().notifications].slice(0, 50),
-    });
+        get().removeTarget(action.resourceName, { skipHistory: true, skipApi: true });
+
+        const newAlert: NotificationItem = {
+          id: `notif-redo-${Date.now()}`,
+          title: `Redo: Re-deleted ${action.resourceName}`,
+          message: `Re-issued deletion for ${action.resourceName} in ${action.namespace}.`,
+          time: "Just now",
+          severity: "WARNING",
+          read: false,
+          cluster: clusterId,
+        };
+
+        set({
+          redoStack: remainingRedo,
+          undoStack: [action, ...get().undoStack].slice(0, 20),
+          notifications: [newAlert, ...get().notifications].slice(0, 50),
+        });
+      } catch (err) {
+        const netAlert: NotificationItem = {
+          id: `notif-redo-err-${Date.now()}`,
+          title: `Redo failed: ${action.resourceName}`,
+          message: err instanceof Error ? err.message : "Network error while re-deleting resource",
+          time: "Just now",
+          severity: "CRITICAL",
+          read: false,
+          cluster: clusterId,
+        };
+        set({ notifications: [netAlert, ...get().notifications].slice(0, 50) });
+      }
+    })();
   }
 }
 
@@ -161,31 +265,14 @@ export function handleRemoveTarget(
     );
   };
 
-  const targetNode = currentRaw.find(matchesTarget) || currentNodes.find(matchesTarget);
-  if (targetNode) {
-    const resData = (targetNode.data as Record<string, unknown>) || {};
-    const resName = String(resData.name || targetNode.id);
-    const resKind = targetNode.type?.replace("k8s", "") || "Resource";
-    const ns = String(resData.namespace || "default");
-
-    if (!options?.skipApi) {
-      const clusterId = get().activeCluster;
-      if (clusterId) {
-        fetch(`${STREAMER_BASE_URL}/api/v1/resource/delete`, {
-          method: "POST",
-          headers: getAuthHeaders(),
-          credentials: "include",
-          body: JSON.stringify({
-            clusterId,
-            namespace: ns,
-            resourceKind: resKind,
-            resourceName: resName,
-          }),
-        }).catch(() => {});
-      }
-    }
-
-    if (!options?.skipHistory) {
+  const applyLocalRemoval = (targetNode: Node | undefined) => {
+    const rawNow = get().rawNodes || [];
+    const nodesNow = get().nodes || [];
+    if (targetNode && !options?.skipHistory) {
+      const resData = (targetNode.data as Record<string, unknown>) || {};
+      const resName = String(resData.name || targetNode.id);
+      const resKind = targetNode.type?.replace("k8s", "") || "Resource";
+      const ns = String(resData.namespace || "default");
       const snapshot = sanitizeManifestSnapshot(targetNode);
       const associatedEdges = (get().edges || []).filter(
         (e) => e.source === targetNode.id || e.target === targetNode.id
@@ -204,33 +291,105 @@ export function handleRemoveTarget(
       const newUndo = [historyItem, ...get().undoStack].slice(0, 20);
       set({ undoStack: newUndo, redoStack: [] });
     }
+
+    const remainingRaw = rawNow.filter((n) => !matchesTarget(n));
+    const remainingNodes = nodesNow.filter((n) => !matchesTarget(n));
+
+    const remainingRawIds = new Set(remainingRaw.map((n) => n.id));
+    const remainingEdges = get().edges.filter(
+      (e) => remainingRawIds.has(e.source) && remainingRawIds.has(e.target)
+    );
+
+    const selected = get().selectedNode;
+    const isSelected =
+      selected &&
+      (selected.data?.name === targetId ||
+        (selected as unknown as Node).id === targetId);
+
+    set({
+      rawNodes: remainingRaw,
+      nodes: remainingNodes,
+      services: extractServices(remainingRaw),
+      pods: extractPods(remainingRaw),
+      ingresses: get().ingresses.filter((i) => i.name !== targetId),
+      edges: remainingEdges,
+      selectedNode: isSelected ? null : syncSelectedNode(remainingRaw, selected),
+    });
+
+    get().applyDagreLayout();
+  };
+
+  const targetNode = currentRaw.find(matchesTarget) || currentNodes.find(matchesTarget);
+  if (targetNode && !options?.skipApi) {
+    const clusterId = get().activeCluster;
+    if (clusterId) {
+      const resData = (targetNode.data as Record<string, unknown>) || {};
+      const resName = String(resData.name || targetNode.id);
+      const resKind = targetNode.type?.replace("k8s", "") || "Resource";
+      const ns = String(resData.namespace || "default");
+
+      void (async () => {
+        const headers = await resolveStreamerAuthHeaders();
+        if (!headers) {
+          const authErrAlert: NotificationItem = {
+            id: `notif-del-err-${Date.now()}`,
+            title: `Delete failed: ${resName}`,
+            message: "Unable to acquire streamer session token. Please sign in again.",
+            time: "Just now",
+            severity: "CRITICAL",
+            read: false,
+            cluster: clusterId,
+          };
+          set({ notifications: [authErrAlert, ...get().notifications].slice(0, 50) });
+          return;
+        }
+
+        try {
+          const res = await fetch(`${STREAMER_BASE_URL}/api/v1/resource/delete`, {
+            method: "POST",
+            headers,
+            credentials: "include",
+            body: JSON.stringify({
+              clusterId,
+              namespace: ns,
+              resourceKind: resKind,
+              resourceName: resName,
+            }),
+          });
+          if (!res.ok) {
+            const detail = await extractErrorMessage(res);
+            const errAlert: NotificationItem = {
+              id: `notif-del-err-${Date.now()}`,
+              title: `Delete failed (${res.status}): ${resName}`,
+              message: detail,
+              time: "Just now",
+              severity: "CRITICAL",
+              read: false,
+              cluster: clusterId,
+            };
+            set({ notifications: [errAlert, ...get().notifications].slice(0, 50) });
+            return;
+          }
+
+          applyLocalRemoval(targetNode);
+        } catch (err) {
+          const netAlert: NotificationItem = {
+            id: `notif-del-err-${Date.now()}`,
+            title: `Delete failed: ${resName}`,
+            message: err instanceof Error ? err.message : "Network error while deleting resource",
+            time: "Just now",
+            severity: "CRITICAL",
+            read: false,
+            cluster: clusterId,
+          };
+          set({ notifications: [netAlert, ...get().notifications].slice(0, 50) });
+        }
+      })();
+      return;
+    }
   }
 
-  const remainingRaw = currentRaw.filter((n) => !matchesTarget(n));
-  const remainingNodes = currentNodes.filter((n) => !matchesTarget(n));
-
-  const remainingRawIds = new Set(remainingRaw.map((n) => n.id));
-  const remainingEdges = get().edges.filter(
-    (e) => remainingRawIds.has(e.source) && remainingRawIds.has(e.target)
-  );
-
-  const selected = get().selectedNode;
-  const isSelected =
-    selected &&
-    (selected.data?.name === targetId ||
-      (selected as unknown as Node).id === targetId);
-
-  set({
-    rawNodes: remainingRaw,
-    nodes: remainingNodes,
-    services: extractServices(remainingRaw),
-    pods: extractPods(remainingRaw),
-    ingresses: get().ingresses.filter((i) => i.name !== targetId),
-    edges: remainingEdges,
-    selectedNode: isSelected ? null : syncSelectedNode(remainingRaw, selected),
-  });
-
-  get().applyDagreLayout();
+  applyLocalRemoval(targetNode);
 }
 
 export function handleCreateNode(

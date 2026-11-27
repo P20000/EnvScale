@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import { and, eq } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { workspaceMembers, workspaces } from "../db/schema.js";
-import { type AuthUser, getUserById } from "../services/auth.service.js";
+import { type AuthUser, consumeManifestDownloadJti, getUserById } from "../services/auth.service.js";
 
 export const workspaceRoles = ["ADMIN", "MEMBER", "VIEWER"] as const;
 export type WorkspaceRole = (typeof workspaceRoles)[number];
@@ -17,6 +17,7 @@ declare global {
       serviceSubject?: "k8s-streamer" | "api-server";
       authorizedClusterId?: string;
       authorizedWorkspaceId?: string;
+      manifestTokenClusterId?: string;
     }
   }
 }
@@ -36,8 +37,55 @@ export const requireAuth = async (request: Request, response: Response, next: Ne
     try {
       const payload = jwt.verify(token, secret);
       if (typeof payload === "object" && typeof payload.sub === "string") {
-        // Recognize internal system service tokens via Bearer header only (never query params)
-        if (bearerToken && (payload.sub === "k8s-streamer" || payload.sub === "api-server")) {
+        const tokenType = typeof payload.tokenType === "string" ? payload.tokenType : undefined;
+
+        // Agent tokens are strictly for /ws/agent on k8s-streamer and never valid on api-server
+        if (tokenType === "agent") {
+          response.status(401).json({ error: "Agent tokens are not permitted on API server routes" });
+          return;
+        }
+
+        // Query-param tokens are restricted strictly to 5m scoped manifest_download tokens on GET /:clusterId/agent.yaml
+        const isManifestDownloadRoute =
+          request.method === "GET" &&
+          typeof payload.clusterId === "string" &&
+          payload.clusterId.length > 0 &&
+          request.path === `/${payload.clusterId}/agent.yaml`;
+
+        if (tokenType === "manifest_download") {
+          if (!isManifestDownloadRoute) {
+            response.status(401).json({ error: "Manifest download token is not valid for this route" });
+            return;
+          }
+          const jti = typeof payload.jti === "string" ? payload.jti : "";
+          const exp = typeof payload.exp === "number" ? payload.exp : undefined;
+          if (!jti || !consumeManifestDownloadJti(jti, exp)) {
+            response.status(401).json({ error: "Manifest download token is invalid or has already been used" });
+            return;
+          }
+          const user = await getUserById(payload.sub);
+          if (user && user.isActive !== false) {
+            request.user = user;
+            request.manifestTokenClusterId = payload.clusterId;
+            next();
+            return;
+          }
+          response.status(401).json({ error: "Authentication required" });
+          return;
+        }
+
+        // Reject arbitrary user/service JWTs in ?token= query strings
+        if (!bearerToken && queryToken) {
+          response.status(401).json({ error: "Bearer Authorization header is required; query tokens are restricted to manifest downloads" });
+          return;
+        }
+
+        // Recognize internal system service tokens via Bearer header only with explicit tokenType === "service"
+        if (
+          bearerToken &&
+          tokenType === "service" &&
+          (payload.sub === "k8s-streamer" || payload.sub === "api-server")
+        ) {
           request.isServiceToken = true;
           request.serviceSubject = payload.sub;
           request.user = {
@@ -55,6 +103,11 @@ export const requireAuth = async (request: Request, response: Response, next: Ne
             avatar: null,
           } as AuthUser;
           next();
+          return;
+        }
+
+        if (tokenType && tokenType !== "user") {
+          response.status(401).json({ error: "Unsupported token type" });
           return;
         }
 

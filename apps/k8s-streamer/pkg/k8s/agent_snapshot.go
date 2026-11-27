@@ -12,10 +12,59 @@ import (
 // AgentClusterState stores the in-memory cached snapshot and status of an agent-connected cluster
 type AgentClusterState struct {
 	ClusterID string
+	SessionID string
 	Snapshot  types.ClusterSnapshot
 	LastSeen  time.Time
 	Connected bool
 	mu        sync.RWMutex
+}
+
+// RegisterSession marks the active streaming session for clusterID as connected.
+func (ar *AgentRegistry) RegisterSession(clusterID, sessionID string) {
+	if clusterID == "" {
+		return
+	}
+	ar.mu.Lock()
+	defer ar.mu.Unlock()
+
+	state, ok := ar.clusters[clusterID]
+	if !ok {
+		state = &AgentClusterState{
+			ClusterID: clusterID,
+		}
+		ar.clusters[clusterID] = state
+	}
+
+	state.mu.Lock()
+	state.SessionID = sessionID
+	state.LastSeen = time.Now()
+	state.Connected = true
+	state.mu.Unlock()
+}
+
+// MarkDisconnectedSession marks clusterID disconnected only if sessionID still owns the active connection.
+// Prevents a stale or half-open socket from clobbering a freshly reconnected agent session.
+func (ar *AgentRegistry) MarkDisconnectedSession(clusterID, sessionID string) bool {
+	if clusterID == "" {
+		return false
+	}
+	ar.mu.Lock()
+	defer ar.mu.Unlock()
+
+	state, ok := ar.clusters[clusterID]
+	if !ok || state == nil {
+		return false
+	}
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.SessionID != "" && sessionID != "" && state.SessionID != sessionID {
+		return false
+	}
+	state.Connected = false
+	state.LastSeen = time.Now()
+	log.Printf("[AgentRegistry] Agent cluster '%s' marked disconnected (session %s)", clusterID, sessionID)
+	return true
 }
 
 // AgentRegistry manages clusters streaming from in-cluster envscale-agents
@@ -54,18 +103,13 @@ func (ar *AgentRegistry) SetSnapshot(clusterID string, snapshot types.ClusterSna
 		clusterID, len(snapshot.Pods), len(snapshot.Nodes), len(snapshot.Services))
 }
 
-// GetSnapshot retrieves the snapshot for an agent cluster
+// GetSnapshot retrieves the snapshot strictly for the requested clusterID.
 func (ar *AgentRegistry) GetSnapshot(clusterID string) (*types.ClusterSnapshot, bool) {
+	if clusterID == "" {
+		return nil, false
+	}
 	ar.mu.RLock()
 	state, ok := ar.clusters[clusterID]
-	if !ok && len(ar.clusters) == 1 {
-		// Fallback if only 1 agent is connected
-		for _, v := range ar.clusters {
-			state = v
-			ok = true
-			break
-		}
-	}
 	ar.mu.RUnlock()
 
 	if !ok || state == nil {

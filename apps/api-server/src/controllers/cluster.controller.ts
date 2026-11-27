@@ -12,9 +12,14 @@ import {
 } from "../services/cluster.service.js";
 
 import { generateAgentManifest } from "../services/agent-manifest.service.js";
+import { createManifestDownloadToken } from "../services/auth.service.js";
 import { ensureDefaultWorkspace } from "../services/workspace.service.js";
 
 export const connect = async (request: Request, response: Response) => {
+  if (request.isServiceToken) {
+    response.status(403).json({ error: "User workspace membership required" });
+    return;
+  }
   let workspaceId = request.params.id as string | undefined;
 
   try {
@@ -39,6 +44,10 @@ export const connect = async (request: Request, response: Response) => {
 };
 
 export const list = async (request: Request, response: Response) => {
+  if (request.isServiceToken) {
+    response.status(403).json({ error: "User workspace membership required" });
+    return;
+  }
   let workspaceId = request.params.id as string | undefined;
 
   if (!workspaceId && request.user) {
@@ -59,7 +68,7 @@ export const list = async (request: Request, response: Response) => {
 };
 
 export const remove = async (request: Request, response: Response) => {
-  let workspaceId = request.params.id as string | undefined;
+  let workspaceId = request.authorizedWorkspaceId || (request.params.id as string | undefined);
 
   if (!workspaceId && request.user) {
     const workspace = await ensureDefaultWorkspace(request.user.id, request.user.name);
@@ -71,7 +80,7 @@ export const remove = async (request: Request, response: Response) => {
     return;
   }
 
-  const clusterId = request.params.clusterId as string;
+  const clusterId = request.authorizedClusterId || (request.params.clusterId as string);
   try {
     await deleteCluster(workspaceId, clusterId);
     response.status(204).send();
@@ -142,10 +151,42 @@ export const resetLayout = async (request: Request, response: Response) => {
   }
 };
 
+export const createManifestToken = async (request: Request, response: Response) => {
+  const clusterId = request.authorizedClusterId;
+  if (!clusterId || !request.user) {
+    response.status(403).json({ error: "Cluster access denied" });
+    return;
+  }
+  const token = createManifestDownloadToken(request.user.id, clusterId);
+  response.setHeader("Cache-Control", "no-store");
+  response.json({ token, expiresInSeconds: 300 });
+};
+
+function validateCustomServerUrl(rawUrl: string): string {
+  if (/[\r\n"'`\s]/.test(rawUrl)) {
+    throw new Error("serverUrl contains disallowed characters");
+  }
+  const parsed = new URL(rawUrl);
+  if (parsed.protocol !== "ws:" && parsed.protocol !== "wss:") {
+    throw new Error("serverUrl must use ws:// or wss://");
+  }
+  if (!parsed.host) {
+    throw new Error("serverUrl must include a valid host");
+  }
+  if (process.env.NODE_ENV === "production" && parsed.protocol !== "wss:") {
+    throw new Error("serverUrl must use wss:// in production");
+  }
+  return parsed.toString();
+}
+
 export const getAgentManifest = async (request: Request, response: Response) => {
   const clusterId = request.authorizedClusterId;
   if (!clusterId) {
     response.status(403).json({ error: "Cluster access denied" });
+    return;
+  }
+  if (request.manifestTokenClusterId && request.manifestTokenClusterId !== clusterId) {
+    response.status(403).json({ error: "Manifest token is not scoped to this cluster" });
     return;
   }
   try {
@@ -155,7 +196,20 @@ export const getAgentManifest = async (request: Request, response: Response) => 
       return;
     }
 
-    const customServerUrl = typeof request.query.serverUrl === "string" && request.query.serverUrl.trim() ? request.query.serverUrl.trim() : undefined;
+    const rawServerUrl =
+      typeof request.query.serverUrl === "string" && request.query.serverUrl.trim()
+        ? request.query.serverUrl.trim()
+        : undefined;
+    let customServerUrl: string | undefined;
+    if (rawServerUrl) {
+      try {
+        customServerUrl = validateCustomServerUrl(rawServerUrl);
+      } catch (validationErr) {
+        response.status(400).send(`# Invalid serverUrl: ${validationErr instanceof Error ? validationErr.message : "invalid URL"}`);
+        return;
+      }
+    }
+
     const host = request.get("host") || "envscale.duckdns.org";
     const protocol = request.protocol === "https" || host.includes("envscale.duckdns.org") ? "wss" : "ws";
     const serverUrl = customServerUrl || process.env.STREAMER_WS_URL || `${protocol}://${host}/ws/agent`;
@@ -166,8 +220,9 @@ export const getAgentManifest = async (request: Request, response: Response) => 
       serverUrl,
     });
 
+    response.setHeader("Cache-Control", "no-store");
     response.setHeader("Content-Type", "application/yaml");
-    response.setHeader("Content-Disposition", `inline; filename="envscale-agent-${cluster.name}.yaml"`);
+    response.setHeader("Content-Disposition", `inline; filename="envscale-agent-${cluster.id}.yaml"`);
     response.send(manifest);
   } catch (error: unknown) {
     response.status(500).send(`# Error generating manifest: ${error instanceof Error ? error.message : "Internal error"}`);

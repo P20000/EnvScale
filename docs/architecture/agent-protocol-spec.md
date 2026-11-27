@@ -11,9 +11,35 @@
 - **Header Auth Only:** Agent sends `Authorization: Bearer <agentToken>` on the WebSocket upgrade HTTP request. Never pass tokens in URL query parameters and never log the token or full credentialed URL to stdout.
 - **Strict TLS:** Agent validates the server certificate against the container trust store (`/etc/ssl/certs/ca-certificates.crt`) or an explicitly supplied `CA_CERT_PATH` / `CA_CERT_PEM`. **`InsecureSkipVerify: true` is strictly prohibited.**
 - **Cluster-Bound Revocable Credentials:**
-  - `agentToken` carries `tokenType: "agent"`, `sub: "agent-<clusterUUID>"`, `clusterId: "<clusterUUID>"`, `tokenId: "<uuid>"`.
-  - `HandleAgentWebSocket` **must** verify `tokenType == "agent"`, match `claims["clusterId"] == query("clusterId")`, and validate `tokenId` is active (not revoked/deleted) via `api-server` / shared Redis revocation state.
-  - Token is mounted into the Agent pod via a Kubernetes `Secret` (`envFrom` / `secretKeyRef`), never plaintext Deployment `env.value`.
+  - `agentToken` carries `tokenType: "agent"`, `sub: "agent-<clusterUUID>"`, `clusterId: "<clusterUUID>"`, `tokenId: "<uuid>"` (`jti`).
+  - `HandleAgentWebSocket` **must** verify `tokenType == "agent"`, match `claims["clusterId"] == query("clusterId")`, and validate `tokenId` is active (not revoked/deleted/expired) via `api-server` / Redis revocation state.
+  - Token is mounted into the Agent pod via a Kubernetes `Secret` (`envscale-agent-credentials` / `secretKeyRef`), never plaintext Deployment `env.value`.
+
+### 1.1 Database-Backed Agent Token Lifecycle & Revocation (`SEC-M2`)
+> **Status:** Authoritative Design Complete; Persistence & Revocation Endpoints Gated to Step 4 (Agent Protocol Foundation). *(Current Phase 2 bridge uses 30d cluster-bound JWTs with zero partial in-memory revocation substitutes.)*
+
+- **Database Schema (`apps/api-server/src/db/schema.ts` — `agent_tokens` table):**
+  - `id` (`uuid`, PK — embedded in JWT as `tokenId` / `jti`)
+  - `clusterId` (`uuid`, FK -> `clusters.id` `ON DELETE CASCADE`)
+  - `workspaceId` (`uuid`, FK -> `workspaces.id` `ON DELETE CASCADE`)
+  - `tokenHash` (`text`, unique SHA-256 of the issued JWT)
+  - `permissionProfile` (`"readonly"` | `"operator"`, default `"readonly"`)
+  - `issuedByUserId` (`uuid`, FK -> `users.id`)
+  - `expiresAt` (`timestamp`)
+  - `revokedAt` (`timestamp`, nullable)
+  - `revokedByUserId` (`uuid`, nullable FK -> `users.id`)
+  - `revokeReason` (`text`, nullable)
+  - `lastUsedAt` (`timestamp`, nullable)
+  - `createdAt` (`timestamp`)
+- **Authentication & Reconnection Verification Flow:**
+  1. Agent upgrades to `/ws/agent?clusterId=<uuid>` with `Authorization: Bearer <agentToken>`.
+  2. `k8s-streamer` verifies the HMAC signature, `tokenType == "agent"`, `claims["clusterId"] == query("clusterId")`, `claims["tokenId"] != ""`, and `exp > now`.
+  3. `k8s-streamer` checks token liveness against `POST /api/v1/internal/agent-tokens/verify` on `api-server` (using a short-lived `service` token; negative/revoked state is mirrored in Redis for fast lookups).
+  4. **Fail-Closed Rule:** If `tokenId` is missing, revoked (`revokedAt != null`), expired, mismatched to `clusterId`, or the verification call fails/times out, the handshake rejects immediately (`401`/`403` on initial upgrade or immediate close on reconnect).
+- **Active Session Revocation & Zero-Downtime Rotation:**
+  - When a cluster is deleted or a workspace `ADMIN` revokes/rotates an agent token, `api-server` sets `revokedAt = now()` in `agent_tokens`, writes `revoked:agent_token:<tokenId>` to Redis with TTL matching `expiresAt`, and publishes `AGENT_TOKEN_REVOKED { clusterId, tokenId }` on Redis Pub/Sub.
+  - `k8s-streamer` immediately terminates any active `/ws/agent` connection authenticated with that `tokenId` (WebSocket close code `4003`), marks the session disconnected, and aborts active streams/commands.
+  - Overlapping rotations keep the prior `tokenId` active while the new Kubernetes `Secret` rolls out, after which the `ADMIN` revokes the old `tokenId`.
 
 ---
 

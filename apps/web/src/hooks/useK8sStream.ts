@@ -196,7 +196,7 @@ export function useK8sStream(
               if (currentToken) {
                 headers["Authorization"] = `Bearer ${currentToken}`;
               }
-              const snapshotUrl = `${streamerUrl}/api/v1/clusters/snapshot?clusterId=${encodeURIComponent(targetClusterId)}${currentToken ? `&token=${encodeURIComponent(currentToken)}` : ""}`;
+              const snapshotUrl = `${streamerUrl}/api/v1/clusters/snapshot?clusterId=${encodeURIComponent(targetClusterId)}`;
               const res = await fetch(snapshotUrl, {
                 headers,
               });

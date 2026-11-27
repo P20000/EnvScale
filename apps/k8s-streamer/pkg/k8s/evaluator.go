@@ -303,8 +303,8 @@ func (me *MetricEvaluator) evaluate() {
 				continue
 			}
 
-			// Scope check: skip rules that target a different cluster
-			if rule.ClusterID != "" && rule.ClusterID != clusterID {
+			// Scope check: require explicit ClusterID and skip rules targeting other clusters
+			if rule.ClusterID == "" || rule.ClusterID != clusterID {
 				continue
 			}
 

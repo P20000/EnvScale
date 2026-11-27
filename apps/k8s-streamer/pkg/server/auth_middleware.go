@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 
 	"github.com/golang-jwt/jwt/v5"
 
@@ -23,21 +22,13 @@ func writeAuthError(w http.ResponseWriter, status int, message string) {
 // RequireAuth wraps an HTTP handler to ensure a valid JWT access token is present.
 func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		allowAnonymous := os.Getenv("ALLOW_ANONYMOUS_WS") == "true"
 		claims, err := websocket.AuthenticateHandshake(r)
 		if err != nil {
-			if allowAnonymous {
-				next(w, r)
-				return
-			}
 			writeAuthError(w, http.StatusUnauthorized, fmt.Sprintf("Authentication required: %v", err))
 			return
 		}
-		if claims == nil && !allowAnonymous {
-			writeAuthError(w, http.StatusUnauthorized, "Authentication required: missing token")
-			return
-		}
 		next(w, r)
+		_ = claims
 	}
 }
 
@@ -45,18 +36,9 @@ func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 // that the client's token grants access to that specific cluster.
 func RequireClusterAuth(getClusterID func(r *http.Request) string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		allowAnonymous := os.Getenv("ALLOW_ANONYMOUS_WS") == "true"
 		claims, err := websocket.AuthenticateHandshake(r)
 		if err != nil {
-			if allowAnonymous {
-				next(w, r)
-				return
-			}
 			writeAuthError(w, http.StatusUnauthorized, fmt.Sprintf("Authentication required: %v", err))
-			return
-		}
-		if claims == nil && !allowAnonymous {
-			writeAuthError(w, http.StatusUnauthorized, "Authentication required: missing token")
 			return
 		}
 
@@ -70,48 +52,75 @@ func RequireClusterAuth(getClusterID func(r *http.Request) string, next http.Han
 				writeAuthError(w, http.StatusForbidden, fmt.Sprintf("Cluster access forbidden: %v", authErr))
 				return
 			}
+		} else if claims == nil {
+			if authErr := websocket.CheckClusterAuthorization(nil, ""); authErr != nil {
+				writeAuthError(w, http.StatusUnauthorized, fmt.Sprintf("Authentication required: %v", authErr))
+				return
+			}
 		}
 
 		next(w, r)
 	}
 }
 
-// RequireAdmin wraps an administrative HTTP handler (e.g. unregister-all, rule sync)
-// ensuring only callers with ADMIN or SUPER_ADMIN roles or api-server service identity can invoke it.
+// RequireClusterOperationAuth wraps an HTTP handler and enforces workspace role authorization for cluster mutations.
+func RequireClusterOperationAuth(getClusterID func(r *http.Request) string, allowedRoles []string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims, err := websocket.AuthenticateBearerRequest(r)
+		if err != nil {
+			if err == websocket.ErrMissingToken || err == websocket.ErrMissingSecret {
+				if authErr := websocket.CheckClusterOperationAuthorization(nil, "anon-check", allowedRoles...); authErr == nil {
+					claims = nil
+				} else {
+					writeAuthError(w, http.StatusUnauthorized, fmt.Sprintf("Authentication required: %v", err))
+					return
+				}
+			} else {
+				writeAuthError(w, http.StatusUnauthorized, fmt.Sprintf("Authentication required: %v", err))
+				return
+			}
+		}
+
+		clusterID := ""
+		if getClusterID != nil {
+			clusterID = getClusterID(r)
+		}
+		if clusterID == "" {
+			writeAuthError(w, http.StatusBadRequest, "clusterId is required")
+			return
+		}
+
+		if authErr := websocket.CheckClusterOperationAuthorization(claims, clusterID, allowedRoles...); authErr != nil {
+			writeAuthError(w, http.StatusForbidden, fmt.Sprintf("Operation forbidden: %v", authErr))
+			return
+		}
+
+		next(w, r)
+	}
+}
+
+// RequireAdmin wraps an internal administrative HTTP handler (e.g. cluster register, unregister-all, rule sync)
+// ensuring only authenticated internal control-plane service tokens can invoke it.
 func RequireAdmin(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		allowAnonymous := os.Getenv("ALLOW_ANONYMOUS_WS") == "true"
-		claims, err := websocket.AuthenticateHandshake(r)
+		claims, err := websocket.AuthenticateBearerRequest(r)
 		if err != nil {
-			if allowAnonymous {
-				next(w, r)
-				return
+			if err == websocket.ErrMissingToken || err == websocket.ErrMissingSecret {
+				if authErr := websocket.CheckClusterOperationAuthorization(nil, "anon-check", "ADMIN"); authErr == nil {
+					next(w, r)
+					return
+				}
 			}
 			writeAuthError(w, http.StatusUnauthorized, fmt.Sprintf("Authentication required: %v", err))
 			return
 		}
 
-		if claims == nil && allowAnonymous {
+		if websocket.IsServiceToken(claims) {
 			next(w, r)
 			return
 		}
 
-		if sub, ok := claims["sub"].(string); ok && sub == "api-server" {
-			next(w, r)
-			return
-		}
-
-		if role, ok := claims["role"].(string); ok && (role == "ADMIN" || role == "SUPER_ADMIN") {
-			next(w, r)
-			return
-		}
-
-		if allowAnonymous {
-			next(w, r)
-			return
-		}
-
-		writeAuthError(w, http.StatusForbidden, "Administrative privileges required (ADMIN, SUPER_ADMIN, or api-server service token)")
+		writeAuthError(w, http.StatusForbidden, "Internal service token required (api-server or k8s-streamer)")
 	}
 }
 

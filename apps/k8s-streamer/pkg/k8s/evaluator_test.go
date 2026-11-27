@@ -118,6 +118,7 @@ func TestMetricEvaluator_EvaluatesRulesAndTriggersAlert(t *testing.T) {
 
 	rule := AlertRule{
 		RuleID:            "rule-crashloop",
+		ClusterID:         "cluster-eval",
 		MetricType:        "pod_restarts",
 		ConditionOperator: ">",
 		ThresholdValue:    5,
@@ -173,5 +174,28 @@ func TestCompareString(t *testing.T) {
 	}
 	if !compareString("Running", "!=", "CrashLoopBackOff") {
 		t.Errorf("Expected string inequality = true")
+	}
+}
+
+func TestMetricEvaluator_DoesNotEvaluateEmptyOrForeignClusterRules(t *testing.T) {
+	hub := websocket.NewHub()
+	provider := &mockSnapshotProvider{
+		clusters: map[string]bool{"cluster-a": true},
+		pods: map[string][]types.PodStatusDelta{
+			"cluster-a": {{Name: "p1", Namespace: "default", RestartCount: 99}},
+		},
+	}
+
+	eval := NewMetricEvaluator(provider, hub)
+	eval.SetRules([]AlertRule{
+		{RuleID: "unscoped", ClusterID: "", MetricType: "pod_restarts", ConditionOperator: ">", ThresholdValue: 1, DurationSeconds: 0, Enabled: true},
+		{RuleID: "foreign", ClusterID: "cluster-b", MetricType: "pod_restarts", ConditionOperator: ">", ThresholdValue: 1, DurationSeconds: 0, Enabled: true},
+	})
+	eval.evaluate()
+
+	eval.violMu.Lock()
+	defer eval.violMu.Unlock()
+	if len(eval.violations) != 0 {
+		t.Fatalf("SEC-H5: expected 0 violations for unscoped or foreign-cluster rules, got %d", len(eval.violations))
 	}
 }

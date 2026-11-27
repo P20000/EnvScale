@@ -2,9 +2,10 @@ import type { Request, Response } from "express";
 import {
   findUserByEmail,
   getUserById,
-  getUserAccessibleClusterIds,
+  getUserClusterRoles,
   issueTokens,
   createAccessToken,
+  createStreamerToken,
   registerUser,
   rotateRefreshToken,
   verifyPassword,
@@ -108,9 +109,10 @@ export const getStreamerToken = async (request: Request, response: Response) => 
     response.status(401).json({ error: "Authentication required" });
     return;
   }
-  const allowedClusterIds = await getUserAccessibleClusterIds(request.user.id, request.user.role);
-  const token = createAccessToken(request.user, { allowedClusterIds });
-  response.json({ token, allowedClusterIds });
+  const clusterRoles = await getUserClusterRoles(request.user.id);
+  const allowedClusterIds = Object.keys(clusterRoles);
+  const token = createStreamerToken(request.user, clusterRoles);
+  response.json({ token, allowedClusterIds, clusterRoles });
 };
 
 export const switchSession = async (request: Request, response: Response) => {
@@ -135,8 +137,9 @@ export const switchSession = async (request: Request, response: Response) => {
       return;
     }
 
-    const allowedClusterIds = await getUserAccessibleClusterIds(caller.id, caller.role);
-    const token = createAccessToken(caller, { allowedClusterIds });
+    const clusterRoles = await getUserClusterRoles(caller.id);
+    const allowedClusterIds = Object.keys(clusterRoles);
+    const token = createAccessToken(caller, { tokenType: "user", clusterRoles, allowedClusterIds });
     const workspace = await ensureDefaultWorkspace(caller.id, caller.name);
 
     response.json({
@@ -144,6 +147,7 @@ export const switchSession = async (request: Request, response: Response) => {
       user: { id: caller.id, name: caller.name, email: caller.email, role: caller.role },
       workspace,
       allowedClusterIds,
+      clusterRoles,
     });
   } catch (error) {
     console.error("switchSession handler error:", error);
