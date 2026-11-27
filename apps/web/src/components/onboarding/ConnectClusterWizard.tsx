@@ -7,7 +7,7 @@ import {
   mdiFileUploadOutline,
 } from "@mdi/js";
 import { Button } from "../ui/button";
-import { apiConnectCluster, apiMe } from "../../config/api";
+import { apiConnectCluster, apiMe, getStreamerToken } from "../../config/api";
 import { useTopologyStore } from "../../store/useTopologyStore";
 import { useAuthStore } from "../../store/useAuthStore";
 import { connectClusterSchema, formatConnectionError } from "./wizardHelpers";
@@ -118,6 +118,10 @@ export default function ConnectClusterWizard({
               healthScore: 100,
               type: environment,
             };
+            const freshToken = await getStreamerToken();
+            if (freshToken) {
+              useAuthStore.setState({ token: freshToken });
+            }
             setConnectedCluster({ id: res.cluster.id, name: res.cluster.name });
             addCluster(clusterObj);
             setActiveCluster(res.cluster.id);
@@ -196,6 +200,10 @@ export default function ConnectClusterWizard({
           healthScore: 100,
           type: environment,
         };
+        const freshToken = await getStreamerToken();
+        if (freshToken) {
+          useAuthStore.setState({ token: freshToken });
+        }
         addCluster(clusterObj);
         setActiveCluster(res.cluster.id);
         setConnectedCluster({ id: res.cluster.id, name: res.cluster.name });

@@ -46,6 +46,23 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
 
   const [chaosActionMsg, setChaosActionMsg] = useState<string | null>(null);
 
+  const resolveChaosAuthHeaders = async (): Promise<Record<string, string>> => {
+    let token = await getStreamerToken();
+    if (!token || token === "null") {
+      token =
+        localStorage.getItem("envscale_auth_token") ||
+        localStorage.getItem("envscale_access_token") ||
+        useAuthStore.getState().token;
+    } else if (useAuthStore.getState().isAuthenticated) {
+      useAuthStore.setState({ token });
+    }
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token && token !== "null") {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+    return headers;
+  };
+
   const triggerChaos = async (
     faultType: "crash" | "oom-pressure" | "scale-down",
     actionLabel: string,
@@ -64,15 +81,7 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
         return;
       }
       const namespace = podData.namespace || "default";
-
-      let token = useAuthStore.getState().token || localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
-      if (!token || token === "null") {
-        token = await getStreamerToken();
-      }
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token && token !== "null") {
-        headers["Authorization"] = `Bearer ${token}`;
-      }
+      const headers = await resolveChaosAuthHeaders();
 
       const res = await fetch(`${STREAMER_BASE_URL}/api/v1/chaos/inject`, {
         method: "POST",
@@ -118,14 +127,7 @@ export function InspectorDrawer({ target, onClose, onOpenLogTerminal }: Inspecto
   const clearChaos = async (faultId: string) => {
     try {
       setChaosActionMsg("Reverting injected chaos fault...");
-      let token = useAuthStore.getState().token || localStorage.getItem("envscale_auth_token") || localStorage.getItem("envscale_access_token");
-      if (!token || token === "null") {
-        token = await getStreamerToken();
-      }
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token && token !== "null") {
-        headers["Authorization"] = `Bearer ${token}`;
-      }
+      const headers = await resolveChaosAuthHeaders();
 
       const res = await fetch(`${STREAMER_BASE_URL}/api/v1/chaos/inject`, {
         method: "DELETE",
