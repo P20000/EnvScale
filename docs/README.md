@@ -5,6 +5,19 @@
 
 ---
 
+## 0. Authoritative Platform Specifications (Target Contract)
+
+> These four specifications under `docs/architecture/` are the binding technical contract for Phases 1–7 across `apps/web`, `apps/api-server`, `apps/k8s-streamer`, and `envscale-agent`.
+
+| Document | Scope & Technical Contract |
+| :--- | :--- |
+| [Architecture Specification](architecture/architecture-spec.md) | Control-plane ownership, unified `ClusterExecutor` interface, `DirectExecutor` / `AgentExecutor`, 5-state `ClusterCapabilityRegistry`, restricted-RBAC discovery, and tenant isolation boundaries. |
+| [Agent Protocol Specification (v2.0)](architecture/agent-protocol-spec.md) | Outbound `WSS /ws/agent` auth, `AGENT_HELLO` / `SERVER_HELLO_ACK` versioning, session CAS ownership, full delta reducer, multiplexed log streaming, `METRICS_BATCH`, and durable command execution. |
+| [Observability Specification](architecture/observability-spec.md) | Resource coverage matrix, Direct/Agent log streaming & failure taxonomy, 15s metrics pipeline & PostgreSQL retention, data freshness rules, and capability-aware frontend behavior. |
+| [Security & Compatibility Specification](architecture/security-and-compatibility-spec.md) | Prioritized security remediation order (`SEC-C1`..`SEC-L3`), controlled cloud auth adapters, Read-Only vs. Operator Agent RBAC profiles, K8s compatibility matrix, and release acceptance gates. |
+
+---
+
 ## 1. Modular Documentation Directory
 
 ### Core Architecture, Design & Algorithms
