@@ -4,8 +4,10 @@ import shutil
 import subprocess
 from typing import Callable, Optional, Dict, Any
 
+from .cloud_identity import DEFAULT_ACCOUNT_ID
 from .config import PROJECT_ROOT, TERRAFORM_EKS_DIR, EKS_TODO_APP_YAML
 from .proc_utils import safe_run, safe_stream
+from .tfstate_reconciler import run_managed_terraform_mutation
 
 LogCallback = Callable[[str], None]
 # StepCallback signature: (step_id: str, title: str, status: str, detail: str) -> None
@@ -108,16 +110,31 @@ class EKSDeployer:
         self._emit_step(s1, t1, "log", "AWS credentials verified.")
         self._emit_step(s1, t1, "success", "Preflight checks passed.")
 
-        # Step 2: Terraform Init
+        # Step 2–3: Terraform Init & Apply (Centralized State Reconciliation + Verified Sync)
         s2, t2 = "eks_tf_init", "Initialize EKS Terraform Provider"
-        self._emit_step(s2, t2, "start", "terraform init in deployment/terraform-eks/")
-        self._stream_cmd(["terraform", "init"], s2, t2, cwd=TERRAFORM_EKS_DIR)
-        self._emit_step(s2, t2, "success", "Terraform initialized.")
-
-        # Step 3: Terraform Apply (Provisions VPC, IAM, EKS Control Plane, Spot Worker Nodegroup)
         s3, t3 = "eks_tf_apply", "Provision AWS EKS & Spot Worker Nodegroup"
+        self._emit_step(s2, t2, "start", "terraform init in deployment/terraform-eks/")
         self._emit_step(s3, t3, "start", "terraform apply -auto-approve (Estimated: 8-12 mins)")
-        self._stream_cmd(["terraform", "apply", "-auto-approve"], s3, t3, cwd=TERRAFORM_EKS_DIR)
+        acct_id = str(json.loads(res.stdout or "{}").get("Account") or DEFAULT_ACCOUNT_ID)
+        def _exec_eks_tf(cmd):
+            sid, title = (s2, t2) if cmd[1] == "init" else (s3, t3)
+            self._stream_cmd(cmd, sid, title, cwd=TERRAFORM_EKS_DIR)
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        run_managed_terraform_mutation(
+            operation_type="eks_apply",
+            tf_commands=[["terraform", "init"], ["terraform", "apply", "-auto-approve"]],
+            cwd=TERRAFORM_EKS_DIR,
+            local_path=os.path.join(TERRAFORM_EKS_DIR, "terraform.tfstate"),
+            account_id=acct_id,
+            region=self.region,
+            state_key="eks/terraform.tfstate",
+            exec_tf_fn=_exec_eks_tf,
+            allow_adopt_remote=True,
+            emit_fn=self._emit_step,
+            step_id=s3,
+            step_title=t3,
+        )
+        self._emit_step(s2, t2, "success", "Terraform initialized.")
         self._emit_step(s3, t3, "success", "AWS EKS cluster and nodegroup provisioned successfully.")
 
         # Step 4: Kubeconfig Synchronization
@@ -174,10 +191,30 @@ class EKSDeployer:
                 self._emit_step(s1, t1, "log", f"Workload teardown warning: {e}")
         self._emit_step(s1, t1, "success", "Workload cleanup complete.")
 
-        # Step 2: Terraform Destroy
+        # Step 2: Terraform Destroy (Centralized State Reconciliation + Verified Sync)
         s2, t2 = "eks_tf_destroy", "Destroy AWS EKS Cluster & Infrastructure"
         self._emit_step(s2, t2, "start", "terraform destroy -auto-approve")
-        self._stream_cmd(["terraform", "destroy", "-auto-approve"], s2, t2, cwd=TERRAFORM_EKS_DIR)
+        ident_res = safe_run(["aws", "sts", "get-caller-identity", "--output", "json"], timeout=6.0)
+        acct_id = DEFAULT_ACCOUNT_ID
+        if ident_res.returncode == 0 and ident_res.stdout.strip():
+            acct_id = str(json.loads(ident_res.stdout).get("Account") or DEFAULT_ACCOUNT_ID)
+        def _exec_eks_destroy(cmd):
+            self._stream_cmd(cmd, s2, t2, cwd=TERRAFORM_EKS_DIR)
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        run_managed_terraform_mutation(
+            operation_type="eks_destroy",
+            tf_commands=[["terraform", "destroy", "-auto-approve"]],
+            cwd=TERRAFORM_EKS_DIR,
+            local_path=os.path.join(TERRAFORM_EKS_DIR, "terraform.tfstate"),
+            account_id=acct_id,
+            region=self.region,
+            state_key="eks/terraform.tfstate",
+            exec_tf_fn=_exec_eks_destroy,
+            allow_adopt_remote=False,
+            emit_fn=self._emit_step,
+            step_id=s2,
+            step_title=t2,
+        )
         self._emit_step(s2, t2, "success", "AWS EKS cluster and resources destroyed.")
 
         # Step 3: Cleanup Kubeconfig Context & Switch back to local minikube

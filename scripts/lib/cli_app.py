@@ -227,37 +227,62 @@ def infra():
 @infra.command("up")
 @click.option("--sha", default=None, help="Specific commit SHA to deploy after provisioning")
 @click.option("--manifest", default=None, help="Path to local validated release-manifest.json")
-def infra_up(sha, manifest):
-    """Provision AWS EC2, configure VPC/S3, and sync DNS/secrets."""
+@click.option("--profile", default=None, help="Optional AWS CLI profile")
+def infra_up(sha, manifest, profile):
+    """Provision AWS EC2, configure VPC/S3, and sync DNS/secrets using centralized state sync."""
+    from .cli_cloud_ops import _cli_runtime_aws_env
     from .cloud_deployer import CloudDeployer
-    deployer = CloudDeployer(log_fn=lambda m: console.print(f"[blue]{m}[/blue]"))
+    aws_env = _cli_runtime_aws_env(profile, require_runtime_role=True)
+    deployer = CloudDeployer(log_fn=lambda m: console.print(f"[blue]{m}[/blue]"), aws_env=aws_env)
     deployer.infra_up(release_sha=sha, manifest_path=manifest)
     console.print("[bold green]✔ Cloud Infrastructure Provisioned & Ready![/bold green]")
 
 @infra.command("stop")
-def infra_stop():
+@click.option("--profile", default=None, help="Optional AWS CLI profile")
+def infra_stop(profile):
     """Pause EC2 instance to eliminate compute billing ($0.00/hr)."""
+    from .cli_cloud_ops import _cli_runtime_aws_env
     from .cloud_deployer import CloudDeployer
-    deployer = CloudDeployer(log_fn=lambda m: console.print(f"[yellow]{m}[/yellow]"))
+    aws_env = _cli_runtime_aws_env(profile, require_runtime_role=True)
+    deployer = CloudDeployer(log_fn=lambda m: console.print(f"[yellow]{m}[/yellow]"), aws_env=aws_env)
     deployer.infra_stop()
     console.print("[bold yellow]✔ EC2 Instance Paused ($0.00/hr).[/bold yellow]")
 
 @infra.command("start")
-def infra_start():
+@click.option("--profile", default=None, help="Optional AWS CLI profile")
+def infra_start(profile):
     """Resume EC2 instance and redeploy application containers."""
+    from .cli_cloud_ops import _cli_runtime_aws_env
     from .cloud_deployer import CloudDeployer
-    deployer = CloudDeployer(log_fn=lambda m: console.print(f"[blue]{m}[/blue]"))
+    aws_env = _cli_runtime_aws_env(profile, require_runtime_role=True)
+    deployer = CloudDeployer(log_fn=lambda m: console.print(f"[blue]{m}[/blue]"), aws_env=aws_env)
     deployer.infra_start()
     console.print("[bold green]✔ EC2 Instance Resumed & Operational![/bold green]")
 
 @infra.command("destroy")
-def infra_destroy():
-    """Backup database to S3 and tear down all AWS resources."""
+@click.option("--profile", default=None, help="Optional AWS CLI profile")
+def infra_destroy(profile):
+    """Backup database to S3 and tear down all AWS resources with verified S3 state sync."""
     if Confirm.ask("[bold red]Are you sure you want to destroy all AWS resources?[/bold red]"):
+        from .cli_cloud_ops import _cli_runtime_aws_env
         from .cloud_deployer import CloudDeployer
-        deployer = CloudDeployer(log_fn=lambda m: console.print(f"[red]{m}[/red]"))
+        aws_env = _cli_runtime_aws_env(profile, require_runtime_role=True)
+        deployer = CloudDeployer(log_fn=lambda m: console.print(f"[red]{m}[/red]"), aws_env=aws_env)
         deployer.infra_destroy()
         console.print("[bold green]✔ All cloud resources destroyed and DB archived to S3.[/bold green]")
+
+@infra.command("reconcile")
+@click.option("--adopt-remote", is_flag=True, default=False, help="Adopt remote state when ahead")
+@click.option("--promote-local", is_flag=True, default=False, help="Promote local state when ahead")
+@click.option("--profile", default=None, help="Optional AWS CLI profile")
+def infra_reconcile(adopt_remote, promote_local, profile):
+    """Reconcile local and S3 Terraform state safely."""
+    from .cli_cloud_ops import _cli_runtime_aws_env
+    from .cloud_deployer import CloudDeployer
+    aws_env = _cli_runtime_aws_env(profile, require_runtime_role=True)
+    deployer = CloudDeployer(log_fn=lambda m: console.print(f"[cyan]{m}[/cyan]"), aws_env=aws_env)
+    res = deployer.reconcile_state(allow_adopt_remote=adopt_remote, allow_promote_local=promote_local)
+    console.print(f"[bold green]✔ State Reconciled:[/bold green] {res['status']} ({res['classification']})")
 
 @infra.command("status")
 def infra_status():
@@ -276,18 +301,24 @@ def infra_status():
 @click.option("--dev", "mode", flag_value="dev", help="Development deploy: sync local snapshot to EC2")
 @click.option("--sha", default=None, help="Specific commit SHA or image tag to deploy (default: latest committed SHA)")
 @click.option("--manifest", default=None, help="Path to local validated release-manifest.json")
-def deploy_cmd(mode, sha, manifest):
+@click.option("--profile", default=None, help="Optional AWS CLI profile")
+def deploy_cmd(mode, sha, manifest, profile):
     """Deploy containers to active cloud EC2 host (--prod committed release, --dev local snapshot)."""
+    from .cli_cloud_ops import _cli_runtime_aws_env
     from .cloud_deployer import CloudDeployer
-    deployer = CloudDeployer(log_fn=lambda m: console.print(f"[cyan]{m}[/cyan]"))
+    aws_env = _cli_runtime_aws_env(profile, require_runtime_role=True)
+    deployer = CloudDeployer(log_fn=lambda m: console.print(f"[cyan]{m}[/cyan]"), aws_env=aws_env)
     deployer.deploy(release_sha=sha, manifest_path=manifest, mode=mode)
     console.print("[bold green]✔ Deployment Complete & Verified![/bold green]")
 
 @cli.command("rollback")
-def rollback_cmd():
+@click.option("--profile", default=None, help="Optional AWS CLI profile")
+def rollback_cmd(profile):
     """Roll back active EC2 host to the previous stable release images."""
+    from .cli_cloud_ops import _cli_runtime_aws_env
     from .cloud_deployer import CloudDeployer
-    deployer = CloudDeployer(log_fn=lambda m: console.print(f"[cyan]{m}[/cyan]"))
+    aws_env = _cli_runtime_aws_env(profile, require_runtime_role=True)
+    deployer = CloudDeployer(log_fn=lambda m: console.print(f"[cyan]{m}[/cyan]"), aws_env=aws_env)
     deployer.rollback()
     console.print("[bold green]✔ Rollback Complete & Verified![/bold green]")
 

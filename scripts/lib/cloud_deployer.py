@@ -3,15 +3,13 @@
 import base64
 import json
 import os
-import shutil
 import subprocess
 import time
-import urllib.error
-import urllib.request
 from typing import Any, Callable, Dict, List, Optional
 
-from .cloud_host_runner import load_deployment_env, verify_deployment_health
+from .cloud_host_runner import assert_runtime_state_ready_for_host_ops, load_deployment_env, verify_deployment_health
 from .cloud_identity import DEFAULT_ACCOUNT_ID, DEFAULT_REGION, redact_sensitive_text, resolve_recovery_bucket
+from .cloud_target_sync import is_tls_propagation_error as _is_tls_propagation_error, sync_duckdns_record, sync_github_target_secrets
 from .config import PROJECT_ROOT, TERRAFORM_DIR
 from .ssm_deployer import (
     DEFAULT_SECRETS_FILE, build_postgres_backup_ssm_commands, build_remote_deploy_commands,
@@ -20,22 +18,11 @@ from .ssm_deployer import (
     verify_no_host_destroy_safety, verify_runtime_instance_profile, verify_s3_postgres_backup_object,
     verify_ssm_parameters_present, wait_for_ssm_online,
 )
-from .tfstate_sync import safe_backup_tfstate_to_s3, safe_restore_tfstate_from_s3, tfstate_bucket_and_key
+from .tfstate_reconciler import inspect_state_status, reconcile_terraform_state, run_managed_terraform_mutation
+from .tfstate_sync import safe_backup_tfstate_to_s3, tfstate_bucket_and_key
 
 LogCallback = Callable[[str], None]
 StepCallback = Callable[[str, str, str, str], None]
-
-
-def _is_tls_propagation_error(errors: List[str]) -> bool:
-    """Return True only for transient initial TLS propagation/handshake errors, never permanent cert/app errors."""
-    if not errors:
-        return False
-    hard = ("returned unexpected status", "returned error status", "returned unexpected code", "health payload invalid", "has expired", "expired", "hostname mismatch", "doesn't match", "self-signed", "self signed", "unknown ca", "revoked")
-    lower_errs = [err.lower() for err in errors]
-    if any(any(m in e for m in hard) for e in lower_errs):
-        return False
-    tls = ("ssl/tls", "certificate_verify_failed", "tlsv1_alert_internal_error", "tlsv1 alert internal error", "handshake", "eof occurred in violation of protocol", "certificate")
-    return any(any(m in e for m in tls) for e in lower_errs)
 
 
 class CloudDeployer:
@@ -142,8 +129,43 @@ class CloudDeployer:
         return safe_backup_tfstate_to_s3(run_cmd_fn=self._run_cmd, **self._tfstate_kwargs(step_id, step_title))
 
     def restore_from_s3(self, step_id: Optional[str] = None, step_title: Optional[str] = None):
-        """Validate and atomically restore manual S3 tfstate copy without overwriting newer local state."""
-        return safe_restore_tfstate_from_s3(**self._tfstate_kwargs(step_id, step_title))
+        """Reconcile local and S3 tfstate via centralized preflight and pending-sync recovery."""
+        return self.reconcile_state(allow_adopt_remote=True, operation_type="restore", step_id=step_id, step_title=step_title)
+
+    def inspect_state_sync(self) -> Dict[str, Any]:
+        kw = self._tfstate_kwargs(None, None)
+        return inspect_state_status(local_path=kw["local_path"], account_id=kw["account_id"], region=kw["region"], aws_env=self._aws_env)
+
+    def reconcile_state(
+        self,
+        *,
+        allow_adopt_remote: bool = False,
+        allow_promote_local: bool = False,
+        operation_type: str = "reconcile",
+        step_id: Optional[str] = None,
+        step_title: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        kw = self._tfstate_kwargs(step_id, step_title)
+        return reconcile_terraform_state(
+            local_path=kw["local_path"], account_id=kw["account_id"], region=kw["region"],
+            operation_type=operation_type, auto_resume_pending=True,
+            allow_adopt_remote=allow_adopt_remote, allow_promote_local=allow_promote_local,
+            aws_env=self._aws_env, emit_fn=self._emit_step, step_id=step_id, step_title=step_title,
+        )
+
+    def _run_managed_tf(
+        self, operation_type: str, commands: List[List[str]], *,
+        allow_adopt_remote: bool = False, auto_resume_pending: bool = False,
+        step_id: Optional[str] = None, step_title: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        kw = self._tfstate_kwargs(step_id, step_title)
+        return run_managed_terraform_mutation(
+            operation_type=operation_type, tf_commands=commands, cwd=TERRAFORM_DIR,
+            local_path=kw["local_path"], account_id=kw["account_id"], region=kw["region"], aws_env=self._aws_env,
+            exec_tf_fn=lambda cmd: self._run_cmd(cmd, cwd=TERRAFORM_DIR, step_id=step_id, step_title=step_title),
+            allow_adopt_remote=allow_adopt_remote, auto_resume_pending=auto_resume_pending,
+            emit_fn=self._emit_step, step_id=step_id, step_title=step_title,
+        )
 
     def _get_tf_outputs(self) -> Dict[str, Any]:
         tf_state = os.path.join(TERRAFORM_DIR, "terraform.tfstate")
@@ -170,49 +192,16 @@ class CloudDeployer:
 
     def sync_duckdns(self, target_ip: str, domain: Optional[str] = None, token: Optional[str] = None, step_id: Optional[str] = None, step_title: Optional[str] = None) -> bool:
         env = self.load_deployment_env()
-        domain = domain or env.get("DUCKDNS_DOMAIN", "envscale")
-        token = token or env.get("DUCKDNS_TOKEN", "")
-        if not token:
-            msg = f"Notice: DUCKDNS_TOKEN not set; skipping DuckDNS DNS record synchronization. Zero-config HTTPS will use https://{target_ip}.sslip.io."
-            if step_id and step_title:
-                self._emit_step(step_id, step_title, "log", msg)
-            else:
-                self._log(msg)
-            return False
-        url = f"https://www.duckdns.org/update?domains={domain}&token={token}&ip={target_ip}"
-        if step_id and step_title:
-            self._emit_step(step_id, step_title, "log", f"Updating DuckDNS record: {domain}.duckdns.org -> {target_ip}...")
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "EnvScale-TestCenter/1.0"})
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                content = resp.read().decode("utf-8").strip()
-                if content == "OK":
-                    if step_id and step_title:
-                        self._emit_step(step_id, step_title, "log", f"DuckDNS record updated to {target_ip} (OK).")
-                    return True
-                if step_id and step_title:
-                    self._emit_step(step_id, step_title, "log", f"DuckDNS response: {content}")
-                return False
-        except Exception as e:
-            if step_id and step_title:
-                self._emit_step(step_id, step_title, "log", f"DuckDNS update request failed: {e}")
-            return False
+        return sync_duckdns_record(
+            target_ip, domain or env.get("DUCKDNS_DOMAIN", "envscale"), token or env.get("DUCKDNS_TOKEN", ""),
+            emit_step=self._emit_step, log_fn=self._log, step_id=step_id, step_title=step_title,
+        )
 
     def sync_github_secrets(self, ip: str, instance_id: Optional[str] = None, step_id: Optional[str] = None, step_title: Optional[str] = None):
         """Sync non-SSH host target secrets (EC2_HOST, EC2_INSTANCE_ID) to GitHub."""
-        if shutil.which("gh"):
-            auth_check = subprocess.run(["gh", "auth", "status"], capture_output=True)
-            if auth_check.returncode == 0:
-                if step_id and step_title:
-                    self._emit_step(step_id, step_title, "log", f"Synchronizing EC2_HOST ({ip}) to GitHub Secrets...")
-                self._run_cmd(["gh", "secret", "set", "EC2_HOST", "--body", ip], step_id=step_id, step_title=step_title)
-                if instance_id:
-                    self._run_cmd(["gh", "secret", "set", "EC2_INSTANCE_ID", "--body", instance_id], step_id=step_id, step_title=step_title)
-                if step_id and step_title:
-                    self._emit_step(step_id, step_title, "log", "GitHub Actions secrets updated successfully.")
-                return
-        if step_id and step_title:
-            self._emit_step(step_id, step_title, "log", "GitHub CLI not authenticated; remember to update EC2_HOST/EC2_INSTANCE_ID secrets manually.")
+        sync_github_target_secrets(
+            ip, instance_id, run_cmd=self._run_cmd, emit_step=self._emit_step, step_id=step_id, step_title=step_title,
+        )
 
     def provision_host(self) -> Dict[str, str]:
         """Provision AWS runtime EC2 host, sync DNS/GitHub targets, and await SSM/cloud-init."""
@@ -230,13 +219,17 @@ class CloudDeployer:
         self._emit_step(s2, t2, "start", "terraform apply -auto-approve")
         try:
             verify_runtime_instance_profile(emit_fn=self._step_fn, step_id=s2, step_title=t2, aws_env=self._aws_env)
-            self._run_cmd(["terraform", "init"], cwd=TERRAFORM_DIR, step_id=s2, step_title=t2)
-            self._run_cmd(["terraform", "apply", "-auto-approve"], cwd=TERRAFORM_DIR, step_id=s2, step_title=t2)
+            self._run_managed_tf(
+                "apply",
+                [["terraform", "init"], ["terraform", "apply", "-auto-approve"]],
+                allow_adopt_remote=True,
+                step_id=s2,
+                step_title=t2,
+            )
             ip = self.get_public_ip()
             instance_id = self.get_instance_id()
             if not ip or not instance_id:
                 raise RuntimeError("Failed to retrieve public_ip or instance_id from Terraform outputs.")
-            self.backup_to_s3(step_id=s2, step_title=t2)
             self._emit_step(s2, t2, "success", f"Host Public IP: {ip} (Instance: {instance_id})")
         except Exception as e:
             self._emit_step(s2, t2, "error", str(e))
@@ -291,6 +284,7 @@ class CloudDeployer:
         return info
 
     def infra_stop(self):
+        assert_runtime_state_ready_for_host_ops(os.path.join(TERRAFORM_DIR, "terraform.tfstate"))
         s1, t1 = "stop_instance", "Pausing AWS EC2 Instance"
         instance_id = self.get_instance_id()
         if not instance_id:
@@ -304,6 +298,7 @@ class CloudDeployer:
             raise
 
     def infra_start(self):
+        assert_runtime_state_ready_for_host_ops(os.path.join(TERRAFORM_DIR, "terraform.tfstate"))
         s1, t1 = "resume_instance", "Resuming AWS EC2 Instance"
         instance_id = self.get_instance_id()
         if not instance_id:
@@ -371,7 +366,6 @@ class CloudDeployer:
                     bucket=bucket, region=region, aws_env=self._aws_env, run_fn=subprocess.run,
                 )
             self._emit_step(s1, t1, "log", f"Verified S3 backup s3://{bucket}/{verified['key']} ({verified['content_length']} bytes).")
-            self.backup_to_s3(step_id=s1, step_title=t1)
             self._emit_step(s1, t1, "success")
         except Exception as e:
             self._emit_step(s1, t1, "error", str(e))
@@ -380,8 +374,13 @@ class CloudDeployer:
         s2, t2 = "destroy_tf", "Tearing Down AWS Cloud Resources (Terraform Destroy)"
         self._emit_step(s2, t2, "start", "terraform destroy -auto-approve")
         try:
-            self._run_cmd(["terraform", "destroy", "-auto-approve"], cwd=TERRAFORM_DIR, step_id=s2, step_title=t2)
-            self.backup_to_s3(step_id=s2, step_title=t2)
+            self._run_managed_tf(
+                "destroy",
+                [["terraform", "destroy", "-auto-approve"]],
+                allow_adopt_remote=False,
+                step_id=s2,
+                step_title=t2,
+            )
             env = self.load_deployment_env()
             cleanup_external_references(
                 domain=env.get("DUCKDNS_DOMAIN"), token=env.get("DUCKDNS_TOKEN"),
@@ -395,6 +394,7 @@ class CloudDeployer:
 
     def rollback(self, step_id: Optional[str] = None, step_title: Optional[str] = None):
         """Revert EC2 host to previous stable release via SSM."""
+        assert_runtime_state_ready_for_host_ops(os.path.join(TERRAFORM_DIR, "terraform.tfstate"))
         instance_id = self.get_instance_id()
         if not instance_id:
             raise RuntimeError("No active AWS instance found. Run 'infra up' first.")
@@ -429,6 +429,7 @@ class CloudDeployer:
         tls_retry_attempts: int = 6,
         tls_retry_delay_s: int = 10,
     ):
+        assert_runtime_state_ready_for_host_ops(os.path.join(TERRAFORM_DIR, "terraform.tfstate"))
         instance_id = self.get_instance_id()
         ip = self.get_public_ip()
         if not instance_id:

@@ -6,10 +6,29 @@ import urllib.request
 import urllib.error
 from typing import Optional, Callable, Dict, List, Tuple
 
-from .config import PROJECT_ROOT, PROD_COMPOSE_FILE
+from .config import PROJECT_ROOT, PROD_COMPOSE_FILE, TERRAFORM_DIR
 from .env_sync import parse_dotenv
+from .tfstate_journal import TfStateJournal, resolve_journal_path
+from .tfstate_uploader import validate_state_backend_and_workspace
 
 StepCallback = Callable[[str, str, str, str], None]
+
+
+def assert_runtime_state_ready_for_host_ops(
+    tf_state_path: Optional[str] = None,
+    *,
+    journal_path: Optional[str] = None,
+) -> None:
+    """Block host deployment, rollback, power ops, or verify if workspace/journal/state sync is unsafe."""
+    state_p = tf_state_path or os.path.join(TERRAFORM_DIR, "terraform.tfstate")
+    validate_state_backend_and_workspace(state_p, "runtime/terraform.tfstate", "default")
+    info = TfStateJournal(resolve_journal_path(state_p, journal_path)).inspect_local_pending_sync(state_p)
+    if info.get("pending"):
+        op = info.get("operation") or {}
+        raise RuntimeError(
+            f"STATE_SYNC_PENDING: unfinished '{op.get('operation_type')}' (op={op.get('operation_id')}) "
+            "has not finished S3 state synchronization. Run 'ops tfstate sync' or 'ops tfstate reconcile' before proceeding."
+        )
 
 REQUIRED_PRODUCTION_KEYS = [
     "DATABASE_URL",

@@ -35,6 +35,7 @@ ALLOWED_CONTEXT_KEYS = frozenset({
     "runtime_profile",
     "last_backup_key",
     "last_restore_key",
+    "state_sync_status",
 })
 
 EXECUTION_PHASES: Tuple[str, ...] = (
@@ -47,6 +48,7 @@ EXECUTION_PHASES: Tuple[str, ...] = (
     "DESTROYING",
     "SUCCEEDED",
     "FOUNDATION_NOT_INITIALIZED",
+    "STATE_SYNC_PENDING",
     "FAILED",
 )
 

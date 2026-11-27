@@ -7,9 +7,17 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from .cloud_demo_flow import verify_destroy_cleanup, verify_destroy_target_environment
 from .cloud_deployer import CloudDeployer
+from .cloud_host_runner import assert_runtime_state_ready_for_host_ops
 from .cloud_identity import DEFAULT_ACCOUNT_ID, DEFAULT_REGION, redact_sensitive_text
 from .cloud_ops_dashboard import trigger_remote_restore
+from .cloud_target_sync import infer_state_sync_status_from_error
 from .config import PROJECT_ROOT
+from .tfstate_reconciler import (
+    ConcurrentStateOperationError,
+    CorruptedStateJournalError,
+    StateDivergenceError,
+    StateSyncPendingError,
+)
 
 if TYPE_CHECKING:
     from .cloud_orchestrator import CloudOrchestrator, OrchestratorCallbacks, PipelineStateStore
@@ -23,6 +31,7 @@ def sync_state_after_destroy(state_store: "PipelineStateStore", backup_meta: Opt
         "public_ip": "",
         "app_url": "",
         "last_restore_key": "",
+        "state_sync_status": "STATE_SYNCHRONIZED",
     }
     if backup_key:
         ctx_updates["last_backup_key"] = backup_key
@@ -119,6 +128,28 @@ def execute_destroy_environment(
                 infrastructure_active=infra_active,
                 recovery_action="Initialize Persistent Foundation before attempting cloud teardown.",
             )
+        elif isinstance(exc, StateSyncPendingError):
+            orchestrator.state_store.update_context(state_sync_status="STATE_SYNC_PENDING")
+            tracker.fail(
+                phase="STATE_SYNC_PENDING",
+                outcome="BLOCKED",
+                failed_stage=failed_stage,
+                error=str(exc),
+                rollback_attempted=False,
+                infrastructure_active=infra_active,
+                recovery_action="Local destroy/state change occurred but S3 sync is pending. Run 'ops tfstate sync' or 'ops tfstate reconcile' before retrying.",
+            )
+        elif isinstance(exc, (StateDivergenceError, ConcurrentStateOperationError, CorruptedStateJournalError)):
+            orchestrator.state_store.update_context(state_sync_status=infer_state_sync_status_from_error(exc))
+            tracker.fail(
+                phase="FAILED",
+                outcome="BLOCKED",
+                failed_stage=failed_stage,
+                error=str(exc),
+                rollback_attempted=False,
+                infrastructure_active=infra_active,
+                recovery_action="Inspect state with 'ops tfstate status' and explicitly reconcile before retrying Destroy Environment.",
+            )
         else:
             rec_map = {
                 "auth": "Re-authenticate Runtime MFA and retry Destroy Environment.",
@@ -182,6 +213,7 @@ def run_restore_lifecycle(
             account_id=account_id,
             region=region,
         )
+        assert_runtime_state_ready_for_host_ops()
         chosen_key = (backup_key or "").strip() or None
         res = trigger_remote_restore(
             backup_key=chosen_key,
@@ -227,6 +259,7 @@ def run_reconstruct_lifecycle(
 
     orchestrator.state_store.update_stage("deploy", "pending", summary="Awaiting reconstruction")
     orchestrator.state_store.update_stage("verify", "pending", summary="Awaiting reconstruction")
+    assert_runtime_state_ready_for_host_ops()
     prov_res = orchestrator.run_stage("provision", callbacks=callbacks, account_id=account_id, region=region)
     dep_res = orchestrator.run_stage(
         "deploy",
