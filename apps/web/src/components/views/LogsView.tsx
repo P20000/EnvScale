@@ -120,6 +120,7 @@ export function LogsView({ initialPodName, initialNamespace }: LogsViewProps) {
     diagnostics,
     healthSummary,
     status,
+    streamError,
     isTailing,
     setIsTailing,
     clearLogs,
@@ -283,10 +284,22 @@ export function LogsView({ initialPodName, initialNamespace }: LogsViewProps) {
           {processedLogs.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center p-8 text-center text-[#777D87] select-none">
               <p className="font-semibold text-[#C4C7C5] text-sm">
-                {status === "streaming" ? "Waiting for container logs..." : "No logs available"}
+                {status === "connecting"
+                  ? "Connecting to log stream..."
+                  : status === "streaming"
+                  ? "Waiting for container logs..."
+                  : status === "ended"
+                  ? "Log stream ended"
+                  : status === "disconnected"
+                  ? "Cluster or Agent disconnected"
+                  : status === "error"
+                  ? "Log stream error"
+                  : "No logs available"}
               </p>
               <p className="text-xs text-[#92959D] mt-1 font-mono">
-                {selectedResource.id === "ALL"
+                {streamError
+                  ? streamError
+                  : selectedResource.id === "ALL"
                   ? selectedNs === "all"
                     ? "Listening to all containers cluster-wide"
                     : `Listening to all pods in namespace "${selectedNs}"`

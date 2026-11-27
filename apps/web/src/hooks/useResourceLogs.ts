@@ -1,15 +1,32 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import type { PodLogLine, LogLevel, LogStreamStatus, StreamDiagnostic, StreamHealthSummary } from "../types/logs";
-import { parseLogPayload } from "../utils/logParser";
+import type {
+  LogStreamStatus,
+  NormalizedLogFrame,
+  StreamDiagnostic,
+  StreamHealthSummary,
+  PodLogLine,
+} from "../types/logs";
 import { useTopologyStore } from "../store/useTopologyStore";
 import { useUIStore } from "../store/useUIStore";
 import { getStreamerToken } from "../config/api";
+import {
+  applyNormalizedLogFrame,
+  buildLogStreamWebSocketUrl,
+  createInitialLogStreamState,
+  type LogStreamState,
+} from "../utils/logStreamHelpers";
 
 interface UseResourceLogsOptions {
   name: string | null;
   kind?: string;
   namespace?: string;
   clusterId?: string;
+  container?: string;
+  follow?: boolean;
+  previous?: boolean;
+  timestamps?: boolean;
+  tailLines?: number;
+  sinceSeconds?: number;
   enabled?: boolean;
   maxLogs?: number;
 }
@@ -19,19 +36,17 @@ export function useResourceLogs({
   kind = "Pod",
   namespace = "default",
   clusterId,
+  container,
+  follow = true,
+  previous = false,
+  timestamps = true,
+  tailLines = 100,
+  sinceSeconds,
   enabled = true,
   maxLogs = 1000,
 }: UseResourceLogsOptions) {
-  const [logs, setLogs] = useState<PodLogLine[]>([]);
-  const [diagnostics, setDiagnostics] = useState<StreamDiagnostic[]>([]);
-  const [healthSummary, setHealthSummary] = useState<StreamHealthSummary>({
-    totalStreams: 0,
-    activeStreams: 0,
-    retryingStreams: 0,
-    failedStreams: 0,
-  });
+  const [streamState, setStreamState] = useState<LogStreamState>(() => createInitialLogStreamState("offline"));
   const [isTailing, setIsTailing] = useState<boolean>(true);
-  const [rawStatus, setRawStatus] = useState<LogStreamStatus>("offline");
 
   const clusters = useTopologyStore((s) => s.clusters);
   const activeCluster = useTopologyStore((s) => s.activeCluster);
@@ -39,20 +54,42 @@ export function useResourceLogs({
   const targetCluster = clusterId || resolvedCluster?.id || activeCluster;
 
   const isTargetValid = Boolean(name && enabled && targetCluster);
-  const status: LogStreamStatus = !isTargetValid ? "offline" : rawStatus;
+  const status: LogStreamStatus = !isTargetValid ? "offline" : streamState.status;
 
   const wsRef = useRef<WebSocket | null>(null);
+  const terminalStatusRef = useRef<LogStreamStatus | null>(null);
+  const seenSequencesRef = useRef<Set<string>>(new Set());
 
   const clearLogs = useCallback(() => {
-    setLogs([]);
+    seenSequencesRef.current.clear();
+    setStreamState((prev) => ({ ...prev, logs: [] }));
   }, []);
 
   const copyLogs = useCallback(() => {
-    const text = logs
+    const text = streamState.logs
       .map((l) => `[${l.timestamp}] [${l.level}] ${l.source ? `(${l.source}) ` : ""}${l.message}`)
       .join("\n");
     navigator.clipboard.writeText(text).catch(() => {});
-  }, [logs]);
+  }, [streamState.logs]);
+
+  const cancelStream = useCallback(() => {
+    const activeWs = wsRef.current;
+    terminalStatusRef.current = "offline";
+    if (activeWs) {
+      if (activeWs.readyState === WebSocket.OPEN) {
+        try {
+          activeWs.send(JSON.stringify({ type: "cancel" }));
+        } catch {
+          // ignore send errors during teardown
+        }
+        activeWs.close();
+      } else if (activeWs.readyState === WebSocket.CONNECTING) {
+        activeWs.close();
+      }
+      wsRef.current = null;
+    }
+    setStreamState((prev) => ({ ...prev, status: "offline" }));
+  }, []);
 
   useEffect(() => {
     if (!name || !enabled || !targetCluster) {
@@ -90,25 +127,29 @@ export function useResourceLogs({
     const WS_BASE_URL = getWsBaseUrl();
     let isDisposed = false;
     let ws: WebSocket | null = null;
+    terminalStatusRef.current = null;
+    seenSequencesRef.current.clear();
 
     void (async () => {
       const token = await getStreamerToken();
       if (isDisposed) return;
 
-      setLogs([]);
-      setDiagnostics([]);
-      setHealthSummary({ totalStreams: 0, activeStreams: 0, retryingStreams: 0, failedStreams: 0 });
-      setRawStatus("connecting");
+      setStreamState(createInitialLogStreamState("connecting"));
 
-      let url = `${WS_BASE_URL}/api/v1/stream/logs?clusterId=${encodeURIComponent(
-        targetCluster
-      )}&namespace=${encodeURIComponent(targetNs)}&kind=${encodeURIComponent(
-        kind
-      )}&name=${encodeURIComponent(name)}&tailLines=100`;
-
-      if (token) {
-        url += `&token=${encodeURIComponent(token)}`;
-      }
+      const url = buildLogStreamWebSocketUrl({
+        wsBaseUrl: WS_BASE_URL,
+        clusterId: targetCluster,
+        namespace: targetNs,
+        kind,
+        name,
+        container,
+        tailLines,
+        follow,
+        previous,
+        timestamps,
+        sinceSeconds,
+        token,
+      });
 
       try {
         ws = new WebSocket(url);
@@ -116,112 +157,98 @@ export function useResourceLogs({
 
         ws.onopen = () => {
           if (!isDisposed) {
-            setRawStatus("streaming");
+            setStreamState((prev) => ({ ...prev, status: "streaming" }));
           }
         };
 
         ws.onmessage = (evt) => {
           if (isDisposed) return;
           try {
-            const data = JSON.parse(evt.data);
+            const data = JSON.parse(evt.data) as NormalizedLogFrame;
             if (!data) return;
 
-            // 1. Separate Stream Diagnostic events from workload logs
-            if (data.type === "diagnostic") {
-              const diag: StreamDiagnostic = {
-                source: data.source || "system",
-                namespace: data.namespace,
-                pod: data.pod,
-                container: data.container,
-                status: data.status || "active",
-                reason: data.reason || "",
-                timestamp: data.timestamp || new Date().toISOString(),
-                retryCount: data.retryCount,
-                nextRetryMs: data.nextRetryMs,
-              };
-              setDiagnostics((prev) => {
-                const idx = prev.findIndex((d) => d.source === diag.source);
-                if (idx >= 0) {
-                  const copy = [...prev];
-                  copy[idx] = diag;
-                  return copy;
-                }
-                return [...prev, diag];
-              });
-              return;
-            }
-
-            // 2. Stream Aggregate Health Status
-            if (data.type === "status") {
-              setHealthSummary({
-                totalStreams: data.totalStreams || 0,
-                activeStreams: data.activeStreams || 0,
-                retryingStreams: data.retryingStreams || 0,
-                failedStreams: data.failedStreams || 0,
-                scope: data.scope,
-              });
-              return;
-            }
-
-            // 3. Genuine Workload Container Log Line
-            if (data.type === "log" || (data.message && !data.status)) {
-              const fallbackLvl = (data.level as LogLevel) || "INFO";
-              const parsed = parseLogPayload(data.message, fallbackLvl);
-
-              const newLogLine: PodLogLine = {
-                id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-                timestamp: data.timestamp || parsed.timestamp || new Date().toISOString(),
-                level: parsed.level || fallbackLvl,
-                message: parsed.message || data.message,
-                podName: data.pod || data.source || name,
-                namespace: data.namespace || targetNs,
-                container: data.container || "main",
-                stream: data.stream || "stdout",
-                source: data.source || name,
-                parsed,
-              };
-
-              setLogs((prev) => [...prev.slice(-(maxLogs - 1)), newLogLine]);
-            }
+            setStreamState((prev) => {
+              const next = applyNormalizedLogFrame(
+                prev,
+                data,
+                name,
+                targetNs,
+                maxLogs,
+                seenSequencesRef.current
+              );
+              if (next.status === "ended" || next.status === "error" || next.status === "disconnected") {
+                terminalStatusRef.current = next.status;
+              }
+              return next;
+            });
           } catch {
             // Ignored malformed message
           }
         };
 
         ws.onerror = () => {
-          if (!isDisposed) {
-            setRawStatus("error");
+          if (!isDisposed && !terminalStatusRef.current) {
+            terminalStatusRef.current = "error";
+            setStreamState((prev) => ({
+              ...prev,
+              status: "error",
+              streamError: prev.streamError || "WebSocket connection failed",
+            }));
           }
         };
 
         ws.onclose = () => {
           if (!isDisposed) {
-            setRawStatus("offline");
+            const preserved = terminalStatusRef.current;
+            setStreamState((prev) => ({
+              ...prev,
+              status: preserved || "offline",
+            }));
           }
         };
       } catch {
         if (!isDisposed) {
-          setRawStatus("error");
+          terminalStatusRef.current = "error";
+          setStreamState((prev) => ({
+            ...prev,
+            status: "error",
+            streamError: "Failed to initialize log stream connection",
+          }));
         }
       }
     })();
 
     return () => {
       isDisposed = true;
-      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-        ws.close();
+      if (ws) {
+        if (ws.readyState === WebSocket.OPEN) {
+          try {
+            ws.send(JSON.stringify({ type: "cancel" }));
+          } catch {
+            // ignore cancellation send errors during teardown
+          }
+          ws.close();
+        } else if (ws.readyState === WebSocket.CONNECTING) {
+          ws.close();
+        }
+      }
+      if (wsRef.current === ws) {
+        wsRef.current = null;
       }
     };
-  }, [name, kind, namespace, targetCluster, enabled, maxLogs]);
+  }, [name, kind, namespace, targetCluster, container, follow, previous, timestamps, tailLines, sinceSeconds, enabled, maxLogs]);
 
   return {
-    logs,
-    diagnostics,
-    healthSummary,
+    logs: streamState.logs as PodLogLine[],
+    diagnostics: streamState.diagnostics as StreamDiagnostic[],
+    healthSummary: streamState.healthSummary as StreamHealthSummary,
     status,
+    streamError: streamState.streamError,
+    streamId: streamState.streamId,
     isTailing,
     setIsTailing,
     clearLogs,
     copyLogs,
+    cancelStream,
   };
 }

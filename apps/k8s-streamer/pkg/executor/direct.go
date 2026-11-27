@@ -30,6 +30,9 @@ type DirectExecutor struct {
 	genKey      string
 	invalidated atomic.Bool
 
+	closeCtx    context.Context
+	closeCancel context.CancelFunc
+
 	mu          sync.Mutex
 	lastProbe   time.Time
 	lastFailure bool
@@ -49,11 +52,14 @@ func NewDirectExecutor(clusterID string, im *k8s.InformerManager, registry *Clus
 	if registry != nil {
 		registry.RegisterGeneration(clusterID, genKey)
 	}
+	closeCtx, closeCancel := context.WithCancel(context.Background())
 	return &DirectExecutor{
-		clusterID: clusterID,
-		im:        im,
-		registry:  registry,
-		genKey:    genKey,
+		clusterID:   clusterID,
+		im:          im,
+		registry:    registry,
+		genKey:      genKey,
+		closeCtx:    closeCtx,
+		closeCancel: closeCancel,
 	}
 }
 
@@ -335,15 +341,14 @@ func (d *DirectExecutor) CheckPDBSafety(_ context.Context, _ PDBCheckRequest) (*
 	return nil, fmt.Errorf("%w: CheckPDBSafety migration is scheduled for a subsequent executor slice", ErrCapabilityUnsupported)
 }
 
-func (d *DirectExecutor) StartLogStream(_ context.Context, _ LogStreamRequest, _ chan<- LogFrame) (StreamHandle, error) {
-	return nil, fmt.Errorf("%w: StartLogStream migration is scheduled for a subsequent executor slice", ErrCapabilityUnsupported)
-}
-
 func (d *DirectExecutor) ExecuteOperation(_ context.Context, _ ClusterCommand) (*CommandResult, error) {
 	return nil, fmt.Errorf("%w: ExecuteOperation migration is scheduled for a subsequent executor slice", ErrCapabilityUnsupported)
 }
 
 func (d *DirectExecutor) Close() error {
 	d.invalidated.Store(true)
+	if d.closeCancel != nil {
+		d.closeCancel()
+	}
 	return nil
 }

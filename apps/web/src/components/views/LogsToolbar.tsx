@@ -209,7 +209,9 @@ export function LogsToolbar({
         >
           <span
             className={`h-2 w-2 rounded-full ${
-              healthSummary.retryingStreams > 0 || healthSummary.failedStreams > 0
+              status === "error" || status === "disconnected"
+                ? "bg-[#F2B8B5]"
+                : healthSummary.retryingStreams > 0 || healthSummary.failedStreams > 0
                 ? "bg-[#F4C26B]"
                 : status === "streaming"
                 ? "bg-[#6DD6A8]"
@@ -221,6 +223,14 @@ export function LogsToolbar({
               ? `${healthSummary.activeStreams}/${healthSummary.totalStreams} Streams`
               : status === "streaming"
               ? "Live"
+              : status === "disconnected"
+              ? "Disconnected"
+              : status === "error"
+              ? "Error"
+              : status === "ended"
+              ? "Ended"
+              : status === "connecting"
+              ? "Connecting"
               : "Diagnostics"}
           </span>
           {healthSummary.retryingStreams > 0 && (

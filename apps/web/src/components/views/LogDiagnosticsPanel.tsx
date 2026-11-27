@@ -42,7 +42,17 @@ export function LogDiagnosticsPanel({
   }, [diagnostics, filter, search]);
 
   const activeCount = healthSummary.activeStreams || diagnostics.filter((d) => d.status === "active").length;
-  const issuesCount = diagnostics.filter((d) => d.status === "retrying" || d.status === "backoff" || d.status === "failed" || d.status === "permission_denied").length;
+  const issuesCount = diagnostics.filter(
+    (d) =>
+      d.status === "retrying" ||
+      d.status === "backoff" ||
+      d.status === "failed" ||
+      d.status === "permission_denied" ||
+      d.status === "backpressure" ||
+      d.status === "interrupted" ||
+      d.status === "disconnected" ||
+      d.status === "unsupported"
+  ).length;
   const totalCount = healthSummary.totalStreams || diagnostics.length;
 
   return (
@@ -142,9 +152,14 @@ export function LogDiagnosticsPanel({
         ) : (
           filteredDiagnostics.map((item) => {
             const isAct = item.status === "active";
-            const isRetry = item.status === "retrying" || item.status === "backoff";
+            const isRetry = item.status === "retrying" || item.status === "backoff" || item.status === "backpressure";
             const isTerm = item.status === "terminated";
-            const isFail = item.status === "failed" || item.status === "permission_denied";
+            const isFail =
+              item.status === "failed" ||
+              item.status === "permission_denied" ||
+              item.status === "interrupted" ||
+              item.status === "disconnected" ||
+              item.status === "unsupported";
 
             const badgeBg = isAct
               ? "bg-[#6DD6A8]/10 text-[#6DD6A8] border-[#6DD6A8]/25"

@@ -89,6 +89,8 @@ var (
 	ErrCommandExpired        = errors.New("cluster command expired")
 	ErrPDBBlocked            = errors.New("blocked by PodDisruptionBudget")
 	ErrInvalidKubeconfig     = errors.New("invalid kubeconfig")
+	ErrInvalidLogRequest     = errors.New("invalid log stream request")
+	ErrResourceNotFound      = errors.New("kubernetes resource not found")
 )
 
 // SnapshotResponse is the unified normalized snapshot contract returned across Direct and Agent modes.
@@ -147,33 +149,28 @@ type PDBCheckResult struct {
 
 // LogStreamRequest configures normalized log tailing without exposing client-go types.
 type LogStreamRequest struct {
-	StreamID   string `json:"streamId"`
-	Namespace  string `json:"namespace"`
-	Kind       string `json:"kind"`
-	Name       string `json:"name"`
-	Container  string `json:"container,omitempty"`
-	TailLines  int64  `json:"tailLines"`
-	Follow     bool   `json:"follow"`
+	StreamID     string     `json:"streamId"`
+	ClusterID    string     `json:"clusterId,omitempty"`
+	Namespace    string     `json:"namespace"`
+	Kind         string     `json:"kind"`
+	Name         string     `json:"name"`
+	Container    string     `json:"container,omitempty"`
+	TailLines    int64      `json:"tailLines"`
+	Follow       bool       `json:"follow"`
+	Previous     bool       `json:"previous,omitempty"`
+	Timestamps   bool       `json:"timestamps"`
+	SinceSeconds *int64     `json:"sinceSeconds,omitempty"`
+	SinceTime    *time.Time `json:"sinceTime,omitempty"`
 }
 
 // LogFrame represents a normalized log or stream diagnostic entry.
-type LogFrame struct {
-	Type      string `json:"type"`
-	Timestamp string `json:"timestamp"`
-	Namespace string `json:"namespace,omitempty"`
-	Pod       string `json:"pod,omitempty"`
-	Container string `json:"container,omitempty"`
-	Source    string `json:"source,omitempty"`
-	Level     string `json:"level,omitempty"`
-	Message   string `json:"message,omitempty"`
-	Status    string `json:"status,omitempty"`
-	Reason    string `json:"reason,omitempty"`
-}
+type LogFrame = types.LogStreamFrame
 
 // StreamHandle controls an active log stream session.
 type StreamHandle interface {
 	StreamID() string
 	Close() error
+	Done() <-chan struct{}
 }
 
 // ClusterCommand represents a normalized mutating or diagnostic command.

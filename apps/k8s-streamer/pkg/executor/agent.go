@@ -124,10 +124,6 @@ func (a *AgentExecutor) CheckPDBSafety(_ context.Context, _ PDBCheckRequest) (*P
 	return nil, fmt.Errorf("%w: CheckPDBSafety over Agent protocol is scheduled for a subsequent executor slice", ErrCapabilityUnsupported)
 }
 
-func (a *AgentExecutor) StartLogStream(_ context.Context, _ LogStreamRequest, _ chan<- LogFrame) (StreamHandle, error) {
-	return nil, fmt.Errorf("%w: StartLogStream over Agent protocol is scheduled for a subsequent executor slice", ErrCapabilityUnsupported)
-}
-
 func (a *AgentExecutor) ExecuteOperation(_ context.Context, _ ClusterCommand) (*CommandResult, error) {
 	return nil, fmt.Errorf("%w: ExecuteOperation over Agent protocol is scheduled for a subsequent executor slice", ErrCapabilityUnsupported)
 }

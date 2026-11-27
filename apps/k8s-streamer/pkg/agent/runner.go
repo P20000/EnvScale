@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -255,65 +256,26 @@ func runStreamingPipeline(cfg Config, im *k8s.InformerManager, outCh <-chan []by
 		backoff = 2 * time.Second // Reset backoff on successful handshake
 		log.Printf("[Agent] Successfully connected to EnvScale Cloud Platform!")
 
-		// 1. Send initial baseline snapshot
-		sendBaselineSnapshot(conn, im, cfg.ClusterID)
-
-		// 2. Stream events until disconnected
-		done := make(chan struct{})
-
-		// Read pump to handle server pings/close frames
+		sessionCtx, cancelSession := context.WithCancel(context.Background())
+		stoppedBySignal := false
 		go func() {
-			defer close(done)
-			for {
-				_, _, err := conn.ReadMessage()
-				if err != nil {
-					log.Printf("[Agent] Server connection closed: %v", err)
-					return
-				}
+			select {
+			case <-stopSig:
+				stoppedBySignal = true
+				cancelSession()
+			case <-sessionCtx.Done():
 			}
 		}()
 
-		// Write pump & periodic resync / ping
-		resyncTicker := time.NewTicker(45 * time.Second)
-		pingTicker := time.NewTicker(20 * time.Second)
-		resyncCount := 0
-		active := true
+		RunSession(sessionCtx, conn, cfg, im, outCh)
+		cancelSession()
+		_ = conn.Close()
 
-		for active {
-			select {
-			case <-stopSig:
-				log.Println("[Agent] Shutdown signal received; closing outbound WebSocket.")
-				resyncTicker.Stop()
-				pingTicker.Stop()
-				_ = conn.Close()
-				return
-
-			case <-done:
-				active = false
-
-			case <-resyncTicker.C:
-				resyncCount++
-				if resyncCount%4 == 0 && im.Clientset() != nil {
-					_ = reconcileAgentCapabilities(context.Background(), cfg.ClusterID, im)
-				}
-				sendBaselineSnapshot(conn, im, cfg.ClusterID)
-
-			case <-pingTicker.C:
-				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-					active = false
-				}
-
-			case msg := <-outCh:
-				if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-					log.Printf("[Agent] Failed to send event delta: %v", err)
-					active = false
-				}
-			}
+		if stoppedBySignal {
+			log.Println("[Agent] Shutdown signal received; stopping agent pipeline.")
+			return
 		}
 
-		resyncTicker.Stop()
-		pingTicker.Stop()
-		_ = conn.Close()
 		log.Printf("[Agent] Disconnected from server. Reconnecting in %v...", backoff)
 		select {
 		case <-stopSig:
@@ -321,6 +283,142 @@ func runStreamingPipeline(cfg Config, im *k8s.InformerManager, outCh <-chan []by
 			return
 		case <-time.After(backoff):
 		}
+	}
+}
+
+// RunSession runs one full Agent Protocol v2.0 WebSocket session (HELLO, snapshots, deltas, and multiplexed logs).
+// Strictly keeps all WebSocket writes in a single goroutine and tears down all active streams on disconnect.
+func RunSession(ctx context.Context, conn *websocket.Conn, cfg Config, im *k8s.InformerManager, outCh <-chan []byte) {
+	caps := reconcileAgentCapabilities(ctx, cfg.ClusterID, im)
+	sendAgentHello(conn, caps, cfg.ClusterID)
+	sendBaselineSnapshot(conn, im, cfg.ClusterID)
+
+	sessionCtx, cancelSession := context.WithCancel(ctx)
+	defer cancelSession()
+
+	logOutCh := make(chan outboundLogMsg, 512)
+	var logBufferedBytes atomic.Int64
+	logMux := newLogMultiplexer(cfg.ClusterID, im, logOutCh, &logBufferedBytes, defaultAgentLogLimits())
+	defer logMux.StopAll()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				log.Printf("[Agent] Server connection closed: %v", err)
+				return
+			}
+			var env struct {
+				Event string          `json:"event"`
+				Type  string          `json:"type"`
+				Data  json.RawMessage `json:"data"`
+			}
+			if err := json.Unmarshal(msg, &env); err != nil {
+				continue
+			}
+			evt := env.Event
+			if evt == "" {
+				evt = env.Type
+			}
+			switch evt {
+			case types.EventServerHelloAck:
+				var ack types.ServerHelloAckPayload
+				if json.Unmarshal(env.Data, &ack) == nil && ack.SessionID != "" {
+					logMux.SetSessionID(ack.SessionID)
+				}
+			case types.EventLogStreamStart:
+				var req types.LogStreamStartPayload
+				if json.Unmarshal(env.Data, &req) == nil {
+					logMux.HandleStart(sessionCtx, req)
+				}
+			case types.EventLogStreamStop:
+				var stop types.LogStreamStopPayload
+				if json.Unmarshal(env.Data, &stop) == nil {
+					logMux.HandleStop(stop.StreamID, stop.SessionID)
+				}
+			}
+		}
+	}()
+
+	resyncTicker := time.NewTicker(45 * time.Second)
+	pingTicker := time.NewTicker(20 * time.Second)
+	defer resyncTicker.Stop()
+	defer pingTicker.Stop()
+
+	resyncCount := 0
+	for {
+		select {
+		case <-sessionCtx.Done():
+			_ = conn.Close()
+			<-done
+			return
+
+		case <-done:
+			cancelSession()
+			return
+
+		case <-resyncTicker.C:
+			resyncCount++
+			if resyncCount%4 == 0 && im != nil && im.Clientset() != nil {
+				updatedCaps := reconcileAgentCapabilities(sessionCtx, cfg.ClusterID, im)
+				sendAgentHello(conn, updatedCaps, cfg.ClusterID)
+			}
+			sendBaselineSnapshot(conn, im, cfg.ClusterID)
+
+		case <-pingTicker.C:
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				cancelSession()
+				_ = conn.Close()
+				<-done
+				return
+			}
+
+		case msg := <-logOutCh:
+			logBufferedBytes.Add(-msg.size)
+			if err := conn.WriteMessage(websocket.TextMessage, msg.payload); err != nil {
+				cancelSession()
+				_ = conn.Close()
+				<-done
+				return
+			}
+
+		case msg := <-outCh:
+			if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+				log.Printf("[Agent] Failed to send event delta: %v", err)
+				cancelSession()
+				_ = conn.Close()
+				<-done
+				return
+			}
+		}
+	}
+}
+
+func sendAgentHello(conn *websocket.Conn, caps executor.ClusterCapabilities, clusterID string) {
+	reported := make(map[string]types.AgentCapabilityReport, len(caps.Capabilities))
+	for k, v := range caps.Capabilities {
+		reported[k] = types.AgentCapabilityReport{
+			State:  string(v.State),
+			Reason: v.Reason,
+		}
+	}
+	payload, err := json.Marshal(types.WSEventEnvelope{
+		Event:     types.EventAgentHello,
+		ClusterID: clusterID,
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		Data: types.AgentHelloPayload{
+			ProtocolVersion: "2.0",
+			AgentVersion:    "2.0.0",
+			Capabilities:    reported,
+		},
+	})
+	if err != nil {
+		return
+	}
+	if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
+		log.Printf("[Agent] Error transmitting AGENT_HELLO: %v", err)
 	}
 }
 

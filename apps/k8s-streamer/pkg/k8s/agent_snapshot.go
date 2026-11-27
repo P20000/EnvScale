@@ -1,7 +1,6 @@
 package k8s
 
 import (
-	"encoding/json"
 	"log"
 	"sync"
 	"time"
@@ -11,32 +10,34 @@ import (
 
 // AgentClusterMeta summarizes connection & protocol state without exposing full snapshot slices.
 type AgentClusterMeta struct {
-	ClusterID         string          `json:"clusterId"`
-	SessionID         string          `json:"sessionId"`
-	SnapshotSessionID string          `json:"snapshotSessionId,omitempty"`
-	Connected         bool            `json:"connected"`
-	HasSnapshot       bool            `json:"hasSnapshot"`
-	EverSynced        bool            `json:"everSynced"`
-	LastSeen          time.Time       `json:"lastSeen"`
-	ProtocolVersion   string          `json:"protocolVersion"`
-	AgentVersion      string          `json:"agentVersion,omitempty"`
-	SyncedResources   map[string]bool `json:"syncedResources,omitempty"`
+	ClusterID            string                                 `json:"clusterId"`
+	SessionID            string                                 `json:"sessionId"`
+	SnapshotSessionID    string                                 `json:"snapshotSessionId,omitempty"`
+	Connected            bool                                   `json:"connected"`
+	HasSnapshot          bool                                   `json:"hasSnapshot"`
+	EverSynced           bool                                   `json:"everSynced"`
+	LastSeen             time.Time                              `json:"lastSeen"`
+	ProtocolVersion      string                                 `json:"protocolVersion"`
+	AgentVersion         string                                 `json:"agentVersion,omitempty"`
+	SyncedResources      map[string]bool                        `json:"syncedResources,omitempty"`
+	ReportedCapabilities map[string]types.AgentCapabilityReport `json:"reportedCapabilities,omitempty"`
 }
 
 // AgentClusterState stores the in-memory cached snapshot and status of an agent-connected cluster
 type AgentClusterState struct {
-	ClusterID         string
-	SessionID         string
-	SnapshotSessionID string
-	ProtocolVersion   string
-	AgentVersion      string
-	Snapshot          types.ClusterSnapshot
-	SyncedResources   map[string]bool
-	HasSnapshot       bool
-	EverSynced        bool
-	LastSeen          time.Time
-	Connected         bool
-	mu                sync.RWMutex
+	ClusterID            string
+	SessionID            string
+	SnapshotSessionID    string
+	ProtocolVersion      string
+	AgentVersion         string
+	Snapshot             types.ClusterSnapshot
+	SyncedResources      map[string]bool
+	ReportedCapabilities map[string]types.AgentCapabilityReport
+	HasSnapshot          bool
+	EverSynced           bool
+	LastSeen             time.Time
+	Connected            bool
+	mu                   sync.RWMutex
 }
 
 // RegisterSession marks the active streaming session for clusterID as connected.
@@ -64,6 +65,8 @@ func (ar *AgentRegistry) RegisterSession(clusterID, sessionID string) {
 		state.SnapshotSessionID = ""
 		state.Snapshot = types.ClusterSnapshot{}
 		state.SyncedResources = nil
+		state.ReportedCapabilities = nil
+		state.ProtocolVersion = "1.0"
 	}
 	state.SessionID = sessionID
 	if state.ProtocolVersion == "" {
@@ -110,17 +113,25 @@ func (ar *AgentRegistry) GetStateMeta(clusterID string) (AgentClusterMeta, bool)
 			syncedCopy[k] = v
 		}
 	}
+	var reportedCopy map[string]types.AgentCapabilityReport
+	if len(state.ReportedCapabilities) > 0 {
+		reportedCopy = make(map[string]types.AgentCapabilityReport, len(state.ReportedCapabilities))
+		for k, v := range state.ReportedCapabilities {
+			reportedCopy[k] = v
+		}
+	}
 	return AgentClusterMeta{
-		ClusterID:         state.ClusterID,
-		SessionID:         state.SessionID,
-		SnapshotSessionID: state.SnapshotSessionID,
-		Connected:         state.Connected,
-		HasSnapshot:       state.HasSnapshot,
-		EverSynced:        state.EverSynced,
-		LastSeen:          state.LastSeen,
-		ProtocolVersion:   proto,
-		AgentVersion:      state.AgentVersion,
-		SyncedResources:   syncedCopy,
+		ClusterID:            state.ClusterID,
+		SessionID:            state.SessionID,
+		SnapshotSessionID:    state.SnapshotSessionID,
+		Connected:            state.Connected,
+		HasSnapshot:          state.HasSnapshot,
+		EverSynced:           state.EverSynced,
+		LastSeen:             state.LastSeen,
+		ProtocolVersion:      proto,
+		AgentVersion:         state.AgentVersion,
+		SyncedResources:      syncedCopy,
+		ReportedCapabilities: reportedCopy,
 	}, true
 }
 
@@ -151,14 +162,16 @@ func (ar *AgentRegistry) MarkDisconnectedSession(clusterID, sessionID string) bo
 
 // AgentRegistry manages clusters streaming from in-cluster envscale-agents
 type AgentRegistry struct {
-	clusters map[string]*AgentClusterState
-	mu       sync.RWMutex
+	clusters   map[string]*AgentClusterState
+	sessionHub *AgentSessionHub
+	mu         sync.RWMutex
 }
 
 // NewAgentRegistry creates a new AgentRegistry
 func NewAgentRegistry() *AgentRegistry {
 	return &AgentRegistry{
-		clusters: make(map[string]*AgentClusterState),
+		clusters:   make(map[string]*AgentClusterState),
+		sessionHub: NewAgentSessionHub(),
 	}
 }
 
@@ -314,6 +327,9 @@ func (ar *AgentRegistry) UnregisterCluster(clusterID string) bool {
 	if clusterID == "" {
 		return false
 	}
+	if ar.sessionHub != nil {
+		ar.sessionHub.DetachCluster(clusterID, "cluster_unregistered", "Agent cluster was unregistered")
+	}
 	ar.mu.Lock()
 	defer ar.mu.Unlock()
 	if _, ok := ar.clusters[clusterID]; !ok {
@@ -325,6 +341,9 @@ func (ar *AgentRegistry) UnregisterCluster(clusterID string) bool {
 
 // Clear removes all agent-connected cluster entries from the registry.
 func (ar *AgentRegistry) Clear() {
+	if ar.sessionHub != nil {
+		ar.sessionHub.DetachAll("cluster_unregistered", "Agent registry cleared")
+	}
 	ar.mu.Lock()
 	defer ar.mu.Unlock()
 	ar.clusters = make(map[string]*AgentClusterState)
@@ -355,122 +374,6 @@ func (ar *AgentRegistry) IsConnected(clusterID string) bool {
 		return state.Connected
 	}
 	return false
-}
-
-// ApplyDelta updates the cached snapshot in real-time when delta events arrive
-func (ar *AgentRegistry) ApplyDelta(clusterID string, eventType string, rawData []byte) {
-	ar.ApplyDeltaForSession(clusterID, "", eventType, rawData)
-}
-
-// ApplyDeltaForSession applies a live delta only if sessionID matches the active session and a baseline snapshot exists.
-func (ar *AgentRegistry) ApplyDeltaForSession(clusterID, sessionID, eventType string, rawData []byte) {
-	ar.mu.RLock()
-	state, ok := ar.clusters[clusterID]
-	ar.mu.RUnlock()
-
-	if !ok || state == nil {
-		return
-	}
-
-	state.mu.Lock()
-	defer state.mu.Unlock()
-	if state.SessionID != "" && sessionID != "" && state.SessionID != sessionID {
-		return
-	}
-	if !state.HasSnapshot {
-		return
-	}
-	state.LastSeen = time.Now()
-
-	switch eventType {
-	case types.EventPodStatusChanged:
-		var pod types.PodStatusDelta
-		if err := json.Unmarshal(rawData, &pod); err == nil {
-			found := false
-			for i, p := range state.Snapshot.Pods {
-				if p.Name == pod.Name && p.Namespace == pod.Namespace {
-					state.Snapshot.Pods[i] = pod
-					found = true
-					break
-				}
-			}
-			if !found {
-				state.Snapshot.Pods = append(state.Snapshot.Pods, pod)
-			}
-		}
-
-	case types.EventPodDeleted:
-		var pod types.PodStatusDelta
-		if err := json.Unmarshal(rawData, &pod); err == nil {
-			filtered := make([]types.PodStatusDelta, 0, len(state.Snapshot.Pods))
-			for _, p := range state.Snapshot.Pods {
-				if !(p.Name == pod.Name && p.Namespace == pod.Namespace) {
-					filtered = append(filtered, p)
-				}
-			}
-			state.Snapshot.Pods = filtered
-		}
-
-	case types.EventNodeMutated:
-		var node types.NodeStatusDelta
-		if err := json.Unmarshal(rawData, &node); err == nil {
-			found := false
-			for i, n := range state.Snapshot.Nodes {
-				if n.Name == node.Name {
-					state.Snapshot.Nodes[i] = node
-					found = true
-					break
-				}
-			}
-			if !found {
-				state.Snapshot.Nodes = append(state.Snapshot.Nodes, node)
-			}
-		}
-
-	case types.EventDeploymentMutated:
-		var dep types.DeploymentStatusDelta
-		if err := json.Unmarshal(rawData, &dep); err == nil {
-			found := false
-			for i, d := range state.Snapshot.Deployments {
-				if d.Name == dep.Name && d.Namespace == dep.Namespace {
-					state.Snapshot.Deployments[i] = dep
-					found = true
-					break
-				}
-			}
-			if !found {
-				state.Snapshot.Deployments = append(state.Snapshot.Deployments, dep)
-			}
-		}
-
-	case types.EventDeploymentDeleted:
-		var dep types.DeploymentStatusDelta
-		if err := json.Unmarshal(rawData, &dep); err == nil {
-			filtered := make([]types.DeploymentStatusDelta, 0, len(state.Snapshot.Deployments))
-			for _, d := range state.Snapshot.Deployments {
-				if !(d.Name == dep.Name && d.Namespace == dep.Namespace) {
-					filtered = append(filtered, d)
-				}
-			}
-			state.Snapshot.Deployments = filtered
-		}
-
-	case types.EventServiceMutated:
-		var svc types.ServiceStatusDelta
-		if err := json.Unmarshal(rawData, &svc); err == nil {
-			found := false
-			for i, s := range state.Snapshot.Services {
-				if s.Name == svc.Name && s.Namespace == svc.Namespace {
-					state.Snapshot.Services[i] = svc
-					found = true
-					break
-				}
-			}
-			if !found {
-				state.Snapshot.Services = append(state.Snapshot.Services, svc)
-			}
-		}
-	}
 }
 
 // BuildClusterSnapshot assembles a complete types.ClusterSnapshot from an InformerManager

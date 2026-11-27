@@ -76,6 +76,15 @@ func (f *ClusterExecutorFactory) GetSnapshot(ctx context.Context, clusterID stri
 	return exec.GetSnapshot(ctx)
 }
 
+// StartLogStream resolves the executor for clusterID and starts a normalized log stream.
+func (f *ClusterExecutorFactory) StartLogStream(ctx context.Context, clusterID string, req LogStreamRequest, sink chan<- LogFrame) (StreamHandle, error) {
+	exec, err := f.GetExecutor(clusterID)
+	if err != nil {
+		return nil, err
+	}
+	return exec.StartLogStream(ctx, req, sink)
+}
+
 // Capabilities resolves the executor for clusterID and reports its ClusterCapabilities.
 func (f *ClusterExecutorFactory) Capabilities(ctx context.Context, clusterID string) (ClusterCapabilities, error) {
 	return f.CapabilitiesWithRefresh(ctx, clusterID, false)

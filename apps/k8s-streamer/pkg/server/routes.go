@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"k8s.io/client-go/kubernetes"
@@ -91,13 +92,13 @@ func SetupRoutes(
 	})
 
 	mux.HandleFunc("/api/v1/stream/logs", func(w http.ResponseWriter, r *http.Request) {
-		HandleUniversalLogStream(clusterManager, w, r)
+		HandleUniversalLogStream(executorFactory, w, r)
 	})
 	mux.HandleFunc("/ws/logs", func(w http.ResponseWriter, r *http.Request) {
-		HandleUniversalLogStream(clusterManager, w, r)
+		HandleUniversalLogStream(executorFactory, w, r)
 	})
 	mux.HandleFunc("/ws/stream/logs", func(w http.ResponseWriter, r *http.Request) {
-		HandleUniversalLogStream(clusterManager, w, r)
+		HandleUniversalLogStream(executorFactory, w, r)
 	})
 
 	setupRollbackRoutes(mux, clusterManager, hub)
@@ -243,76 +244,22 @@ func SetupRoutes(
 		})
 	}))
 
+	// Legacy /api/v1/logs/stream endpoint retired in Slice 2 so all log streaming
+	// flows exclusively through the unified ClusterExecutor endpoint (/api/v1/stream/logs).
 	mux.HandleFunc("/api/v1/logs/stream", RequireAuth(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, "Failed to read request body", http.StatusBadRequest)
-			return
-		}
-
-		var req LogStreamRequest
-		if err := json.Unmarshal(body, &req); err != nil {
-			http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
-			return
-		}
-		if req.ClusterID == "" || req.Namespace == "" || req.PodName == "" {
-			http.Error(w, "clusterId, namespace, and podName are required", http.StatusBadRequest)
-			return
-		}
-
 		claims := ExtractClaims(r)
-		if authErr := websocket.CheckClusterAuthorization(claims, req.ClusterID); authErr != nil {
-			writeAuthError(w, http.StatusForbidden, fmt.Sprintf("Cluster authorization denied: %v", authErr))
-			return
-		}
-
-		switch r.Method {
-		case http.MethodPost:
-			im, ok := clusterManager.GetCluster(req.ClusterID)
-			if !ok {
-				http.Error(w, fmt.Sprintf("cluster '%s' is not registered", req.ClusterID), http.StatusNotFound)
+		if clusterID := strings.TrimSpace(r.URL.Query().Get("clusterId")); clusterID != "" {
+			if authErr := websocket.CheckClusterAuthorization(claims, clusterID); authErr != nil {
+				writeAuthError(w, http.StatusForbidden, fmt.Sprintf("Cluster authorization denied: %v", authErr))
 				return
 			}
-
-			tailLines := req.TailLines
-			if tailLines <= 0 {
-				tailLines = 100
-			}
-
-			if err := logStreamer.StartStream(
-				r.Context(),
-				im.Clientset(),
-				req.ClusterID, req.Namespace, req.PodName, req.Container,
-				tailLines,
-			); err != nil {
-				http.Error(w, fmt.Sprintf("Failed to start log stream: %v", err), http.StatusInternalServerError)
-				return
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"status":    "streaming",
-				"clusterId": req.ClusterID,
-				"namespace": req.Namespace,
-				"pod":       req.PodName,
-				"container": req.Container,
-			})
-
-		case http.MethodDelete:
-			logStreamer.StopStream(req.ClusterID, req.Namespace, req.PodName, req.Container)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"status":    "stopped",
-				"clusterId": req.ClusterID,
-				"namespace": req.Namespace,
-				"pod":       req.PodName,
-			})
-
-		default:
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusGone)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":       "legacy /api/v1/logs/stream endpoint is retired",
+			"replacement": "/api/v1/stream/logs",
+		})
 	}))
 
 	registerChaosRoutes(mux, chaosInjector, clusterManager)
