@@ -291,8 +291,15 @@ def execute_deploy_environment(
         if str(ctx.get("state_sync_status") or "STATE_SYNCHRONIZED") != "STATE_SYNCHRONIZED":
             orchestrator.state_store.update_context(state_sync_status="RECOVERING")
         tracker.transition("PROVISIONING", stage="tfstate_sync", ui_stage="provision", ui_status="running", message="Synchronizing Terraform state...")
+        orchestrator._emit_step("stage_tfstate_sync", "Synchronizing Terraform State", "start", "Inspecting local and S3 runtime Terraform state")
         deployer = CloudDeployer(log_fn=orchestrator.log_fn, step_fn=orchestrator.step_fn, aws_env=verified_env)
-        deployer.restore_from_s3(step_id="stage_tfstate_sync", step_title="Synchronizing Terraform State")
+        try:
+            sync_res = deployer.restore_from_s3(step_id="stage_tfstate_sync", step_title="Synchronizing Terraform State")
+            st_lbl = f"{(sync_res or {}).get('status', 'synchronized')} ({(sync_res or {}).get('classification', 'STATE_SYNCHRONIZED')})"
+            orchestrator._emit_step("stage_tfstate_sync", "Synchronizing Terraform State", "success", st_lbl)
+        except Exception as sync_exc:
+            orchestrator._emit_step("stage_tfstate_sync", "Synchronizing Terraform State", "error", str(sync_exc))
+            raise
         orchestrator.state_store.update_context(state_sync_status="STATE_SYNCHRONIZED")
 
         current_stage = "provision"
@@ -354,14 +361,14 @@ def execute_deploy_environment(
             tracker.fail(
                 phase="STATE_SYNC_PENDING", outcome="BLOCKED", failed_stage=current_stage,
                 ui_stage=current_ui, error=str(exc), rollback_attempted=False, infrastructure_active=infra_active,
-                recovery_action="Run 'ops tfstate reconcile' or retry once AWS S3 connectivity is restored to finish pending state synchronization.",
+                recovery_action="Use Test Center's 'Inspect & Resolve State' button (or 'ops tfstate sync') to finish pending S3 state synchronization.",
             )
         elif isinstance(exc, (StateDivergenceError, ConcurrentStateOperationError, CorruptedStateJournalError)):
             orchestrator.state_store.update_context(state_sync_status=infer_state_sync_status_from_error(exc))
             tracker.fail(
                 phase="FAILED", outcome="BLOCKED", failed_stage=current_stage, ui_stage=current_ui,
                 error=str(exc), rollback_attempted=False, infrastructure_active=infra_active,
-                recovery_action="Inspect state with 'ops tfstate status' and explicitly reconcile before retrying provisioning.",
+                recovery_action="Use Test Center's 'Inspect & Resolve State' button under Terraform State Sync & Recovery (or 'ops tfstate status') to inspect and reconcile.",
             )
         else:
             tracker.fail(

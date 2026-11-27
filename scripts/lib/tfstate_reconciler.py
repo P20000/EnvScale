@@ -270,14 +270,15 @@ def reconcile_terraform_state(
             return {"status": "unchanged", "classification": cls, **status}
 
         if cls in (SAME_SERIAL_DIFFERENT_CONTENT, LINEAGE_MISMATCH):
-            raise StateDivergenceError(status["message"])
+            raise StateDivergenceError(status["message"], classification=cls)
 
         if cls == STATE_SYNC_PENDING:
             if not status["proven_local_mutation"]:
-                raise StateSyncPendingError(status["message"])
+                raise StateSyncPendingError(status["message"], classification=STATE_SYNC_PENDING)
             if not auto_resume_pending:
                 raise StateSyncPendingError(
-                    f"{status['message']} Complete pending S3 synchronization before starting '{operation_type}'."
+                    f"{status['message']} Complete pending S3 synchronization before starting '{operation_type}'.",
+                    classification=STATE_SYNC_PENDING,
                 )
             journal.record_recovery_attempt(op["operation_id"], note=f"Resuming via {operation_type}")
             emit_state_log(emit_fn, step_id, step_title, f"Resuming verified pending S3 sync for {op['operation_id']}...")
@@ -296,7 +297,7 @@ def reconcile_terraform_state(
             if cls == REMOTE_MISSING and local_st and local_st["serial"] == 0 and local_st["resource_count"] == 0:
                 return {"status": "unchanged", "classification": cls, **status}
             if not allow_promote_local:
-                raise StateDivergenceError(status["message"])
+                raise StateDivergenceError(status["message"], classification=cls)
             prom_op = journal.start_operation(
                 operation_type="reconcile_promote_local", workspace=ws,
                 backend_bucket=bucket, backend_key=key, account_id=account_id, region=region,
@@ -314,7 +315,7 @@ def reconcile_terraform_state(
             return {"status": "promoted_local", "classification": STATE_SYNCHRONIZED, "sync": sync_res}
 
         if not allow_adopt_remote or status["remote"] is None:
-            raise StateDivergenceError(status["message"])
+            raise StateDivergenceError(status["message"], classification=cls)
         meta_err = _check_metadata_consistency(status["backend"]["uri"], remote_meta.get("metadata") or {}, status["remote"])
         if meta_err:
             raise StateDivergenceError(meta_err)

@@ -205,12 +205,88 @@ class TestTfStateLifecycleIntegration(unittest.TestCase):
         }
         self.assertEqual(set(cloud_target_sync.STATE_SYNC_UI_LABELS.values()), expected_labels)
 
-        demo_path = REPO_ROOT / "scripts" / "lib" / "gui_adw" / "demo_cloud_panel.py"
-        src = demo_path.read_text(encoding="utf-8")
-        self.assertIn('"STATE_SYNC_PENDING": ("STATE SYNC PENDING", "warning")', src)
-        self.assertIn('if sync_code != "STATE_SYNCHRONIZED":', src)
-        self.assertIn("CorruptedStateJournalError", src)
-        self.assertIn("State: {sync_label}", src)
+        demo_src = (REPO_ROOT / "scripts" / "lib" / "gui_adw" / "demo_cloud_panel.py").read_text(encoding="utf-8")
+        panel_src = (REPO_ROOT / "scripts" / "lib" / "gui_adw" / "tfstate_panel.py").read_text(encoding="utf-8")
+        view_src = (REPO_ROOT / "scripts" / "lib" / "gui_adw" / "view_cloud.py").read_text(encoding="utf-8")
+        self.assertIn('"STATE_SYNC_PENDING": ("STATE SYNC PENDING", "warning")', demo_src)
+        self.assertIn('if sync_code != "STATE_SYNCHRONIZED":', demo_src)
+        self.assertIn("CorruptedStateJournalError", demo_src)
+        self.assertIn("State: {sync_label}", demo_src)
+        self.assertIn("Inspect & Resolve State", demo_src)
+        self.assertNotIn("reconcile", demo_src.lower())
+
+        for req in (
+            "class TfStateSyncPanel", "Inspect State", "Resume Pending Sync", "Adopt Remote State",
+            "Promote Local State", "Unlock Stale Lock", "Adw.MessageDialog", "use_remote_lock=True",
+            "self.btn_adopt.set_sensitive(cls in (REMOTE_AHEAD, LOCAL_MISSING))",
+            "self.btn_promote.set_sensitive(cls in (LOCAL_AHEAD, REMOTE_MISSING))",
+        ):
+            self.assertIn(req, panel_src)
+        self.assertIn("TfStateSyncPanel", view_src)
+        self.assertIn("_open_tfstate_recovery", view_src)
+
+    def test_infer_state_sync_status_and_tfstate_stage_logging(self):
+        self.assertEqual(
+            cloud_target_sync.infer_state_sync_status_from_error(
+                tfstate_reconciler.StateDivergenceError(
+                    "Local state (serial=330) is ahead of remote s3://b/runtime/terraform.tfstate (serial=320) without operation journal proof."
+                )
+            ),
+            "LOCAL_AHEAD",
+        )
+        self.assertEqual(
+            cloud_target_sync.infer_state_sync_status_from_error(
+                tfstate_reconciler.StateDivergenceError(
+                    "Remote state s3://b/runtime/terraform.tfstate (serial=10) is ahead of local (serial=4)."
+                )
+            ),
+            "REMOTE_AHEAD",
+        )
+        self.assertEqual(
+            cloud_target_sync.infer_state_sync_status_from_error(
+                tfstate_reconciler.StateDivergenceError("conflict", classification="SAME_SERIAL_DIFFERENT_CONTENT")
+            ),
+            "SAME_SERIAL_DIFFERENT_CONTENT",
+        )
+        self.assertEqual(
+            cloud_target_sync.infer_state_sync_status_from_error(
+                tfstate_reconciler.CorruptedStateJournalError("bad json")
+            ),
+            "JOURNAL_CORRUPTED",
+        )
+
+        # Verify execute_deploy_environment logs stage_tfstate_sync start/error and records LOCAL_AHEAD (never REMOTE_AHEAD)
+        with tempfile.TemporaryDirectory() as td:
+            td_p = pathlib.Path(td)
+            manifest = td_p / "release-manifest.json"
+            manifest.write_text('{"release_id":"rel-1","git":{"commit_sha":"' + ("a" * 40) + '"}}', encoding="utf-8")
+            step_events = []
+            orch = cloud_orchestrator.CloudOrchestrator(
+                state_store=cloud_orchestrator.PipelineStateStore(td_p / "pipe.json"),
+                runtime_session=_make_runtime_session(), allow_ram_handoff=False,
+                step_fn=lambda sid, title, st, det="": step_events.append((sid, st, det)),
+            )
+            local_ahead_err = tfstate_reconciler.StateDivergenceError(
+                "Local state (serial=330) is ahead of remote s3://envscale-tfstate-982534376726-ap-south-1/runtime/terraform.tfstate (serial=320).",
+                classification=tfstate_reconciler.LOCAL_AHEAD,
+            )
+            with (
+                mock.patch.object(orch, "_require_verified_runtime_env", return_value={"AWS_REGION": REGION}),
+                mock.patch.object(cloud_demo_flow.shutil, "which", return_value="/usr/bin/ok"),
+                mock.patch.object(cloud_demo_flow, "verify_runtime_instance_profile", return_value={"profile_name": "p"}),
+                mock.patch.object(cloud_demo_flow.CloudDeployer, "ensure_s3_vault", return_value=None),
+                mock.patch.object(cloud_demo_flow, "verify_ssm_parameters_present", return_value=["duckdns_domain"]),
+                mock.patch.object(cloud_demo_flow.CloudDeployer, "get_aws_context", return_value={"account_id": ACCOUNT, "region": REGION, "recovery_bucket": "b"}),
+                mock.patch.object(cloud_demo_flow, "resolve_and_validate_manifest", return_value=manifest),
+                mock.patch.object(cloud_demo_flow.CloudDeployer, "restore_from_s3", side_effect=local_ahead_err),
+            ):
+                res = orch.deploy_environment(manifest_path=str(manifest))
+            self.assertEqual((res["status"], res["outcome"]), ("FAILED", "BLOCKED"))
+            self.assertEqual(res["state"]["context"]["state_sync_status"], "LOCAL_AHEAD")
+            tf_steps = [(st, det) for sid, st, det in step_events if sid == "stage_tfstate_sync"]
+            self.assertEqual(tf_steps[0][0], "start")
+            self.assertEqual(tf_steps[-1][0], "error")
+            self.assertIn("serial=330", tf_steps[-1][1])
 
 
 if __name__ == "__main__":
