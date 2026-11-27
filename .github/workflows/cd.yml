@@ -296,11 +296,11 @@ jobs:
             INV_ERR=""
             if INV_JSON="$(aws ssm get-command-invocation --region "${AWS_REGION}" --command-id "${COMMAND_ID}" --instance-id "${INSTANCE_ID}" --output json 2>&1)"; then
               readarray -t _PARSED < <(python3 - "${INV_JSON}" <<'PYEOF'
-import json, sys
-p = json.loads(sys.argv[1] or "{}")
-print(str(p.get("Status") or "Unknown"))
-print(str(p.get("ResponseCode") if p.get("ResponseCode") is not None else "unknown"))
-PYEOF
+          import json, sys
+          p = json.loads(sys.argv[1] or "{}")
+          print(str(p.get("Status") or "Unknown"))
+          print(str(p.get("ResponseCode") if p.get("ResponseCode") is not None else "unknown"))
+          PYEOF
               )
               STATUS="${_PARSED[0]:-Unknown}"
               RESP_CODE="${_PARSED[1]:-unknown}"
@@ -342,20 +342,20 @@ PYEOF
 
           if [ "${STATUS}" != "Success" ] || [ "${RESP_CODE}" != "0" ]; then
             REDACTED_ERR="$(python3 - "${SSM_ERR}" <<'PYEOF'
-import re, sys
-txt = sys.argv[1] or ""
-pats = (
-    (re.compile(r"(AKIA|ASIA)[A-Z0-9]{16}"), "[REDACTED_AWS_KEY]"),
-    (re.compile(r"(ghp|gho|ghs|github_pat)_[A-Za-z0-9_]+"), "[REDACTED_GH_TOKEN]"),
-    (re.compile(r"Bearer\s+[A-Za-z0-9._-]+", re.I), "Bearer [REDACTED]"),
-    (re.compile(r"(postgres(?:ql)?|redis)://[^/\s@]+@", re.I), r"\1://[REDACTED]@"),
-    (re.compile(r"(?i)(token|password|secret)\s*[:=]\s*[^\s'\"]+"), r"\1=[REDACTED]"),
-)
-for rx, repl in pats:
-    txt = rx.sub(repl, txt)
-print(txt)
-PYEOF
-)"
+          import re, sys
+          txt = sys.argv[1] or ""
+          pats = (
+              (re.compile(r"(AKIA|ASIA)[A-Z0-9]{16}"), "[REDACTED_AWS_KEY]"),
+              (re.compile(r"(ghp|gho|ghs|github_pat)_[A-Za-z0-9_]+"), "[REDACTED_GH_TOKEN]"),
+              (re.compile(r"Bearer\s+[A-Za-z0-9._-]+", re.I), "Bearer [REDACTED]"),
+              (re.compile(r"(postgres(?:ql)?|redis)://[^/\s@]+@", re.I), r"\1://[REDACTED]@"),
+              (re.compile(r"(?i)(token|password|secret)\s*[:=]\s*[^\s'\"]+"), r"\1=[REDACTED]"),
+          )
+          for rx, repl in pats:
+              txt = rx.sub(repl, txt)
+          print(txt)
+          PYEOF
+          )"
             printf '%s\n' "${REDACTED_ERR}" >&2
             {
               echo ""
