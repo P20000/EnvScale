@@ -205,9 +205,8 @@ class TestTfStateLifecycleIntegration(unittest.TestCase):
         }
         self.assertEqual(set(cloud_target_sync.STATE_SYNC_UI_LABELS.values()), expected_labels)
 
-        from scripts.lib.gui_adw import demo_cloud_panel
-
-        src = pathlib.Path(demo_cloud_panel.__file__).read_text(encoding="utf-8")
+        demo_path = REPO_ROOT / "scripts" / "lib" / "gui_adw" / "demo_cloud_panel.py"
+        src = demo_path.read_text(encoding="utf-8")
         self.assertIn('"STATE_SYNC_PENDING": ("STATE SYNC PENDING", "warning")', src)
         self.assertIn('if sync_code != "STATE_SYNCHRONIZED":', src)
         self.assertIn("CorruptedStateJournalError", src)
