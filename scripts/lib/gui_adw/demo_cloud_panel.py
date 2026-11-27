@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional
 
+import os
+
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
@@ -12,6 +14,9 @@ from gi.repository import Adw, GLib, Gtk
 from ..browser_utils import open_browser_url
 from ..cloud_identity import DEFAULT_ACCOUNT_ID, DEFAULT_REGION, redact_sensitive_text
 from ..cloud_pipeline_state import DEPLOY_UI_STAGES
+from ..cloud_target_sync import state_sync_ui_label
+from ..config import TERRAFORM_DIR
+from ..tfstate_journal import CorruptedStateJournalError, TfStateJournal, resolve_journal_path
 
 
 class DemoCloudPanel(Gtk.Box):
@@ -163,6 +168,7 @@ class DemoCloudPanel(Gtk.Box):
             "DESTROYING": ("DESTROYING", "warning"),
             "SUCCEEDED": ("READY" if event.get("workflow") != "destroy" else "DESTROYED", "success"),
             "FOUNDATION_NOT_INITIALIZED": ("FOUNDATION NOT INITIALIZED", "warning"),
+            "STATE_SYNC_PENDING": ("STATE SYNC PENDING", "warning"),
             "FAILED": ("FAILED", "error"),
             "IDLE": ("OFFLINE", "dim-label"),
         }
@@ -236,6 +242,15 @@ class DemoCloudPanel(Gtk.Box):
                 badge_style="warning",
             )
             return
+        if status == "STATE_SYNC_PENDING":
+            self.set_result(
+                False,
+                "Blocked — S3 state synchronization pending",
+                f"{err} {rec}".strip(),
+                badge_text="STATE SYNC PENDING",
+                badge_style="warning",
+            )
+            return
         f_stage = str(failure.get("failed_stage") or "unknown")
         rb = "yes" if failure.get("rollback_attempted") else "no"
         inf = "active" if failure.get("infrastructure_active") else "inactive"
@@ -257,11 +272,24 @@ class DemoCloudPanel(Gtk.Box):
         release_id = str(ctx.get("release_id") or "").strip() or "-"
         last_backup = str(ctx.get("last_backup_key") or "").strip()
         runtime_lbl = f"Online ({instance_id})" if instance_id else "Offline"
+        tf_p = os.path.join(TERRAFORM_DIR, "terraform.tfstate")
+        sync_reason = ""
+        try:
+            pending_sync = TfStateJournal(resolve_journal_path(tf_p)).inspect_local_pending_sync(tf_p)
+            if pending_sync.get("pending"):
+                sync_code = "STATE_SYNC_PENDING"
+                sync_reason = str(pending_sync.get("reason") or "")
+            else:
+                sync_code = str(ctx.get("state_sync_status") or "STATE_SYNCHRONIZED")
+        except CorruptedStateJournalError as exc:
+            sync_code = "JOURNAL_CORRUPTED"
+            sync_reason = str(exc)
+        sync_label = state_sync_ui_label(sync_code)
 
         def _apply():
             self.row_env.set_subtitle(
                 GLib.markup_escape_text(
-                    f"AWS {DEFAULT_ACCOUNT_ID} · {DEFAULT_REGION} · Runtime: {runtime_lbl} · Release: {release_id}", -1
+                    f"AWS {DEFAULT_ACCOUNT_ID} · {DEFAULT_REGION} · Runtime: {runtime_lbl} · State: {sync_label} · Release: {release_id}", -1
                 )
             )
             if sess_ok and sess:
@@ -278,10 +306,29 @@ class DemoCloudPanel(Gtk.Box):
             self._app_url = app_url
             self.btn_open_url.set_sensitive(bool(app_url))
             self.row_endpoint.set_subtitle(GLib.markup_escape_text(app_url or "Available after health verification", -1))
-            if not self._busy and self.badge_status.get_text() in ("OFFLINE", "READY", "DESTROYED"):
-                if app_url and instance_id:
-                    self._set_badge(self.badge_status, "READY", "success")
-                elif last_backup and not instance_id and self.badge_status.get_text() == "OFFLINE":
-                    self.row_result.set_subtitle(GLib.markup_escape_text(f"Environment offline | Last verified backup: {last_backup}", -1))
+            sync_badge_map = {
+                "STATE_SYNC_PENDING": ("STATE SYNC PENDING", "warning"),
+                "LOCAL_AHEAD": ("LOCAL STATE AHEAD", "warning"),
+                "REMOTE_AHEAD": ("REMOTE STATE AHEAD", "warning"),
+                "RECOVERING": ("RECOVERING", "warning"),
+                "STATE_CONFLICT": ("STATE CONFLICT", "error"),
+                "SAME_SERIAL_DIFFERENT_CONTENT": ("STATE CONFLICT", "error"),
+                "LINEAGE_MISMATCH": ("STATE CONFLICT", "error"),
+                "JOURNAL_CORRUPTED": ("STATE CONFLICT", "error"),
+                "RECONCILIATION_REQUIRED": ("RECONCILIATION REQUIRED", "warning"),
+                "LOCAL_MISSING": ("RECONCILIATION REQUIRED", "warning"),
+                "REMOTE_MISSING": ("RECONCILIATION REQUIRED", "warning"),
+            }
+            if not self._busy:
+                if sync_code != "STATE_SYNCHRONIZED":
+                    b_txt, b_css = sync_badge_map.get(sync_code, ("RECONCILIATION REQUIRED", "warning"))
+                    self._set_badge(self.badge_status, b_txt, b_css)
+                    det = sync_reason or f"State status: {sync_label}. Run 'ops tfstate status' via CLI for recovery steps."
+                    self.row_result.set_subtitle(GLib.markup_escape_text(det, -1))
+                elif self.badge_status.get_text() in ("OFFLINE", "READY", "DESTROYED", "STATE SYNC PENDING", "STATE CONFLICT", "RECONCILIATION REQUIRED", "LOCAL STATE AHEAD", "REMOTE STATE AHEAD"):
+                    if app_url and instance_id:
+                        self._set_badge(self.badge_status, "READY", "success")
+                    elif last_backup and not instance_id and self.badge_status.get_text() == "OFFLINE":
+                        self.row_result.set_subtitle(GLib.markup_escape_text(f"Environment offline | Last verified backup: {last_backup}", -1))
 
         GLib.idle_add(_apply)

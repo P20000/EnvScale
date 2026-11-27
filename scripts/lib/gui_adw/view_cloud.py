@@ -14,6 +14,7 @@ from ..cloud_demo_flow import FoundationNotInitializedError, inspect_destroy_tar
 from ..cloud_deployer import CloudDeployer
 from ..cloud_identity import RUNTIME_PROVISIONER_ROLE_NAME, redact_sensitive_text
 from ..eks_deployer import EKSDeployer
+from ..tfstate_reconciler import StateSyncPendingError
 from .cloud_ops_panel import CloudOpsPanel
 from .cloud_pipeline_panel import CloudPipelinePanel
 from .demo_cloud_panel import DemoCloudPanel
@@ -183,6 +184,14 @@ class CloudView(Gtk.Box):
                 "Foundation not initialized",
                 redact_sensitive_text(str(exc)),
                 badge_text="FOUNDATION NOT INITIALIZED",
+                badge_style="warning",
+            )
+        elif isinstance(exc, StateSyncPendingError):
+            self.demo_panel.set_result(
+                False,
+                "S3 state sync pending",
+                redact_sensitive_text(str(exc)),
+                badge_text="STATE SYNC PENDING",
                 badge_style="warning",
             )
         else:

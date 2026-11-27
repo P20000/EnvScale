@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
 
 from .cloud_deployer import CloudDeployer
-from .cloud_host_runner import load_deployment_env
+from .cloud_host_runner import assert_runtime_state_ready_for_host_ops, load_deployment_env
 from .cloud_identity import (
     ADMIN_ROLE_NAME,
     DEFAULT_ACCOUNT_ID,
@@ -317,6 +317,7 @@ class CloudOrchestrator:
             return {"status": "completed", "app_url": app_url, "instance_id": instance_id, "public_ip": ip, "summary": f"Live at {app_url}"}
 
         # stage_id == "verify"
+        assert_runtime_state_ready_for_host_ops()
         self._emit_step("stage_verify", "Stage 7: Operations Health Verify", "start", "Checking EC2, SSM, containers, and HTTPS")
         verified_env = self._require_verified_runtime_env(
             cb,

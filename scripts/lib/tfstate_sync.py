@@ -21,19 +21,45 @@ from typing import Any, Callable, Dict, Optional, Tuple
 from .cloud_config_utils import redact_sensitive_text
 
 _SCOPE_TOKEN_RE = re.compile(r"^[A-Za-z0-9-]+$")
+_STATE_KEY_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
 _MISSING_OBJECT_MARKERS = ("404", "not found", "nosuchkey")
 _RunFn = Callable[..., subprocess.CompletedProcess]
 
 
-def tfstate_bucket_and_key(account_id: str, region: str) -> Tuple[str, str]:
-    """Return validated (tfstate_bucket, runtime_key) without fallback defaults."""
+def tfstate_bucket_and_key(
+    account_id: str,
+    region: str,
+    state_key: str = "runtime/terraform.tfstate",
+) -> Tuple[str, str]:
+    """Return validated (tfstate_bucket, state_key) without fallback defaults."""
     acct = (account_id or "").strip()
     reg = (region or "").strip()
+    skey = (state_key or "").strip().lstrip("/")
     if not acct or not _SCOPE_TOKEN_RE.fullmatch(acct):
         raise ValueError(f"Invalid AWS account_id for tfstate bucket: {account_id!r}")
     if not reg or not _SCOPE_TOKEN_RE.fullmatch(reg):
         raise ValueError(f"Invalid AWS region for tfstate bucket: {region!r}")
-    return f"envscale-tfstate-{acct}-{reg}", "runtime/terraform.tfstate"
+    if not skey or ".." in skey or not _STATE_KEY_RE.fullmatch(skey):
+        raise ValueError(f"Invalid tfstate S3 key: {state_key!r}")
+    return f"envscale-tfstate-{acct}-{reg}", skey
+
+
+def _build_resource_inventory(resources: List[Any]) -> List[str]:
+    items: List[str] = []
+    for res in resources:
+        if not isinstance(res, dict):
+            continue
+        mode = str(res.get("mode") or "managed")
+        rtype = str(res.get("type") or "")
+        rname = str(res.get("name") or "")
+        insts = res.get("instances") if isinstance(res.get("instances"), list) else []
+        ids = sorted(
+            str((inst.get("attributes") or {}).get("id") or "")
+            for inst in insts
+            if isinstance(inst, dict) and (inst.get("attributes") or {}).get("id")
+        )
+        items.append(f"{mode}:{rtype}.{rname}:{len(insts)}:{','.join(ids)}")
+    return sorted(items)
 
 
 def parse_and_validate_tfstate(path: str | pathlib.Path) -> Dict[str, Any]:
@@ -69,9 +95,44 @@ def parse_and_validate_tfstate(path: str | pathlib.Path) -> Dict[str, Any]:
         "serial": serial,
         "lineage": lineage.strip(),
         "resource_count": len(resources),
+        "resource_inventory": _build_resource_inventory(resources),
+        "workspace": "default",
         "sha256": hashlib.sha256(raw_bytes).hexdigest(),
         "size": len(raw_bytes),
     }
+
+
+def _head_remote_tfstate_meta(
+    bucket: str,
+    key: str,
+    region: str,
+    aws_env: Optional[Dict[str, str]],
+    run_fn: _RunFn,
+) -> Dict[str, Any]:
+    kw: Dict[str, Any] = {"capture_output": True, "text": True}
+    if aws_env is not None:
+        kw["env"] = aws_env
+    res = run_fn(
+        ["aws", "s3api", "head-object", "--bucket", bucket, "--key", key, "--region", region, "--output", "json"],
+        **kw,
+    )
+    if res.returncode == 0:
+        try:
+            doc = json.loads(res.stdout or "{}")
+        except json.JSONDecodeError:
+            doc = {}
+        return {
+            "exists": True,
+            "version_id": str(doc.get("VersionId") or ""),
+            "etag": str(doc.get("ETag") or ""),
+            "content_length": int(doc.get("ContentLength") or 0),
+            "metadata": dict(doc.get("Metadata") or {}),
+        }
+    err = redact_sensitive_text((res.stderr or res.stdout or f"exit {res.returncode}").strip())
+    low = err.lower()
+    if any(marker in low for marker in _MISSING_OBJECT_MARKERS):
+        return {"exists": False, "version_id": "", "etag": "", "content_length": 0, "metadata": {}}
+    raise RuntimeError(f"Unable to inspect remote Terraform state s3://{bucket}/{key}: {err}")
 
 
 def _head_remote_tfstate(
@@ -81,20 +142,7 @@ def _head_remote_tfstate(
     aws_env: Optional[Dict[str, str]],
     run_fn: _RunFn,
 ) -> bool:
-    kw: Dict[str, Any] = {"capture_output": True, "text": True}
-    if aws_env is not None:
-        kw["env"] = aws_env
-    res = run_fn(
-        ["aws", "s3api", "head-object", "--bucket", bucket, "--key", key, "--region", region],
-        **kw,
-    )
-    if res.returncode == 0:
-        return True
-    err = redact_sensitive_text((res.stderr or res.stdout or f"exit {res.returncode}").strip())
-    low = err.lower()
-    if any(marker in low for marker in _MISSING_OBJECT_MARKERS):
-        return False
-    raise RuntimeError(f"Unable to inspect remote Terraform state s3://{bucket}/{key}: {err}")
+    return bool(_head_remote_tfstate_meta(bucket, key, region, aws_env, run_fn)["exists"])
 
 
 def _download_remote_tfstate_temp(
@@ -249,6 +297,15 @@ def verify_tfstate_consistency_with_s3(
     """Strictly read-only consistency check against S3 state copy (never modifies local_path)."""
     bucket, key = tfstate_bucket_and_key(account_id, region)
     uri = f"s3://{bucket}/{key}"
+    from .tfstate_journal import TfStateJournal, resolve_journal_path
+
+    pending = TfStateJournal(resolve_journal_path(local_path)).inspect_local_pending_sync(local_path)
+    if pending.get("pending"):
+        op = pending.get("operation") or {}
+        raise RuntimeError(
+            f"STATE_SYNC_PENDING: unresolved state synchronization from '{op.get('operation_type')}' "
+            f"(op={op.get('operation_id')}). Reconcile S3 state before destroying."
+        )
     remote_exists = _head_remote_tfstate(bucket, key, region, aws_env, run_fn)
     local_exists = os.path.isfile(local_path)
 

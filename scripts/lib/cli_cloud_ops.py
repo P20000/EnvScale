@@ -11,25 +11,14 @@ from rich.prompt import Confirm
 from rich.table import Table
 
 from .cloud_identity import (
-    ADMIN_ROLE_NAME,
-    RUNTIME_PROVISIONER_ROLE_NAME,
-    AwsSessionContext,
-    assume_foundation_admin_role,
-    assume_runtime_provisioner_role,
-    build_profile_env,
-    complete_virtual_mfa_enrollment,
-    inspect_aws_identity,
-    load_ram_admin_session,
-    load_ram_runtime_session,
-    redact_sensitive_text,
-    start_virtual_mfa_enrollment,
+    ADMIN_ROLE_NAME, RUNTIME_PROVISIONER_ROLE_NAME, AwsSessionContext,
+    assume_foundation_admin_role, assume_runtime_provisioner_role, build_profile_env,
+    complete_virtual_mfa_enrollment, inspect_aws_identity, load_ram_admin_session,
+    load_ram_runtime_session, redact_sensitive_text, start_virtual_mfa_enrollment,
 )
 from .cloud_ops_dashboard import (
-    ALLOWED_REMOTE_SERVICES,
-    fetch_ops_snapshot,
-    fetch_remote_logs,
-    trigger_remote_backup,
-    trigger_remote_verify,
+    ALLOWED_REMOTE_SERVICES, fetch_ops_snapshot, fetch_remote_logs,
+    trigger_remote_backup, trigger_remote_verify,
 )
 from .cloud_orchestrator import STAGE_IDS, CloudOrchestrator, OrchestratorCallbacks, PipelineStateStore
 
@@ -242,6 +231,8 @@ def ops_status():
         console.print(Panel(ctx_lines or "No context recorded yet.", title="Saved Context (Non-Sensitive)", border_style="blue"))
     nxt = store.next_incomplete_stage()
     console.print(f"Next incomplete stage: [bold cyan]{nxt or 'ALL COMPLETED'}[/bold cyan]")
+    from .cli_tfstate import print_local_tfstate_banner
+    print_local_tfstate_banner(console)
 
 
 @ops.command("preflight")
@@ -493,4 +484,8 @@ def ops_reconstruct(key, sha, manifest, profile, skip_restore):
         title="Reconstruction & Verification Complete",
         border_style="green",
     ))
+
+
+from .cli_tfstate import tfstate  # noqa: E402
+ops.add_command(tfstate)
 

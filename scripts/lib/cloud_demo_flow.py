@@ -11,19 +11,19 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 from .cloud_deployer import CloudDeployer
 from .cloud_identity import (
-    DEFAULT_ACCOUNT_ID,
-    DEFAULT_REGION,
-    RUNTIME_PROVISIONER_ROLE_NAME,
-    redact_sensitive_text,
-    resolve_recovery_bucket,
+    DEFAULT_ACCOUNT_ID, DEFAULT_REGION, RUNTIME_PROVISIONER_ROLE_NAME,
+    redact_sensitive_text, resolve_recovery_bucket,
 )
+from .cloud_target_sync import infer_state_sync_status_from_error
 from .config import PROJECT_ROOT, TERRAFORM_DIR
 from .postgres_backup_verifier import extract_tfstate_deployment_identity
 from .ssm_deployer import (
-    resolve_and_validate_manifest,
-    verify_runtime_instance_profile,
-    verify_ssm_parameters_present,
-    wait_for_ssm_online,
+    resolve_and_validate_manifest, verify_runtime_instance_profile,
+    verify_ssm_parameters_present, wait_for_ssm_online,
+)
+from .tfstate_reconciler import (
+    ConcurrentStateOperationError, CorruptedStateJournalError, STATE_SYNC_PENDING,
+    STATE_SYNCHRONIZED, StateDivergenceError, StateSyncPendingError, inspect_state_status,
 )
 from .tfstate_sync import parse_and_validate_tfstate, verify_tfstate_consistency_with_s3
 
@@ -288,9 +288,12 @@ def execute_deploy_environment(
         tracker.mark_ui_stage("readiness", "completed")
 
         current_ui, current_stage = "provision", "tfstate_sync"
+        if str(ctx.get("state_sync_status") or "STATE_SYNCHRONIZED") != "STATE_SYNCHRONIZED":
+            orchestrator.state_store.update_context(state_sync_status="RECOVERING")
         tracker.transition("PROVISIONING", stage="tfstate_sync", ui_stage="provision", ui_status="running", message="Synchronizing Terraform state...")
         deployer = CloudDeployer(log_fn=orchestrator.log_fn, step_fn=orchestrator.step_fn, aws_env=verified_env)
         deployer.restore_from_s3(step_id="stage_tfstate_sync", step_title="Synchronizing Terraform State")
+        orchestrator.state_store.update_context(state_sync_status="STATE_SYNCHRONIZED")
 
         current_stage = "provision"
         tracker.transition("PROVISIONING", stage="provision", ui_stage="provision", ui_status="running", message="Provisioning or starting EC2 infrastructure...")
@@ -346,6 +349,20 @@ def execute_deploy_environment(
                 recovery_action="Expand Advanced Operations and run 'Initialize Foundation (One-Time)' (after one-time IAM reconciliation if required).",
                 missing_prerequisites=exc.missing_prerequisites,
             )
+        elif isinstance(exc, StateSyncPendingError):
+            orchestrator.state_store.update_context(state_sync_status="STATE_SYNC_PENDING")
+            tracker.fail(
+                phase="STATE_SYNC_PENDING", outcome="BLOCKED", failed_stage=current_stage,
+                ui_stage=current_ui, error=str(exc), rollback_attempted=False, infrastructure_active=infra_active,
+                recovery_action="Run 'ops tfstate reconcile' or retry once AWS S3 connectivity is restored to finish pending state synchronization.",
+            )
+        elif isinstance(exc, (StateDivergenceError, ConcurrentStateOperationError, CorruptedStateJournalError)):
+            orchestrator.state_store.update_context(state_sync_status=infer_state_sync_status_from_error(exc))
+            tracker.fail(
+                phase="FAILED", outcome="BLOCKED", failed_stage=current_stage, ui_stage=current_ui,
+                error=str(exc), rollback_attempted=False, infrastructure_active=infra_active,
+                recovery_action="Inspect state with 'ops tfstate status' and explicitly reconcile before retrying provisioning.",
+            )
         else:
             tracker.fail(
                 phase="FAILED", outcome="FAILED", failed_stage=current_stage, ui_stage=current_ui,
@@ -387,13 +404,9 @@ def inspect_destroy_target(
     deployer = CloudDeployer()
     instance_id = deployer.get_instance_id() or str(ident.get("state_instance_id") or ctx.get("instance_id") or "")
     return {
-        "account_id": account_id,
-        "region": region,
-        "instance_id": instance_id,
-        "vpc_id": str(ident.get("vpc_id") or ""),
-        "tf_lineage": str(ident.get("tf_lineage") or ""),
-        "app_url": str(ctx.get("app_url") or ""),
-        "recovery_bucket": resolve_recovery_bucket(account_id=account_id, region=region),
+        "account_id": account_id, "region": region, "instance_id": instance_id,
+        "vpc_id": str(ident.get("vpc_id") or ""), "tf_lineage": str(ident.get("tf_lineage") or ""),
+        "app_url": str(ctx.get("app_url") or ""), "recovery_bucket": resolve_recovery_bucket(account_id=account_id, region=region),
     }
 
 
@@ -408,14 +421,15 @@ def verify_destroy_target_environment(
 ) -> Dict[str, Any]:
     """Fail-closed pre-destroy verification: scope, tfstate S3 consistency, and Project/Layer/VPC tags."""
     if account_id != DEFAULT_ACCOUNT_ID or region != DEFAULT_REGION:
-        raise RuntimeError(
-            f"Destruction blocked: target scope ({account_id}, {region}) does not match "
-            f"allowed demo scope ({DEFAULT_ACCOUNT_ID}, {DEFAULT_REGION})."
-        )
+        raise RuntimeError(f"Destruction blocked: target scope ({account_id}, {region}) does not match allowed demo scope ({DEFAULT_ACCOUNT_ID}, {DEFAULT_REGION}).")
     tf_path = tf_state_path or _default_tfstate_path()
-    verify_tfstate_consistency_with_s3(
-        local_path=tf_path, account_id=account_id, region=region, aws_env=aws_env, run_fn=run_fn
-    )
+    chk = verify_tfstate_consistency_with_s3(local_path=tf_path, account_id=account_id, region=region, aws_env=aws_env, run_fn=run_fn)
+    if isinstance(chk, dict) and chk.get("status") == "local_newer":
+        st = inspect_state_status(local_path=tf_path, account_id=account_id, region=region, aws_env=aws_env, run_fn=run_fn)
+        if st.get("classification") == STATE_SYNC_PENDING:
+            raise StateSyncPendingError(st["message"])
+        if st.get("classification") != STATE_SYNCHRONIZED:
+            raise StateDivergenceError(st["message"])
     ident = extract_tfstate_deployment_identity(tf_path) if os.path.isfile(tf_path) else {}
     instance_id = deployer.get_instance_id() or str(ident.get("state_instance_id") or "")
     vpc_id = str(ident.get("vpc_id") or "")
@@ -423,23 +437,14 @@ def verify_destroy_target_environment(
         inst = _describe_ec2_instance(instance_id, region=region, aws_env=aws_env, run_fn=run_fn)
         tags = {str(t.get("Key")): str(t.get("Value")) for t in (inst.get("Tags") or []) if isinstance(t, dict)}
         if tags.get("Project") != "EnvScale" or tags.get("Layer") != "DisposableRuntime":
-            raise RuntimeError(
-                f"Destruction blocked: EC2 {instance_id} tags (Project={tags.get('Project')!r}, "
-                f"Layer={tags.get('Layer')!r}) do not match EnvScale DisposableRuntime."
-            )
+            raise RuntimeError(f"Destruction blocked: EC2 {instance_id} tags (Project={tags.get('Project')!r}, Layer={tags.get('Layer')!r}) do not match EnvScale DisposableRuntime.")
         live_vpc = str(inst.get("VpcId") or "")
         if vpc_id and live_vpc != vpc_id:
-            raise RuntimeError(
-                f"Destruction blocked: EC2 {instance_id} VPC ({live_vpc!r}) does not match Terraform state VPC ({vpc_id!r})."
-            )
+            raise RuntimeError(f"Destruction blocked: EC2 {instance_id} VPC ({live_vpc!r}) does not match Terraform state VPC ({vpc_id!r}).")
         vpc_id = live_vpc or vpc_id
     return {
-        "verified": True,
-        "account_id": account_id,
-        "region": region,
-        "instance_id": instance_id,
-        "vpc_id": vpc_id,
-        "tf_lineage": str(ident.get("tf_lineage") or ""),
+        "verified": True, "account_id": account_id, "region": region,
+        "instance_id": instance_id, "vpc_id": vpc_id, "tf_lineage": str(ident.get("tf_lineage") or ""),
     }
 
 
@@ -456,9 +461,7 @@ def verify_destroy_cleanup(
     if os.path.isfile(tf_path):
         meta = parse_and_validate_tfstate(tf_path)
         if meta["resource_count"] != 0:
-            raise RuntimeError(
-                f"Teardown verification failed: Terraform state still reports {meta['resource_count']} active resource(s)."
-            )
+            raise RuntimeError(f"Teardown verification failed: Terraform state still reports {meta['resource_count']} active resource(s).")
     inst_state = "none"
     if destroyed_instance_id:
         res = run_fn(
@@ -467,18 +470,15 @@ def verify_destroy_cleanup(
         )
         if res.returncode != 0:
             err = redact_sensitive_text((res.stderr or res.stdout or "").strip())
-            if "InvalidInstanceID.NotFound" in err:
-                inst_state = "not_found"
-            else:
+            if "InvalidInstanceID.NotFound" not in err:
                 raise RuntimeError(f"Post-destroy EC2 verification failed for {destroyed_instance_id}: {err}")
+            inst_state = "not_found"
         else:
             doc = json.loads(res.stdout or "{}")
             reservations = doc.get("Reservations") or []
             instances = (reservations[0].get("Instances") or []) if reservations else []
             inst_state = str(((instances[0].get("State") or {}).get("Name")) or "not_found") if instances else "not_found"
             if inst_state not in ("terminated", "shutting-down", "not_found"):
-                raise RuntimeError(
-                    f"Teardown verification failed: EC2 instance {destroyed_instance_id} is still in state '{inst_state}'."
-                )
+                raise RuntimeError(f"Teardown verification failed: EC2 instance {destroyed_instance_id} is still in state '{inst_state}'.")
     return {"verified": True, "remaining_resources": 0, "instance_state": inst_state}
 

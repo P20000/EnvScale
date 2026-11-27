@@ -219,10 +219,15 @@ class TestPostgresBackupDestroySafety(unittest.TestCase):
                 return subprocess.CompletedProcess(cmd, 0, stdout="Destroy complete!", stderr="")
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
+        def _fake_managed_tf(**kw):
+            for cmd in kw["tf_commands"]:
+                kw["exec_tf_fn"](list(cmd))
+            return {"status": "completed", "sync": {"status": "synchronized"}}
+
         with (
             mock.patch.object(deployer, "get_aws_context", return_value={"account_id": ACCOUNT, "region": REGION, "s3_bucket": BUCKET, "recovery_bucket": BUCKET}),
             mock.patch.object(deployer, "get_instance_id", return_value=INSTANCE_ID),
-            mock.patch.object(deployer, "backup_to_s3"),
+            mock.patch.object(cloud_deployer, "run_managed_terraform_mutation", side_effect=_fake_managed_tf),
             mock.patch.object(deployer, "load_deployment_env", return_value={}),
             mock.patch.object(cloud_deployer, "cleanup_external_references") as m_cleanup,
             mock.patch.object(cloud_deployer, "run_ssm_command", side_effect=_fake_ssm) as m_ssm,
@@ -424,7 +429,7 @@ class TestPostgresBackupDestroySafety(unittest.TestCase):
                     mock.patch.object(postgres_backup_verifier, "DEFAULT_PIPELINE_STATE_PATH", str(pipe_state)),
                     mock.patch.object(deployer, "get_aws_context", return_value={"account_id": ACCOUNT, "region": REGION, "s3_bucket": BUCKET}),
                     mock.patch.object(deployer, "get_instance_id", return_value=""),
-                    mock.patch.object(deployer, "backup_to_s3"),
+                    mock.patch.object(cloud_deployer, "run_managed_terraform_mutation", side_effect=lambda **kw: ([kw["exec_tf_fn"](list(c)) for c in kw["tf_commands"]], {"status": "completed"})[1]),
                     mock.patch.object(deployer, "load_deployment_env", return_value={}),
                     mock.patch.object(cloud_deployer, "cleanup_external_references"),
                     mock.patch.object(cloud_deployer.subprocess, "run", side_effect=_subproc),
