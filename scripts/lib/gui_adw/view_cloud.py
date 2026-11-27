@@ -12,7 +12,7 @@ from gi.repository import Adw, GLib, Gtk
 
 from ..cloud_demo_flow import FoundationNotInitializedError, inspect_destroy_target
 from ..cloud_deployer import CloudDeployer
-from ..cloud_identity import RUNTIME_PROVISIONER_ROLE_NAME, redact_sensitive_text
+from ..cloud_identity import DEFAULT_ACCOUNT_ID, DEFAULT_REGION, RUNTIME_PROVISIONER_ROLE_NAME, redact_sensitive_text
 from ..eks_deployer import EKSDeployer
 from ..tfstate_reconciler import StateSyncPendingError
 from .cloud_ops_panel import CloudOpsPanel
@@ -20,6 +20,7 @@ from .cloud_pipeline_panel import CloudPipelinePanel
 from .demo_cloud_panel import DemoCloudPanel
 from .log_storage import LogStorage
 from .step_row import HeadingLogPanel
+from .tfstate_panel import TfStateSyncPanel
 
 
 class CloudView(Gtk.Box):
@@ -45,10 +46,18 @@ class CloudView(Gtk.Box):
             on_sign_in=self._run_demo_sign_in,
             on_deploy=self._run_demo_deploy,
             on_destroy=self._confirm_destroy,
+            on_resolve_state=self._open_tfstate_recovery,
             log_fn=lambda m: self._on_step_event("demo_url", "Open Application", "log", m),
         )
         self.pipeline_panel.orchestrator.progress_fn = self.demo_panel.apply_progress_event
         self.append(self.demo_panel)
+
+        self.tfstate_panel = TfStateSyncPanel(
+            step_fn=self._on_step_event,
+            ensure_aws_env=self.pipeline_panel.ensure_runtime_aws_env,
+            get_scope=self._runtime_scope,
+            on_sync_status_changed=self._on_tfstate_status_changed,
+        )
 
         self.ops_panel = CloudOpsPanel(
             self.pm,
@@ -109,6 +118,7 @@ class CloudView(Gtk.Box):
 
         advanced_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         advanced_box.set_margin_top(8)
+        advanced_box.append(self.tfstate_panel)
         advanced_box.append(self.ops_panel)
         advanced_box.append(host_bar)
         advanced_box.append(self.pipeline_panel)
@@ -135,6 +145,20 @@ class CloudView(Gtk.Box):
 
     def _sync_demo_panel(self) -> None:
         self.demo_panel.refresh_from_orchestrator(self.pipeline_panel.orchestrator)
+
+    def _runtime_scope(self) -> tuple[str, str]:
+        sess = self.pipeline_panel.orchestrator.runtime_session
+        if sess is not None and not sess.is_expired():
+            return sess.account_id or DEFAULT_ACCOUNT_ID, sess.region or DEFAULT_REGION
+        return DEFAULT_ACCOUNT_ID, DEFAULT_REGION
+
+    def _on_tfstate_status_changed(self, sync_code: str) -> None:
+        self.pipeline_panel.orchestrator.state_store.update_context(state_sync_status=sync_code)
+        self._sync_demo_panel()
+
+    def _open_tfstate_recovery(self) -> None:
+        self.advanced_expander.set_expanded(True)
+        self.tfstate_panel.inspect_async()
 
     def _on_step_event(self, step_id: str, title: str, status: str, detail: str) -> None:
         safe_title = redact_sensitive_text(title)
@@ -218,6 +242,8 @@ class CloudView(Gtk.Box):
                     self.ops_panel.refresh_async(include_http=True)
                 else:
                     GLib.idle_add(lambda: self.logs_expander.set_expanded(True))
+                    if res.get("outcome") == "BLOCKED" and res.get("status") != "FOUNDATION_NOT_INITIALIZED":
+                        GLib.idle_add(self._open_tfstate_recovery)
             except Exception as exc:
                 msg = redact_sensitive_text(f"{type(exc).__name__}: {exc}")
                 self._on_step_event("demo_deploy_err", "Deploy Environment failed", "start", msg)
@@ -268,6 +294,8 @@ class CloudView(Gtk.Box):
                     self.demo_panel.apply_final_result(res, workflow="destroy")
                     if res.get("status") != "SUCCEEDED":
                         GLib.idle_add(lambda: self.logs_expander.set_expanded(True))
+                        if res.get("outcome") == "BLOCKED" and res.get("status") != "FOUNDATION_NOT_INITIALIZED":
+                            GLib.idle_add(self._open_tfstate_recovery)
                 else:
                     aws_env = self.pipeline_panel.ensure_runtime_aws_env()
                     deployer = CloudDeployer(

@@ -19,6 +19,19 @@ from ..config import TERRAFORM_DIR
 from ..tfstate_journal import CorruptedStateJournalError, TfStateJournal, resolve_journal_path
 
 
+_SYNC_BADGE_MAP = {
+    "STATE_SYNC_PENDING": ("STATE SYNC PENDING", "warning"),
+    "LOCAL_AHEAD": ("LOCAL STATE AHEAD", "warning"),
+    "REMOTE_AHEAD": ("REMOTE STATE AHEAD", "warning"),
+    "RECOVERING": ("RECOVERING", "warning"),
+    "STATE_CONFLICT": ("STATE CONFLICT", "error"),
+    "SAME_SERIAL_DIFFERENT_CONTENT": ("STATE CONFLICT", "error"),
+    "LINEAGE_MISMATCH": ("STATE CONFLICT", "error"),
+    "JOURNAL_CORRUPTED": ("STATE CONFLICT", "error"),
+    "RECONCILIATION_REQUIRED": ("RECONCILIATION REQUIRED", "warning"),
+    "LOCAL_MISSING": ("RECONCILIATION REQUIRED", "warning"),
+    "REMOTE_MISSING": ("RECONCILIATION REQUIRED", "warning"),
+}
 class DemoCloudPanel(Gtk.Box):
     """Primary operator experience: Environment status, Deploy/Destroy actions, 5-stage progress, and URL."""
 
@@ -28,12 +41,14 @@ class DemoCloudPanel(Gtk.Box):
         on_sign_in: Callable[[], None],
         on_deploy: Callable[[], None],
         on_destroy: Callable[[], None],
+        on_resolve_state: Optional[Callable[[], None]] = None,
         log_fn: Optional[Callable[[str], None]] = None,
     ):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         self._on_sign_in = on_sign_in
         self._on_deploy = on_deploy
         self._on_destroy = on_destroy
+        self._on_resolve_state = on_resolve_state
         self._log_fn = log_fn
         self._app_url = ""
         self._busy = False
@@ -111,6 +126,11 @@ class DemoCloudPanel(Gtk.Box):
             title="Pipeline Result",
             subtitle="Idle — click Deploy Environment to provision and verify",
         )
+        self.btn_resolve_state = Gtk.Button(label="Inspect & Resolve State")
+        self.btn_resolve_state.add_css_class("suggested-action")
+        self.btn_resolve_state.set_visible(False)
+        self.btn_resolve_state.connect("clicked", lambda _: self._on_resolve_state() if self._on_resolve_state else None)
+        self.row_result.add_suffix(self.btn_resolve_state)
         self.exec_group.add(self.row_result)
         self.row_status = self.row_result
         self.append(self.exec_group)
@@ -243,12 +263,25 @@ class DemoCloudPanel(Gtk.Box):
             )
             return
         if status == "STATE_SYNC_PENDING":
+            GLib.idle_add(lambda: self.btn_resolve_state.set_visible(True))
             self.set_result(
                 False,
                 "Blocked — S3 state synchronization pending",
                 f"{err} {rec}".strip(),
                 badge_text="STATE SYNC PENDING",
                 badge_style="warning",
+            )
+            return
+        sync_code = str(((res.get("state") or {}).get("context") or {}).get("state_sync_status") or "")
+        if res.get("outcome") == "BLOCKED" and sync_code and sync_code != "STATE_SYNCHRONIZED":
+            b_txt, b_css = _SYNC_BADGE_MAP.get(sync_code, ("RECONCILIATION REQUIRED", "warning"))
+            GLib.idle_add(lambda: self.btn_resolve_state.set_visible(True))
+            self.set_result(
+                False,
+                f"Blocked — {state_sync_ui_label(sync_code)}",
+                f"{err} {rec}".strip(),
+                badge_text=b_txt,
+                badge_style=b_css,
             )
             return
         f_stage = str(failure.get("failed_stage") or "unknown")
@@ -306,24 +339,12 @@ class DemoCloudPanel(Gtk.Box):
             self._app_url = app_url
             self.btn_open_url.set_sensitive(bool(app_url))
             self.row_endpoint.set_subtitle(GLib.markup_escape_text(app_url or "Available after health verification", -1))
-            sync_badge_map = {
-                "STATE_SYNC_PENDING": ("STATE SYNC PENDING", "warning"),
-                "LOCAL_AHEAD": ("LOCAL STATE AHEAD", "warning"),
-                "REMOTE_AHEAD": ("REMOTE STATE AHEAD", "warning"),
-                "RECOVERING": ("RECOVERING", "warning"),
-                "STATE_CONFLICT": ("STATE CONFLICT", "error"),
-                "SAME_SERIAL_DIFFERENT_CONTENT": ("STATE CONFLICT", "error"),
-                "LINEAGE_MISMATCH": ("STATE CONFLICT", "error"),
-                "JOURNAL_CORRUPTED": ("STATE CONFLICT", "error"),
-                "RECONCILIATION_REQUIRED": ("RECONCILIATION REQUIRED", "warning"),
-                "LOCAL_MISSING": ("RECONCILIATION REQUIRED", "warning"),
-                "REMOTE_MISSING": ("RECONCILIATION REQUIRED", "warning"),
-            }
+            self.btn_resolve_state.set_visible(sync_code != "STATE_SYNCHRONIZED")
             if not self._busy:
                 if sync_code != "STATE_SYNCHRONIZED":
-                    b_txt, b_css = sync_badge_map.get(sync_code, ("RECONCILIATION REQUIRED", "warning"))
+                    b_txt, b_css = _SYNC_BADGE_MAP.get(sync_code, ("RECONCILIATION REQUIRED", "warning"))
                     self._set_badge(self.badge_status, b_txt, b_css)
-                    det = sync_reason or f"State status: {sync_label}. Run 'ops tfstate status' via CLI for recovery steps."
+                    det = sync_reason or f"State status: {sync_label}. Click Inspect & Resolve State for recovery steps."
                     self.row_result.set_subtitle(GLib.markup_escape_text(det, -1))
                 elif self.badge_status.get_text() in ("OFFLINE", "READY", "DESTROYED", "STATE SYNC PENDING", "STATE CONFLICT", "RECONCILIATION REQUIRED", "LOCAL STATE AHEAD", "REMOTE STATE AHEAD"):
                     if app_url and instance_id:

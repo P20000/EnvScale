@@ -137,7 +137,7 @@ def execute_destroy_environment(
                 error=str(exc),
                 rollback_attempted=False,
                 infrastructure_active=infra_active,
-                recovery_action="Local destroy/state change occurred but S3 sync is pending. Run 'ops tfstate sync' or 'ops tfstate reconcile' before retrying.",
+                recovery_action="Use Test Center's 'Inspect & Resolve State' button (or 'ops tfstate sync') before retrying.",
             )
         elif isinstance(exc, (StateDivergenceError, ConcurrentStateOperationError, CorruptedStateJournalError)):
             orchestrator.state_store.update_context(state_sync_status=infer_state_sync_status_from_error(exc))
@@ -148,7 +148,7 @@ def execute_destroy_environment(
                 error=str(exc),
                 rollback_attempted=False,
                 infrastructure_active=infra_active,
-                recovery_action="Inspect state with 'ops tfstate status' and explicitly reconcile before retrying Destroy Environment.",
+                recovery_action="Use Test Center's 'Inspect & Resolve State' button under Terraform State Sync & Recovery (or 'ops tfstate status') before retrying.",
             )
         else:
             rec_map = {

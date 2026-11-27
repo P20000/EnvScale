@@ -31,6 +31,9 @@ def state_sync_ui_label(status_code: str) -> str:
 
 def infer_state_sync_status_from_error(exc: Exception) -> str:
     """Classify a state exception into a persisted UI state_sync_status code."""
+    explicit = str(getattr(exc, "classification", "") or "").strip().upper()
+    if explicit in STATE_SYNC_UI_LABELS:
+        return explicit
     cname = type(exc).__name__
     msg = str(exc).lower()
     if "CorruptedStateJournal" in cname or "corrupt" in msg:
@@ -41,10 +44,18 @@ def infer_state_sync_status_from_error(exc: Exception) -> str:
         return "RECONCILIATION_REQUIRED"
     if "lineage" in msg or "same_serial" in msg or "diverged" in msg or "checksum" in msg or "workspace" in msg:
         return "STATE_CONFLICT"
-    if "remote" in msg and "ahead" in msg:
+    if "local state" in msg and "ahead" in msg:
+        return "LOCAL_AHEAD"
+    if "remote state" in msg and "ahead" in msg:
         return "REMOTE_AHEAD"
+    if "local" in msg and "missing" in msg:
+        return "LOCAL_MISSING"
+    if "remote" in msg and "missing" in msg:
+        return "REMOTE_MISSING"
     if "local" in msg and "ahead" in msg:
         return "LOCAL_AHEAD"
+    if "remote" in msg and "ahead" in msg:
+        return "REMOTE_AHEAD"
     return "RECONCILIATION_REQUIRED"
 
 

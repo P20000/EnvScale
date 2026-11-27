@@ -25,9 +25,17 @@ _CONFLICT_MARKERS = ("preconditionfailed", "412", "conditionalrequestconflict")
 class StateSyncPendingError(RuntimeError):
     """Raised when Terraform completed a state mutation but S3 state synchronization has not finished."""
 
+    def __init__(self, message: str, *, classification: str = "STATE_SYNC_PENDING"):
+        super().__init__(message)
+        self.classification = classification
+
 
 class StateDivergenceError(RuntimeError):
     """Raised when local and remote Terraform state disagree safely without an automatic resolution."""
+
+    def __init__(self, message: str, *, classification: str = ""):
+        super().__init__(message)
+        self.classification = classification
 
 
 def emit_state_log(emit_fn: _EmitFn, step_id: Optional[str], step_title: Optional[str], msg: str) -> None:
