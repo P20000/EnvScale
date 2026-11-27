@@ -203,6 +203,17 @@ func rejectNonUserTokenType(claims jwt.MapClaims) error {
 	return nil
 }
 
+// CheckUserOrServiceToken verifies that claims belong to a user or internal service token (rejecting agent/scoped tokens).
+func CheckUserOrServiceToken(claims jwt.MapClaims) error {
+	if claims == nil {
+		if isAnonymousAllowed() {
+			return nil
+		}
+		return ErrMissingToken
+	}
+	return rejectNonUserTokenType(claims)
+}
+
 // CheckClusterAuthorization verifies whether the provided claims permit read/stream access to clusterID.
 // Fails closed when claims are absent or lack explicit authorization for the target cluster UUID.
 func CheckClusterAuthorization(claims jwt.MapClaims, clusterID string) error {
@@ -221,6 +232,10 @@ func CheckClusterAuthorization(claims jwt.MapClaims, clusterID string) error {
 		return nil
 	}
 
+	if clusterID == "" || clusterID == "*" {
+		return fmt.Errorf("valid canonical clusterId is required for cluster access")
+	}
+
 	if role, ok := extractClusterRole(claims, clusterID); ok {
 		if role == "ADMIN" || role == "MEMBER" || role == "VIEWER" {
 			return nil
@@ -232,13 +247,13 @@ func CheckClusterAuthorization(claims jwt.MapClaims, clusterID string) error {
 		switch clusterList := rawClusters.(type) {
 		case []interface{}:
 			for _, item := range clusterList {
-				if str, ok := item.(string); ok && str == clusterID {
+				if str, ok := item.(string); ok && str != "*" && str == clusterID {
 					return nil
 				}
 			}
 		case []string:
 			for _, str := range clusterList {
-				if str == clusterID {
+				if str != "*" && str == clusterID {
 					return nil
 				}
 			}

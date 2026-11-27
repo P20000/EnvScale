@@ -13,43 +13,53 @@ import (
 
 // setupPolicyHPAInformers attaches Informer event handlers for HPA and NetworkPolicy
 func (im *InformerManager) setupPolicyHPAInformers() {
-	hpaInformer := im.factory.Autoscaling().V2().HorizontalPodAutoscalers().Informer()
-	hpaInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if hpa, ok := obj.(*autoscalingv2.HorizontalPodAutoscaler); ok {
-				im.emitHPADelta(hpa)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if hpa, ok := newObj.(*autoscalingv2.HorizontalPodAutoscaler); ok {
-				im.emitHPADelta(hpa)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			if hpa, ok := obj.(*autoscalingv2.HorizontalPodAutoscaler); ok {
-				im.emitHPADeleted(hpa)
-			}
-		},
-	})
+	f := im.currentFactory()
+	if f == nil {
+		return
+	}
+	if im.shouldRegisterInformer("autoscaling/v2/horizontalpodautoscalers") {
+		hpaInformer := f.Autoscaling().V2().HorizontalPodAutoscalers().Informer()
+		im.recordInformer("autoscaling/v2/horizontalpodautoscalers", hpaInformer)
+		hpaInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				if hpa, ok := obj.(*autoscalingv2.HorizontalPodAutoscaler); ok {
+					im.emitHPADelta(hpa)
+				}
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if hpa, ok := newObj.(*autoscalingv2.HorizontalPodAutoscaler); ok {
+					im.emitHPADelta(hpa)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				if hpa, ok := obj.(*autoscalingv2.HorizontalPodAutoscaler); ok {
+					im.emitHPADeleted(hpa)
+				}
+			},
+		})
+	}
 
-	netpolInformer := im.factory.Networking().V1().NetworkPolicies().Informer()
-	netpolInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if np, ok := obj.(*networkingv1.NetworkPolicy); ok {
-				im.emitNetworkPolicyDelta(np)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if np, ok := newObj.(*networkingv1.NetworkPolicy); ok {
-				im.emitNetworkPolicyDelta(np)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			if np, ok := obj.(*networkingv1.NetworkPolicy); ok {
-				im.emitNetworkPolicyDeleted(np)
-			}
-		},
-	})
+	if im.shouldRegisterInformer("networking.k8s.io/v1/networkpolicies") {
+		netpolInformer := f.Networking().V1().NetworkPolicies().Informer()
+		im.recordInformer("networking.k8s.io/v1/networkpolicies", netpolInformer)
+		netpolInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				if np, ok := obj.(*networkingv1.NetworkPolicy); ok {
+					im.emitNetworkPolicyDelta(np)
+				}
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if np, ok := newObj.(*networkingv1.NetworkPolicy); ok {
+					im.emitNetworkPolicyDelta(np)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				if np, ok := obj.(*networkingv1.NetworkPolicy); ok {
+					im.emitNetworkPolicyDeleted(np)
+				}
+			},
+		})
+	}
 }
 
 func (im *InformerManager) extractHPADelta(hpa *autoscalingv2.HorizontalPodAutoscaler) types.HPAStatusDelta {
@@ -164,8 +174,15 @@ func (im *InformerManager) emitNetworkPolicyDeleted(np *networkingv1.NetworkPoli
 
 // GetHPASnapshot returns the current cached state of all HorizontalPodAutoscalers
 func (im *InformerManager) GetHPASnapshot() []types.HPAStatusDelta {
-	hpaList := im.factory.Autoscaling().V2().HorizontalPodAutoscalers().Informer().GetStore().List()
-	var hpas []types.HPAStatusDelta
+	if !im.isResourceRegistered("autoscaling/v2/horizontalpodautoscalers") {
+		return nil
+	}
+	f := im.currentFactory()
+	if f == nil {
+		return nil
+	}
+	hpaList := f.Autoscaling().V2().HorizontalPodAutoscalers().Informer().GetStore().List()
+	hpas := make([]types.HPAStatusDelta, 0)
 	for _, obj := range hpaList {
 		if hpa, ok := obj.(*autoscalingv2.HorizontalPodAutoscaler); ok {
 			hpas = append(hpas, im.extractHPADelta(hpa))
@@ -176,8 +193,15 @@ func (im *InformerManager) GetHPASnapshot() []types.HPAStatusDelta {
 
 // GetNetworkPolicySnapshot returns the current cached state of all NetworkPolicies
 func (im *InformerManager) GetNetworkPolicySnapshot() []types.NetworkPolicyStatusDelta {
-	npList := im.factory.Networking().V1().NetworkPolicies().Informer().GetStore().List()
-	var nps []types.NetworkPolicyStatusDelta
+	if !im.isResourceRegistered("networking.k8s.io/v1/networkpolicies") {
+		return nil
+	}
+	f := im.currentFactory()
+	if f == nil {
+		return nil
+	}
+	npList := f.Networking().V1().NetworkPolicies().Informer().GetStore().List()
+	nps := make([]types.NetworkPolicyStatusDelta, 0)
 	for _, obj := range npList {
 		if np, ok := obj.(*networkingv1.NetworkPolicy); ok {
 			nps = append(nps, im.extractNetworkPolicyDelta(np))

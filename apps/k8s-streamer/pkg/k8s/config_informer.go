@@ -217,36 +217,44 @@ func ExtractPodConfigReferences(pod *corev1.Pod) ([]types.PodConfigRef, []types.
 
 // setupConfigInformers registers event handlers for ConfigMaps and Secrets.
 func (im *InformerManager) setupConfigInformers() {
-	cmInformer := im.factory.Core().V1().ConfigMaps().Informer()
-	cmInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if cm, ok := obj.(*corev1.ConfigMap); ok {
-				if !IsInternalConfigMap(cm) {
-					im.emitConfigMapDelta(cm)
+	f := im.currentFactory()
+	if f == nil {
+		return
+	}
+	if im.shouldRegisterInformer("core/v1/configmaps") {
+		cmInformer := f.Core().V1().ConfigMaps().Informer()
+		im.recordInformer("core/v1/configmaps", cmInformer)
+		cmInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				if cm, ok := obj.(*corev1.ConfigMap); ok {
+					if !IsInternalConfigMap(cm) {
+						im.emitConfigMapDelta(cm)
+					}
 				}
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if cm, ok := newObj.(*corev1.ConfigMap); ok {
-				if !IsInternalConfigMap(cm) {
-					im.emitConfigMapDelta(cm)
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if cm, ok := newObj.(*corev1.ConfigMap); ok {
+					if !IsInternalConfigMap(cm) {
+						im.emitConfigMapDelta(cm)
+					}
 				}
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			if cm, ok := obj.(*corev1.ConfigMap); ok {
-				if !IsInternalConfigMap(cm) {
-					im.emitConfigMapDeleted(cm)
+			},
+			DeleteFunc: func(obj interface{}) {
+				if cm, ok := obj.(*corev1.ConfigMap); ok {
+					if !IsInternalConfigMap(cm) {
+						im.emitConfigMapDeleted(cm)
+					}
 				}
-			}
-		},
-	})
+			},
+		})
+	}
 
-	if !im.watchSecrets {
+	if !im.watchSecrets || !im.shouldRegisterInformer("core/v1/secrets") {
 		return
 	}
 
-	secInformer := im.factory.Core().V1().Secrets().Informer()
+	secInformer := f.Core().V1().Secrets().Informer()
+	im.recordInformer("core/v1/secrets", secInformer)
 	secInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			if sec, ok := obj.(*corev1.Secret); ok {
@@ -358,8 +366,15 @@ func (im *InformerManager) emitSecretDeleted(sec *corev1.Secret) {
 }
 
 func (im *InformerManager) getConfigMapsSnapshot() []types.ConfigMapStatusDelta {
-	var result []types.ConfigMapStatusDelta
-	cmList := im.factory.Core().V1().ConfigMaps().Informer().GetStore().List()
+	if !im.isResourceRegistered("core/v1/configmaps") {
+		return nil
+	}
+	result := make([]types.ConfigMapStatusDelta, 0)
+	f := im.currentFactory()
+	if f == nil {
+		return result
+	}
+	cmList := f.Core().V1().ConfigMaps().Informer().GetStore().List()
 	for _, obj := range cmList {
 		if cm, ok := obj.(*corev1.ConfigMap); ok {
 			if !IsInternalConfigMap(cm) {
@@ -371,11 +386,15 @@ func (im *InformerManager) getConfigMapsSnapshot() []types.ConfigMapStatusDelta 
 }
 
 func (im *InformerManager) getSecretsSnapshot() []types.SecretStatusDelta {
-	if !im.watchSecrets {
-		return []types.SecretStatusDelta{}
+	if !im.watchSecrets || !im.isResourceRegistered("core/v1/secrets") {
+		return nil
 	}
-	var result []types.SecretStatusDelta
-	secList := im.factory.Core().V1().Secrets().Informer().GetStore().List()
+	result := make([]types.SecretStatusDelta, 0)
+	f := im.currentFactory()
+	if f == nil {
+		return result
+	}
+	secList := f.Core().V1().Secrets().Informer().GetStore().List()
 	for _, obj := range secList {
 		if sec, ok := obj.(*corev1.Secret); ok {
 			if !IsInternalSecret(sec) {

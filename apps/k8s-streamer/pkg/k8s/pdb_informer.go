@@ -13,7 +13,15 @@ import (
 
 // setupPDBInformers attaches Informer event handlers for PodDisruptionBudgets (policy/v1)
 func (im *InformerManager) setupPDBInformers() {
-	pdbInformer := im.factory.Policy().V1().PodDisruptionBudgets().Informer()
+	if !im.shouldRegisterInformer("policy/v1/poddisruptionbudgets") {
+		return
+	}
+	f := im.currentFactory()
+	if f == nil {
+		return
+	}
+	pdbInformer := f.Policy().V1().PodDisruptionBudgets().Informer()
+	im.recordInformer("policy/v1/poddisruptionbudgets", pdbInformer)
 	pdbInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			if pdb, ok := obj.(*policyv1.PodDisruptionBudget); ok {
@@ -84,8 +92,15 @@ func (im *InformerManager) emitPDBDeleted(pdb *policyv1.PodDisruptionBudget) {
 
 // GetPDBSnapshot returns the current cached state of all PodDisruptionBudgets for this cluster
 func (im *InformerManager) GetPDBSnapshot() []types.PDBStatusDelta {
-	pdbList := im.factory.Policy().V1().PodDisruptionBudgets().Informer().GetStore().List()
-	var pdbs []types.PDBStatusDelta
+	if !im.isResourceRegistered("policy/v1/poddisruptionbudgets") {
+		return nil
+	}
+	f := im.currentFactory()
+	if f == nil {
+		return nil
+	}
+	pdbList := f.Policy().V1().PodDisruptionBudgets().Informer().GetStore().List()
+	pdbs := make([]types.PDBStatusDelta, 0)
 	for _, obj := range pdbList {
 		if pdb, ok := obj.(*policyv1.PodDisruptionBudget); ok {
 			pdbs = append(pdbs, im.extractPDBDelta(pdb))
@@ -96,7 +111,14 @@ func (im *InformerManager) GetPDBSnapshot() []types.PDBStatusDelta {
 
 // CheckWorkloadPDB looks up whether a target workload or pod is governed by an active PDB
 func (im *InformerManager) CheckWorkloadPDB(namespace string, workloadName string, targetLabels map[string]string) (*types.PDBStatusDelta, bool) {
-	pdbList := im.factory.Policy().V1().PodDisruptionBudgets().Informer().GetStore().List()
+	if !im.isResourceRegistered("policy/v1/poddisruptionbudgets") {
+		return nil, false
+	}
+	f := im.currentFactory()
+	if f == nil {
+		return nil, false
+	}
+	pdbList := f.Policy().V1().PodDisruptionBudgets().Informer().GetStore().List()
 	workloadLower := strings.ToLower(workloadName)
 
 	for _, obj := range pdbList {

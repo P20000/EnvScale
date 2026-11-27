@@ -74,24 +74,35 @@ func ExtractPodVolumeClaims(pod *corev1.Pod) []types.PodVolumeMountInfo {
 
 // setupStorageInformers initializes informers for PersistentVolumeClaims and PersistentVolumes.
 func (im *InformerManager) setupStorageInformers() {
-	pvcInformer := im.factory.Core().V1().PersistentVolumeClaims().Informer()
-	pvcInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if pvc, ok := obj.(*corev1.PersistentVolumeClaim); ok {
-				im.emitPVCDelta(pvc)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if pvc, ok := newObj.(*corev1.PersistentVolumeClaim); ok {
-				im.emitPVCDelta(pvc)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			if pvc, ok := obj.(*corev1.PersistentVolumeClaim); ok {
-				im.emitPVCDeleted(pvc)
-			}
-		},
-	})
+	f := im.currentFactory()
+	if f == nil {
+		return
+	}
+	if im.shouldRegisterInformer("core/v1/persistentvolumeclaims") {
+		pvcInformer := f.Core().V1().PersistentVolumeClaims().Informer()
+		im.recordInformer("core/v1/persistentvolumeclaims", pvcInformer)
+		pvcInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				if pvc, ok := obj.(*corev1.PersistentVolumeClaim); ok {
+					im.emitPVCDelta(pvc)
+				}
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if pvc, ok := newObj.(*corev1.PersistentVolumeClaim); ok {
+					im.emitPVCDelta(pvc)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				if pvc, ok := obj.(*corev1.PersistentVolumeClaim); ok {
+					im.emitPVCDeleted(pvc)
+				}
+			},
+		})
+	}
+
+	if !im.shouldRegisterInformer("core/v1/persistentvolumes") {
+		return
+	}
 
 	// Wrap PV informer defensively to avoid panics on restricted namespace RBAC clusters
 	defer func() {
@@ -100,7 +111,8 @@ func (im *InformerManager) setupStorageInformers() {
 		}
 	}()
 
-	pvInformer := im.factory.Core().V1().PersistentVolumes().Informer()
+	pvInformer := f.Core().V1().PersistentVolumes().Informer()
+	im.recordInformer("core/v1/persistentvolumes", pvInformer)
 	pvInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			if pv, ok := obj.(*corev1.PersistentVolume); ok {
@@ -270,8 +282,15 @@ func (im *InformerManager) emitPVDeleted(pv *corev1.PersistentVolume) {
 
 // getPVCSnapshot returns all PersistentVolumeClaims currently in the informer cache.
 func (im *InformerManager) getPVCSnapshot() []types.PVCStatusDelta {
-	var pvcs []types.PVCStatusDelta
-	pvcList := im.factory.Core().V1().PersistentVolumeClaims().Informer().GetStore().List()
+	if !im.isResourceRegistered("core/v1/persistentvolumeclaims") {
+		return nil
+	}
+	pvcs := make([]types.PVCStatusDelta, 0)
+	f := im.currentFactory()
+	if f == nil {
+		return pvcs
+	}
+	pvcList := f.Core().V1().PersistentVolumeClaims().Informer().GetStore().List()
 	for _, obj := range pvcList {
 		if pvc, ok := obj.(*corev1.PersistentVolumeClaim); ok {
 			pvcs = append(pvcs, im.extractPVCDelta(pvc))
@@ -282,14 +301,21 @@ func (im *InformerManager) getPVCSnapshot() []types.PVCStatusDelta {
 
 // getPVSnapshot returns all PersistentVolumes currently in the informer cache.
 func (im *InformerManager) getPVSnapshot() []types.PVStatusDelta {
-	var pvs []types.PVStatusDelta
+	if !im.isResourceRegistered("core/v1/persistentvolumes") {
+		return nil
+	}
+	pvs := make([]types.PVStatusDelta, 0)
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("[K8s Informer] Warning: Failed to query PV snapshot: %v", r)
 		}
 	}()
 
-	pvList := im.factory.Core().V1().PersistentVolumes().Informer().GetStore().List()
+	f := im.currentFactory()
+	if f == nil {
+		return pvs
+	}
+	pvList := f.Core().V1().PersistentVolumes().Informer().GetStore().List()
 	for _, obj := range pvList {
 		if pv, ok := obj.(*corev1.PersistentVolume); ok {
 			pvs = append(pvs, im.extractPVDelta(pv))

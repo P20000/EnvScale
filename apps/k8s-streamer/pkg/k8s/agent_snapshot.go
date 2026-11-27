@@ -9,17 +9,39 @@ import (
 	"github.com/EnvScale/k8s-streamer/pkg/types"
 )
 
+// AgentClusterMeta summarizes connection & protocol state without exposing full snapshot slices.
+type AgentClusterMeta struct {
+	ClusterID         string          `json:"clusterId"`
+	SessionID         string          `json:"sessionId"`
+	SnapshotSessionID string          `json:"snapshotSessionId,omitempty"`
+	Connected         bool            `json:"connected"`
+	HasSnapshot       bool            `json:"hasSnapshot"`
+	EverSynced        bool            `json:"everSynced"`
+	LastSeen          time.Time       `json:"lastSeen"`
+	ProtocolVersion   string          `json:"protocolVersion"`
+	AgentVersion      string          `json:"agentVersion,omitempty"`
+	SyncedResources   map[string]bool `json:"syncedResources,omitempty"`
+}
+
 // AgentClusterState stores the in-memory cached snapshot and status of an agent-connected cluster
 type AgentClusterState struct {
-	ClusterID string
-	SessionID string
-	Snapshot  types.ClusterSnapshot
-	LastSeen  time.Time
-	Connected bool
-	mu        sync.RWMutex
+	ClusterID         string
+	SessionID         string
+	SnapshotSessionID string
+	ProtocolVersion   string
+	AgentVersion      string
+	Snapshot          types.ClusterSnapshot
+	SyncedResources   map[string]bool
+	HasSnapshot       bool
+	EverSynced        bool
+	LastSeen          time.Time
+	Connected         bool
+	mu                sync.RWMutex
 }
 
 // RegisterSession marks the active streaming session for clusterID as connected.
+// When a new session reconnects after a prior session, any previous session's snapshot is cleared
+// so stale data cannot be served as fresh connected state.
 func (ar *AgentRegistry) RegisterSession(clusterID, sessionID string) {
 	if clusterID == "" {
 		return
@@ -30,16 +52,76 @@ func (ar *AgentRegistry) RegisterSession(clusterID, sessionID string) {
 	state, ok := ar.clusters[clusterID]
 	if !ok {
 		state = &AgentClusterState{
-			ClusterID: clusterID,
+			ClusterID:       clusterID,
+			ProtocolVersion: "1.0",
 		}
 		ar.clusters[clusterID] = state
 	}
 
 	state.mu.Lock()
+	if state.SessionID != "" && sessionID != "" && state.SessionID != sessionID {
+		state.HasSnapshot = false
+		state.SnapshotSessionID = ""
+		state.Snapshot = types.ClusterSnapshot{}
+		state.SyncedResources = nil
+	}
 	state.SessionID = sessionID
+	if state.ProtocolVersion == "" {
+		state.ProtocolVersion = "1.0"
+	}
 	state.LastSeen = time.Now()
 	state.Connected = true
 	state.mu.Unlock()
+}
+
+// HasCluster reports whether clusterID exists in the agent registry (connected or previously registered).
+func (ar *AgentRegistry) HasCluster(clusterID string) bool {
+	if clusterID == "" {
+		return false
+	}
+	ar.mu.RLock()
+	_, ok := ar.clusters[clusterID]
+	ar.mu.RUnlock()
+	return ok
+}
+
+// GetStateMeta retrieves connection and protocol metadata strictly for clusterID.
+func (ar *AgentRegistry) GetStateMeta(clusterID string) (AgentClusterMeta, bool) {
+	if clusterID == "" {
+		return AgentClusterMeta{}, false
+	}
+	ar.mu.RLock()
+	state, ok := ar.clusters[clusterID]
+	ar.mu.RUnlock()
+	if !ok || state == nil {
+		return AgentClusterMeta{}, false
+	}
+
+	state.mu.RLock()
+	defer state.mu.RUnlock()
+	proto := state.ProtocolVersion
+	if proto == "" {
+		proto = "1.0"
+	}
+	var syncedCopy map[string]bool
+	if len(state.SyncedResources) > 0 {
+		syncedCopy = make(map[string]bool, len(state.SyncedResources))
+		for k, v := range state.SyncedResources {
+			syncedCopy[k] = v
+		}
+	}
+	return AgentClusterMeta{
+		ClusterID:         state.ClusterID,
+		SessionID:         state.SessionID,
+		SnapshotSessionID: state.SnapshotSessionID,
+		Connected:         state.Connected,
+		HasSnapshot:       state.HasSnapshot,
+		EverSynced:        state.EverSynced,
+		LastSeen:          state.LastSeen,
+		ProtocolVersion:   proto,
+		AgentVersion:      state.AgentVersion,
+		SyncedResources:   syncedCopy,
+	}, true
 }
 
 // MarkDisconnectedSession marks clusterID disconnected only if sessionID still owns the active connection.
@@ -80,8 +162,94 @@ func NewAgentRegistry() *AgentRegistry {
 	}
 }
 
+func cloneSlice[T any](in []T) []T {
+	if in == nil {
+		return nil
+	}
+	out := make([]T, len(in))
+	copy(out, in)
+	return out
+}
+
+func cloneClusterSnapshot(s types.ClusterSnapshot) types.ClusterSnapshot {
+	return types.ClusterSnapshot{
+		Pods:                   cloneSlice(s.Pods),
+		Nodes:                  cloneSlice(s.Nodes),
+		Services:               cloneSlice(s.Services),
+		Deployments:            cloneSlice(s.Deployments),
+		ReplicaSets:            cloneSlice(s.ReplicaSets),
+		StatefulSets:           cloneSlice(s.StatefulSets),
+		DaemonSets:             cloneSlice(s.DaemonSets),
+		Ingresses:              cloneSlice(s.Ingresses),
+		Incidents:              cloneSlice(s.Incidents),
+		CronJobs:               cloneSlice(s.CronJobs),
+		Jobs:                   cloneSlice(s.Jobs),
+		PVCs:                   cloneSlice(s.PVCs),
+		PVs:                    cloneSlice(s.PVs),
+		ConfigMaps:             cloneSlice(s.ConfigMaps),
+		Secrets:                cloneSlice(s.Secrets),
+		HPAs:                   cloneSlice(s.HPAs),
+		NetworkPolicies:        cloneSlice(s.NetworkPolicies),
+		PDBs:                   cloneSlice(s.PDBs),
+		ResourceQuotas:         cloneSlice(s.ResourceQuotas),
+		LimitRanges:            cloneSlice(s.LimitRanges),
+		VolumeSnapshots:        cloneSlice(s.VolumeSnapshots),
+		VolumeSnapshotContents: cloneSlice(s.VolumeSnapshotContents),
+		ServiceAccounts:        cloneSlice(s.ServiceAccounts),
+		RoleBindings:           cloneSlice(s.RoleBindings),
+		ClusterRoleBindings:    cloneSlice(s.ClusterRoleBindings),
+		Roles:                  cloneSlice(s.Roles),
+		ClusterRoles:           cloneSlice(s.ClusterRoles),
+	}
+}
+
+func computeSyncedResources(s types.ClusterSnapshot) map[string]bool {
+	synced := make(map[string]bool)
+	mark := func(key string, present bool) {
+		if present {
+			synced[key] = true
+		}
+	}
+	mark("core/v1/pods", s.Pods != nil)
+	mark("core/v1/nodes", s.Nodes != nil)
+	mark("core/v1/services", s.Services != nil)
+	mark("apps/v1/deployments", s.Deployments != nil)
+	mark("apps/v1/replicasets", s.ReplicaSets != nil)
+	mark("apps/v1/statefulsets", s.StatefulSets != nil)
+	mark("apps/v1/daemonsets", s.DaemonSets != nil)
+	mark("networking.k8s.io/v1/ingresses", s.Ingresses != nil)
+	mark("core/v1/events", s.Incidents != nil)
+	mark("batch/v1/cronjobs", s.CronJobs != nil)
+	mark("batch/v1/jobs", s.Jobs != nil)
+	mark("core/v1/persistentvolumeclaims", s.PVCs != nil)
+	mark("core/v1/persistentvolumes", s.PVs != nil)
+	mark("core/v1/configmaps", s.ConfigMaps != nil)
+	mark("core/v1/secrets", s.Secrets != nil)
+	mark("autoscaling/v2/horizontalpodautoscalers", s.HPAs != nil)
+	mark("networking.k8s.io/v1/networkpolicies", s.NetworkPolicies != nil)
+	mark("policy/v1/poddisruptionbudgets", s.PDBs != nil)
+	mark("core/v1/resourcequotas", s.ResourceQuotas != nil)
+	mark("core/v1/limitranges", s.LimitRanges != nil)
+	mark("snapshot.storage.k8s.io/v1/volumesnapshots", s.VolumeSnapshots != nil)
+	mark("snapshot.storage.k8s.io/v1/volumesnapshotcontents", s.VolumeSnapshotContents != nil)
+	mark("core/v1/serviceaccounts", s.ServiceAccounts != nil)
+	mark("rbac.authorization.k8s.io/v1/rolebindings", s.RoleBindings != nil)
+	mark("rbac.authorization.k8s.io/v1/clusterrolebindings", s.ClusterRoleBindings != nil)
+	mark("rbac.authorization.k8s.io/v1/roles", s.Roles != nil)
+	mark("rbac.authorization.k8s.io/v1/clusterroles", s.ClusterRoles != nil)
+	return synced
+}
+
 // SetSnapshot registers or updates a complete baseline snapshot for an agent cluster
 func (ar *AgentRegistry) SetSnapshot(clusterID string, snapshot types.ClusterSnapshot) {
+	_ = ar.SetSnapshotForSession(clusterID, "", snapshot)
+}
+
+// SetSnapshotForSession updates the baseline snapshot only if sessionID owns the active session (or sessionID == "").
+func (ar *AgentRegistry) SetSnapshotForSession(clusterID, sessionID string, snapshot types.ClusterSnapshot) bool {
+	if clusterID == "" {
+		return false
+	}
 	ar.mu.Lock()
 	defer ar.mu.Unlock()
 
@@ -94,16 +262,31 @@ func (ar *AgentRegistry) SetSnapshot(clusterID string, snapshot types.ClusterSna
 	}
 
 	state.mu.Lock()
-	state.Snapshot = snapshot
+	defer state.mu.Unlock()
+	if state.SessionID != "" && sessionID != "" && state.SessionID != sessionID {
+		return false
+	}
+	state.Snapshot = cloneClusterSnapshot(snapshot)
+	state.SyncedResources = computeSyncedResources(snapshot)
+	state.HasSnapshot = true
+	state.EverSynced = true
+	if sessionID != "" {
+		state.SnapshotSessionID = sessionID
+	} else {
+		state.SnapshotSessionID = state.SessionID
+	}
+	if state.ProtocolVersion == "" {
+		state.ProtocolVersion = "1.0"
+	}
 	state.LastSeen = time.Now()
 	state.Connected = true
-	state.mu.Unlock()
 
 	log.Printf("[AgentRegistry] Registered snapshot for cluster '%s' (%d pods, %d nodes, %d services)",
 		clusterID, len(snapshot.Pods), len(snapshot.Nodes), len(snapshot.Services))
+	return true
 }
 
-// GetSnapshot retrieves the snapshot strictly for the requested clusterID.
+// GetSnapshot retrieves an isolated deep-copied snapshot strictly for the requested clusterID.
 func (ar *AgentRegistry) GetSnapshot(clusterID string) (*types.ClusterSnapshot, bool) {
 	if clusterID == "" {
 		return nil, false
@@ -112,16 +295,39 @@ func (ar *AgentRegistry) GetSnapshot(clusterID string) (*types.ClusterSnapshot, 
 	state, ok := ar.clusters[clusterID]
 	ar.mu.RUnlock()
 
-	if !ok || state == nil {
+	if !ok || state == nil || !state.HasSnapshot {
 		return nil, false
 	}
 
 	state.mu.RLock()
 	defer state.mu.RUnlock()
+	if !state.HasSnapshot {
+		return nil, false
+	}
 
-	// Return a copy
-	cp := state.Snapshot
+	cp := cloneClusterSnapshot(state.Snapshot)
 	return &cp, true
+}
+
+// UnregisterCluster removes an agent-connected cluster from the registry.
+func (ar *AgentRegistry) UnregisterCluster(clusterID string) bool {
+	if clusterID == "" {
+		return false
+	}
+	ar.mu.Lock()
+	defer ar.mu.Unlock()
+	if _, ok := ar.clusters[clusterID]; !ok {
+		return false
+	}
+	delete(ar.clusters, clusterID)
+	return true
+}
+
+// Clear removes all agent-connected cluster entries from the registry.
+func (ar *AgentRegistry) Clear() {
+	ar.mu.Lock()
+	defer ar.mu.Unlock()
+	ar.clusters = make(map[string]*AgentClusterState)
 }
 
 // MarkDisconnected flags the agent cluster as disconnected
@@ -153,6 +359,11 @@ func (ar *AgentRegistry) IsConnected(clusterID string) bool {
 
 // ApplyDelta updates the cached snapshot in real-time when delta events arrive
 func (ar *AgentRegistry) ApplyDelta(clusterID string, eventType string, rawData []byte) {
+	ar.ApplyDeltaForSession(clusterID, "", eventType, rawData)
+}
+
+// ApplyDeltaForSession applies a live delta only if sessionID matches the active session and a baseline snapshot exists.
+func (ar *AgentRegistry) ApplyDeltaForSession(clusterID, sessionID, eventType string, rawData []byte) {
 	ar.mu.RLock()
 	state, ok := ar.clusters[clusterID]
 	ar.mu.RUnlock()
@@ -163,6 +374,12 @@ func (ar *AgentRegistry) ApplyDelta(clusterID string, eventType string, rawData 
 
 	state.mu.Lock()
 	defer state.mu.Unlock()
+	if state.SessionID != "" && sessionID != "" && state.SessionID != sessionID {
+		return
+	}
+	if !state.HasSnapshot {
+		return
+	}
 	state.LastSeen = time.Now()
 
 	switch eventType {
@@ -185,7 +402,7 @@ func (ar *AgentRegistry) ApplyDelta(clusterID string, eventType string, rawData 
 	case types.EventPodDeleted:
 		var pod types.PodStatusDelta
 		if err := json.Unmarshal(rawData, &pod); err == nil {
-			filtered := state.Snapshot.Pods[:0]
+			filtered := make([]types.PodStatusDelta, 0, len(state.Snapshot.Pods))
 			for _, p := range state.Snapshot.Pods {
 				if !(p.Name == pod.Name && p.Namespace == pod.Namespace) {
 					filtered = append(filtered, p)
@@ -229,7 +446,7 @@ func (ar *AgentRegistry) ApplyDelta(clusterID string, eventType string, rawData 
 	case types.EventDeploymentDeleted:
 		var dep types.DeploymentStatusDelta
 		if err := json.Unmarshal(rawData, &dep); err == nil {
-			filtered := state.Snapshot.Deployments[:0]
+			filtered := make([]types.DeploymentStatusDelta, 0, len(state.Snapshot.Deployments))
 			for _, d := range state.Snapshot.Deployments {
 				if !(d.Name == dep.Name && d.Namespace == dep.Namespace) {
 					filtered = append(filtered, d)
@@ -260,23 +477,30 @@ func (ar *AgentRegistry) ApplyDelta(clusterID string, eventType string, rawData 
 func BuildClusterSnapshot(im *InformerManager) types.ClusterSnapshot {
 	pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, cronJobs, jobs, pvcs, pvs, configMaps, secrets := im.GetSnapshot()
 	return types.ClusterSnapshot{
-		Pods:            pods,
-		Nodes:           nodes,
-		Services:        services,
-		Deployments:     deployments,
-		ReplicaSets:     replicaSets,
-		StatefulSets:    statefulSets,
-		DaemonSets:      daemonSets,
-		Ingresses:       ingresses,
-		Incidents:       incidents,
-		CronJobs:        cronJobs,
-		Jobs:            jobs,
-		PVCs:            pvcs,
-		PVs:             pvs,
-		ConfigMaps:      configMaps,
-		Secrets:         secrets,
-		HPAs:            im.GetHPASnapshot(),
-		NetworkPolicies: im.GetNetworkPolicySnapshot(),
-		PDBs:            im.GetPDBSnapshot(),
+		Pods:                pods,
+		Nodes:               nodes,
+		Services:            services,
+		Deployments:         deployments,
+		ReplicaSets:         replicaSets,
+		StatefulSets:        statefulSets,
+		DaemonSets:          daemonSets,
+		Ingresses:           ingresses,
+		Incidents:           incidents,
+		CronJobs:            cronJobs,
+		Jobs:                jobs,
+		PVCs:                pvcs,
+		PVs:                 pvs,
+		ConfigMaps:          configMaps,
+		Secrets:             secrets,
+		HPAs:                im.GetHPASnapshot(),
+		NetworkPolicies:     im.GetNetworkPolicySnapshot(),
+		PDBs:                im.GetPDBSnapshot(),
+		ResourceQuotas:      im.GetResourceQuotaSnapshot(),
+		LimitRanges:         im.GetLimitRangeSnapshot(),
+		ServiceAccounts:     im.GetServiceAccountsSnapshot(),
+		RoleBindings:        im.GetRoleBindingsSnapshot(),
+		ClusterRoleBindings: im.GetClusterRoleBindingsSnapshot(),
+		Roles:               im.GetRolesSnapshot(),
+		ClusterRoles:        im.GetClusterRolesSnapshot(),
 	}
 }

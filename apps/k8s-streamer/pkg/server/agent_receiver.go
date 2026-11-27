@@ -62,7 +62,7 @@ func HandleAgentWebSocket(hub *ws.Hub, clusterManager *k8s.ClusterManager, w htt
 	defer conn.Close()
 
 	sessionID := fmt.Sprintf("agent-sess-%d-%d", time.Now().UnixNano(), agentSessionSeq.Add(1))
-	clusterManager.AgentRegistry().RegisterSession(clusterID, sessionID)
+	clusterManager.PromoteToAgentSession(clusterID, sessionID)
 	log.Printf("[AgentReceiver] Agent connected for cluster '%s' (session=%s) from %s", clusterID, sessionID, r.RemoteAddr)
 
 	conn.SetReadLimit(16 * 1024 * 1024) // 16 MB max for high-density snapshots
@@ -110,9 +110,10 @@ func HandleAgentWebSocket(hub *ws.Hub, clusterManager *k8s.ClusterManager, w htt
 		if evt == "EVENT_SNAPSHOT_SYNC" {
 			var snapshot types.ClusterSnapshot
 			if err := json.Unmarshal(envelope.Data, &snapshot); err == nil {
-				clusterManager.AgentRegistry().SetSnapshot(clusterID, snapshot)
-				// Broadcast snapshot to frontend web clients listening on this room
-				hub.RouteRaw(clusterID, message)
+				if clusterManager.AgentRegistry().SetSnapshotForSession(clusterID, sessionID, snapshot) {
+					// Broadcast snapshot to frontend web clients listening on this room
+					hub.RouteRaw(clusterID, message)
+				}
 			} else {
 				log.Printf("[AgentReceiver] Error parsing snapshot from cluster %s: %v", clusterID, err)
 			}
@@ -125,7 +126,7 @@ func HandleAgentWebSocket(hub *ws.Hub, clusterManager *k8s.ClusterManager, w htt
 		}
 
 		// Live delta event (pod, node, deployment mutated/added/deleted)
-		clusterManager.AgentRegistry().ApplyDelta(clusterID, evt, envelope.Data)
+		clusterManager.AgentRegistry().ApplyDeltaForSession(clusterID, sessionID, evt, envelope.Data)
 		hub.RouteRaw(clusterID, message)
 	}
 }

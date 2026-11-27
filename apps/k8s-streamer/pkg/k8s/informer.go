@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -23,6 +24,8 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 )
 
+var informerGenSeq atomic.Uint64
+
 // InformerManager manages client-go SharedInformerFactory for Pods, Nodes, and Services
 type InformerManager struct {
 	clientset       kubernetes.Interface
@@ -32,13 +35,30 @@ type InformerManager struct {
 	factory         informers.SharedInformerFactory
 	hub             *websocket.Hub
 	clusterID       string
+	generation      uint64
 	stopCh          chan struct{}
+	stopOnce        sync.Once
+	factoryStopCh   chan struct{}
+	factoryStopOnce *sync.Once
+	readyCh         chan struct{}
+	readyOnce       *sync.Once
+	reconcileMu     sync.Mutex
+	started         bool
+	stopped         bool
 	running         bool
 	mu              sync.RWMutex
 	dedup           *DedupCache
 	metricsHistory  []types.ClusterMetricPoint
 	metricsMu       sync.RWMutex
 	watchSecrets    bool
+	metricsAllowed  *bool
+	allowedResources    map[string]bool
+	registeredResources map[string]bool
+	activeResources     map[string]bool
+	syncedByKey         map[string]cache.InformerSynced
+	lastSyncAt          time.Time
+	vsInformer          cache.SharedIndexInformer
+	vscInformer         cache.SharedIndexInformer
 }
 
 // NewInformerManager creates an InformerManager from raw Kubeconfig bytes
@@ -134,208 +154,287 @@ func NewInformerManagerWithClientsets(clientset kubernetes.Interface, metricsCli
 	factory := informers.NewSharedInformerFactory(clientset, 30*time.Second)
 
 	return &InformerManager{
-		clientset:     clientset,
-		metricsClient: metricsClient,
-		factory:       factory,
-		hub:           hub,
-		clusterID:     clusterID,
-		stopCh:        make(chan struct{}),
-		running:       false,
-		dedup:         NewDedupCache(),
+		clientset:           clientset,
+		metricsClient:       metricsClient,
+		factory:             factory,
+		hub:                 hub,
+		clusterID:           clusterID,
+		generation:          informerGenSeq.Add(1),
+		stopCh:              make(chan struct{}),
+		factoryStopCh:       make(chan struct{}),
+		factoryStopOnce:     &sync.Once{},
+		readyCh:             make(chan struct{}),
+		readyOnce:           &sync.Once{},
+		running:             false,
+		dedup:               NewDedupCache(),
+		registeredResources: make(map[string]bool),
+		activeResources:     make(map[string]bool),
+		syncedByKey:         make(map[string]cache.InformerSynced),
 	}
 }
 
-// Start registers Informer handlers and begins watching Pods, Nodes, and Services synchronously
+// Start registers Informer handlers and begins watching permitted resources.
 func (im *InformerManager) Start(stopCh <-chan struct{}) {
+	im.reconcileMu.Lock()
+	defer im.reconcileMu.Unlock()
+
 	im.mu.Lock()
+	if im.stopped || im.started {
+		im.mu.Unlock()
+		return
+	}
+	im.started = true
 	im.running = true
+	readyOnce := im.readyOnce
+	readyCh := im.readyCh
+	mgrStopCh := im.stopCh
 	im.mu.Unlock()
 
-	podInformer := im.factory.Core().V1().Pods().Informer()
-	nodeInformer := im.factory.Core().V1().Nodes().Informer()
-	serviceInformer := im.factory.Core().V1().Services().Informer()
+	if stopCh != nil && stopCh != mgrStopCh {
+		go func() {
+			select {
+			case <-stopCh:
+				im.Stop()
+			case <-mgrStopCh:
+			}
+		}()
+	}
 
-	podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if pod, ok := obj.(*corev1.Pod); ok {
-				im.emitPodDelta(pod)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if pod, ok := newObj.(*corev1.Pod); ok {
-				im.emitPodDelta(pod)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			pod := im.resolvePodObject(obj)
-			if pod != nil {
-				delta := im.extractPodDelta(pod)
-				delta.Phase = "Terminated"
-				im.dedup.Remove(fmt.Sprintf("Pod/%s/%s", pod.Namespace, pod.Name))
-				im.hub.BroadcastEvent(types.EventPodStatusChanged, im.clusterID, delta)
-				im.hub.BroadcastEvent(types.EventPodDeleted, im.clusterID, map[string]interface{}{
-					"podId":     pod.Name,
-					"name":      pod.Name,
-					"namespace": pod.Namespace,
-				})
-			}
-		},
-	})
+	im.registerAllowedInformers()
+	if readyOnce != nil {
+		readyOnce.Do(func() { close(readyCh) })
+	}
 
-	nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if node, ok := obj.(*corev1.Node); ok {
-				im.emitNodeDelta(node)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if node, ok := newObj.(*corev1.Node); ok {
-				im.emitNodeDelta(node)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			node := im.resolveNodeObject(obj)
-			if node != nil {
-				delta := types.NodeStatusDelta{
-					Name:   node.Name,
-					Status: "Terminated",
-					Labels: node.Labels,
+	if im.IsStopped() {
+		return
+	}
+
+	if f := im.currentFactory(); f != nil {
+		f.Start(im.currentFactoryStopCh())
+	}
+	go im.startMetricsPulse(mgrStopCh)
+	log.Printf("[K8s Informer] Informers started for cluster: %s", im.clusterID)
+}
+
+func (im *InformerManager) registerAllowedInformers() {
+	f := im.currentFactory()
+	if f == nil {
+		return
+	}
+	if im.shouldRegisterInformer("core/v1/pods") {
+		podInformer := f.Core().V1().Pods().Informer()
+		im.recordInformer("core/v1/pods", podInformer)
+		podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				if pod, ok := obj.(*corev1.Pod); ok {
+					im.emitPodDelta(pod)
 				}
-				im.hub.BroadcastEvent(types.EventNodeMutated, im.clusterID, delta)
-			}
-		},
-	})
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if pod, ok := newObj.(*corev1.Pod); ok {
+					im.emitPodDelta(pod)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				pod := im.resolvePodObject(obj)
+				if pod != nil {
+					delta := im.extractPodDelta(pod)
+					delta.Phase = "Terminated"
+					im.dedup.Remove(fmt.Sprintf("Pod/%s/%s", pod.Namespace, pod.Name))
+					im.hub.BroadcastEvent(types.EventPodStatusChanged, im.clusterID, delta)
+					im.hub.BroadcastEvent(types.EventPodDeleted, im.clusterID, map[string]interface{}{
+						"podId":     pod.Name,
+						"name":      pod.Name,
+						"namespace": pod.Namespace,
+					})
+				}
+			},
+		})
+	}
 
-	serviceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if svc, ok := obj.(*corev1.Service); ok {
-				im.emitServiceDelta(svc)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if svc, ok := newObj.(*corev1.Service); ok {
-				im.emitServiceDelta(svc)
-			}
-		},
-	})
+	if im.shouldRegisterInformer("core/v1/nodes") {
+		nodeInformer := f.Core().V1().Nodes().Informer()
+		im.recordInformer("core/v1/nodes", nodeInformer)
+		nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				if node, ok := obj.(*corev1.Node); ok {
+					im.emitNodeDelta(node)
+				}
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if node, ok := newObj.(*corev1.Node); ok {
+					im.emitNodeDelta(node)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				node := im.resolveNodeObject(obj)
+				if node != nil {
+					delta := types.NodeStatusDelta{
+						Name:   node.Name,
+						Status: "Terminated",
+						Labels: node.Labels,
+					}
+					im.hub.BroadcastEvent(types.EventNodeMutated, im.clusterID, delta)
+				}
+			},
+		})
+	}
 
-	deploymentInformer := im.factory.Apps().V1().Deployments().Informer()
-	deploymentInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if dep, ok := obj.(*appsv1.Deployment); ok {
-				im.emitDeploymentDelta(dep)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if dep, ok := newObj.(*appsv1.Deployment); ok {
-				im.emitDeploymentDelta(dep)
-			}
-		},
-	})
+	if im.shouldRegisterInformer("core/v1/services") {
+		serviceInformer := f.Core().V1().Services().Informer()
+		im.recordInformer("core/v1/services", serviceInformer)
+		serviceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				if svc, ok := obj.(*corev1.Service); ok {
+					im.emitServiceDelta(svc)
+				}
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if svc, ok := newObj.(*corev1.Service); ok {
+					im.emitServiceDelta(svc)
+				}
+			},
+		})
+	}
 
-	replicaSetInformer := im.factory.Apps().V1().ReplicaSets().Informer()
-	replicaSetInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if rs, ok := obj.(*appsv1.ReplicaSet); ok {
-				im.emitReplicaSetDelta(rs)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if rs, ok := newObj.(*appsv1.ReplicaSet); ok {
-				im.emitReplicaSetDelta(rs)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			if rs, ok := obj.(*appsv1.ReplicaSet); ok {
-				im.emitReplicaSetDeleted(rs)
-			}
-		},
-	})
+	if im.shouldRegisterInformer("apps/v1/deployments") {
+		deploymentInformer := f.Apps().V1().Deployments().Informer()
+		im.recordInformer("apps/v1/deployments", deploymentInformer)
+		deploymentInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				if dep, ok := obj.(*appsv1.Deployment); ok {
+					im.emitDeploymentDelta(dep)
+				}
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if dep, ok := newObj.(*appsv1.Deployment); ok {
+					im.emitDeploymentDelta(dep)
+				}
+			},
+		})
+	}
 
-	statefulSetInformer := im.factory.Apps().V1().StatefulSets().Informer()
-	statefulSetInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if sts, ok := obj.(*appsv1.StatefulSet); ok {
-				im.emitStatefulSetDelta(sts)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if sts, ok := newObj.(*appsv1.StatefulSet); ok {
-				im.emitStatefulSetDelta(sts)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			if sts, ok := obj.(*appsv1.StatefulSet); ok {
-				im.emitStatefulSetDeleted(sts)
-			}
-		},
-	})
+	if im.shouldRegisterInformer("apps/v1/replicasets") {
+		replicaSetInformer := f.Apps().V1().ReplicaSets().Informer()
+		im.recordInformer("apps/v1/replicasets", replicaSetInformer)
+		replicaSetInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				if rs, ok := obj.(*appsv1.ReplicaSet); ok {
+					im.emitReplicaSetDelta(rs)
+				}
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if rs, ok := newObj.(*appsv1.ReplicaSet); ok {
+					im.emitReplicaSetDelta(rs)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				if rs, ok := obj.(*appsv1.ReplicaSet); ok {
+					im.emitReplicaSetDeleted(rs)
+				}
+			},
+		})
+	}
 
-	ingressInformer := im.factory.Networking().V1().Ingresses().Informer()
-	ingressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if ing, ok := obj.(*networkingv1.Ingress); ok {
-				im.emitIngressDelta(ing)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if ing, ok := newObj.(*networkingv1.Ingress); ok {
-				im.emitIngressDelta(ing)
-			}
-		},
-	})
+	if im.shouldRegisterInformer("apps/v1/statefulsets") {
+		statefulSetInformer := f.Apps().V1().StatefulSets().Informer()
+		im.recordInformer("apps/v1/statefulsets", statefulSetInformer)
+		statefulSetInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				if sts, ok := obj.(*appsv1.StatefulSet); ok {
+					im.emitStatefulSetDelta(sts)
+				}
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if sts, ok := newObj.(*appsv1.StatefulSet); ok {
+					im.emitStatefulSetDelta(sts)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				if sts, ok := obj.(*appsv1.StatefulSet); ok {
+					im.emitStatefulSetDeleted(sts)
+				}
+			},
+		})
+	}
 
-	eventInformer := im.factory.Core().V1().Events().Informer()
-	eventInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if evt, ok := obj.(*corev1.Event); ok {
-				im.emitK8sIncidentEvent(evt)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if evt, ok := newObj.(*corev1.Event); ok {
-				im.emitK8sIncidentEvent(evt)
-			}
-		},
-	})
+	if im.shouldRegisterInformer("networking.k8s.io/v1/ingresses") {
+		ingressInformer := f.Networking().V1().Ingresses().Informer()
+		im.recordInformer("networking.k8s.io/v1/ingresses", ingressInformer)
+		ingressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				if ing, ok := obj.(*networkingv1.Ingress); ok {
+					im.emitIngressDelta(ing)
+				}
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if ing, ok := newObj.(*networkingv1.Ingress); ok {
+					im.emitIngressDelta(ing)
+				}
+			},
+		})
+	}
 
-	daemonSetInformer := im.factory.Apps().V1().DaemonSets().Informer()
-	daemonSetInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if ds, ok := obj.(*appsv1.DaemonSet); ok {
-				im.emitDaemonSetDelta(ds)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if ds, ok := newObj.(*appsv1.DaemonSet); ok {
-				im.emitDaemonSetDelta(ds)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			if ds, ok := obj.(*appsv1.DaemonSet); ok {
-				im.emitDaemonSetDeleted(ds)
-			}
-		},
-	})
+	if im.shouldRegisterInformer("core/v1/events") {
+		eventInformer := f.Core().V1().Events().Informer()
+		im.recordInformer("core/v1/events", eventInformer)
+		eventInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				if evt, ok := obj.(*corev1.Event); ok {
+					im.emitK8sIncidentEvent(evt)
+				}
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if evt, ok := newObj.(*corev1.Event); ok {
+					im.emitK8sIncidentEvent(evt)
+				}
+			},
+		})
+	}
 
-	cronJobInformer := im.factory.Batch().V1().CronJobs().Informer()
-	cronJobInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if cj, ok := obj.(*batchv1.CronJob); ok {
-				im.emitCronJobDelta(cj)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if cj, ok := newObj.(*batchv1.CronJob); ok {
-				im.emitCronJobDelta(cj)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			if cj, ok := obj.(*batchv1.CronJob); ok {
-				im.emitCronJobDeleted(cj)
-			}
-		},
-	})
+	if im.shouldRegisterInformer("apps/v1/daemonsets") {
+		daemonSetInformer := f.Apps().V1().DaemonSets().Informer()
+		im.recordInformer("apps/v1/daemonsets", daemonSetInformer)
+		daemonSetInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				if ds, ok := obj.(*appsv1.DaemonSet); ok {
+					im.emitDaemonSetDelta(ds)
+				}
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if ds, ok := newObj.(*appsv1.DaemonSet); ok {
+					im.emitDaemonSetDelta(ds)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				if ds, ok := obj.(*appsv1.DaemonSet); ok {
+					im.emitDaemonSetDeleted(ds)
+				}
+			},
+		})
+	}
+
+	if im.shouldRegisterInformer("batch/v1/cronjobs") {
+		cronJobInformer := f.Batch().V1().CronJobs().Informer()
+		im.recordInformer("batch/v1/cronjobs", cronJobInformer)
+		cronJobInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				if cj, ok := obj.(*batchv1.CronJob); ok {
+					im.emitCronJobDelta(cj)
+				}
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if cj, ok := newObj.(*batchv1.CronJob); ok {
+					im.emitCronJobDelta(cj)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				if cj, ok := obj.(*batchv1.CronJob); ok {
+					im.emitCronJobDeleted(cj)
+				}
+			},
+		})
+	}
 
 	im.setupJobInformer()
 	im.setupStorageInformers()
@@ -345,35 +444,75 @@ func (im *InformerManager) Start(stopCh <-chan struct{}) {
 	im.setupQuotaInformers()
 	im.setupSnapshotInformers()
 	im.setupRBACInformers()
-
-	im.factory.Start(stopCh)
-	go im.startMetricsPulse(stopCh)
-	log.Printf("[K8s Informer] Informers started for cluster: %s", im.clusterID)
 }
 
 func (im *InformerManager) StartAsync() {
+	im.reconcileMu.Lock()
+	defer im.reconcileMu.Unlock()
+
 	im.mu.Lock()
+	if im.stopped || im.started {
+		im.mu.Unlock()
+		return
+	}
+	im.started = true
 	im.running = true
+	readyOnce := im.readyOnce
+	readyCh := im.readyCh
 	im.mu.Unlock()
-	go im.Start(im.stopCh)
+
+	// Populate permitted informers synchronously before returning so concurrent
+	// snapshots cannot observe an empty/partial registration window.
+	im.registerAllowedInformers()
+	if readyOnce != nil {
+		readyOnce.Do(func() { close(readyCh) })
+	}
+
+	go func() {
+		if im.IsStopped() {
+			return
+		}
+		if f := im.currentFactory(); f != nil {
+			f.Start(im.currentFactoryStopCh())
+		}
+		go im.startMetricsPulse(im.stopCh)
+		log.Printf("[K8s Informer] Informers started for cluster: %s", im.clusterID)
+	}()
 }
 
 func (im *InformerManager) Stop() {
 	im.mu.Lock()
-	defer im.mu.Unlock()
-
-	if !im.running {
-		return
-	}
-	close(im.stopCh)
+	wasRunning := im.running
+	im.stopped = true
 	im.running = false
-	log.Printf("[K8s Informer] Informers stopped for cluster: %s", im.clusterID)
+	fStopCh := im.factoryStopCh
+	fStopOnce := im.factoryStopOnce
+	readyCh := im.readyCh
+	readyOnce := im.readyOnce
+	im.mu.Unlock()
+
+	im.stopOnce.Do(func() {
+		close(im.stopCh)
+	})
+	if fStopOnce != nil && fStopCh != nil {
+		fStopOnce.Do(func() {
+			close(fStopCh)
+		})
+	}
+	if readyOnce != nil && readyCh != nil {
+		readyOnce.Do(func() {
+			close(readyCh)
+		})
+	}
+	if wasRunning {
+		log.Printf("[K8s Informer] Informers stopped for cluster: %s", im.clusterID)
+	}
 }
 
 func (im *InformerManager) IsRunning() bool {
 	im.mu.RLock()
 	defer im.mu.RUnlock()
-	return im.running
+	return im.running && !im.stopped
 }
 
 func (im *InformerManager) GetClusterID() string {

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -9,7 +10,10 @@ import (
 	"os"
 	"time"
 
+	"k8s.io/client-go/kubernetes"
+
 	"github.com/EnvScale/k8s-streamer/pkg/chaos"
+	"github.com/EnvScale/k8s-streamer/pkg/executor"
 	"github.com/EnvScale/k8s-streamer/pkg/k8s"
 	envredis "github.com/EnvScale/k8s-streamer/pkg/redis"
 	"github.com/EnvScale/k8s-streamer/pkg/websocket"
@@ -39,6 +43,20 @@ func SetupRoutes(
 	metricEvaluator *k8s.MetricEvaluator,
 	redisAdapter *envredis.Adapter,
 ) {
+	clusterManager.SetResourceProber(func(ctx context.Context, clusterID string, clientset kubernetes.Interface, watchSecrets bool) (map[string]bool, bool) {
+		caps := executor.ProbeDirectCapabilities(ctx, clusterID, clientset, watchSecrets)
+		if caps.ConnectionState == executor.StateDisconnected || len(caps.Resources) == 0 {
+			return nil, false
+		}
+		return executor.AllowedResourceMap(caps), caps.Capabilities[executor.CapMetrics].State == executor.CapSupportedWorking
+	})
+
+	executorFactory := executor.NewClusterExecutorFactory(clusterManager)
+	clusterManager.SetOnModeChange(func(clusterID string) {
+		executorFactory.Evict(clusterID)
+	})
+	registerExecutorRoutes(mux, executorFactory)
+
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		redisStatus := "disabled"
 		if redisAdapter != nil && redisAdapter.IsRunning() {
@@ -123,6 +141,7 @@ func SetupRoutes(
 				return
 			}
 		}
+		executorFactory.Evict(req.ClusterID)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -132,68 +151,7 @@ func SetupRoutes(
 		})
 	}))
 
-	mux.HandleFunc("/api/v1/clusters/snapshot", RequireClusterAuth(func(r *http.Request) string {
-		return r.URL.Query().Get("clusterId")
-	}, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		clusterID := r.URL.Query().Get("clusterId")
-		if clusterID == "" {
-			http.Error(w, "clusterId query parameter is required", http.StatusBadRequest)
-			return
-		}
-
-		pods, nodes, services, deployments, replicaSets, statefulSets, daemonSets, ingresses, incidents, cronJobs, jobs, pvcs, pvs, configMaps, secrets, err := clusterManager.GetClusterSnapshot(clusterID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
-			return
-		}
-		hpas := clusterManager.GetHPASnapshot(clusterID)
-		networkPolicies := clusterManager.GetNetworkPolicySnapshot(clusterID)
-		pdbs := clusterManager.GetPDBSnapshot(clusterID)
-		resourceQuotas := clusterManager.GetResourceQuotaSnapshot(clusterID)
-		limitRanges := clusterManager.GetLimitRangeSnapshot(clusterID)
-		serviceAccounts := clusterManager.GetServiceAccountsSnapshot(clusterID)
-		roleBindings := clusterManager.GetRoleBindingsSnapshot(clusterID)
-		clusterRoleBindings := clusterManager.GetClusterRoleBindingsSnapshot(clusterID)
-		roles := clusterManager.GetRolesSnapshot(clusterID)
-		clusterRoles := clusterManager.GetClusterRolesSnapshot(clusterID)
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"pods":                pods,
-			"nodes":               nodes,
-			"services":            services,
-			"deployments":         deployments,
-			"replicaSets":         replicaSets,
-			"statefulSets":        statefulSets,
-			"daemonSets":          daemonSets,
-			"ingresses":           ingresses,
-			"incidents":           incidents,
-			"cronJobs":            cronJobs,
-			"jobs":                jobs,
-			"pvcs":                pvcs,
-			"pvs":                 pvs,
-			"configMaps":          configMaps,
-			"secrets":             secrets,
-			"hpas":                hpas,
-			"networkPolicies":     networkPolicies,
-			"pdbs":                pdbs,
-			"resourceQuotas":      resourceQuotas,
-			"limitRanges":         limitRanges,
-			"serviceAccounts":     serviceAccounts,
-			"roleBindings":        roleBindings,
-			"clusterRoleBindings": clusterRoleBindings,
-			"roles":               roles,
-			"clusterRoles":        clusterRoles,
-			"metricsHistory":      clusterManager.GetMetricsHistory(clusterID),
-		})
-	}))
-
-	mux.HandleFunc("/api/v1/clusters/metrics/history", RequireClusterAuth(func(r *http.Request) string {
+	mux.HandleFunc("/api/v1/clusters/metrics/history", RequireClusterBearerAuth(func(r *http.Request) string {
 		return r.URL.Query().Get("clusterId")
 	}, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -255,6 +213,7 @@ func SetupRoutes(
 					http.Error(w, err.Error(), http.StatusNotFound)
 					return
 				}
+				executorFactory.Evict(clusterID)
 
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
@@ -276,6 +235,7 @@ func SetupRoutes(
 		}
 
 		clusterManager.UnregisterAllClusters()
+		executorFactory.EvictAll()
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]interface{}{

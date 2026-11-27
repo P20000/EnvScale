@@ -26,15 +26,22 @@ type NodeMetricData struct {
 
 // FetchNodeMetricsMap fetches real-time node metrics from metrics-server clientset
 func (im *InformerManager) FetchNodeMetricsMap() map[string]NodeMetricData {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return im.FetchNodeMetricsMapWithContext(ctx)
+}
+
+// FetchNodeMetricsMapWithContext fetches node metrics bounded by the caller context and metrics permission.
+func (im *InformerManager) FetchNodeMetricsMapWithContext(ctx context.Context) map[string]NodeMetricData {
 	metricsMap := make(map[string]NodeMetricData)
-	if im.metricsClient == nil {
+	if im.metricsClient == nil || !im.IsMetricsAllowed() || ctx == nil || ctx.Err() != nil {
 		return metricsMap
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	reqCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
-	nodeMetricsList, err := im.metricsClient.MetricsV1beta1().NodeMetricses().List(ctx, metav1.ListOptions{})
+	nodeMetricsList, err := im.metricsClient.MetricsV1beta1().NodeMetricses().List(reqCtx, metav1.ListOptions{})
 	if err != nil {
 		return metricsMap
 	}
@@ -47,15 +54,19 @@ func (im *InformerManager) FetchNodeMetricsMap() map[string]NodeMetricData {
 		var cpuPct float64 = 0
 		var memPct float64 = 0
 
-		if nodeObj, exists, _ := im.factory.Core().V1().Nodes().Informer().GetStore().GetByKey(nm.Name); exists {
-			if node, ok := nodeObj.(*corev1.Node); ok {
-				allocatableCpu := node.Status.Allocatable.Cpu().MilliValue()
-				if allocatableCpu > 0 {
-					cpuPct = math.Min(100, math.Max(0, (float64(cpuMilli)/float64(allocatableCpu))*100))
-				}
-				allocatableMem := node.Status.Allocatable.Memory().Value()
-				if allocatableMem > 0 {
-					memPct = math.Min(100, math.Max(0, (float64(memBytes)/float64(allocatableMem))*100))
+		if im.isResourceRegistered("core/v1/nodes") {
+			if f := im.currentFactory(); f != nil {
+				if nodeObj, exists, _ := f.Core().V1().Nodes().Informer().GetStore().GetByKey(nm.Name); exists {
+					if node, ok := nodeObj.(*corev1.Node); ok {
+						allocatableCpu := node.Status.Allocatable.Cpu().MilliValue()
+						if allocatableCpu > 0 {
+							cpuPct = math.Min(100, math.Max(0, (float64(cpuMilli)/float64(allocatableCpu))*100))
+						}
+						allocatableMem := node.Status.Allocatable.Memory().Value()
+						if allocatableMem > 0 {
+							memPct = math.Min(100, math.Max(0, (float64(memBytes)/float64(allocatableMem))*100))
+						}
+					}
 				}
 			}
 		}
@@ -72,15 +83,22 @@ func (im *InformerManager) FetchNodeMetricsMap() map[string]NodeMetricData {
 
 // FetchPodMetricsMap fetches real-time pod metrics from metrics-server clientset
 func (im *InformerManager) FetchPodMetricsMap() map[string]PodMetricData {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return im.FetchPodMetricsMapWithContext(ctx)
+}
+
+// FetchPodMetricsMapWithContext fetches pod metrics bounded by the caller context and metrics permission.
+func (im *InformerManager) FetchPodMetricsMapWithContext(ctx context.Context) map[string]PodMetricData {
 	metricsMap := make(map[string]PodMetricData)
-	if im.metricsClient == nil {
+	if im.metricsClient == nil || !im.IsMetricsAllowed() || ctx == nil || ctx.Err() != nil {
 		return metricsMap
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	reqCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
-	podMetricsList, err := im.metricsClient.MetricsV1beta1().PodMetricses("").List(ctx, metav1.ListOptions{})
+	podMetricsList, err := im.metricsClient.MetricsV1beta1().PodMetricses("").List(reqCtx, metav1.ListOptions{})
 	if err != nil {
 		return metricsMap
 	}
@@ -137,6 +155,9 @@ func (im *InformerManager) startMetricsPulse(stopCh <-chan struct{}) {
 			if !im.IsRunning() {
 				return
 			}
+			if !im.IsMetricsAllowed() {
+				continue
+			}
 			metricsMap := im.FetchPodMetricsMap()
 			if len(metricsMap) == 0 {
 				continue
@@ -151,11 +172,16 @@ func (im *InformerManager) startMetricsPulse(stopCh <-chan struct{}) {
 
 			var totalCapMcores float64
 			var totalCapMemoryMb float64
-			nodeList := im.factory.Core().V1().Nodes().Informer().GetStore().List()
-			for _, obj := range nodeList {
-				if node, ok := obj.(*corev1.Node); ok {
-					totalCapMcores += float64(node.Status.Allocatable.Cpu().MilliValue())
-					totalCapMemoryMb += float64(node.Status.Allocatable.Memory().Value()) / (1024 * 1024)
+			var nodeList []interface{}
+			if im.isResourceRegistered("core/v1/nodes") {
+				if f := im.currentFactory(); f != nil {
+					nodeList = f.Core().V1().Nodes().Informer().GetStore().List()
+					for _, obj := range nodeList {
+						if node, ok := obj.(*corev1.Node); ok {
+							totalCapMcores += float64(node.Status.Allocatable.Cpu().MilliValue())
+							totalCapMemoryMb += float64(node.Status.Allocatable.Memory().Value()) / (1024 * 1024)
+						}
+					}
 				}
 			}
 			if totalCapMcores == 0 {
@@ -175,20 +201,24 @@ func (im *InformerManager) startMetricsPulse(stopCh <-chan struct{}) {
 			im.recordClusterMetric(metricPoint)
 			im.hub.BroadcastEvent(types.EventClusterMetrics, im.clusterID, metricPoint)
 
-			podList := im.factory.Core().V1().Pods().Informer().GetStore().List()
-			for _, obj := range podList {
-				if pod, ok := obj.(*corev1.Pod); ok {
-					key := fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)
-					if m, ok := metricsMap[key]; ok {
-						delta := im.extractPodDelta(pod)
-						delta.CpuUsageMcores = int64(m.CPUUsagePct)
-						delta.MemoryUsageMiB = int64(m.MemoryUsageMb)
-						delta.CPUUsagePct = m.CPUUsagePct
-						delta.MemoryUsageMb = m.MemoryUsageMb
+			if im.isResourceRegistered("core/v1/pods") {
+				if f := im.currentFactory(); f != nil {
+					podList := f.Core().V1().Pods().Informer().GetStore().List()
+					for _, obj := range podList {
+						if pod, ok := obj.(*corev1.Pod); ok {
+							key := fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)
+							if m, ok := metricsMap[key]; ok {
+								delta := im.extractPodDelta(pod)
+								delta.CpuUsageMcores = int64(m.CPUUsagePct)
+								delta.MemoryUsageMiB = int64(m.MemoryUsageMb)
+								delta.CPUUsagePct = m.CPUUsagePct
+								delta.MemoryUsageMb = m.MemoryUsageMb
 
-						dedupKey := fmt.Sprintf("PodMetric/%s/%s", pod.Namespace, pod.Name)
-						if im.dedup.ShouldEmit(dedupKey, delta) {
-							im.hub.BroadcastEvent(types.EventPodStatusChanged, im.clusterID, delta)
+								dedupKey := fmt.Sprintf("PodMetric/%s/%s", pod.Namespace, pod.Name)
+								if im.dedup.ShouldEmit(dedupKey, delta) {
+									im.hub.BroadcastEvent(types.EventPodStatusChanged, im.clusterID, delta)
+								}
+							}
 						}
 					}
 				}

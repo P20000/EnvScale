@@ -13,7 +13,15 @@ import (
 
 // setupJobInformer registers the batchv1.Job informer and its event listeners.
 func (im *InformerManager) setupJobInformer() {
-	jobInformer := im.factory.Batch().V1().Jobs().Informer()
+	if !im.shouldRegisterInformer("batch/v1/jobs") {
+		return
+	}
+	f := im.currentFactory()
+	if f == nil {
+		return
+	}
+	jobInformer := f.Batch().V1().Jobs().Informer()
+	im.recordInformer("batch/v1/jobs", jobInformer)
 
 	jobInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
@@ -135,8 +143,15 @@ func (im *InformerManager) emitJobDeleted(job *batchv1.Job) {
 
 // getJobsSnapshot lists all standalone batchv1.Jobs from the informer cache.
 func (im *InformerManager) getJobsSnapshot() []types.JobStatusDelta {
-	var jobs []types.JobStatusDelta
-	jobList := im.factory.Batch().V1().Jobs().Informer().GetStore().List()
+	if !im.isResourceRegistered("batch/v1/jobs") {
+		return nil
+	}
+	jobs := make([]types.JobStatusDelta, 0)
+	f := im.currentFactory()
+	if f == nil {
+		return jobs
+	}
+	jobList := f.Batch().V1().Jobs().Informer().GetStore().List()
 	for _, obj := range jobList {
 		if j, ok := obj.(*batchv1.Job); ok {
 			delta, isStandalone := im.extractJobDelta(j)

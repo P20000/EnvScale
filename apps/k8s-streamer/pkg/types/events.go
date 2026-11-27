@@ -63,7 +63,8 @@ const (
 	EventLimitRangeDeleted    = "EVENT_LIMIT_RANGE_DELETED"
 	EventClusterMetrics       = "EVENT_CLUSTER_METRICS"
 
-	EventSnapshotSync = "EVENT_SNAPSHOT_SYNC"
+	EventSnapshotSync        = "EVENT_SNAPSHOT_SYNC"
+	EventCapabilitiesUpdated = "EVENT_CAPABILITIES_UPDATED"
 )
 
 // ClusterMetricPoint encapsulates real-time rolling cluster-level CPU and Memory telemetry

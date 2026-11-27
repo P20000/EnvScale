@@ -21,6 +21,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
 
+	"github.com/EnvScale/k8s-streamer/pkg/executor"
 	"github.com/EnvScale/k8s-streamer/pkg/k8s"
 	"github.com/EnvScale/k8s-streamer/pkg/types"
 	ws "github.com/EnvScale/k8s-streamer/pkg/websocket"
@@ -150,6 +151,8 @@ func Run(cfg Config) error {
 	hub.SetPublisher(sender)
 
 	informerMgr := k8s.NewInformerManagerWithClientset(clientset, hub, cfg.ClusterID)
+	_ = reconcileAgentCapabilities(context.Background(), cfg.ClusterID, informerMgr)
+
 	stopInformers := make(chan struct{})
 	defer close(stopInformers)
 
@@ -273,6 +276,7 @@ func runStreamingPipeline(cfg Config, im *k8s.InformerManager, outCh <-chan []by
 		// Write pump & periodic resync / ping
 		resyncTicker := time.NewTicker(45 * time.Second)
 		pingTicker := time.NewTicker(20 * time.Second)
+		resyncCount := 0
 		active := true
 
 		for active {
@@ -288,6 +292,10 @@ func runStreamingPipeline(cfg Config, im *k8s.InformerManager, outCh <-chan []by
 				active = false
 
 			case <-resyncTicker.C:
+				resyncCount++
+				if resyncCount%4 == 0 && im.Clientset() != nil {
+					_ = reconcileAgentCapabilities(context.Background(), cfg.ClusterID, im)
+				}
 				sendBaselineSnapshot(conn, im, cfg.ClusterID)
 
 			case <-pingTicker.C:
@@ -339,4 +347,33 @@ func sendBaselineSnapshot(conn *websocket.Conn, im *k8s.InformerManager, cluster
 		log.Printf("[Agent] Transmitted baseline snapshot (%d pods, %d nodes, %d svcs, %d deps)",
 			len(snapshot.Pods), len(snapshot.Nodes), len(snapshot.Services), len(snapshot.Deployments))
 	}
+}
+
+// reconcileAgentCapabilities probes permissions strictly using the Agent's own Kubernetes clientset
+// identity (never control-plane/API-server service tokens) and reconciles live informers without
+// revoking healthy capabilities on transient probe failures.
+func reconcileAgentCapabilities(ctx context.Context, clusterID string, im *k8s.InformerManager) executor.ClusterCapabilities {
+	if im == nil {
+		return executor.ProbeDirectCapabilities(ctx, clusterID, nil, false)
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	caps := executor.ProbeDirectCapabilities(probeCtx, clusterID, im.Clientset(), im.WatchSecrets())
+	if caps.ConnectionState != executor.StateDisconnected && len(caps.Resources) > 0 {
+		if !im.IsRunning() {
+			im.SetAllowedResources(executor.AllowedResourceMap(caps))
+			im.SetMetricsAllowed(caps.Capabilities[executor.CapMetrics].State == executor.CapSupportedWorking)
+		} else {
+			merged := executor.MergeReconciledAllowedResources(im.AllowedResources(), caps)
+			im.ReconcileAllowedResources(merged)
+			if mState := caps.Capabilities[executor.CapMetrics].State; mState != executor.CapTemporarilyUnavailable {
+				im.SetMetricsAllowed(mState == executor.CapSupportedWorking)
+			}
+		}
+	}
+	return caps
 }

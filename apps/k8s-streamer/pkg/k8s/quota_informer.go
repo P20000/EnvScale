@@ -9,51 +9,61 @@ import (
 
 // setupQuotaInformers attaches Informer event handlers for ResourceQuotas and LimitRanges
 func (im *InformerManager) setupQuotaInformers() {
-	quotaInformer := im.factory.Core().V1().ResourceQuotas().Informer()
-	quotaInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if rq, ok := obj.(*corev1.ResourceQuota); ok {
-				im.emitResourceQuotaDelta(rq)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if rq, ok := newObj.(*corev1.ResourceQuota); ok {
-				im.emitResourceQuotaDelta(rq)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			if rq, ok := obj.(*corev1.ResourceQuota); ok {
-				im.emitResourceQuotaDeleted(rq)
-			} else if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
-				if rq, ok := tombstone.Obj.(*corev1.ResourceQuota); ok {
+	f := im.currentFactory()
+	if f == nil {
+		return
+	}
+	if im.shouldRegisterInformer("core/v1/resourcequotas") {
+		quotaInformer := f.Core().V1().ResourceQuotas().Informer()
+		im.recordInformer("core/v1/resourcequotas", quotaInformer)
+		quotaInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				if rq, ok := obj.(*corev1.ResourceQuota); ok {
+					im.emitResourceQuotaDelta(rq)
+				}
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if rq, ok := newObj.(*corev1.ResourceQuota); ok {
+					im.emitResourceQuotaDelta(rq)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				if rq, ok := obj.(*corev1.ResourceQuota); ok {
 					im.emitResourceQuotaDeleted(rq)
+				} else if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+					if rq, ok := tombstone.Obj.(*corev1.ResourceQuota); ok {
+						im.emitResourceQuotaDeleted(rq)
+					}
 				}
-			}
-		},
-	})
+			},
+		})
+	}
 
-	limitRangeInformer := im.factory.Core().V1().LimitRanges().Informer()
-	limitRangeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if lr, ok := obj.(*corev1.LimitRange); ok {
-				im.emitLimitRangeDelta(lr)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if lr, ok := newObj.(*corev1.LimitRange); ok {
-				im.emitLimitRangeDelta(lr)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			if lr, ok := obj.(*corev1.LimitRange); ok {
-				im.emitLimitRangeDeleted(lr)
-			} else if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
-				if lr, ok := tombstone.Obj.(*corev1.LimitRange); ok {
-					im.emitLimitRangeDeleted(lr)
+	if im.shouldRegisterInformer("core/v1/limitranges") {
+		limitRangeInformer := f.Core().V1().LimitRanges().Informer()
+		im.recordInformer("core/v1/limitranges", limitRangeInformer)
+		limitRangeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				if lr, ok := obj.(*corev1.LimitRange); ok {
+					im.emitLimitRangeDelta(lr)
 				}
-			}
-		},
-	})
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if lr, ok := newObj.(*corev1.LimitRange); ok {
+					im.emitLimitRangeDelta(lr)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				if lr, ok := obj.(*corev1.LimitRange); ok {
+					im.emitLimitRangeDeleted(lr)
+				} else if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+					if lr, ok := tombstone.Obj.(*corev1.LimitRange); ok {
+						im.emitLimitRangeDeleted(lr)
+					}
+				}
+			},
+		})
+	}
 }
 
 // extractResourceQuotaDelta parses ResourceQuota spec/status into a normalized delta
@@ -197,8 +207,15 @@ func (im *InformerManager) emitLimitRangeDeleted(lr *corev1.LimitRange) {
 
 // GetResourceQuotaSnapshot returns all cached ResourceQuotas for baseline hydration
 func (im *InformerManager) GetResourceQuotaSnapshot() []types.ResourceQuotaStatusDelta {
-	store := im.factory.Core().V1().ResourceQuotas().Informer().GetStore()
-	var res []types.ResourceQuotaStatusDelta
+	if !im.isResourceRegistered("core/v1/resourcequotas") {
+		return nil
+	}
+	f := im.currentFactory()
+	if f == nil {
+		return nil
+	}
+	store := f.Core().V1().ResourceQuotas().Informer().GetStore()
+	res := make([]types.ResourceQuotaStatusDelta, 0)
 	for _, item := range store.List() {
 		if rq, ok := item.(*corev1.ResourceQuota); ok {
 			res = append(res, im.extractResourceQuotaDelta(rq))
@@ -209,8 +226,15 @@ func (im *InformerManager) GetResourceQuotaSnapshot() []types.ResourceQuotaStatu
 
 // GetLimitRangeSnapshot returns all cached LimitRanges for baseline hydration
 func (im *InformerManager) GetLimitRangeSnapshot() []types.LimitRangeStatusDelta {
-	store := im.factory.Core().V1().LimitRanges().Informer().GetStore()
-	var res []types.LimitRangeStatusDelta
+	if !im.isResourceRegistered("core/v1/limitranges") {
+		return nil
+	}
+	f := im.currentFactory()
+	if f == nil {
+		return nil
+	}
+	store := f.Core().V1().LimitRanges().Informer().GetStore()
+	res := make([]types.LimitRangeStatusDelta, 0)
 	for _, item := range store.List() {
 		if lr, ok := item.(*corev1.LimitRange); ok {
 			res = append(res, im.extractLimitRangeDelta(lr))

@@ -63,6 +63,53 @@ func RequireClusterAuth(getClusterID func(r *http.Request) string, next http.Han
 	}
 }
 
+// RequireClusterBearerAuth enforces HTTP Bearer-header authentication (rejecting ?token= URL query parameters)
+// and canonical cluster authorization while keeping browser WebSocket handshake flows unchanged.
+func RequireClusterBearerAuth(getClusterID func(r *http.Request) string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims, err := websocket.AuthenticateBearerRequest(r)
+		if err != nil {
+			if err == websocket.ErrMissingToken || err == websocket.ErrMissingSecret {
+				if authErr := websocket.CheckUserOrServiceToken(nil); authErr == nil {
+					claims = nil
+				} else {
+					writeAuthError(w, http.StatusUnauthorized, fmt.Sprintf("Authentication required: %v", err))
+					return
+				}
+			} else {
+				writeAuthError(w, http.StatusUnauthorized, fmt.Sprintf("Authentication required: %v", err))
+				return
+			}
+		}
+
+		if authErr := websocket.CheckUserOrServiceToken(claims); authErr != nil {
+			writeAuthError(w, http.StatusForbidden, fmt.Sprintf("Cluster access forbidden: %v", authErr))
+			return
+		}
+
+		clusterID := ""
+		if getClusterID != nil {
+			clusterID = getClusterID(r)
+		}
+		if clusterID == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error": "clusterId is required",
+				"code":  "invalid_request",
+			})
+			return
+		}
+
+		if authErr := websocket.CheckClusterAuthorization(claims, clusterID); authErr != nil {
+			writeAuthError(w, http.StatusForbidden, fmt.Sprintf("Cluster access forbidden: %v", authErr))
+			return
+		}
+
+		next(w, r)
+	}
+}
+
 // RequireClusterOperationAuth wraps an HTTP handler and enforces workspace role authorization for cluster mutations.
 func RequireClusterOperationAuth(getClusterID func(r *http.Request) string, allowedRoles []string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

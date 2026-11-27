@@ -220,12 +220,16 @@ func (im *InformerManager) extractDeploymentDelta(dep *appsv1.Deployment) types.
 	if dep.Spec.Replicas != nil {
 		replicas = *dep.Spec.Replicas
 	}
+	var selector map[string]string
+	if dep.Spec.Selector != nil {
+		selector = dep.Spec.Selector.MatchLabels
+	}
 	delta := types.DeploymentStatusDelta{
 		Name:            dep.Name,
 		Namespace:       dep.Namespace,
 		Replicas:        replicas,
 		ReadyReplicas:   dep.Status.ReadyReplicas,
-		Selector:        dep.Spec.Selector.MatchLabels,
+		Selector:        selector,
 		Labels:          dep.Labels,
 		MinReadySeconds: dep.Spec.MinReadySeconds,
 	}

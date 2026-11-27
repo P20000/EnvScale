@@ -53,6 +53,11 @@ func (im *InformerManager) setupSnapshotInformers() {
 	if im.dynamicClient == nil {
 		return
 	}
+	wantVS := im.shouldRegisterInformer("snapshot.storage.k8s.io/v1/volumesnapshots")
+	wantVSC := im.shouldRegisterInformer("snapshot.storage.k8s.io/v1/volumesnapshotcontents")
+	if !wantVS && !wantVSC {
+		return
+	}
 
 	// Guard against clusters where external-snapshotter CRDs are not installed
 	defer func() {
@@ -67,47 +72,104 @@ func (im *InformerManager) setupSnapshotInformers() {
 	}
 
 	dynFactory := dynamicinformer.NewDynamicSharedInformerFactory(im.dynamicClient, 30*time.Second)
+	startedAny := false
 
-	vsInformer := dynFactory.ForResource(VolumeSnapshotGVR).Informer()
-	vsInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if u, ok := obj.(*unstructured.Unstructured); ok {
-				im.emitVolumeSnapshotDelta(u)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if u, ok := newObj.(*unstructured.Unstructured); ok {
-				im.emitVolumeSnapshotDelta(u)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			if u, ok := obj.(*unstructured.Unstructured); ok {
-				im.emitVolumeSnapshotDeleted(u)
-			}
-		},
-	})
+	if wantVS {
+		vsInf := dynFactory.ForResource(VolumeSnapshotGVR).Informer()
+		im.recordInformer("snapshot.storage.k8s.io/v1/volumesnapshots", vsInf)
+		im.mu.Lock()
+		im.vsInformer = vsInf
+		im.mu.Unlock()
+		vsInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				if u, ok := obj.(*unstructured.Unstructured); ok {
+					im.emitVolumeSnapshotDelta(u)
+				}
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if u, ok := newObj.(*unstructured.Unstructured); ok {
+					im.emitVolumeSnapshotDelta(u)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				if u, ok := obj.(*unstructured.Unstructured); ok {
+					im.emitVolumeSnapshotDeleted(u)
+				}
+			},
+		})
+		startedAny = true
+	}
 
-	vscInformer := dynFactory.ForResource(VolumeSnapshotContentGVR).Informer()
-	vscInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if u, ok := obj.(*unstructured.Unstructured); ok {
-				im.emitVolumeSnapshotContentDelta(u)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if u, ok := newObj.(*unstructured.Unstructured); ok {
-				im.emitVolumeSnapshotContentDelta(u)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			if u, ok := obj.(*unstructured.Unstructured); ok {
-				im.emitVolumeSnapshotContentDeleted(u)
-			}
-		},
-	})
+	if wantVSC {
+		vscInf := dynFactory.ForResource(VolumeSnapshotContentGVR).Informer()
+		im.recordInformer("snapshot.storage.k8s.io/v1/volumesnapshotcontents", vscInf)
+		im.mu.Lock()
+		im.vscInformer = vscInf
+		im.mu.Unlock()
+		vscInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				if u, ok := obj.(*unstructured.Unstructured); ok {
+					im.emitVolumeSnapshotContentDelta(u)
+				}
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if u, ok := newObj.(*unstructured.Unstructured); ok {
+					im.emitVolumeSnapshotContentDelta(u)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				if u, ok := obj.(*unstructured.Unstructured); ok {
+					im.emitVolumeSnapshotContentDeleted(u)
+				}
+			},
+		})
+		startedAny = true
+	}
 
-	dynFactory.Start(im.stopCh)
-	log.Printf("[K8s Informer] VolumeSnapshot dynamic informers active for cluster %s", im.clusterID)
+	if startedAny {
+		dynFactory.Start(im.currentFactoryStopCh())
+		log.Printf("[K8s Informer] VolumeSnapshot dynamic informers active for cluster %s", im.clusterID)
+	}
+}
+
+// GetVolumeSnapshotsSnapshot returns cached VolumeSnapshots when permitted and registered, or nil when unavailable.
+func (im *InformerManager) GetVolumeSnapshotsSnapshot() []types.VolumeSnapshotDelta {
+	if !im.isResourceRegistered("snapshot.storage.k8s.io/v1/volumesnapshots") {
+		return nil
+	}
+	im.mu.RLock()
+	inf := im.vsInformer
+	im.mu.RUnlock()
+	if inf == nil {
+		return nil
+	}
+	res := make([]types.VolumeSnapshotDelta, 0)
+	for _, obj := range inf.GetStore().List() {
+		if u, ok := obj.(*unstructured.Unstructured); ok {
+			res = append(res, ExtractVolumeSnapshotDelta(u))
+		}
+	}
+	return res
+}
+
+// GetVolumeSnapshotContentsSnapshot returns cached VolumeSnapshotContents when permitted and registered, or nil when unavailable.
+func (im *InformerManager) GetVolumeSnapshotContentsSnapshot() []types.VolumeSnapshotContentDelta {
+	if !im.isResourceRegistered("snapshot.storage.k8s.io/v1/volumesnapshotcontents") {
+		return nil
+	}
+	im.mu.RLock()
+	inf := im.vscInformer
+	im.mu.RUnlock()
+	if inf == nil {
+		return nil
+	}
+	res := make([]types.VolumeSnapshotContentDelta, 0)
+	for _, obj := range inf.GetStore().List() {
+		if u, ok := obj.(*unstructured.Unstructured); ok {
+			res = append(res, ExtractVolumeSnapshotContentDelta(u))
+		}
+	}
+	return res
 }
 
 // ExtractVolumeSnapshotDelta parses an unstructured VolumeSnapshot resource into normalized delta

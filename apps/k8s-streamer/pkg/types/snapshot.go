@@ -24,5 +24,10 @@ type ClusterSnapshot struct {
 	LimitRanges            []LimitRangeStatusDelta      `json:"limitRanges,omitempty"`
 	VolumeSnapshots        []VolumeSnapshotDelta        `json:"volumeSnapshots,omitempty"`
 	VolumeSnapshotContents []VolumeSnapshotContentDelta `json:"volumeSnapshotContents,omitempty"`
+	ServiceAccounts        []ServiceAccountDelta        `json:"serviceAccounts,omitempty"`
+	RoleBindings           []RoleBindingDelta           `json:"roleBindings,omitempty"`
+	ClusterRoleBindings    []ClusterRoleBindingDelta    `json:"clusterRoleBindings,omitempty"`
+	Roles                  []RoleDelta                  `json:"roles,omitempty"`
+	ClusterRoles           []ClusterRoleDelta           `json:"clusterRoles,omitempty"`
 }
 

@@ -18,125 +18,145 @@ func (im *InformerManager) setupRBACInformers() {
 		}
 	}()
 
+	f := im.currentFactory()
+	if f == nil {
+		return
+	}
+
 	// 1. ServiceAccounts Informer
-	saInformer := im.factory.Core().V1().ServiceAccounts().Informer()
-	saInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if sa, ok := obj.(*corev1.ServiceAccount); ok {
-				im.emitServiceAccountDelta(sa)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if sa, ok := newObj.(*corev1.ServiceAccount); ok {
-				im.emitServiceAccountDelta(sa)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			if sa, ok := obj.(*corev1.ServiceAccount); ok {
-				im.emitServiceAccountDeleted(sa)
-			} else if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
-				if sa, ok := tombstone.Obj.(*corev1.ServiceAccount); ok {
-					im.emitServiceAccountDeleted(sa)
+	if im.shouldRegisterInformer("core/v1/serviceaccounts") {
+		saInformer := f.Core().V1().ServiceAccounts().Informer()
+		im.recordInformer("core/v1/serviceaccounts", saInformer)
+		saInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				if sa, ok := obj.(*corev1.ServiceAccount); ok {
+					im.emitServiceAccountDelta(sa)
 				}
-			}
-		},
-	})
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if sa, ok := newObj.(*corev1.ServiceAccount); ok {
+					im.emitServiceAccountDelta(sa)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				if sa, ok := obj.(*corev1.ServiceAccount); ok {
+					im.emitServiceAccountDeleted(sa)
+				} else if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+					if sa, ok := tombstone.Obj.(*corev1.ServiceAccount); ok {
+						im.emitServiceAccountDeleted(sa)
+					}
+				}
+			},
+		})
+	}
 
 	// 2. RoleBindings Informer
-	rbInformer := im.factory.Rbac().V1().RoleBindings().Informer()
-	rbInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if rb, ok := obj.(*rbacv1.RoleBinding); ok {
-				im.emitRoleBindingDelta(rb)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if rb, ok := newObj.(*rbacv1.RoleBinding); ok {
-				im.emitRoleBindingDelta(rb)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			if rb, ok := obj.(*rbacv1.RoleBinding); ok {
-				im.emitRoleBindingDeleted(rb)
-			} else if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
-				if rb, ok := tombstone.Obj.(*rbacv1.RoleBinding); ok {
-					im.emitRoleBindingDeleted(rb)
+	if im.shouldRegisterInformer("rbac.authorization.k8s.io/v1/rolebindings") {
+		rbInformer := f.Rbac().V1().RoleBindings().Informer()
+		im.recordInformer("rbac.authorization.k8s.io/v1/rolebindings", rbInformer)
+		rbInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				if rb, ok := obj.(*rbacv1.RoleBinding); ok {
+					im.emitRoleBindingDelta(rb)
 				}
-			}
-		},
-	})
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if rb, ok := newObj.(*rbacv1.RoleBinding); ok {
+					im.emitRoleBindingDelta(rb)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				if rb, ok := obj.(*rbacv1.RoleBinding); ok {
+					im.emitRoleBindingDeleted(rb)
+				} else if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+					if rb, ok := tombstone.Obj.(*rbacv1.RoleBinding); ok {
+						im.emitRoleBindingDeleted(rb)
+					}
+				}
+			},
+		})
+	}
 
 	// 3. ClusterRoleBindings Informer
-	crbInformer := im.factory.Rbac().V1().ClusterRoleBindings().Informer()
-	crbInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if crb, ok := obj.(*rbacv1.ClusterRoleBinding); ok {
-				im.emitClusterRoleBindingDelta(crb)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if crb, ok := newObj.(*rbacv1.ClusterRoleBinding); ok {
-				im.emitClusterRoleBindingDelta(crb)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			if crb, ok := obj.(*rbacv1.ClusterRoleBinding); ok {
-				im.emitClusterRoleBindingDeleted(crb)
-			} else if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
-				if crb, ok := tombstone.Obj.(*rbacv1.ClusterRoleBinding); ok {
-					im.emitClusterRoleBindingDeleted(crb)
+	if im.shouldRegisterInformer("rbac.authorization.k8s.io/v1/clusterrolebindings") {
+		crbInformer := f.Rbac().V1().ClusterRoleBindings().Informer()
+		im.recordInformer("rbac.authorization.k8s.io/v1/clusterrolebindings", crbInformer)
+		crbInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				if crb, ok := obj.(*rbacv1.ClusterRoleBinding); ok {
+					im.emitClusterRoleBindingDelta(crb)
 				}
-			}
-		},
-	})
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if crb, ok := newObj.(*rbacv1.ClusterRoleBinding); ok {
+					im.emitClusterRoleBindingDelta(crb)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				if crb, ok := obj.(*rbacv1.ClusterRoleBinding); ok {
+					im.emitClusterRoleBindingDeleted(crb)
+				} else if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+					if crb, ok := tombstone.Obj.(*rbacv1.ClusterRoleBinding); ok {
+						im.emitClusterRoleBindingDeleted(crb)
+					}
+				}
+			},
+		})
+	}
 
 	// 4. Roles Informer
-	roleInformer := im.factory.Rbac().V1().Roles().Informer()
-	roleInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if role, ok := obj.(*rbacv1.Role); ok {
-				im.emitRoleDelta(role)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if role, ok := newObj.(*rbacv1.Role); ok {
-				im.emitRoleDelta(role)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			if role, ok := obj.(*rbacv1.Role); ok {
-				im.emitRoleDeleted(role)
-			} else if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
-				if role, ok := tombstone.Obj.(*rbacv1.Role); ok {
-					im.emitRoleDeleted(role)
+	if im.shouldRegisterInformer("rbac.authorization.k8s.io/v1/roles") {
+		roleInformer := f.Rbac().V1().Roles().Informer()
+		im.recordInformer("rbac.authorization.k8s.io/v1/roles", roleInformer)
+		roleInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				if role, ok := obj.(*rbacv1.Role); ok {
+					im.emitRoleDelta(role)
 				}
-			}
-		},
-	})
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if role, ok := newObj.(*rbacv1.Role); ok {
+					im.emitRoleDelta(role)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				if role, ok := obj.(*rbacv1.Role); ok {
+					im.emitRoleDeleted(role)
+				} else if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+					if role, ok := tombstone.Obj.(*rbacv1.Role); ok {
+						im.emitRoleDeleted(role)
+					}
+				}
+			},
+		})
+	}
 
 	// 5. ClusterRoles Informer
-	crInformer := im.factory.Rbac().V1().ClusterRoles().Informer()
-	crInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if cr, ok := obj.(*rbacv1.ClusterRole); ok {
-				im.emitClusterRoleDelta(cr)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if cr, ok := newObj.(*rbacv1.ClusterRole); ok {
-				im.emitClusterRoleDelta(cr)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			if cr, ok := obj.(*rbacv1.ClusterRole); ok {
-				im.emitClusterRoleDeleted(cr)
-			} else if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
-				if cr, ok := tombstone.Obj.(*rbacv1.ClusterRole); ok {
-					im.emitClusterRoleDeleted(cr)
+	if im.shouldRegisterInformer("rbac.authorization.k8s.io/v1/clusterroles") {
+		crInformer := f.Rbac().V1().ClusterRoles().Informer()
+		im.recordInformer("rbac.authorization.k8s.io/v1/clusterroles", crInformer)
+		crInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				if cr, ok := obj.(*rbacv1.ClusterRole); ok {
+					im.emitClusterRoleDelta(cr)
 				}
-			}
-		},
-	})
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if cr, ok := newObj.(*rbacv1.ClusterRole); ok {
+					im.emitClusterRoleDelta(cr)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				if cr, ok := obj.(*rbacv1.ClusterRole); ok {
+					im.emitClusterRoleDeleted(cr)
+				} else if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+					if cr, ok := tombstone.Obj.(*rbacv1.ClusterRole); ok {
+						im.emitClusterRoleDeleted(cr)
+					}
+				}
+			},
+		})
+	}
 }
 
 // Extract helpers
@@ -298,8 +318,15 @@ func (im *InformerManager) emitClusterRoleDeleted(cr *rbacv1.ClusterRole) {
 
 // Snapshot getters
 func (im *InformerManager) GetServiceAccountsSnapshot() []types.ServiceAccountDelta {
-	var list []types.ServiceAccountDelta
-	store := im.factory.Core().V1().ServiceAccounts().Informer().GetStore()
+	if !im.isResourceRegistered("core/v1/serviceaccounts") {
+		return nil
+	}
+	list := make([]types.ServiceAccountDelta, 0)
+	f := im.currentFactory()
+	if f == nil {
+		return list
+	}
+	store := f.Core().V1().ServiceAccounts().Informer().GetStore()
 	for _, obj := range store.List() {
 		if sa, ok := obj.(*corev1.ServiceAccount); ok {
 			list = append(list, im.extractServiceAccountDelta(sa))
@@ -309,8 +336,15 @@ func (im *InformerManager) GetServiceAccountsSnapshot() []types.ServiceAccountDe
 }
 
 func (im *InformerManager) GetRoleBindingsSnapshot() []types.RoleBindingDelta {
-	var list []types.RoleBindingDelta
-	store := im.factory.Rbac().V1().RoleBindings().Informer().GetStore()
+	if !im.isResourceRegistered("rbac.authorization.k8s.io/v1/rolebindings") {
+		return nil
+	}
+	list := make([]types.RoleBindingDelta, 0)
+	f := im.currentFactory()
+	if f == nil {
+		return list
+	}
+	store := f.Rbac().V1().RoleBindings().Informer().GetStore()
 	for _, obj := range store.List() {
 		if rb, ok := obj.(*rbacv1.RoleBinding); ok {
 			list = append(list, im.extractRoleBindingDelta(rb))
@@ -320,8 +354,15 @@ func (im *InformerManager) GetRoleBindingsSnapshot() []types.RoleBindingDelta {
 }
 
 func (im *InformerManager) GetClusterRoleBindingsSnapshot() []types.ClusterRoleBindingDelta {
-	var list []types.ClusterRoleBindingDelta
-	store := im.factory.Rbac().V1().ClusterRoleBindings().Informer().GetStore()
+	if !im.isResourceRegistered("rbac.authorization.k8s.io/v1/clusterrolebindings") {
+		return nil
+	}
+	list := make([]types.ClusterRoleBindingDelta, 0)
+	f := im.currentFactory()
+	if f == nil {
+		return list
+	}
+	store := f.Rbac().V1().ClusterRoleBindings().Informer().GetStore()
 	for _, obj := range store.List() {
 		if crb, ok := obj.(*rbacv1.ClusterRoleBinding); ok {
 			list = append(list, im.extractClusterRoleBindingDelta(crb))
@@ -331,8 +372,15 @@ func (im *InformerManager) GetClusterRoleBindingsSnapshot() []types.ClusterRoleB
 }
 
 func (im *InformerManager) GetRolesSnapshot() []types.RoleDelta {
-	var list []types.RoleDelta
-	store := im.factory.Rbac().V1().Roles().Informer().GetStore()
+	if !im.isResourceRegistered("rbac.authorization.k8s.io/v1/roles") {
+		return nil
+	}
+	list := make([]types.RoleDelta, 0)
+	f := im.currentFactory()
+	if f == nil {
+		return list
+	}
+	store := f.Rbac().V1().Roles().Informer().GetStore()
 	for _, obj := range store.List() {
 		if r, ok := obj.(*rbacv1.Role); ok {
 			list = append(list, im.extractRoleDelta(r))
@@ -342,8 +390,15 @@ func (im *InformerManager) GetRolesSnapshot() []types.RoleDelta {
 }
 
 func (im *InformerManager) GetClusterRolesSnapshot() []types.ClusterRoleDelta {
-	var list []types.ClusterRoleDelta
-	store := im.factory.Rbac().V1().ClusterRoles().Informer().GetStore()
+	if !im.isResourceRegistered("rbac.authorization.k8s.io/v1/clusterroles") {
+		return nil
+	}
+	list := make([]types.ClusterRoleDelta, 0)
+	f := im.currentFactory()
+	if f == nil {
+		return list
+	}
+	store := f.Rbac().V1().ClusterRoles().Informer().GetStore()
 	for _, obj := range store.List() {
 		if cr, ok := obj.(*rbacv1.ClusterRole); ok {
 			list = append(list, im.extractClusterRoleDelta(cr))

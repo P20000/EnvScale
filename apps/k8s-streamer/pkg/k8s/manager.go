@@ -1,9 +1,11 @@
 package k8s
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"k8s.io/client-go/kubernetes"
 
@@ -11,12 +13,17 @@ import (
 	"github.com/EnvScale/k8s-streamer/pkg/websocket"
 )
 
+// ResourceProber evaluates cluster RBAC and API group availability prior to informer startup.
+type ResourceProber func(ctx context.Context, clusterID string, clientset kubernetes.Interface, watchSecrets bool) (allowed map[string]bool, metricsAllowed bool)
+
 // ClusterManager maintains a dynamic, thread-safe registry of InformerManager instances keyed by cluster/workspace ID.
 type ClusterManager struct {
-	clusters      map[string]*InformerManager
-	agentRegistry *AgentRegistry
-	hub           *websocket.Hub
-	mu            sync.RWMutex
+	clusters       map[string]*InformerManager
+	agentRegistry  *AgentRegistry
+	hub            *websocket.Hub
+	resourceProber ResourceProber
+	onModeChange   func(clusterID string)
+	mu             sync.RWMutex
 }
 
 // NewClusterManager creates a new ClusterManager registry instance
@@ -28,76 +35,119 @@ func NewClusterManager(hub *websocket.Hub) *ClusterManager {
 	}
 }
 
+// SetResourceProber registers a startup capability probe applied before starting Direct informers.
+func (cm *ClusterManager) SetResourceProber(prober ResourceProber) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	cm.resourceProber = prober
+}
+
+// SetOnModeChange registers a callback invoked whenever a cluster transitions modes or is unregistered.
+func (cm *ClusterManager) SetOnModeChange(fn func(clusterID string)) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	cm.onModeChange = fn
+}
+
+func (cm *ClusterManager) notifyModeChange(clusterID string) {
+	cm.mu.RLock()
+	fn := cm.onModeChange
+	cm.mu.RUnlock()
+	if fn != nil {
+		fn(clusterID)
+	}
+}
+
+// PromoteToAgentSession transitions clusterID cleanly into Agent mode for sessionID,
+// stopping any existing Direct InformerManager and evicting stale executor/capability state.
+func (cm *ClusterManager) PromoteToAgentSession(clusterID, sessionID string) {
+	if clusterID == "" {
+		return
+	}
+	cm.mu.Lock()
+	if existing, ok := cm.clusters[clusterID]; ok {
+		existing.Stop()
+		delete(cm.clusters, clusterID)
+	}
+	cm.mu.Unlock()
+
+	cm.notifyModeChange(clusterID)
+	cm.agentRegistry.RegisterSession(clusterID, sessionID)
+}
+
+func (cm *ClusterManager) applyStartupProbe(clusterID string, im *InformerManager) {
+	cm.mu.RLock()
+	prober := cm.resourceProber
+	cm.mu.RUnlock()
+	if prober == nil || im == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	allowed, metricsAllowed := prober(ctx, clusterID, im.Clientset(), im.WatchSecrets())
+	im.SetAllowedResources(allowed)
+	im.SetMetricsAllowed(metricsAllowed)
+}
+
 // AgentRegistry returns the agent registry for outbound agents
 func (cm *ClusterManager) AgentRegistry() *AgentRegistry {
 	return cm.agentRegistry
 }
 
-// RegisterCluster parses raw Kubeconfig bytes, instantiates an InformerManager, and starts informers asynchronously.
+// RegisterCluster parses raw Kubeconfig bytes, instantiates an InformerManager, probes permitted resources, and starts informers asynchronously.
 func (cm *ClusterManager) RegisterCluster(clusterID string, kubeconfigBytes []byte) error {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
-	if existing, ok := cm.clusters[clusterID]; ok {
-		if existing.IsRunning() {
-			log.Printf("[ClusterManager] Cluster %s is already registered and running", clusterID)
-			return nil
-		}
-		existing.Stop()
-		delete(cm.clusters, clusterID)
-	}
-
 	im, err := NewInformerManager(kubeconfigBytes, cm.hub, clusterID)
 	if err != nil {
 		return fmt.Errorf("failed to register cluster %s: %w", clusterID, err)
 	}
 
+	cm.applyStartupProbe(clusterID, im)
+
+	cm.agentRegistry.UnregisterCluster(clusterID)
+	cm.notifyModeChange(clusterID)
+
+	cm.mu.Lock()
+	if existing, ok := cm.clusters[clusterID]; ok {
+		existing.Stop()
+		delete(cm.clusters, clusterID)
+	}
 	im.StartAsync()
 	cm.clusters[clusterID] = im
+	cm.mu.Unlock()
+
 	log.Printf("[ClusterManager] Successfully registered and started cluster informers for: %s", clusterID)
 	return nil
 }
 
-// RegisterClusterAlias registers an alternative identifier/alias (such as friendly cluster name) for a registered cluster.
-func (cm *ClusterManager) RegisterClusterAlias(clusterID, alias string) {
-	if alias == "" || alias == clusterID {
-		return
-	}
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-	if im, ok := cm.clusters[clusterID]; ok {
-		cm.clusters[alias] = im
-		log.Printf("[ClusterManager] Registered alias %q for cluster %q", alias, clusterID)
-	}
-}
-
-// RegisterInCluster creates and starts an InformerManager using in-cluster ServiceAccount config.
+// RegisterInCluster creates, probes, and starts an InformerManager using in-cluster ServiceAccount config.
 func (cm *ClusterManager) RegisterInCluster(clusterID string) error {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
-	if existing, ok := cm.clusters[clusterID]; ok {
-		if existing.IsRunning() {
-			log.Printf("[ClusterManager] In-cluster %s is already registered and running", clusterID)
-			return nil
-		}
-		existing.Stop()
-		delete(cm.clusters, clusterID)
-	}
-
 	im, err := NewInformerManagerInCluster(cm.hub, clusterID)
 	if err != nil {
 		return fmt.Errorf("failed to register in-cluster %s: %w", clusterID, err)
 	}
 
+	cm.applyStartupProbe(clusterID, im)
+	cm.agentRegistry.UnregisterCluster(clusterID)
+	cm.notifyModeChange(clusterID)
+
+	cm.mu.Lock()
+	if existing, ok := cm.clusters[clusterID]; ok {
+		existing.Stop()
+		delete(cm.clusters, clusterID)
+	}
 	im.StartAsync()
 	cm.clusters[clusterID] = im
+	cm.mu.Unlock()
+
 	log.Printf("[ClusterManager] Successfully registered in-cluster informers for: %s", clusterID)
 	return nil
 }
 
 // RegisterWithClientset registers an InformerManager with a pre-configured clientset (for testing/fake clientset use).
 func (cm *ClusterManager) RegisterWithClientset(clusterID string, clientset kubernetes.Interface) *InformerManager {
+	cm.agentRegistry.UnregisterCluster(clusterID)
+	cm.notifyModeChange(clusterID)
+
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
@@ -112,32 +162,54 @@ func (cm *ClusterManager) RegisterWithClientset(clusterID string, clientset kube
 	return im
 }
 
-// UnregisterCluster stops informers for the specified cluster and removes it from the registry.
-func (cm *ClusterManager) UnregisterCluster(clusterID string) error {
+// RegisterWithClientsetProbed runs the configured ResourceProber prior to starting informers.
+func (cm *ClusterManager) RegisterWithClientsetProbed(clusterID string, clientset kubernetes.Interface) *InformerManager {
+	im := NewInformerManagerWithClientset(clientset, cm.hub, clusterID)
+	cm.applyStartupProbe(clusterID, im)
+	cm.agentRegistry.UnregisterCluster(clusterID)
+	cm.notifyModeChange(clusterID)
+
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
+	if existing, ok := cm.clusters[clusterID]; ok {
+		existing.Stop()
+		delete(cm.clusters, clusterID)
+	}
+	im.StartAsync()
+	cm.clusters[clusterID] = im
+	return im
+}
 
-	im, ok := cm.clusters[clusterID]
-	if !ok {
+// UnregisterCluster stops informers and/or removes agent state for clusterID.
+func (cm *ClusterManager) UnregisterCluster(clusterID string) error {
+	cm.mu.Lock()
+	im, hasDirect := cm.clusters[clusterID]
+	if hasDirect {
+		im.Stop()
+		delete(cm.clusters, clusterID)
+	}
+	cm.mu.Unlock()
+
+	hasAgent := cm.agentRegistry.UnregisterCluster(clusterID)
+	cm.notifyModeChange(clusterID)
+	if !hasDirect && !hasAgent {
 		return fmt.Errorf("cluster %s is not registered", clusterID)
 	}
 
-	im.Stop()
-	delete(cm.clusters, clusterID)
-	log.Printf("[ClusterManager] Unregistered and stopped informers for cluster: %s", clusterID)
+	log.Printf("[ClusterManager] Unregistered cluster: %s (direct=%v, agent=%v)", clusterID, hasDirect, hasAgent)
 	return nil
 }
 
-// UnregisterAllClusters stops all running informers and clears the registry.
+// UnregisterAllClusters stops all running informers and clears agent and direct registries.
 func (cm *ClusterManager) UnregisterAllClusters() {
 	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
 	for id, im := range cm.clusters {
 		im.Stop()
 		delete(cm.clusters, id)
 		log.Printf("[ClusterManager] Unregistered and stopped informers for cluster: %s", id)
 	}
+	cm.mu.Unlock()
+	cm.agentRegistry.Clear()
 }
 
 
@@ -349,16 +421,16 @@ func (cm *ClusterManager) ActiveClusterCount() int {
 	return len(cm.clusters)
 }
 
-// ShutdownAll gracefully stops all active cluster informers.
+// ShutdownAll gracefully stops all active cluster informers and clears agent registrations.
 func (cm *ClusterManager) ShutdownAll() {
 	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
 	log.Printf("[ClusterManager] Shutting down all %d active cluster informers...", len(cm.clusters))
 	for id, im := range cm.clusters {
 		im.Stop()
 		delete(cm.clusters, id)
 	}
+	cm.mu.Unlock()
+	cm.agentRegistry.Clear()
 	log.Println("[ClusterManager] All cluster informers successfully shut down.")
 }
 
